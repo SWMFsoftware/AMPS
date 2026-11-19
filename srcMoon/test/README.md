@@ -1149,6 +1149,13 @@ status meanings and permission/data gates remain binding. The broader
 [design proposal](../../doc/CHEMISTRY_DATABASE_PROPOSAL.md) retains unimplemented
 application-profile migration work, including Hartley2.
 
+The additional [r4 source-input update](../../utility/chemical_database/PHYSICAL_INPUT_STATUS_20261119_R4.md)
+is tested by the same automatically discovering shared runner. New molecular,
+surface, quenching, metadata-amendment and recipe-dependency controls retain
+administrative versus actual-source scopes. The shared test README documents
+explicit native-file selectors and the new lock. No permanent lunar ID,
+scientific criterion, profile default or formal I21–I24 predecessor is changed.
+
 ## Source-bound M3 profiles, trajectories and conditional cohorts
 
 The U15 supporting namespace also runs source-state profiles, moving-parent

@@ -10,6 +10,7 @@ or modify an original.  See SOURCE_PACKET_CONTRACT.md for the pre-change contrac
 from __future__ import annotations
 
 import copy
+import ast
 import hashlib
 import json
 import re
@@ -186,6 +187,22 @@ def load_packets(packet_paths, policies):
             quantity = row.get("quantity_metadata")
             if not isinstance(quantity, dict):
                 raise ValueError("explicit native quantity metadata is required, even when empty")
+            # A small wrapper can depend on another maintained decoder. Its
+            # exact sibling path/hash must be authenticated too, then archived
+            # beside the wrapper by the publisher. Otherwise an unchanged
+            # wrapper could silently run a different scientific parser after
+            # relocation. This field is optional for historical packets.
+            dependencies = quantity.get("recipe_dependencies", [])
+            if not isinstance(dependencies, list) or (dependencies and role != "derived-table"):
+                raise ValueError("recipe dependencies require a derived-table declaration list")
+            seen_dependencies = set()
+            for dependency in dependencies:
+                if not isinstance(dependency, dict):
+                    raise ValueError("invalid recipe dependency declaration")
+                _member(root, dependency.get("path"), dependency.get("sha256"))
+                if dependency["path"] in seen_dependencies or dependency["path"] == row["recipe"]["path"]:
+                    raise ValueError("duplicate recipe dependency path")
+                seen_dependencies.add(dependency["path"])
             entry = copy.deepcopy(row)
             entry.update(path=str(path), storage_permission=policy["storage_permission"],
                          evaluation_permission=policy["evaluation_permission"],
@@ -212,6 +229,36 @@ def load_packets(packet_paths, policies):
     # held parent's numerical data through an allowed output policy. All parent
     # identities must actually be in the explicitly selected packet family.
     entries = {entry["id"]: entry for dataset in datasets for entry in dataset["files"]}
+    # Recipes are software, not an alternative permission path for native
+    # data. In particular, a metadata-only source must not be copied into
+    # provenance by relabelling its file (or an identical copy) a dependency.
+    # Check the full packet family so cross-packet aliases are covered too.
+    payload_paths = {Path(entry["path"]).resolve() for entry in entries.values()}
+    payload_hashes = {entry["sha256"] for entry in entries.values()}
+    for entry in entries.values():
+        for evidence in entry["rights_evidence"]:
+            payload_paths.add(Path(evidence["original_path"]).resolve())
+            payload_hashes.add(evidence["sha256"])
+    checked_recipes = set()
+    for dataset in datasets:
+        packet_root = Path(dataset["expected_root"])
+        for entry in dataset["files"]:
+            declarations = ([entry["recipe"]] if entry.get("recipe") else [])
+            declarations += entry["quantity_metadata"].get("recipe_dependencies", [])
+            for recipe in declarations:
+                path = _member(packet_root, recipe["path"], recipe["sha256"])
+                if path in payload_paths or recipe["sha256"] in payload_hashes:
+                    raise ValueError("recipe/dependency may not copy source data as software")
+                if path.suffix != ".py":
+                    raise ValueError("source-packet recipe/dependency must be explicit Python software")
+                if path not in checked_recipes:
+                    try:
+                        # Parsing establishes syntax only. Never execute source
+                        # recipes at admission or infer their third-party rights.
+                        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                    except (SyntaxError, UnicodeError) as error:
+                        raise ValueError("invalid Python recipe/dependency software") from error
+                    checked_recipes.add(path)
     for entry in entries.values():
         if entry["role"] != "derived-table":
             continue

@@ -73,3 +73,22 @@ Canonical data SHA256: `d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d58
 Approved source development/resource amendments govern implementation order;
 unchanged scientific criteria, native interpretation and formal predecessors
 continue to govern qualification. No roadmap is silently reconciled.
+
+## Explicit recipe dependencies in later packets
+
+A derived source can declare `quantity_metadata.recipe_dependencies` as a
+list of packet-relative `path`/`sha256` objects. Each is an actual decoder/helper
+imported by the pinned main recipe. Admission authenticates and confines these
+members exactly as it does the main recipe; duplicate/self paths, traversal,
+missing or changed dependencies fail before publication. The builder archives
+dependencies at their original relative locations beside the recipe, and the
+release QA independently checks their member/packet/original hashes. Historical
+packets without this optional field retain their behavior. This field grants
+no scientific capability or third-party data permission.
+
+Main recipes and dependencies are explicit Python software, parsed for syntax
+without execution. Neither a recipe nor a dependency may alias a declared
+native/derived/rights source by resolved path or identical byte hash, including
+another selected packet. Renaming a held payload to `.py` does not clear its
+managed-storage restriction. This check protects provenance archives as well
+as the ordinary source-object store.

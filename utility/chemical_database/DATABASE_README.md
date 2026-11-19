@@ -603,3 +603,64 @@ clear held ASD, ADAS, PHIDRATES or other third-party data.
 All source/integrity/API and analytical-helper PASS outcomes are software or
 local kernel verification. They establish neither full daughter distributions
 nor linked application verification or observational validation.
+
+## 10. Additional physical inputs: explicit r4 selection
+
+The r4 release adds molecular radiative state/transition arrays, seven IAEA
+excited-Na composite records, Apollo15221 TPD/derived site distributions, six
+soil-water workbooks and three OH(A)+H2 quenching source-data archives. Read
+`PHYSICAL_INPUT_STATUS_20261119_R4.md` for the exact source roles, rights,
+metadata discrepancies and remaining physical admission requirements. Original
+root/r2/r3 locks and payloads are unchanged; an existing application keeps its
+previous selection until its own explicit input is changed.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r4
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" identity
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" verify
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" query ohplus
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" describe surface-apollo15221-water-tpd-csv
+```
+
+This example opens the actual new radiative matrix and measured TPD view
+through the installed production API. Native energy/wavenumber units are
+cm^-1; A is s^-1. Rows are exact strings, not converted floating-point values.
+
+```bash
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$CHEM_DB_ROOT/database-lock.json" <<'PY'
+import sys
+from amps_chemical_database import Database
+db = Database.from_lock(sys.argv[1])
+states = db.table("molecular-20261119-r4:ohplus-mollist:states-table")
+transitions = db.table("molecular-20261119-r4:ohplus-mollist:transitions-table")
+print("OH+ actual states/transitions:", len(states.rows), len(transitions.rows))
+print(transitions.columns)
+print(transitions.rows[:3])
+tpd = db.table("surface-apollo15221-water-tpd-csv")
+print(tpd.columns)
+print(tpd.rows[:3])
+PY
+```
+
+C++ callers use the same table IDs with the existing `Catalogue::TableRows`;
+no Moon namespace, MPI, SPICE or new runtime ABI is required. Opaque native
+originals remain available through `source-path` only when their source policy
+permits storage/evaluation. Metadata-only records keep their IDs/URLs/hashes
+and refuse payload access with `PermissionRequired`.
+
+Each OH/H2 state view names only the four unambiguous mandatory fields; later
+native quantum tokens remain positional where their metadata disagree. State
+counts that disagree with source declarations are retained, without creating
+missing rows. Internal spectroscopic energies and A values do not establish
+absolute formation energies or complete photon/collision daughter laws.
+IAEA capture-plus-ionization composites remain separate from partial CEX.
+Source temperature, pressure, specimen, collision energy and calculated versus
+measured labels accompany surface/quenching data; no lunar default is inferred.
+
+The new release corrects an earlier MYTHOS JSON `max_energy` interpretation:
+the matching native definition labels it a transition-completeness energy,
+not the maximum state energy. `amend_exomol_metadata.py` reproduces this
+metadata-only correction from pinned old/new evidence. Previous snapshots and
+every retained native/CSV value remain unchanged. New source-specific readers
+and exact packet recipes/dependencies are archived for offline reproduction.
+Neither publication nor these queries activates physics or changes M3 status.

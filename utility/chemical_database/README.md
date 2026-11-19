@@ -103,3 +103,21 @@ metadata; C++ reads the same table through the existing Catalogue. New
 parameters and preserve the old runtime and rate services. They implement
 general mathematical/reduced kernels rather than selecting a Moon network.
 Installed README section9 gives executable CLI/Python and shared C++ guidance.
+
+The additional database-first/publication search is published separately as
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r4`.
+Read [PHYSICAL_INPUT_STATUS_20261119_R4.md](PHYSICAL_INPUT_STATUS_20261119_R4.md)
+for the new molecular radiative matrices, IAEA excited-Na composites, Apollo
+15221 TPD, soil adsorption/migration and OH(A)+H2 source-data scope. Native
+count/label gaps, measured/model distinctions and source-specific permissions
+remain explicit. The new release corrects the MYTHOS transition-completeness
+interpretation with matching-version native evidence; all earlier release
+bytes and source/CSV values are preserved.
+
+Select the r4 lock explicitly. Its installed README section10 gives executable
+queries and examples; the same Python/CLI/C++ Catalogue paths serve every AMPS
+application. Source readers `new_molecular_exomol.py`, `new_surface_*.py` and
+their exact helper dependencies ship with release provenance and the installed
+software. `amend_exomol_metadata.py` reproduces the version-bound metadata
+correction without changing science payloads. No provider or reaction is
+automatically selected, and no source-access PASS closes M3.

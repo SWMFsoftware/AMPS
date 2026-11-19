@@ -4399,3 +4399,165 @@ archives, dependency trees and historical root handoff remain unstaged. Exact
 selection/source hashes, upstream diff and index-preservation checks are in
 `/tmp/amps-moon-staging-review-20261119-a555l7zo/`. No commit or push is made; M3
 scientific status and all source/data/acceptance gates remain unchanged.
+
+
+## 5.39 — Additional physical-input acquisition and shared database update
+
+**Source acquisition/integration package COMPLETE; M3 remains NOT QUALIFIED.**
+The requested database-first search, primary-publication follow-up and shared
+database update are implemented. Source HEAD is
+`26f1a65c58a8a70f1c6301b1a6c4d283a4558c94`, with exact working-source hashes in
+the build/test manifests. Three agents handled independent molecular,
+collision and surface/relaxation searches; the root handled atomic research,
+shared admission/provenance, documentation, verification and installation.
+
+Artifacts: `test_output/chemical_database/m3-physical-inputs-20261119T231417Z/`.
+`work_package.json`, `publication-plan.json`, per-lane source ledgers/reports,
+acquisition receipts, parser QA, full software logs and installation/preservation
+receipts retain the complete source-to-release path. No source original,
+acceptance criterion, application profile or observation was changed.
+
+### New physical inputs and exact source roles
+
+The new immutable installation is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r4`.
+Its own README section10 gives actual CLI/Python/C++ usage; select its lock
+explicitly. The original root lock and r1/r2/r3 remain selected/available as
+before. The new catalogue contains48datasets,885source records,267admitted
+payloads,618metadata-only records,143table descriptors,115available tables
+(112CSV) and the same12inert model definitions. Relative to r3, this adds
+103source records and38accessible CSV tables; counts are source-access counts,
+not independently validated laws.
+
+| New inputs | Actually acquired numerical scope | Retained limitations |
+|---|---|---|
+| ExoMol OH+ MoLLIST, OH MoLLIST-OH, H2 ARLR and H2 RACPPK | Eight exact state/transition views:5046actual states and103947transitions, with native cm^-1/s^-1 units, isotopologue and dataset/version metadata | OH+,OH and RACPPK declared-state counts disagree with actual rows. Optional OH quantum labels are ambiguous and remain positional. No missing state, formation/Q crosswalk, full cascade or coefficient uncertainty is invented. |
+| IAEA D107579/580/582–586 | Seven new native excited-Na AOCC composite pages and49exact printed coefficient rows | Capture+ionization is not pure CEX. Missing equation/upper domain and source-attributed10% model experience error remain explicit; no fit evaluator or daughter law is activated. |
+| Zenodo5044539 Apollo15221 | Four native TPD/energy/site tables;9598rows | Experimental TPD remains separate from model components and inversions; signed values, specimen/preparation and distribution conventions are preserved. |
+| Zenodo14588634 soil water | Six native XLSX files; eleven worksheets and19151represented cells | Simulated lunar soil, loess and montmorillonite remain distinct. Pressure/history, measured/calculated labels, units and unresolved figure numbering stay native. No prompt sticking/accommodation law is inferred. |
+| Zhao2021 OH(A)+H2 | Three publisher ZIPs, thirteen long-cell views and35976retained records including138blank-row markers | Measured and quantum-calculated products, source energies, Ntot=0, duplicate headings and missing markers remain distinct. No Maxwellian total, missing elastic/inelastic outcome or complete joint product law is inferred. |
+
+ExoMol's CC BY-SA4.0, IAEA's CC BY4.0, each Zenodo deposit's CC BY4.0 and
+the quenching article's own CC BY4.0 evidence are pinned separately. Native
+LAMDA/BASECOL/KIDA and atomic/publication records with unclear managed rights
+remain metadata-only. ATcT403 and EuropePMC500 responses are retained acquisition
+ERRORs, never successful source objects. CODATA2022's primary article is a2025
+publication with its own rights-reserved notice. Public access/search snippets
+are not substituted for a numerical source or permission. Exact URLs, hashes,
+native roles and unresolved conditions are in
+`utility/chemical_database/PHYSICAL_INPUT_STATUS_20261119_R4.md`.
+
+### Metadata and provenance corrections
+
+Fresh MYTHOS native definition SHA
+`4da22ac7d223b6b92174f716e52c80ecf4fa77ca8387d21f56c457f455816f4c`
+matches version20240526 and explicitly labels131898.260953cm^-1 as the
+transition-completeness energy. Comparing it with the maximum state energy
+132196.65537cm^-1 as a source defect was incorrect. A reproducible r4-only
+metadata amendment corrects this interpretation; every old native/CSV member
+and source ID remains byte-identical, and old release metadata is unchanged.
+
+New source-specific readers preserve lexical fields and refuse changed hashes,
+bad schemas, missing state references and overwritten outputs. Their exact
+helpers/dependencies are archived beside their recipes. Independent review
+found that a held data file could otherwise be declared a parser dependency;
+the admission path now rejects native/derived/rights payload aliases by resolved
+path or hash, authenticates software dependencies and checks Python syntax
+without executing recipes. Regression controls cover the refusal. No held
+payload was copied by the actual selected packets.
+
+### Verification, commands and preserved identities
+
+No AMPS application rebuild or linked U/I execution is required for this
+source-catalogue/parser package. The portable shared C++17 API/SDK was compiled
+with the normal shared test runner; compiler/source/build identities and all
+stdout/stderr are retained. No PIC/MPI/SPICE configuration or root Makefile is
+changed. The user's pre-existing Makefile edit remains untouched.
+
+| Check | Actual outcome | Artifact |
+|---|---|---|
+| New publication and deep source integrity | PASS,14.095s;727objects checked | `build-result.json`, `staged-r4/publication.json` |
+| Full shared software/API/source suite | 341PASS,0FAIL/ERROR/SKIPPED;69.757s | `software-qa/result.json` |
+| Registered CORE protocol scope | 293PASS,0FAIL/ERROR/SKIPPED | `core-protocol-qa/result.json` |
+| All selected packets/recipes and all available CSV Python/C++ comparisons | 26PASS,0FAIL/ERROR/SKIPPED;113.099s;112tables/2653685exact cells | `release-qa/result.json` |
+| Original source/table preservation | 782old sources and105old table payloads unchanged | `release-delta.json` |
+| Installed package and fresh installed CLI | PASS;412installed members | `installation.json` |
+| Original installation and actual new installed API | 494protected old members unchanged;412members equal verified staging;9new table queries PASS | `installed-verification.json` |
+
+The CORE293checks are a subset/scope repeat, not293additional independent
+physics tests. Per-lane source/parser results are separate, overlapping source
+QA. Full software includes actual relocated CLI/SDK checks. Release QA checks
+all20selected packet declarations,16archived recipe/dependency members and
+refusals for all618held sources/26held tables in both APIs. An initial helper
+setup error used the wrong preservation-manifest key; its ERROR receipt is
+retained. The corrected check uses the original pre-task494expected hashes,
+not recalculated expected values. No installed data was changed by that error.
+
+Exact publication and20packet arguments are in `publication-plan.json`.
+`software-command.json` records all actual-source environment selectors. The
+principal commands, from the repository root, are:
+
+```sh
+/usr/bin/python3 -B utility/chemical_database/build_database.py --amps-root "$PWD" --validation-root /data/vtenishe/moon_validation_data --output-root NEW_PUBLICATION --release-id NEW_RELEASE --include-model-definitions --source-packet PACKET_JSON
+/usr/bin/python3 -B test/chemical_database/run_all_tests.py --database-lock DATABASE_LOCK --output-dir NEW_SOFTWARE_QA
+/usr/bin/python3 -B test/chemical_database/run_all_tests.py --protocol-only --output-dir NEW_PROTOCOL_QA
+/usr/bin/python3 -B test/chemical_database/verify_physical_model_release.py --database-lock DATABASE_LOCK --output-dir NEW_RELEASE_QA --native-probe CATALOGUE_PROBE --source-packet PACKET_JSON
+/usr/bin/python3 -B utility/chemical_database/install_database.py --staged-root VERIFIED_PUBLICATION --destination NEW_SNAPSHOT --receipt NEW_RECEIPT
+```
+
+Repeat `--source-packet` with the full frozen family in the plan. Use new output
+directories. Runtime selection and exact release hashes are:
+
+```text
+release: amps-chemistry-20261119-r4
+release SHA256: 08153b0f7efb888260628adf87d9f4e80df4728ceb50d77303a7c26a846cdcba
+profile SHA256: 8aafa28cbd73e12262c2a1ac4f4eafcbc414b21141ad7fc25665b2c47efdbfaa
+export SHA256: a43c260082bdcdc0b2cd2bf2f64a3c1758e59e1af48d7d35b66148c30429517c
+lock SHA256: db5d167351c31244a86df61d5eaf3fe0f7211dbd49cc5fb1e413ccc8e9e4b38a
+```
+
+### Remaining M3 requirements and roadmap control
+
+New state/transition arrays reduce source gaps. Physical molecular admission
+still needs explicit formation/threshold/asymptote/state and compatible-mass
+crosswalks, populations, complete exits or omitted-exit bounds, and uncertainty/
+model-error scope. The approved heavy-ion reservoir does not require a full
+joint outgoing-electron PDF, but does require compatible state/rate/domain/
+moment and ledger/error evidence. The new Na composites do not supply complete
+CEX products, the missing D119990 provenance/uncertainty or a forward-angle
+error bound. The approved ideal collector remains distinct from a real lunar
+retention/neutralization/accommodation/release law.
+
+Full linked numerical/statistical matrices, global budgets and same-campaign
+M1/M2 predecessors remain required. Nothing in this source/software package
+constitutes formal I21–I24 PASS or observational validation. No lunar test ID,
+criterion, calibration/hold-out membership or roadmap is changed. No git stage,
+commit or push is made.
+
+Roadmap hashes remain source
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`
+and canonical data
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+Approved source development/resource amendments govern implementation order;
+canonical scientific/data/predecessor contracts govern qualification.
+
+
+## 5.40 — Commit staging of the additional physical-input update
+
+The user requested staging of the completed r4 source-input work without a
+commit. The reviewed selection contains26files: shared chemical-database
+readers/publication/provenance code, five new source/amendment test modules,
+existing parser/release-audit tests and the corresponding contracts/READMEs/
+STATUS. The source revision is
+`26f1a65c58a8a70f1c6301b1a6c4d283a4558c94`. No AMPS core `src/` file is part
+of this selection.
+
+The local Makefile, generated inputs/executables, archives, dependency trees,
+external source payloads and all `test_output/` artifacts remain outside the
+index. Source/installed-data scientific scope and the341software/293protocol
+subset/26release-audit PASS results in section5.39 are unchanged. All selected
+Python files pass a fresh syntax check. Staged whitespace, exact selected
+working/index bytes and preservation of excluded paths are checked after
+staging. The operation makes no commit or push and changes no external database
+selection. Its detailed before/after selection and hashes are retained in a
+unique `/tmp/amps-chemdb-stage-*` review directory.

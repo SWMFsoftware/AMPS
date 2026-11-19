@@ -109,3 +109,35 @@ formal linked I21–I24 qualification or observational validation.
 Decimal/Fraction oracles, retained development failures and the proof behind
 the binary floating-point zero-COM certificate. Mathematical roundoff criteria
 are distinct from physical approximation or observational agreement limits.
+
+The r4 physical-input follow-up adds automatically discovered
+`test_new_molecular_exomol.py`, `test_new_surface_apollo15221.py`,
+`test_new_surface_workbooks.py`, `test_new_surface_relaxation.py` and
+`test_amend_exomol_metadata.py`. Administrative controls test exact tokens,
+missing/duplicate metadata, dependency hashes, source gaps and refusal paths.
+They are not observations. Molecular real-source controls require
+`AMPS_NEW_MOLECULAR_SOURCE_ROOT` to name the acquired ExoMol directory. The
+metadata-amendment real-source controls require
+`AMPS_EXOMOL_AMENDMENT_OLD_PACKET` and
+`AMPS_EXOMOL_AMENDMENT_EVIDENCE_PACKET`; these tests authenticate their frozen
+packet identities before copying any science values. Missing actual inputs
+remain SKIPPED in the full suite and outside CORE's protocol-only scope.
+
+Example from the retained work package, using a new output directory:
+
+```bash
+AMPS_NEW_MOLECULAR_SOURCE_ROOT="$PWD/test_output/chemical_database/m3-physical-inputs-20261119T231417Z/molecular/database-originals-network/exomol" \
+AMPS_EXOMOL_AMENDMENT_OLD_PACKET="$PWD/test_output/chemical_database/physical-input-integration-20261119T062501Z/exomol-native/source_packet_v2.json" \
+AMPS_EXOMOL_AMENDMENT_EVIDENCE_PACKET="$PWD/test_output/chemical_database/m3-physical-inputs-20261119T231417Z/molecular/source_packet.json" \
+/usr/bin/python3 -B test/chemical_database/run_all_tests.py \
+  --database-lock /data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261119-r4/database-lock.json \
+  --output-dir test_output/chemical_database/NEW_R4_RUN
+```
+
+Set the earlier CEA/CHIANTI/ExoMol selectors too when their real-source controls
+are desired. `verify_physical_model_release.py` additionally verifies all
+selected r4 packets and all actual available CSV cells through Python/C++,
+including complete packet/recipe/dependency archives and held-source refusals.
+Source-parser QA independently compares new author files with lexical views;
+release QA compares published views with those originals. These are separate
+layers, and neither substitutes for linked physical verification/validation.

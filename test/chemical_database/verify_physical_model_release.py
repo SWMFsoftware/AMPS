@@ -130,6 +130,8 @@ def selected_packet(a,path,datasets,release,archived):
             same(a.db.source_path(key).read_bytes(),native,'stored source bytes changed '+key);allowed+=1
         if row['role']=='derived-table':
             recipe=row['recipe'];a.original(path.parent/recipe['path'],recipe['sha256'])
+            for dependency in row.get('quantity_metadata',{}).get('recipe_dependencies',[]):
+                a.original(path.parent/dependency['path'],dependency['sha256'])
             same(plain(stored.get('derived_from')),row['derived_from'],'derived parent IDs changed '+key)
             for parent in row['derived_from']:
                 if parent not in expected or expected[parent]['role']=='derived-table':raise ValueError('derived source has absent/non-native parent')
@@ -163,8 +165,10 @@ def archived_declarations(a,release,provenance):
         same(a.original(a.db.root/relative,row['sha256']),original,'archived packet bytes changed')
         document=strict_json(original)
         for source in document['sources']:
-            recipe=source.get('recipe')
-            if recipe:expected_recipes[(row['sha256'],recipe['path'])]=(Path(row['path']).parent/recipe['path'],recipe['sha256'])
+            declarations=([source['recipe']]if source.get('recipe')else[])
+            declarations+=source.get('quantity_metadata',{}).get('recipe_dependencies',[])
+            for recipe in declarations:
+                expected_recipes[(row['sha256'],recipe['path'])]=(Path(row['path']).parent/recipe['path'],recipe['sha256'])
         count+=1
     observed={}
     for row in recipes:

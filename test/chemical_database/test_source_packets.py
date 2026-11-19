@@ -216,6 +216,52 @@ class SourcePackets(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "corrupt"):
             self.load()
 
+    def test_changed_recipe_dependency_is_refused(self):
+        row = self.derived()
+        decoder = self.root/'decoder.py'
+        decoder.write_text('# Administrative decoder fixture, no physical data.\n')
+        row['quantity_metadata']['recipe_dependencies'] = [{'path': 'decoder.py', 'sha256': digest(decoder)}]
+        self.load()
+        decoder.write_text('# changed decoder\n')
+        with self.assertRaisesRegex(ValueError, 'corrupt'):
+            self.load()
+
+    def test_recipe_dependency_cannot_escape_packet(self):
+        row = self.derived()
+        row['quantity_metadata']['recipe_dependencies'] = [{'path': '../decoder.py', 'sha256': '0'*64}]
+        with self.assertRaisesRegex(ValueError, 'escapes'):
+            self.load()
+
+    def test_duplicate_recipe_dependency_is_refused(self):
+        row = self.derived()
+        row['quantity_metadata']['recipe_dependencies'] = [dict(row['recipe'])]
+        with self.assertRaisesRegex(ValueError, 'duplicate recipe'):
+            self.load()
+
+    def test_held_payload_cannot_be_renamed_as_dependency(self):
+        row = self.derived()
+        self.row['policy'] = row['policy'] = 'metadata-only'
+        # Deliberate administrative attack: a new filename and valid Python
+        # suffix do not clear a held native file's payload permission.
+        copied = self.root/'renamed_data.py';copied.write_bytes(self.native.read_bytes())
+        row['quantity_metadata']['recipe_dependencies'] = [{'path': copied.name, 'sha256': digest(copied)}]
+        with self.assertRaisesRegex(ValueError, 'may not copy source data'):
+            self.load()
+
+    def test_native_payload_cannot_be_renamed_as_main_recipe(self):
+        row = self.derived()
+        copied = self.root/'renamed_data.py';copied.write_bytes(self.native.read_bytes())
+        row['recipe'] = {'path': copied.name, 'sha256': digest(copied)}
+        with self.assertRaisesRegex(ValueError, 'may not copy source data'):
+            self.load()
+
+    def test_recipe_requires_explicit_python_software(self):
+        row = self.derived()
+        copied = self.root/'not_software.txt';copied.write_text('# Administrative fixture\n')
+        row['recipe'] = {'path': copied.name, 'sha256': digest(copied)}
+        with self.assertRaisesRegex(ValueError, 'explicit Python'):
+            self.load()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

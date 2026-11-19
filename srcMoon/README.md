@@ -1442,3 +1442,15 @@ inverse. It checks the mass-weighted roundtrip with the existing momentum
 bound, preserving supplied SPICE coefficients and every acceptance criterion.
 This fixes a captured cancellation-sensitive physical-event refusal without
 adjusting bath moments to fit a residual. Full M3 qualification remains separate.
+
+The next [physical-input search/update](../utility/chemical_database/PHYSICAL_INPUT_STATUS_20261119_R4.md)
+adds a separate immutable shared-database r4 snapshot. It supplies new OH/OH+
+and H2 radiative matrices, IAEA excited-Na composite source records, Apollo15221
+TPD, soil-water workbooks and OH(A)+H2 quenching source data. Their native
+states/units, missingness, measured/model roles, source conditions and rights
+are preserved. The MYTHOS transition-completeness interpretation is corrected
+using matching-version native evidence, without changing old source numbers.
+Use r4's own explicit lock; existing Moon input/profile selections are unchanged.
+These are reusable source inputs, not activated chemistry or a new M3 PASS.
+The detailed limitations and actual verification/install results are recorded
+in STATUS.md section5.39 and the shared database/test READMEs.

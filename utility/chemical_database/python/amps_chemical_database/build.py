@@ -228,7 +228,14 @@ def _sdk(root, amps_root):
     # Source packet parsing is a maintained offline publication dependency,
     # never a downloader or a means to grant physical readiness at runtime.
     shutil.copy2(str(importer.with_name("source_packets.py")), str(package_target / "source_packets.py"))
-    for recipe in sorted(importer.parent.glob("native_*.py")):
+    # New source-specific readers are also needed to reproduce the selected
+    # lexical views after relocation. They do not run during ordinary queries
+    # and cannot select/activate a physical process. Archive the same maintained
+    # helpers that packet recipes import, including metadata-only amendments.
+    source_helpers = (list(importer.parent.glob("native_*.py")) +
+                      list(importer.parent.glob("new_*.py")) +
+                      list(importer.parent.glob("amend_*.py")))
+    for recipe in sorted(source_helpers):
         shutil.copy2(str(recipe), str(package_target / recipe.name))
     _, native_iaea_source = _load_iaea()
     shutil.copy2(str(native_iaea_source), str(package_target / "native_iaea.py"))
@@ -242,7 +249,7 @@ def _sdk(root, amps_root):
     # Ship the acquisition contract and source-specific caveats with the
     # portable installation. These are documentation, not a physical-profile
     # grant; users must not need the original checkout to discover data gaps.
-    for note in [importer.with_name("SOURCE_PACKET_CONTRACT.md"), importer.with_name("PHYSICAL_MODELS_INTEGRATION_CONTRACT.md")] + sorted(importer.parent.glob("NATIVE_*_SOURCES.md")) + sorted(importer.parent.glob("PHYSICAL_INPUT_STATUS_*.md")):
+    for note in [importer.with_name("SOURCE_PACKET_CONTRACT.md"), importer.with_name("PHYSICAL_MODELS_INTEGRATION_CONTRACT.md"), importer.with_name("PHYSICAL_INPUT_EXTENSION_CONTRACT.md")] + sorted(importer.parent.glob("NATIVE_*_SOURCES.md")) + sorted(importer.parent.glob("NEW_*_SOURCES.md")) + sorted(importer.parent.glob("PHYSICAL_INPUT_STATUS_*.md")):
         if note.is_file():
             shutil.copy2(str(note), str(root / note.name))
     bin_dir = root / "bin"
@@ -448,20 +455,25 @@ def build_database(amps_root, validation_root, output_root, release_id, source_p
             selected = strict_json(packet["path"])
             seen_recipe_paths = set()
             for source in selected["sources"]:
-                recipe = source.get("recipe")
-                if not recipe or recipe["path"] in seen_recipe_paths:
-                    continue
-                seen_recipe_paths.add(recipe["path"])
-                original = member(Path(packet["path"]).parent, recipe["path"])
-                archived = prefix + "/provenance/packet_recipes/{:03d}/".format(index) + recipe["path"]
-                destination = root / archived
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(original), str(destination))
-                if sha256(destination) != recipe["sha256"]:
-                    raise DatabaseError("CorruptSource", "source-packet recipe changed during publication")
-                members[archived] = recipe["sha256"]
-                packet_recipes.append(dict(packet_sha256=packet["sha256"],
-                    original_path=recipe["path"], archived_path=archived, sha256=recipe["sha256"]))
+                # Preserve dependencies at their original packet-relative
+                # locations as well as the main recipe. Admission has checked
+                # every declared hash and confined each path to the packet.
+                declarations = ([source["recipe"]] if source.get("recipe") else [])
+                declarations += source.get("quantity_metadata", {}).get("recipe_dependencies", [])
+                for recipe in declarations:
+                    if recipe["path"] in seen_recipe_paths:
+                        continue
+                    seen_recipe_paths.add(recipe["path"])
+                    original = member(Path(packet["path"]).parent, recipe["path"])
+                    archived = prefix + "/provenance/packet_recipes/{:03d}/".format(index) + recipe["path"]
+                    destination = root / archived
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(original), str(destination))
+                    if sha256(destination) != recipe["sha256"]:
+                        raise DatabaseError("CorruptSource", "source-packet recipe changed during publication")
+                    members[archived] = recipe["sha256"]
+                    packet_recipes.append(dict(packet_sha256=packet["sha256"],
+                        original_path=recipe["path"], archived_path=archived, sha256=recipe["sha256"]))
         for source in source_rows:
             if source["path"]:
                 members[source["path"]] = source["sha256"]
@@ -475,8 +487,11 @@ def build_database(amps_root, validation_root, output_root, release_id, source_p
             importer_path.with_name("DATABASE_README.md"), importer_path.with_name("source_packets.py"),
             importer_path.with_name("SOURCE_PACKET_CONTRACT.md")]
         recipe_sources += [importer_path.with_name("PHYSICAL_MODELS_INTEGRATION_CONTRACT.md")]
+        recipe_sources += [importer_path.with_name("PHYSICAL_INPUT_EXTENSION_CONTRACT.md")]
         recipe_sources += list(importer_path.parent.glob("native_*.py")) + [importer_path.with_name("acquire_sources.py")]
+        recipe_sources += list(importer_path.parent.glob("new_*.py")) + list(importer_path.parent.glob("amend_*.py"))
         recipe_sources += list(importer_path.parent.glob("NATIVE_*_SOURCES.md")) + list(importer_path.parent.glob("PHYSICAL_INPUT_STATUS_*.md"))
+        recipe_sources += list(importer_path.parent.glob("NEW_*_SOURCES.md"))
         recipe_sources = list(dict.fromkeys(recipe_sources))
         for recipe in recipe_sources:
             destination = root / recipe_prefix / recipe.name

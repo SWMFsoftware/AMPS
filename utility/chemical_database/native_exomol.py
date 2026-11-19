@@ -90,15 +90,20 @@ def project(source, output, kind, definition=None):
         qa = {"definition_sha256": _sha(definition), "source_dataset_version": definitions["dataset"]["version"],
               "declared_states": state["number_of_states"], "observed_states": len(rows),
               "minimum_energy_native_cm-1": str(min(energy)), "maximum_energy_native_cm-1": str(max(energy))}
-        # The current source definition and actual E-column upper extent differ.
-        # Preserve both: do not silently crop states, alter the header or assume
-        # this metadata field supplies a validated physical energy cutoff.
+        # A JSON key named max_energy does not establish an upper state-energy
+        # bound. The matching native MYTHOS .def labels this quantity "Higher
+        # energy with complete set of transitions (in cm-1)". States above a
+        # transition-completeness cutoff are legitimate. Preserve the JSON
+        # value, but do not compare these different quantities as a QA defect.
+        # This entry point accepts only JSON; exact native-text evidence and
+        # the version-bound correction are retained in the new source packet.
         if "max_energy" in state:
             declared = Decimal(str(state["max_energy"]))
+            if not declared.is_finite():
+                raise ValueError("nonfinite source definition max_energy")
             qa["definition_max_energy_native_cm-1"] = str(declared)
-            qa["maximum_energy_matches_definition"] = declared == max(energy)
-            if declared != max(energy):
-                limitations.append("Definition max_energy differs from the native E-column maximum; no physical cutoff is inferred.")
+            qa["definition_max_energy_semantics"] = "consult matching-version native .def; not an inferred maximum state energy"
+            limitations.append("JSON max_energy alone does not establish a maximum state-energy bound; no states are cropped.")
         limitations += ["E is the source spectroscopic excitation coordinate, not molecular formation energy.",
                         "Catalogue mass is not admitted as an isotope/state physical-rest-mass crosswalk.",
                         "Source lifetime/uncertainty tokens are preserved; no missing value or complete cascade is inferred."]

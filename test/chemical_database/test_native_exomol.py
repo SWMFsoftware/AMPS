@@ -56,6 +56,20 @@ class ExoMolParser(unittest.TestCase):
             native.project(source, output, 'photo')
         self.assertEqual(output.read_text(), 'ORIGINAL')
 
+    def test_json_max_energy_does_not_impose_a_state_cutoff(self):
+        # Administrative schema control: the metadata label is insufficient
+        # to identify a physical upper bound. These are not measured levels.
+        source = self.root/'administrative.states';source.write_text('1 3.0 1 0\n')
+        definition = self.root/'administrative.def.json'
+        definition.write_text(json.dumps({'dataset': {'version': 'administrative', 'states': {
+            'states_file_fields': [{'name': name} for name in ('ID', 'E', 'gtot', 'J')],
+            'number_of_states': 1, 'max_energy': 2.0}}}))
+        result = native.project(source, self.root/'states.csv', 'states', definition)
+        self.assertEqual(result['source_checks']['maximum_energy_native_cm-1'], '3.0')
+        self.assertEqual(result['source_checks']['definition_max_energy_native_cm-1'], '2.0')
+        self.assertNotIn('maximum_energy_matches_definition', result['source_checks'])
+        self.assertIn('not an inferred maximum', result['source_checks']['definition_max_energy_semantics'])
+
 
 class ExoMolRealSource(unittest.TestCase):
     requires_authoritative_source = True
