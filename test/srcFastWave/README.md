@@ -21,6 +21,12 @@ The driver actually advances 60 iterations and produces three sampling files
 per species. The timestep, weights, particles and sampling controls remain
 defined by the existing driver and `input/test/fast-wave.input`.
 
+When the driver generates a mesh, rank zero publishes its cache with a checked
+file rename to `amr.sig=0x<signature>.mesh.bin`. A failed rename reports the
+destination and operating-system error through AMPS' nonzero MPI-abort path,
+so the run cannot silently continue with a failed cache operation. All ranks
+still participate in signature computation and the following synchronization.
+
 ## Implemented algorithm improvements
 
 The subsequent P0–P4 implementation batches eligible periodic ghost records

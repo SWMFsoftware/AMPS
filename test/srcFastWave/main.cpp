@@ -11,6 +11,11 @@
 #include "pic.h"
 #include "constants.h"
 
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <sstream>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
@@ -597,10 +602,18 @@ int main(int argc,char **argv) {
     unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
-      char command[300];
-
-      sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
-      system(command);
+      // Rank zero owns the cache rename. Keep the collective signature call
+      // above on every rank, and abort the MPI run if cache publication fails
+      // so peers cannot continue past the following barrier with a false success.
+      std::ostringstream destination;
+      destination << "amr.sig=0x" << std::hex << MeshSignature << ".mesh.bin";
+      const std::string meshCacheName=destination.str();
+      if (std::rename("mesh.msh",meshCacheName.c_str())!=0) {
+        const int renameError=errno;
+        const std::string message="Cannot rename mesh.msh to "+meshCacheName+
+            ": "+std::strerror(renameError);
+        exit(__LINE__,__FILE__,message.c_str());
+      }
     }
   }
 
