@@ -112,6 +112,17 @@ self-consistent PIC field solver/current-charge deposition and concurrent
 local-time flux resampling. Prescribed Lorentz acceleration is supported;
 self-consistent charge/current deposition is a different production path.
 
+The source also compiles when MPI uses C++ worker threads. Its temporary-list
+insertion selects the existing atomic-exchange protocol in that configuration
+and retains the plain list head in serial MPI builds. Every worker must own a
+distinct particle, and traversal/commit must wait for all insertion workers:
+the head is published before its next link is completed. Initialize `prev`
+before publishing so a later inserter's predecessor update is preserved.
+The two threaded fast-wave regressions exercise build compatibility with this
+source while selecting the ECSIM/Lapenta mover. They retain their physical
+workload and numerical gates; they do not qualify threaded force/surface
+callbacks or extend the native tracer matrix above.
+
 Reproduce a native unsupported-mode refusal in an isolated checkout (replace
 `periodic` with `backward` or `field-solver` for the other controls):
 

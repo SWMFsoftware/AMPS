@@ -89,7 +89,18 @@ void Insert(long int ptr,PIC::ParticleBuffer::byte* data,Node* node,const State&
   int i,j,k;
   if(PIC::Mesh::mesh->FindCellIndex(probe,i,j,k,node,false)<0)Error("cannot locate destination cell");
   auto block=node->block;
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  // Match the existing temporary-list protocol in the other native movers.
+  // Each worker owns a distinct particle; traversal/commit must follow the
+  // worker barrier/join, since exchange publishes the head before its next
+  // link is filled. Set prev before publication so a later inserter's update
+  // of this particle's predecessor cannot be overwritten by this worker.
+  PIC::ParticleBuffer::SetPrev(-1,data);
+  const long int previous=std::atomic_exchange(
+      block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  PIC::ParticleBuffer::SetNext(previous,data);
+  if(previous!=-1)PIC::ParticleBuffer::SetPrev(ptr,previous);
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int& head=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
   PIC::ParticleBuffer::SetPrev(-1,data);PIC::ParticleBuffer::SetNext(head,data);
   if(head!=-1)PIC::ParticleBuffer::SetPrev(ptr,head);head=ptr;
