@@ -109,6 +109,20 @@ for every facet). Output `<chain>/maps/`: `<model>_flux.pvd` + 13 `.vtu`, `<mode
 (Tecplot 360 only; ParaView's Tecplot reader mis-reads shared zones), README.txt, maps_manifest.json; geometry and
 build in `$RUN/maps_geometry/job_<id>/`. CPU job (normal128cores), ~6 min; validates the geometry against the base's
 kernel records first.
+
+**H2O night-side fix (2026-11-18; user decision "(b) -- use 0.02; x10 was not intended"):** every map, production-rate
+figure, contribution, cliff and illumination product made BEFORE 2026-11-18 used H2O q_min = 0.2 q_max (the law of all
+fits so far); the fixed law is q_min = 0.02 q_max (as srcCG). `model_ext/nonneg_maps.py` now holds the ratio as
+`H2O_QMIN_RATIO` (0.02; snapshots `model_ext_frozen/nonneg_maps_20261118T072729Z`, `nonneg_contrib_20261118T072729Z`).
+Make maps of fits done with the new law with these snapshots. The older snapshots refuse with the fixed
+`fit_cops.py` (law_guard: "the reference source law changed"); maps of the old (0.2) fits can only be remade with the
+pre-fix fit_cops (git history, commit 4b1e0c2 or earlier) and their own snapshots.
+**Maps on base_q002 (2026-11-18 13:30 CST):** base_q002 has no run_manifest.json by design, so the geometry validation
+needs the EXPLICIT shape manifest: `sbatch --export=ALL,CHAINS=<...>,BASE=$R/base_q002,SHAPE_MANIFEST=$R/base_q002/cpp_run_manifest.json,SHAPE_REFERENCE=$R/base/run_manifest.json,MODEL_EXT=model_ext_frozen/nonneg_maps_20261118T192126Z jobs/nonneg_maps.sbatch`
+(`validate-geometry --shape-manifest ... --shape-manifest-must-equal ...`); a validated geometry exists:
+`$R/maps_geometry/job_136691/geometry` (use it as GEOM for maps / contributions / the localnn and d2 tools, with
+`--contrib-code model_ext_frozen/nonneg_contrib_20261118T192126Z`). D2 on base_q002: `jobs/d2_tools.sbatch` with
+`D2DIR=$R/clip_refit/D2_q002_warm D2_BASE=$R/base_q002` (job 136692: `D2_q002_warm/maps`).
 ```bash
 sbatch --export=ALL,CHAINS=<chain dir>,MODEL_EXT=$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_maps_20261112T021623Z $COPS_OUTPUT_ROOT/jobs/nonneg_maps.sbatch
 # after a chain: add --dependency=afterany:<chain job ids>; one chain per job (jobs 124324 softplus, 124325 squared)
@@ -568,6 +582,161 @@ KEY=<key> FT=.. FIT=.. MAPS=.. CONTRIB=.. PHASE=.. [CHAIN= NCYC=] JOB_SET4=<set1
 .venv/bin/python figures_cluster/scripts/full_set_docs.py --spec figures_cluster/scripts/data/full_sets_stage2_20261117.json --key <key>
 ```
 
+### 3.12 Word document comparing the six full sets plot by plot (2026-11-17)
+
+`figures_cluster/12M/full_sets_stage2_comparison/12M_stage2_full_sets_comparison.docx` (user: "prepare word doc that compares
+all the cases: group the same plot for all cases and provide summary and that for every plot"); `fullsets_comparison_docx.py`
+(version-controlled copy `figures/`). For each of the 85 PNGs of a full set (3.11) one figure group: the six cases in one grid
+(order softplus, A, B, D, C, D2; portrait or landscape, 3 x 2 or 2 x 3, chosen for the largest images), each labelled with its
+case, caption "Figure N: <plot> — all six cases", then a Summary (what the plot shows from its caption; a table of the case
+numbers; how the cases compare; observations from the images, marked as such). Plots whose six PNGs are byte-identical
+(visibility/, the geometry panels (c)-(f)) are shown once. Front matter: cases table (data cost, terminations, rms ln all /
+late, Q_H2O total / seen, kappa, multipliers, README caveats) and an overall summary (FINDINGS A12 / A14 / A15); Appendix A:
+the source PNG paths (SHA256 prefixes). Every printed number is read from a file and listed in `numbers_used.json` (literal
+numbers of hand-written sentences checked against the captions / READMEs / FINDINGS / this file; the build refuses to write
+the document otherwise). Images: downscaled copies in `images/` (maps JPEG q78, line plots 256-colour PNG, 1000-1400 px).
+Interpreter: separate venv `$COPS_OUTPUT_ROOT/tools/docx_venv` (python-docx, Pillow, defusedxml; not the project `.venv`).
+No PDF: LibreOffice is not installed on Voyager (login and compute nodes); `validate` checks counts, page fit and zip
+entries and draws layout previews; the docx skill's `validate.py` checks the OOXML schema. CPU job, ~20 s; refuses an existing
+document (move the folder aside as `.superseded_<UTC>`).
+```bash
+OUT=/data001/highresolu_vt/cops_output/figures_cluster/12M/full_sets_stage2_comparison; PYD=/data001/highresolu_vt/cops_output/tools/docx_venv/bin/python
+srun -p normal128cores -c 8 --mem=32G -t 00:25:00 bash -c "$PYD -I figures_cluster/scripts/fullsets_comparison_docx.py build --out $OUT --jobs 8 && $PYD -I figures_cluster/scripts/fullsets_comparison_docx.py validate --out $OUT"
+```
+To compare other sets: edit `CASES` (set folder, file stem, summary.csv key, residual table names) and the catalogue in the
+script (it asserts 85 plot types).
+
+### 3.13 Slope at equal illumination: does the source rate depend on the slope angle? (2026-11-17)
+
+`figures_cluster/12M/cliff_effect_stage2/` (user: "test several definitions: >40, >60, >80, as well as 0-40,40-50,50-60,
+60-70,70-80, 80-90; for the six cases individually ... find whether at the same illuminations condition the source rate
+depends on the slope angle ... word doc ... pack the same plot for all six cases in a cluster and add a summary").
+Scripts (version-controlled copies `figures/`, `jobs/`): `cliff_effect_data.py` (one CPU job per case,
+`jobs/cliff_effect_data.sbatch`, 3-5 min), `cliff_effect_figures.py` (`jobs/cliff_effect_figures.sbatch`, all cases, ~3 min;
+labels and caveats from `figures/data/cliff_effect_cases_20261117.json`), `cliff_effect_docx.py` (docx_venv; imports
+`fullsets_comparison_docx.py`). Per case `<key>/`: P1_NG / P1_RG (F, A, ratios to 0-40, active fraction, lit / shadowed /
+night strip, per illumination class, gauge-seen surface, four snapshots), P1_whole (whole surface, maps' .vtu, 10:33:10 /
+10:39:26), P2_NG / P2_RG (g = K/dS = 1/r^2 x cos theta x W x visible fraction at the centroid), P3_NG / P3_RG (matched cells
+SZA class x 10 % distance x 0.1 cos theta: contribution-weighted distribution of the ratio per m^2), P4_NG / P4_RG (signal
+share / area share = activity x illumination x geometry x covariance, snapshots and phase means); answer.csv / .json (the
+SZA-controlled ratio, lead's definition; additions: under-sampled-reference flag (grey columns, dagger), variant over
+well-sampled classes, ratio of sums), p2_summary.json, p3.csv, p4.csv, P1_whole_tables.csv. Slope categories = the fit's
+bins and their unions (>40, >60, >80 include 90-180; 90-180 alone as an addition). Document
+`12M_stage2_cliff_effect.docx`: question, model facts, definitions, checks, overall answer per case (tables, caveats), nine
+clusters (the same plot of the six cases, labelled (a)-(f)) each followed by a summary with numbers and the answer for that
+plot; `numbers_used.json`; validation (python-docx reopen, page fit, layout previews, OOXML schema). Checks in each
+`data/<key>/cliff_data.json` (contributions = the fit's bitwise; F vs the maps <= 4e-8; row totals = the full sets'
+snapshots). Rerun: README.txt and HOW-TO-RERUN.md of the folder.
+
+### 3.14 Illumination maps at the production-rate map times (2026-11-18)
+
+`figures_cluster/12M/illumination_maps_103310_103926/` (user: "check the production rate plots -- i dont see the effect of the
+shadow or night side decrease of the productions -- is it there? generate illumination maps for the time intervals that
+corresponds to that on the production rate maps"). Script `figures_cluster/scripts/illumination_maps_figures.py` (copy
+`figures/`), jobs `jobs/illumination_numbers.sbatch` (CPU, ~2 min) and `jobs/illumination_maps.sbatch` (1 GPU, `TIME=`, ~7 min);
+then `illumination_maps_figures.py docs` on the login node. Quantities (fixed classes, the same in every panel):
+illumination class (day #E69F00, night #0072B2, cast shadow #CC79A7), cos SZA of the day facets (10 classes of 0.1,
+'YlOrBr'; night / shadow in their class colours), q/q_max = 0.2 (night, shadow; colour-bar triangle) or 0.2 + 0.8 cos SZA
+(8 classes of 0.1, 'YlOrBr' reversed) and log10 q/q_max (14 classes of 0.05 decade); masks `whole_surface` and `seen_only`
+(unseen grey). Layouts = every layout of `full_set_*/production_rate/` (templates with slope and cliff rows, panels a / b,
+lon/lat and 3-D ground tracks; relief 0.7 in templates and panels, flat colours in the ground tracks, Rosetta impact only);
+`side_by_side/`: production rate (classes checked equal to the full set's manifest) | q/q_max on the same facets | q/q_max
+on the whole surface. Illumination is fit-independent (cos_SZA, illumination and seen identical bitwise in the six cases'
+maps), so the folder serves every full set. Numbers and the answer: README.txt, checks/illumination_numbers.txt. Rerun:
+HOW-TO-RERUN.md of the folder (figure jobs ran the script version sha256 1980967985..., the docs step 829697321f...).
+**2026-11-18 (H2O night-side fix):** this folder shows the 0.2 law (q/q_max = 0.2 at night, 0.2 + 0.8 cos SZA by day) of
+all fits so far. The script no longer has the literal 0.2: `QRATIO` = the maps' own `nonneg_maps.H2O_QMIN_RATIO`
+(`set_qratio`; the numbers json records it as `qratio_h2o`), and the factor classes, ticks and texts derive from it
+(identical to the figures above for 0.2). For the fixed law (0.02) they become: f = 0.02 at night / in shadow,
+0.02 + 0.98 cos SZA by day, 10 classes of 0.1 from 0 to 1 (triangle 0.02), log10 f 34 classes of 0.05 from -1.70
+(ticks every 0.2 / 0.4 decade); a factor-50 (1.70-decade) range. That layout is derived, not a user decision: confirm it
+when the maps are redone after a refit. A rerun needs maps made with `nonneg_maps_20261118T072729Z` (an older maps
+folder has no `H2O_QMIN_RATIO` and is refused).
+
+### 3.15 Source-rate maps of the runs fitted with the new H2O law (2026-11-18)
+
+`figures_cluster/12M/source_rate_q002/<run>/` (user: "prepare the surface source rate maps for completed runs for inspection
+of the source rate"; the H2O night-side fix of 2026-11-18: q_min = 0.02 q_max, srcCG's value; before, every fit and figure
+used 0.2). Per completed run (`figures/source_rate_q002_submit.py --run <key>`, GPU job `jobs/source_rate_q002.sbatch`):
+activity/ and production_rate/ exactly as the full sets (pub_maps_v2_figures.py: templates + panels, lon/lat and 3-D ground
+tracks; seen-only colouring, area cut 0.02, relief 0.7 for the rate; captions state the law and that the old figures used 0.2;
+the activity model described in the model's own terms via `--model-text`) and inspection/ (source_rate_q002_inspect.py, per
+map time: (a, b) new-law F_H2O, (c, d) the old-law counterpart's F_H2O on the SAME log classes, (e, f) the new q/q_max on the
+whole surface; checks/inspect_<hhmmss>.{json,txt}: Q_H2O total and seen, night + cast-shadow shares, active area, new vs old).
+README.txt / CAPTIONS.md / HOW-TO-RERUN.md / code/ by source_rate_q002_docs.py. Runs, their maps, old-law counterparts and
+caption texts: `figures/data/source_rate_q002_runs_20261118.json` (D2_q002_warm and the nine stage-2 chains of the new law;
+C f 10 / f_m 1e-4 has no old-law maps: no inspection figure). `cluster/` (source_rate_q002_cluster.py, CPU): the production-rate
+panels of all completed runs, one row per run, per time (each panel keeps its own classes). GPU needed (cops_cuda.figures
+rasterizer); gpu003 is not schedulable for us (2026-11-18).
+
+### 3.16 Comparison set of the new-law stage-2 round (2026-11-19)
+
+`figures_cluster/12M/model_vs_observations_nonneg_options_stage2_q002/` (user: "prepare a full set of comparison plots for the
+last round of fitting"; the round = the refitted D2 and the nine regularized stage-2 chains with H2O q_min = 0.02 q_max on
+base_q002). The set of 3.10 for the new-law states (`stage2_q002_figures.py`, CPU job `jobs/stage2_q002_figures.sbatch`, ~3
+min; docs `stage2_q002_docs.py`): 12M_q002_best_* (softplus, D2, A, B, best C, D vs COPS), 12M_q002_C_* (the five C chains),
+12M_q002_vs_old_<run>_* (new law solid vs old law dashed for softplus, A, B, D, D2 and each C setting), residuals
+(12M_q002_best_residuals, 12M_q002_C_residuals, 12M_q002_vs_old_<run>_residuals for softplus, A, B, D, D2, best C),
+12M_q002_convergence_<chain> (data cost after each cycle's fit and fine tuning, new vs old) and 12M_q002_convergence_all;
+summary.txt / .csv (new and old rows: costs, P_delta, terminations / nfev, rms all / late, multipliers, bounds, kappa,
+Q_H2O total and seen at 10:33:10, old-law cost and change). Every legend label carries "new law q_min 0.02 q_max" or
+"old law q_min 0.2 q_max"; every caption states both laws. 78 figures.
+
+### 3.17 Word document clustering the plots of the ten new-law runs (2026-11-19)
+
+`figures_cluster/12M/stage2_q002_comparison/12M_stage2_q002_comparison.docx` (user: "similarly to what you have done
+priorly, generate word doc clastering the same plot from each of the runs and summarizing them"); `q002_comparison_docx.py`
+(version-controlled copy `figures/`; derived from 3.12's generator, same rules). Inputs: 3.15 (`source_rate_q002/<run>/`) and
+3.16. Front matter: purpose, the law correction, a runs table from summary.csv (new / old data cost and change,
+terminations, rms all / late, multipliers, kappa, Q_H2O total / seen), a summary of the round (FINDINGS A18) with caveats.
+Section 3: the multi-run figures of 3.16 (12M_q002_best_*, 12M_q002_C_*, convergence_all), one image each. Sections 4-7: one
+cluster per per-run plot type (new-vs-old model/data figures, residuals, convergence; activity; production rate at 10:33:10 /
+10:39:26; inspection), the runs in the fixed order D2, softplus, A, B, D, C f1/1e-4, C f10/1e-4, C f1/0.01, C f10/0.01,
+C f10/0.01 off, all on one page (2-5 columns), a placeholder with the README's reason where a run lacks the plot; plot types
+byte-identical in all runs shown once. Every figure caption states the law (validate checks it). Summaries: number table per
+run (summary.csv, inspection json, captions, manifests, slope_bins json, tables/*.dat), comparison, observations marked as
+such; `numbers_used.json`. No PDF (no LibreOffice on Voyager); docx skill `validate.py` for the schema. Notes in the document:
+the full-set categories (contribution density, source areas, cliffs, regions) were not produced for the new-law runs; the
+tall `source_rate_q002/cluster/` page is not inserted (it repeats the production-rate panel clusters).
+```bash
+OUT=/data001/highresolu_vt/cops_output/figures_cluster/12M/stage2_q002_comparison; PYD=/data001/highresolu_vt/cops_output/tools/docx_venv/bin/python
+srun -p normal128cores -c 8 --mem=32G -t 00:25:00 bash -c "$PYD -I figures_cluster/scripts/q002_comparison_docx.py build --out $OUT --jobs 8 && $PYD -I figures_cluster/scripts/q002_comparison_docx.py validate --out $OUT"
+```
+
+### 3.18 Full figure sets of the ten new-law states (2026-11-20)
+
+`figures_cluster/12M/full_set_q002_<key>/` for D2 (refitted), softplus, A, B, D and the five option-C chains (user: "prepare the
+full set of plots for the last round of fits with the fixed surface source distribution"): exactly the 3.11 sets (visibility/,
+model_data/ with the publication NG/RG figure, activity/, production_rate/, source_areas/, cliffs/, contribution_density/,
+regions/, checks/, CAPTIONS.md, README.txt with Facts, HOW-TO-RERUN.md, code/, provenance; no movies) on base_q002 with the
+new-law snapshots (nonneg_maps / nonneg_contrib_20261118T192126Z) and each state's maps / contributions; plus inspection/
+(new vs old law, 3.15). activity/, production_rate/ and inspection/ are sha256-checked COPIES of `source_rate_q002/<run>/`
+(same tool, settings, inputs); everything else was made for the set (`figures/full_set_q002.py`, `jobs/full_set_submit.sh` with
+the 2026-11-20 overrides, `jobs/full_set_q002_finish.sbatch`). Every caption carries the law via the model name (the visibility/
+captions are the fit-independent copies of 3.4). Model-data reference: the refitted D2 (same law). The publication NG/RG figures:
+`12M/publication_q002_<key>/`.
+
+### 3.19 ONE Word document summarizing all fits of the new-law round (2026-11-20)
+
+`figures_cluster/12M/q002_all_fits_summary/12M_q002_all_fits_summary.docx` (user: "prepare the full set of plots for the last
+round of fits with the fixed surface source distribution; also prepare a single word doc summarizing all the fit");
+`q002_all_fits_summary_docx.py` (version-controlled copy `figures/`; from 3.12 / 3.17's generators, same rules). For this round it
+supersedes 3.17's document. Inputs: 3.16 (comparison set), 3.18 (the ten full sets `full_set_q002_<key>/`, discovered by name or
+`--sets-spec`), 3.15 (inspection). Structure: runs table new vs old (summary.csv) + the full sets' facts; summary of the round
+(A18: fit quality, source rates, multiplier shift new [old], full-set facts incl. the overhang share of NG at the last
+observation, caveats); the 13 multi-run figures; 7 per-run new-vs-old clusters; one cluster per full-set plot type (85; ten runs in
+the fixed order; byte-identical types shown once; activity/ and production_rate/ of the full sets are copies of 3.15 and appear
+once); 2 inspection clusters; Appendix A old-law results, B sources with SHA-256, C build. Every caption states the law
+(validate checks it). Observations from the images: data file `figures/data/q002_all_fits_observations_20261120.json`, written
+after viewing contact sheets (`q002_all_fits_sheets.py`); a cluster without an entry gets none. No PDF (no LibreOffice on
+Voyager); docx skill `validate.py` for the schema.
+```bash
+P=/data001/highresolu_vt/cops_output/tools/docx_venv/bin/python; S=figures_cluster/scripts/q002_all_fits_summary_docx.py
+OBS=figures_cluster/scripts/data/q002_all_fits_observations_20261120.json; OUT=figures_cluster/12M/q002_all_fits_summary
+srun -p normal128cores -c 4 --mem=16G -t 00:10:00 $P -I $S check --observations $OBS
+srun -p normal128cores -c 8 --mem=32G -t 00:30:00 bash -c "$P -I $S build --out $OUT --observations $OBS --jobs 8 && $P -I $S validate --out $OUT"
+```
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -579,7 +748,9 @@ KEY=<key> FT=.. FIT=.. MAPS=.. CONTRIB=.. PHASE=.. [CHAIN= NCYC=] JOB_SET4=<set1
 
 1. Identify the new chain(s): `<chain>/c<N>/ft/final` complete (`finetune_result.txt`), and the chain job id(s).
 2. **Maps** (3.3): `sbatch --export=ALL,CHAINS=<chain>,MODEL_EXT=<frozen nonneg_maps> jobs/nonneg_maps.sbatch`; note the
-   job id (its geometry folder `$RUN/maps_geometry/job_<id>/geometry` is an input of 3.4).
+   job id (its geometry folder `$RUN/maps_geometry/job_<id>/geometry` is an input of 3.4). For fits made after the
+   2026-11-18 H2O night-side fix use `MODEL_EXT=model_ext_frozen/nonneg_maps_20261118T072729Z` (and
+   `nonneg_contrib_20261118T072729Z` for the contributions); older snapshots refuse with the fixed fit_cops.
 3. **Model/data figures** (3.1): copy the closest wrapper (e.g. `figures_12m_nonneg5.sh`) to a new name, set `TAG`/`NC`
    (and the job ids in its `JOB`/`MAPJ` arrays) and the output folder; run it on the login node.
 4. **Publication figure** (3.2): the two commands with the new `c<N>/ft/final`, into a new folder (or move the old
@@ -755,6 +926,38 @@ KEY=<key> FT=.. FIT=.. MAPS=.. CONTRIB=.. PHASE=.. [CHAIN= NCYC=] JOB_SET4=<set1
   12M_stage2_reg_best (softplus, A, B, D regularized, best C = f 1 / P_m 1e-4, D2), no movies, no comparison_vs_* folders;
   the needed adapters approved (15:50 CST) with the bitwise conditions.
 
+* 2026-11-17 (20:30 CST, lead; user verbatim in 3.13): slope at equal illumination for the six stage-2 cases
+  individually, definitions >40, >60, >80, 0-40 ... 80-90; Word document packing the same plot of the six cases in a cluster
+  with a summary. Defaults set by the lead (not changed by the user): illumination = 10-deg SZA classes + shadowed + night;
+  times = four snapshots + phase means; surface = gauge-seen (main) + whole surface (secondary); P3 cells 10 deg x 10 % x 0.1;
+  answer = SZA-controlled ratio (area-weighted over the classes, weights = the category's area). 90-180 shown separately as an
+  addition. My additions, labelled in the document: the under-sampled-reference flag and the variant ratio (sensitivity
+  check; at 20 m / 5.5 m the specified ratio can exceed 1e100 because a few m^2 of 0-40 deg facets carry the reference).
+* 2026-11-18 (00:15 CST, lead; user question verbatim in 3.14): illumination maps at 10:33:10 and 10:39:26 UTC: class, cos SZA, q/q_max (linear and log), whole surface and seen facets, in every production-rate layout with its relief and track; one side-by-side figure per time for the softplus reg case; one set for all cases after the cross-case identity check.
+* 2026-11-18 (user, relayed by the lead; a model decision that changes every production-rate figure): "(b) -- use 0.02;
+  x10 was not intended; use the same law but with decreased activity": H2O q_min = 0.02 q_max (was 0.2). Every figure and
+  map made before 2026-11-18 shows the 0.2 law. Captions now take q_min / q_max from the maps' law (pub_maps_figures.py,
+  pub_maps_v2_figures.py, illumination_maps_figures.py); nothing was redrawn (no refit yet).
+
+* 2026-11-18 (14:00 CST, lead; user: "prepare the surface source rate maps for completed runs for inspection of the source
+  rate"): per completed new-law run the source-rate set as in the full sets' production_rate/ and activity/ (LOWCUT 0.02,
+  relief 0.7, seen-only) plus an inspection figure per time (new-law rate | old-law rate | new q/q_max); captions state the
+  law and that the old figures used 0.2; a cluster page of all completed runs. Lead 14:12 CST: the old 0.2-law sets stay as
+  they are (superseded; their map captions describe every model with the softplus formula), the new sets use each model's own
+  text (`--model-text`). Mine (stated in the captions): common log classes for the new and old rate in the inspection figure.
+
+* 2026-11-19 (17:05 CST, lead; user: "prepare a full set of comparison plots for the last round of fitting"): the set of
+  3.10 for the new-law round: best of each option and all C chains vs COPS, per option new vs old law (law in every legend
+  and caption), residuals for the new best set and new vs old, cost per cycle per chain, summary with kappa, Q_H2O and the
+  cost change. Mine: new-vs-old residual figures only for softplus, A, B, D, D2 and the best C; the C f10 / 1e-4 Q_H2O total
+  from its final maps and the seen part from its report (no inspection figure: no old-law maps).
+
+* 2026-11-20 (14:45 CST, lead; user: "prepare the full set of plots for the last round of fits with the fixed surface source
+  distribution; also prepare a single word doc summarizing all the fit"): full sets of the ten new-law states like 3.11 (the
+  Word document by the docx agent). Mine: activity / production_rate / inspection copied from the source-rate sets (identical
+  inputs) instead of regenerated; the maps' own geometry folders used (content-identical to job_136691); the refitted D2 as the
+  model-data reference.
+
 ## 6. Change log of this file
 
 * 2026-11-12: created (sections 1–6; 3.5 pending).
@@ -805,3 +1008,18 @@ KEY=<key> FT=.. FIT=.. MAPS=.. CONTRIB=.. PHASE=.. [CHAIN= NCYC=] JOB_SET4=<set1
 * 2026-11-17 (UTC): 3.10 final stage-2 comparison (`stage2_figures.py`, `stage2_howto.py`, spec `stage2_final_spec_20261117.json`; `options_residual_figure.py` one legend column for long labels); §5 decision.
 * 2026-11-17 (UTC): 3.10 rebuilt with all nine regularized chains; `kappa_table.py` (kappa_check/).
 * 2026-11-17 (UTC): 3.11 full figure sets of the stage-2 states and D2 (`full_set_submit.sh`, `finish_full_set.sh`, `full_set_facts.py`, `full_set_docs.py`, `d2_tools.py`, the alternative-model state_activity, figure-script fallbacks); §5 decision.
+* 2026-11-17 (CST; UTC 2026-11-18): 3.12 Word document comparing the six stage-2 full sets plot by plot (`fullsets_comparison_docx.py`, separate venv `tools/docx_venv`; `full_sets_stage2_comparison/`).
+* 2026-11-17 (CST; UTC 2026-11-18): 3.13 slope at equal illumination (`cliff_effect_data.py`, `cliff_effect_figures.py`, `cliff_effect_docx.py`, jobs `cliff_effect_{data,figures}.sbatch`, spec `cliff_effect_cases_20261117.json`; `cliff_effect_stage2/`); §5 decision.
+* 2026-11-18 (CST): 3.14 illumination maps at the production-rate map times (`illumination_maps_figures.py`, jobs `illumination_{numbers,maps}.sbatch`; `illumination_maps_103310_103926/`); §5 decision.
+* 2026-11-18 (01:45 CST): H2O night-side fix (q_min/q_max 0.2 -> 0.02): notes in 3.3, 3.14, 4 (step 2) and 5: every
+  production-rate / illumination / map product so far used 0.2; the new snapshots nonneg_maps / nonneg_contrib
+  20261118T072729Z; illumination_maps_figures.py QRATIO from the maps' code with derived classes (0.02: 10 linear classes
+  from 0, 34 log classes from -1.70; to confirm); captions of pub_maps_figures.py / pub_maps_v2_figures.py data-driven.
+  No figure redrawn. Diagnostic of the old states with the new law: tests/nightfix_diagnostic_20261118/ (FINDINGS A18).
+* 2026-11-18 (13:35 CST): 3.3: maps on base_q002 (explicit --shape-manifest; SHAPE_MANIFEST / SHAPE_REFERENCE of
+  jobs/nonneg_maps.sbatch; snapshots nonneg_maps / nonneg_contrib 20261118T192126Z; geometry job_136691; D2_q002 maps).
+* 2026-11-18 (CST): 3.15 source-rate maps of the new-law runs (`source_rate_q002_{inspect,submit,docs,cluster}.py`, `jobs/source_rate_q002.sbatch`, spec `source_rate_q002_runs_20261118.json`; `pub_maps_v2_figures.py --model-text`); §5 decision.
+* 2026-11-19 (CST): 3.16 comparison set of the new-law stage-2 round (`stage2_q002_figures.py`, `stage2_q002_docs.py`, `jobs/stage2_q002_figures.sbatch`, spec `stage2_q002_spec_20261119.json`); §5 decision.
+* 2026-11-19 (CST): 3.17 Word document clustering the plots of the ten new-law runs (`q002_comparison_docx.py`, separate venv `tools/docx_venv`; `stage2_q002_comparison/`).
+* 2026-11-20 (CST): 3.18 full figure sets of the new-law states (`full_set_q002.py`, `full_set_q002_finish.sbatch`, job-script overrides, `full_set_docs.py` spec fields); §5 decision.
+* 2026-11-20 (CST): 3.19 ONE Word document summarizing all fits of the new-law round (`q002_all_fits_summary_docx.py`, `q002_all_fits_sheets.py`, `figures/data/q002_all_fits_observations_20261120.json`; `q002_all_fits_summary/`).

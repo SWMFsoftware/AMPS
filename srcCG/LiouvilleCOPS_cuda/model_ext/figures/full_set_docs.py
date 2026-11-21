@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/full_set_docs.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/full_set_docs.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e11a01fbc1e5db8cec193bada2ade86aeecfd5191b7f359efda37ffa60ed58c9
+# SHA256 of the run copy = SHA256 of this file without these header lines: fafee4cec05af1fb8c48aad9288e90dec4a83106a5bd0cb6da0ff7590f4803d3
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: README.txt, HOW-TO-RERUN.md and code/ of one full figure set (2026-11-17)
-# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
+# WHAT: README.txt, HOW-TO-RERUN.md and code/ of one full figure set (2026-11-17); 2026-11-20 (full sets of the new-
+#   law fits): optional spec fields intro, reference, pub, written, extra_dirs (absent: the 2026-11-17 texts, tested
+#   identical)
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh) and of the new-law
+#   states (figures/full_set_q002.py)
 # ==== end of header ====
 """README.txt, HOW-TO-RERUN.md and code/ of ONE full figure set (2026-11-17, full sets of the six cases of
 12M_stage2_reg_best; the layout of ../12M/full_set_softplus_smm1_9cycles/). Light (login node).
@@ -71,20 +74,24 @@ def main():
                           text=True).stdout.strip()
     prods = [(n, sp[n]) for n in ("maps", "contrib", "phase", "xc") if sp.get(n)]
     # README
-    R = [sp["title"], "=" * len(sp["title"]),
-         "Lead 2026-11-17 15:35 CST (user: \"yes, free the 44M store and generate the full sets\"; \"I need the full set\"): a FULL "
-         "figure set, exactly like ../full_set_softplus_smm1_9cycles/ (same tools, styles and user decisions), no movies, for "
-         "the six cases of 12M_stage2_reg_best. This set: %s." % sp["model_name"],
+    # 2026-11-20 (full sets of the new-law fits): optional spec fields "intro", "reference", "pub", "written", "extra_dirs"
+    # replace the 2026-11-17 texts (absent: the texts of 2026-11-17, unchanged)
+    intro = sp.get("intro") or (
+        "Lead 2026-11-17 15:35 CST (user: \"yes, free the 44M store and generate the full sets\"; \"I need the full set\"): a FULL "
+        "figure set, exactly like ../full_set_softplus_smm1_9cycles/ (same tools, styles and user decisions), no movies, for "
+        "the six cases of 12M_stage2_reg_best.")
+    R = [sp["title"], "=" * len(sp["title"]), intro + " This set: %s." % sp["model_name"],
          "Final state: %s" % sp["state"], "",
          "Every figure: .eps + .png (300 dpi) + _caption.txt; all captions in CAPTIONS.md.", "",
          "visibility/        set 1 (tools/pub_figures.py templates + ground track, unchanged tracked tool) on the observation-only",
          "                   base: fit-independent; the ground track shows the Rosetta impact only; CAPTIONS_COPIED.txt (the",
          "                   PNGs are pixel-identical to the c9 set's, checked; two captions copied)",
-         "model_data/        set 4: tables/ (this state and the clipped reference D2), 12M_%s_vs_COPS_*, 12M_%s_pressures_*,"
-         % (a.key, a.key),
+         "model_data/        set 4: tables/ (this state and %s), 12M_%s_vs_COPS_*, 12M_%s_pressures_*,"
+         % (sp.get("reference", "the clipped reference D2"), a.key, a.key),
          "                   captions by model_data_captions.py; publication_NG_RG_altitude/ = copy of",
-         "                   ../publication_%s/ (pub_ng_rg_altitude.py)" % a.key.replace("stage2_", "stage2_") if a.key != "D2"
-         else "                   ../publication_D2/ (pub_ng_rg_altitude.py)",
+         ("                   ../%s/ (pub_ng_rg_altitude.py)" % sp["pub"]) if sp.get("pub") else
+         ("                   ../publication_%s/ (pub_ng_rg_altitude.py)" % a.key.replace("stage2_", "stage2_") if a.key != "D2"
+          else "                   ../publication_D2/ (pub_ng_rg_altitude.py)"),
          "activity/          final H2O activity A (pub_maps_v2_figures.py --quantity activity --low-cut-area 0.02, flat colours)",
          "production_rate/   H2O production rate F_H2O = q_H2O A at 10:33:10 and 10:39:26 UTC (--quantity h2o, LOWCUT 0.02, relief 0.7)",
          "source_areas/      P% source areas of the 95 post-gap observations, unions and occurrence, NG / RG / NG_RG, P50-90",
@@ -94,7 +101,7 @@ def main():
          "regions/           share of the modelled surface pressure by lobe and by distance shell from the touchdown point",
          "checks/            class tables, field verification, manifests, slope-bin json, source-area tables, caption json,",
          "                   facts.json / facts.txt (full_set_facts.py), regions / captions logs",
-         "code/, provenance-<job>/, HOW-TO-RERUN.md", "",
+         "code/, provenance-<job>/, HOW-TO-RERUN.md"] + sp.get("extra_dirs", []) + ["",
          "Products next to the state (as for c9): " + "; ".join("%s %s (%s)" % (n, p, du(p)) for n, p in prods) + ".",
          "Not made (c9-specific): comparison_vs_* folders. Possible comparisons (source_area_compare.py, A = this state's",
          "contributions): " + "; ".join(sp.get("comparisons", [])) + ".", ""]
@@ -119,7 +126,8 @@ def main():
     subprocess.run(["bash", "-c", "cd '%s' && sha256sum $(find . -type f ! -name SHA256SUMS | sort) > SHA256SUMS" % cd], check=True)
     # HOW-TO
     H = ["# How to rerun: %s" % sp["title"], "",
-         "Written 2026-11-17 (UTC) by figures_cluster/scripts/full_set_docs.py. Description and facts: README.txt; captions: "
+         ("Written %s by figures_cluster/scripts/full_set_docs.py. Description and facts: README.txt; captions: " % sp.get(
+             "written", "2026-11-17 (UTC)")) +
          "CAPTIONS.md. The state itself: %s (its chain's README.md / HOW-TO-RERUN.md)." % sp["state"],
          "AMPS tree: `%s` (local changes: code/git.txt; not used by the jobs). Code that ran: code/ (SHA256SUMS; the jobs' own "
          "copies in provenance-<job>/code and in each product's provenance). Frozen code: %s." % (

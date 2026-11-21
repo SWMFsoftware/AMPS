@@ -1,10 +1,12 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_maps.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_maps.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 67a98e7e0466579d6296c5f37b86edc49ec56cd5f950abcb34c71300b406d2a8
+# SHA256 of the run copy = SHA256 of this file without these header lines: 044ce455672dc244c541b0f09f80fbdf9b6aff8c66a1a4a5228dd2c1cfadc066
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: maps job; 2026-11-17: cycle detection skips moved-aside c<N>.incomplete_* folders
 # RUN: see model_ext/README.md (full sets of the stage-2 states, 2026-11-17)
+# 2026-11-18 (agent 3): BASE override (default $R/base; q002 states: base_q002); q002 posts 136624/136630/136636/136642.
+# 2026-11-18 13:21 CST: SHAPE_MANIFEST / SHAPE_REFERENCE -> validate-geometry --shape-manifest / --shape-manifest-must-equal (unset = unchanged)
 # ==== end of header ====
 # Activity and instantaneous source-rate maps of the non-negative H2O activity models (softplus, squared harmonics x
 # slope multipliers) for visualization: model_ext/nonneg_maps.py. CPU node (normal128cores), no GPU.
@@ -44,7 +46,14 @@ UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[
 [ -n "$UNSET" ] && unset $UNSET
 CSPICE=/home/vtenishev/SPICE/cspice
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
-BASE=$R/base
+BASE=$(readlink -f "${BASE:-$R/base}")   # BASE: 2026-11-18 (agent 3, lead): default $R/base; the H2O q_min 0.02 states: $R/base_q002
+# SHAPE_MANIFEST (2026-11-18, lead): explicit manifest for validate-geometry's shape-model path / sha256 when the base has
+# no run_manifest.json (base_q002: SHAPE_MANIFEST=$R/base_q002/cpp_run_manifest.json, with SHAPE_REFERENCE=$R/base/
+# run_manifest.json, whose shape_model entry must be identical); unset = the base's own run_manifest.json (unchanged)
+SHAPE_ARGS=()
+[ -n "${SHAPE_MANIFEST:-}" ] && SHAPE_ARGS+=(--shape-manifest "$(readlink -f "$SHAPE_MANIFEST")")
+[ -n "${SHAPE_REFERENCE:-}" ] && SHAPE_ARGS+=(--shape-manifest-must-equal "$(readlink -f "$SHAPE_REFERENCE")")
+[ -n "${SHAPE_REFERENCE:-}" ] && [ -z "${SHAPE_MANIFEST:-}" ] && { echo "SHAPE_REFERENCE needs SHAPE_MANIFEST"; exit 2; }
 REF=$AMPS/srcCG/LiouvilleCOPS/src
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 PROCS=${PROCS:-${SLURM_CPUS_PER_TASK:-8}}
@@ -86,7 +95,7 @@ done
   command -v nvcc >/dev/null 2>&1 && nvcc --version | tail -2 || echo "nvcc: not used"; lscpu | grep -E 'Model name|^CPU\(s\)';
   "$PVPY" --version 2>&1 | head -1; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$PY" > "$P/pip_list.txt" 2>&1 || "$PY" -m pip list > "$P/pip_list.txt" 2>&1
-env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|CHAINS|EXPECT_CYCLES|MAPS_NAME|PROCS|OMP_NUM_THREADS)=' > "$P/env.txt"
+env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|CHAINS|EXPECT_CYCLES|MAPS_NAME|PROCS|OMP_NUM_THREADS|BASE)=' > "$P/env.txt"
 echo "MAPS_NAME=$MAPS_NAME" >> "$P/env.txt"
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"; } > "$P/commands.sh"
 run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }
@@ -118,7 +127,7 @@ run "$PY" -W ignore "$MODEL_EXT/nonneg_maps.py" times --base "$BASE" --out "$J/t
 run heavy "$BD/nonneg_maps_geom" "$BASE/boundary.in" "$J/times.txt" "$J/geometry" "$PROCS" > "$J/geometry.log" 2>&1; rc=$?
 grep -E "nonneg_maps_geom|Shape model|Surface:" "$J/geometry.log"
 [ $rc -eq 0 ] || { stamp "nonneg_maps_geom FAILED (rc $rc)"; exit 1; }
-run heavy "$PY" -W ignore "$MODEL_EXT/nonneg_maps.py" validate-geometry --geometry "$J/geometry" --base "$BASE" > "$J/validate_geometry.log" 2>&1; rc=$?
+run heavy "$PY" -W ignore "$MODEL_EXT/nonneg_maps.py" validate-geometry --geometry "$J/geometry" --base "$BASE" "${SHAPE_ARGS[@]}" > "$J/validate_geometry.log" 2>&1; rc=$?
 cat "$J/validate_geometry.log"
 [ $rc -eq 0 ] || { stamp "validate-geometry FAILED (rc $rc): no maps"; exit 1; }
 

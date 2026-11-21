@@ -953,7 +953,7 @@ activity map is not constrained to [0,1] and is not an active-area probability.
 With heliocentric distance r_h in AU:
 
 ```text
-H2O: q_max = 600 r_h^-p,  q_min = 0.2 q_max
+H2O: q_max = 600 r_h^-p,  q_min = 0.02 q_max   (as srcCG; 0.2 before 2026-11-18, not intended)
      p = 4.2143229 for shap5, 4.8 for shap5_1
 CO2: q_max = 600 r_h^-2,  q_min = 0.1 q_max
 
@@ -1180,8 +1180,8 @@ Q_s(t)   = sum_e F_s,e(t) area_e
 
 These expressions use the supplied `SZAMode = continuous`. The q factors
 also vary with heliocentric distance through the prescribed laws in section
-4.3. Night/shadow production factors are 0.2 of q_max for H2O and 0.1 for
-CO2. `SZAMode = srccg_table` instead truncates the illuminated production-law
+4.3. Night/shadow production factors are 0.02 of q_max for H2O (as srcCG;
+0.2 before 2026-11-18, not intended) and 0.1 for CO2. `SZAMode = srccg_table` instead truncates the illuminated production-law
 angle to integer degrees, limited to 89 degrees; it does not quantize the
 analytical temperature law.
 
@@ -1390,7 +1390,7 @@ time history. It does not necessarily mean constant with time.
 | Rotation and observation geometry | SPICE orientation, spacecraft position/velocity, observation timestamps, gauge position offset and pointing. No spin-period, pole, phase, trajectory, or timing-offset fit. |
 | Angular surface boundary condition | `flat` or `rough` selected when the base was generated; not an optimized discrete choice or a fitted mixture. |
 | Illumination and shadows | Each observation's cached solar angle/shadow state and the chosen `CastShadows`/`SZAMode` prescription. |
-| Source illumination/distance law | H2O night/day ratio 0.2, CO2 ratio 0.1, H2O distance exponent 4.2143229 (`shap5`) or 4.8 (`shap5_1`), CO2 exponent 2, and the implemented normalization convention. These are not fitted separately from activity. |
+| Source illumination/distance law | H2O night/day ratio 0.02 (as srcCG; 0.2 before 2026-11-18, not intended), CO2 ratio 0.1, H2O distance exponent 4.2143229 (`shap5`) or 4.8 (`shap5_1`), CO2 exponent 2, and the implemented normalization convention. These are not fitted separately from activity. |
 | CO2 spatial shape | Base map; only kappa may vary. `--fix-kappa` holds kappa at 1 relative to that base map. |
 | Surface-temperature functional form | Analytical solar-angle law, floor and 75-degree transition. Only its three temperature parameters can vary; the transition angle is not fitted. |
 | Temperature correction | `SurfaceTemperatureCorrectionFactor = 1` is required for this workflow, not a fitted extra scaling parameter. |

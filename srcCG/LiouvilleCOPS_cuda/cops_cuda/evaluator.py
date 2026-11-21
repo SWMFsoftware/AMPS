@@ -127,7 +127,8 @@ class HostConstants:
         # Model.load_kernels: rhA = rh / AU; Q_H2O ~ rhA**-p, Q_CO2 ~ rhA**-2
         rhA = model.rh / fit_cops.AU
         p = 4.2143229 if model.helio == "shap5" else 4.8
-        self.qmin = {"H2O": 0.2 * 600 / rhA ** p, "CO2": 0.1 * 600 / rhA ** 2}
+        # 2026-11-18: H2O qmin/qmax = 0.02 as srcCG and fit_cops (the former 0.2 was not intended; user decision)
+        self.qmin = {"H2O": 0.02 * 600 / rhA ** p, "CO2": 0.1 * 600 / rhA ** 2}
         self.qmax = {"H2O": 600 / rhA ** p, "CO2": 600 / rhA ** 2}
         self.vdotb = np.asarray(model.VdotB, dtype=np.float64)
 

@@ -1,13 +1,13 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_chain_to_gpu.sh (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_chain_to_gpu.sh)
-# SHA256 of the run copy = SHA256 of this file without these header lines: a124d0ee936b9d2f856bf54b1afb6cc4a648650631459ac4676da5ae8b4b2cfb
+# SHA256 of the run copy = SHA256 of this file without these header lines: 2238ca9e3c67156d3e77c69a7b58d38a1c88d6b127c40715ff98eefe47e8e4ca
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: move the remaining cycles of one chain to a GPU: GPU attempts (1 GPU, gpu partition, never gpu003) with
-#   CANCEL_JOBS = the chain's CPU attempts; the settings of the chain's last CPU submission including TEMPLATES /
-#   FT_EXTRA / NONNEG_CODE (2026-11-17); --script, --no-post, --after-checkpoint (TAKEOVER_AFTER_CHECKPOINT=1).
-# RUN 2026-11-15: 2026-11-17 17:45Z: stage2r_f10_pm1e-4_tplon (136092-136093), stage2r_f1_pm1e-4_tplon
-#   (136095-136096), gpu002.
+# WHAT: move the remaining cycles of one chain to a GPU (GPU attempts with CANCEL_JOBS; --after-checkpoint: the
+#   takeover seconds after the active fit's next checkpoint); carries the settings of the chain's last CPU
+#   submission incl. TEMPLATES / FT_EXTRA / NONNEG_CODE and (2026-11-18) BASE_DIR / D2_DIR / C1_START / DESIGN_DIR.
+# RUN 2026-11-18: 2026-11-17 the stage2r 1e-4 chains; planned: q002 chains 1 / 2 to gpu001 (dry run on a mock
+#   submission.json 2026-11-18).
 # ==== end of header ====
 # Option C stage 2 (lead 2026-11-15 "option 3"): move the remaining cycles of ONE localnn chain to a GPU.
 #   localnn_chain_to_gpu.sh --chain CHAIN --model-ext FROZEN_GPU_SNAPSHOT [--attempts 6] [--time 08:00:00]
@@ -42,7 +42,7 @@ import json, sys, shlex
 j = json.load(open(sys.argv[1])); s = j["settings"]
 name = j["sbatch_lines"][0].split("--job-name=lnn_")[1].split()[0].rsplit("_", 1)[0]
 for k in ("LAMBDA", "RULE", "FM", "CYCLES", "NFEV", "FT_MAXNFEV", "WINDOW_MIN", "CHECKPOINT", "LATE", "CHECK", "DEVICE",
-          "TEMPLATES", "FT_EXTRA", "NONNEG_CODE"):
+          "TEMPLATES", "FT_EXTRA", "NONNEG_CODE", "C1_START", "BASE_DIR", "D2_DIR", "DESIGN_DIR"):
     print("S_%s=%s" % (k, shlex.quote(str(s.get(k, "")))))
 print("S_C1_FROM=%s S_C1_FIT=%s NAME=%s" % (shlex.quote(s.get("C1_FROM", "")), shlex.quote(s.get("C1_FIT", "")), shlex.quote(name)))
 print("JOBS=%s" % shlex.quote(":".join(str(x) for x in j["jobs"])))
@@ -51,6 +51,7 @@ PYEOF
 [ "$S_DEVICE" = cpu ] || { echo "the last submission of $CHAIN is not a CPU one ($S_DEVICE)"; exit 2; }
 grep -q '"stage": "chain_complete", "rc": 0' "$CHAIN/chain_events.jsonl" 2>/dev/null && { echo "$CHAIN is complete"; exit 0; }
 C1=(); [ -n "$S_C1_FROM" ] && C1=(--c1-from "$S_C1_FROM"); [ -n "$S_C1_FIT" ] && C1=(--c1-fit "$S_C1_FIT")
+# shellcheck disable=SC2034
 X="--account=general --gpus-per-node=1 --cpus-per-task=$CPUS --mem=$MEM"; [ -n "$NODE" ] && X="$X --nodelist=$NODE"
 CMD=(bash "$ROOT/jobs/localnn_chain_submit.sh" --chain "$CHAIN" --name "${NAME}_gpu" --lambda "$S_LAMBDA" --rule "$S_RULE"
      --fm "$S_FM" "${C1[@]}" --model-ext "$MEXT" --late "$S_LATE" --device gpu --gpu-svd-mode "$SVDM" --cycles "$S_CYCLES"
@@ -59,6 +60,10 @@ CMD=(bash "$ROOT/jobs/localnn_chain_submit.sh" --chain "$CHAIN" --name "${NAME}_
      --sbatch-extra "$X" --env "CANCEL_JOBS=$JOBS$AFTERCK" --script "$SCRIPT" --templates "${S_TEMPLATES:-on}")
 [ -n "$S_FT_EXTRA" ] && CMD+=(--ft-extra "$S_FT_EXTRA"); [ -n "$S_NONNEG_CODE" ] && CMD+=(--nonneg-code "$S_NONNEG_CODE")
 [ -n "$NOPOST" ] && CMD+=($NOPOST)
+# 2026-11-18: the base, D2 and cycle-1 start of the chain's last CPU submission (the new-law chains)
+[ -n "$S_BASE_DIR" ] && CMD+=(--base-dir "$S_BASE_DIR"); [ -n "$S_D2_DIR" ] && CMD+=(--d2-dir "$S_D2_DIR")
+[ -n "$S_C1_START" ] && CMD+=(--c1-start "$S_C1_START")
+[ -n "$S_DESIGN_DIR" ] && CMD+=(--design-dir "$S_DESIGN_DIR")   # 2026-11-18: the design of the chain (q002 chains)
 echo "chain $CHAIN ($NAME): the first GPU attempt will cancel $JOBS when it starts"
 echo "${CMD[*]} --submit"
 if [ $SUBMIT = 1 ]; then

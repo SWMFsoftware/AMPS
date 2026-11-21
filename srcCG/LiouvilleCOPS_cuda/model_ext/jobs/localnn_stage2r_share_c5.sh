@@ -1,11 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/stage2r/share_c5.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2r/share_c5.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 3309d6b85028a36b178ab2064eba299adbc41daddbf077d0d8abaee60024f7b9
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: late-signal share of the tuned facets and production numbers of the c5 fine tunings (unregularized f10 /
 #   0.01, stage-2r templates on / off) with localnn_ftreg_summary.py.
-# RUN 2026-11-15: the stage-2r comparison (2026-11-16).
+# RUN 2026-11-16: the stage-2r comparison (2026-11-16).
 # ==== end of header ====
 # late-signal share of the tuned facets etc. for the c5 fine tunings of the stage-2r chains (localnn_ftreg_summary.py)
 set -uo pipefail

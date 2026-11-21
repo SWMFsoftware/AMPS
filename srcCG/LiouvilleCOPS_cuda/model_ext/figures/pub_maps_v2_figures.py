@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/pub_maps_v2_figures.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/pub_maps_v2_figures.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 2a458856830f06fd8f8f62e8ddee9d022ff2c6a8cdf6e31cf6af29647007600e
+# SHA256 of the run copy = SHA256 of this file without these header lines: 095a8740ac27302dfb1fce6c2859bbfc945848f92adec9b7eea2ad65b9b9cc0e
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: version-2 activity / production-rate figures; 2026-11-17: multiplier bounds via
-#   pub_maps_figures.multiplier_bounds
-# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
+#   pub_maps_figures.multiplier_bounds; 2026-11-18: H2O night-side fix: caption q_min / q_max from the maps' law (was
+#   the literal 0.2); 2026-11-18 (source-rate maps of the new law): --model-text (default: the softplus text,
+#   unchanged)
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh); the new-law source-
+#   rate sets (jobs/source_rate_q002.sbatch)
 # ==== end of header ====
 """Version 2 of the activity and production-rate template / ground-track figures of ONE fitted state (softplus model
 after 5 cycles), with the surface coloured only where the gauges saw it during the fit.
@@ -426,8 +429,13 @@ def main():
     ap.add_argument("--pixels3d", type=int, default=800)
     ap.add_argument("--model-name", default=M.MODEL_NAME,
                     help="name of the fitted state in the captions (default: %(default)s; 2026-11-13: set per fit)")
+    ap.add_argument("--model-text", default=None,
+                    help="description of the activity model in the captions (2026-11-18; default: the softplus model's "
+                         "text of pub_maps_figures.model_text, unchanged)")
     args = ap.parse_args()
     M.MODEL_NAME = args.model_name
+    if args.model_text is not None:          # 2026-11-18: the model's own description (default: the softplus text)
+        M.MODEL_TEXT = args.model_text
     global NMIN, NMAX
     NMIN, NMAX = (int(v) for v in args.classes.split(","))
     out = Path(args.out_dir)
@@ -601,11 +609,13 @@ def main():
                 "%s, at %s UTC on 2016-09-30. "
                 "Time %s UTC (r_h = %.6f AU). F_H2O = q_H2O A as the model computes it: q_H2O = q_min on the night side "
                 "(cos SZA <= 0) and in cast shadow (Sun ray from the facet blocked by the nucleus), else q_min + (q_max - "
-                "q_min) cos SZA, with q_max = 600 / r_h^%.7g = %.4f and q_min = 0.2 q_max (r_h in AU); facets at this "
+                "q_min) cos SZA, with q_max = 600 / r_h^%.7g = %.4f and q_min = %.4g q_max (r_h in AU); facets at this "
                 "time: %s day, %s night, %s in cast shadow; total H2O production Q_H2O = sum F_H2O area = %.4e s^-1. "
                 "F_H2O = 0 exactly where A = 0. %s" % (
                     args.model_name, tinfo["utc"].split("T")[1], tinfo["utc"].split("T")[1], tinfo["rh_AU"], tinfo["p"],
-                    tinfo["q"]["H2O"][1], M.thousands(n_["day"]), M.thousands(n_["night"]),
+                    # 2026-11-18: q_min / q_max from the law the maps used (was the literal 0.2; now 0.02)
+                    tinfo["q"]["H2O"][1], tinfo["q"]["H2O"][0] / tinfo["q"]["H2O"][1], M.thousands(n_["day"]),
+                    M.thousands(n_["night"]),
                     M.thousands(n_["cast_shadow"]), tinfo["Q_H2O"], M.model_text(ctx)))
     trk = M.track_text(ctx)
     slp = M.slope_text(ctx)

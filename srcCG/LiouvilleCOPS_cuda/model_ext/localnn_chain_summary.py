@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_chain_summary.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_chain_summary.py)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 0e449b7eadeae9c1741c33fd5146148e4a470c2a77ccf382264b2a6756fcea45
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
@@ -7,7 +7,7 @@
 #   smoothness, P_m, P_delta, objective, late rms ln NG / RG), multipliers, Q_H2O(10:33:10), active seen area, seen
 #   area holding 50 % / 90 % of the seen production, the facet with the largest activity and its share of the seen
 #   production.
-# RUN 2026-11-15: 135078 (the unregularized f10 / 0.01 chain); the stage-2r chains.
+# RUN 2026-11-16: 135078 (the unregularized f10 / 0.01 chain); the stage-2r chains.
 # ==== end of header ====
 """Per-cycle summary of option C stage-2 chains (user / lead 2026-11-16, the stage-2 reruns templates on / off):
 

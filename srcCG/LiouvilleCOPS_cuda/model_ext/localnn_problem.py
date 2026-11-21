@@ -1,18 +1,13 @@
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 9d59f19ff7973205a6cfc8ea20768418a7fde629d60fcf3d530bbb246c6427fb
+# SHA256 of the run copy = SHA256 of this file without these header lines: 9c1a1f20dcd56991a4717da7270aeb9fd48771f82c4e5e083cee42c375d5cddd
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: module (option C). The fit problem on CPU: D2's selection, W10x5 (positive_problem.LateLayout), grain, crossing
-#   rows (grain_crossing), smoothness rows, residuals, Jacobian, start projection (NNLS), lambda rule, table compare.
-#   2026-11-14 ~17:30 CST (user): optional multiplier penalty P_m = f_m C_ref sum_b (ln m_b)^2 (mult_penalty_f; rows
-#   sqrt(2 f_m C_ref) ln m_b; absent / 0 = the previous code bitwise).
-# USED BY: localnn_fit.py, localnn_direct.py, localnn_report.py, localnn_degeneracy.py, tests (frozen localnn_anch_20261114T090437Z for
-#   stage 1 without P_m; model_ext_frozen/localnn_mp_20261115T020233Z with P_m).
-# 2026-11-15: stage 2: Problem(..., held) = the held fine-tuning term exp(h_e) (A_e = m_b (u_e + TS_e) exp(h_e)) as
-#   the exact linear correction (exp(h_e) - 1) m_b (u_e + TS_e) G[:, e] through the late kernels (localnn_late.py),
-#   exact Jacobian; held absent / all zero = the previous code bitwise; checkpoint hook in fun; held_from_meta,
-#   problem_from_meta, state_surface.
-# RUN 2026-11-15: stage-2 chains 132010-132044 (frozen model_ext_frozen/localnn_s2_20261115T185842Z).
+# WHAT: stage 2: Problem(..., held) (the held fine-tuning term exp(h) as the exact linear correction through the
+#   late kernels), P_m, checkpoint hook, held_from_meta / problem_from_meta / state_surface; 2026-11-18: the
+#   production-law check of the design path: load_design compares the design's H2O q_min / q_max ratio (meta
+#   law.h2o_qmin_ratio, or the fit_cops law line its build checked) with the reference fitter's (tools/fit_cops.py)
+#   and refuses a mismatch (LOCALNN_ALLOW_LAW_MISMATCH=1 reads it on purpose, recorded).
+# RUN 2026-11-18: localnn_s2law_20261118T081952Z; design rebuild 136507.
 # ==== end of header ====
 """Option C (local non-negative basis, user 2026-11-14): the fit problem on CPU from the precomputed design matrices
 (localnn_design.py) and the coarse grid (localnn_mesh.py). The driver is localnn_fit.py.
@@ -143,10 +138,72 @@ def load_grid(gdir):
     return g
 
 
-def load_design(ddir):
+# ------------------------------------------------------------------------------------------------ the production law
+# 2026-11-18 (user decision: H2O q_min / q_max = 0.02 as srcCG, it was 0.2 before): design matrices and late kernels
+# hold the law of the contribution code that built them. Every load compares that law with the law of the reference
+# fitter (fit_cops.Model.load_kernels, the tracked tools/fit_cops.py) and refuses a mismatch, so that a 0.2 design
+# cannot be used with the 0.02 law (or the reverse) without notice. LOCALNN_ALLOW_LAW_MISMATCH=1 lets an old product be
+# read on purpose (e.g. to re-evaluate an old fit); the mismatch is then printed and recorded in the loaded dict.
+import re                                                    # noqa: E402
+
+FIT_COPS_PATH = Path(os.environ.get("LOCALNN_FIT_COPS", "/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS/tools/fit_cops.py"))
+_H2O_QMIN_RE = re.compile(r'\("H2O", \(([0-9.eE+-]+) \* 600 / rhA \*\* p')
+
+
+def h2o_qmin_ratio_of_text(text):
+    """The H2O q_min / q_max factor of fit_cops' law line ('("H2O", (0.02 * 600 / rhA ** p, ...') in a text, or None."""
+    m = _H2O_QMIN_RE.search(text)
+    return float(m.group(1)) if m else None
+
+
+def fitter_h2o_qmin_ratio():
+    r = h2o_qmin_ratio_of_text(FIT_COPS_PATH.read_text())
+    if r is None:
+        raise SystemExit("localnn: the H2O law line was not found in %s" % FIT_COPS_PATH)
+    return r
+
+
+def contrib_code_h2o_qmin_ratio(ccode):
+    """The ratio of a frozen nonneg_contrib folder: nonneg_maps.H2O_QMIN_RATIO (from 2026-11-18) or its law line."""
+    t = (Path(ccode) / "nonneg_maps.py").read_text()
+    m = re.search(r"^H2O_QMIN_RATIO = ([0-9.eE+-]+)", t, re.M)
+    return float(m.group(1)) if m else h2o_qmin_ratio_of_text(t)
+
+
+def law_check(kind, path, ratio, source):
+    """Refuse a product whose H2O q_min ratio differs from the fitter's (see above); returns the record."""
+    cur = fitter_h2o_qmin_ratio()
+    rec = {"product": kind, "path": str(path), "h2o_qmin_ratio": ratio, "ratio_source": source,
+           "fitter": str(FIT_COPS_PATH), "fitter_h2o_qmin_ratio": cur, "match": ratio == cur}
+    if ratio != cur:
+        msg = ("localnn: the %s %s was built with H2O q_min / q_max = %r (%s), the fitter's law is %r (%s); build it "
+               "again with the contribution code of the current law" % (kind, path, ratio, source, cur, FIT_COPS_PATH))
+        if os.environ.get("LOCALNN_ALLOW_LAW_MISMATCH") == "1":
+            say("WARNING " + msg + " -- read anyway (LOCALNN_ALLOW_LAW_MISMATCH=1)")
+            rec["allowed_by"] = "LOCALNN_ALLOW_LAW_MISMATCH=1"
+        else:
+            raise SystemExit(msg)
+    return rec
+
+
+def design_h2o_qmin_ratio(meta):
+    """The law of a design: meta law (2026-11-18 designs: h2o_qmin_ratio), else the fit_cops law line its build checked."""
+    law = meta.get("law") or {}
+    if "h2o_qmin_ratio" in law:
+        return float(law["h2o_qmin_ratio"]), "design meta law.h2o_qmin_ratio"
+    r = h2o_qmin_ratio_of_text("\n".join(str(v) for vv in (law.get("lines") or {}).values() for v in vv))
+    if r is None:
+        raise SystemExit("localnn: the design has no law record")
+    return r, "design meta law.lines (the fit_cops line its build checked)"
+
+
+def load_design(ddir, law_check_on=True):
     with np.load(Path(ddir) / "design.npz", allow_pickle=False) as z:
         d = {k: np.asarray(z[k]) for k in z.files if k != "meta_json"}
         d["meta"] = json.loads(str(z["meta_json"]))
+    if law_check_on:
+        ratio, src = design_h2o_qmin_ratio(d["meta"])
+        d["law_check"] = law_check("design", Path(ddir).resolve(), ratio, src)
     return d
 
 

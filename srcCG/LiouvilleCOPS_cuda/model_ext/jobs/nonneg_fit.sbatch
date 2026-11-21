@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_fit.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_fit.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e5b7f724a388badfcd35fe8c2627bb2d2fd1b07a35f9c5eb74e29ac81ab04293
+# SHA256 of the run copy = SHA256 of this file without these header lines: 37d73403987c68de9ded8689f041b7ab99c6e469cbfaf3fa2a05ae50399d120b
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. Softplus / squared fit on the lategrid base (user decisions 2026-11-11): MODEL required, START d2 | lsq |
 #   chain, START_FILE, FT_FROM, HELD, GRAIN_FROM, NFEV 4000, CHECK, L_THREADS, MODEL_EXT, TESTMODE; everything else as
@@ -12,6 +12,9 @@
 # 2026-11-13: SLOPE_MULT_MIN (softplus; user 2026-11-12: multipliers >= 1) -> --slope-mult-min; GPU test 124659.
 # 2026-11-14: MODEL=sos|background|logspread, SOS_RANK, BG_MIN, SPREAD_F, SPREAD_CREF; START gram / uniform.
 # 2026-11-14: MODEL=sos|background|logspread, SOS_RANK, BG_MIN, SPREAD_F, SPREAD_CREF; START gram / uniform.
+# 2026-11-18 (agent 3, lead decision): BASE=${BASE:-$R/base} override (default unchanged; the H2O q_min 0.02 gate and
+#   chains use base_q002); BASE in environment.txt.
+# 2026-11-18: --allow-legacy-base when the base has no run_manifest.json (base_q002), as clip_refit_q002.sbatch.
 # ==== end of header ====
 # Non-negative H2O activity fit on the lategrid base (user decisions 2026-11-11, handoff.md section 10; model_ext/
 # nonneg_mult.py, nonneg_problem.py, driver nonneg_fit.py; adapted from jobs/slope_mult_fit.sbatch):
@@ -92,7 +95,7 @@ BOPT=(); [ -n "$L_THREADS" ] && BOPT=(--l-threads "$L_THREADS" --l-mode chunked)
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
 X=$MODEL_EXT; PY="$APP/.venv/bin/python -W ignore"
-BASE=$R/base; PTS=$R/late_grid_points.txt
+BASE=$(readlink -f "${BASE:-$R/base}"); PTS=$R/late_grid_points.txt   # BASE: 2026-11-18 (agent 3, lead): the base of the fit (default $R/base; the H2O q_min 0.02 campaign: $R/base_q002)
 BUNDLE=$(readlink -f "${BUNDLE:-$R/slope_mult/bundle/slope_bins.npz}")
 FT_FROM=$(readlink -f "${FT_FROM:-$R/clip_refit/D2/final/fit_manifest.json}")
 if [ "$MODEL" = sos ]; then START_FILE=$(readlink -f "${START_FILE:-$R/nonneg/bundle/sos_start_r${SOS_RANK}.npz}")
@@ -211,7 +214,7 @@ nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 nvidia-smi -L > "$P/nvidia_smi_L.txt" 2>&1
 { nvcc --version; gcc --version | head -1; grep -m1 CSPICE /home/vtenishev/SPICE/cspice/doc/version.txt; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|START_RESTART|START_FILE|FT_FROM|L_THREADS|SLOPE_MULT_MIN|SOS_RANK|BG_MIN|SPREAD_F|SPREAD_CREF|SPREAD_U0|HELD|GRAIN_FROM|FITDIR|BUNDLE|CHAIN|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
+env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z_]*|NFEV|CHECK|CHECKPARAMS|TESTNAME|TESTMODE|MODEL|START|START_RESTART|START_FILE|FT_FROM|L_THREADS|SLOPE_MULT_MIN|SOS_RANK|BG_MIN|SPREAD_F|SPREAD_CREF|SPREAD_U0|HELD|GRAIN_FROM|FITDIR|BUNDLE|BASE|CHAIN|MODEL_EXT|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|SLURM_JOB_NODELIST|SLURM_JOB_NUM_NODES|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
 # commands.sh: every command of this job with all arguments resolved, runnable as is (HOW-TO-RERUN.md)
 { echo '#!/bin/bash'; echo "# job $SLURM_JOB_ID on $(hostname), $(date -u +%FT%TZ); AMPS $(git -C "$AMPS" rev-parse HEAD)"
   grep '^export ' "$0"; echo "cd $APP"; } > "$P/commands.sh"
@@ -236,11 +239,15 @@ MEMLOG=$!
     ps -u "$(id -un)" -o pid,ppid,nlwp,pcpu,rss,etimes,comm --sort=-pcpu | awk 'NR == 1 || $7 ~ /python/' | head -12
     sleep 10; done ) > "$P/process_load.txt" 2>&1 &
 LOADLOG=$!
+# 2026-11-18 (agent 3, as jobs/clip_refit_q002.sbatch, lead's decision for base_q002: no hand-written manifest): a base
+# without run_manifest.json (base_q002) needs fit_cops' --allow-legacy-base (strict structural validation, recorded in
+# fit_manifest.json); every segment gets it (the same CMD)
+LEGACY=(); [ ! -e "$BASE/run_manifest.json" ] && LEGACY=(--allow-legacy-base)
 CMD=($PY "$P/nonneg_fit.py" --point-table "$PTS" --slope-bundle "$BUNDLE" "${MOPT[@]}" "${SOPT[@]}" "${BOPT[@]}" "${CHK[@]}" "${CHKP[@]}" \
     "${TOPT[@]}" "${FIX[@]}" --crossing-weight 10 "${GCHK[@]}" --devices "$DEV" --precision mixed --max-nfev "$LEFT" \
     --segment "$SEG" --wall-time slurm --template-start 0 -- "$BASE" \
     --profile all_available --degree 4 --enhancement-degree 4 --lambda 0 --jobs 1 --tbounds 30 400 \
-    --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6 --out "$O")
+    --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --check-tolerance 1e-6 "${LEGACY[@]}" --out "$O")
 rec bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' _ "${CMD[@]}"
 bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' _ "${CMD[@]}" > "$P/fit.log" 2>&1; rc=$?
 echo "$(date -u +%FT%TZ) $NAME segment $SEG: exit $rc"

@@ -1,12 +1,12 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/ftreg/ftreg_runs.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/ftreg/ftreg_runs.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 8a174816cac13fd1c75d29c3b01cb7e3ba655df1168a0b4979c8f1a1519bb371
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: the fine-tuning regularization test runs on CPU: c5 fine tuning of C f1 / 0.01, C f10 / 0.01 (localnn_ft.py
 #   run), B and D (run-nonneg, plus an unregularized control each) with f_delta 0.1, 1, 10 (C_ref 4.2688066575e-03)
 #   and the cap ln 100, MAXNFEV 500 (GROUP=C | BD; NONNEG_CODE = agent 1's snapshot nonneg_20261116T031115Z).
-# RUN 2026-11-15: 134504 (C), 134505 (BD).
+# RUN 2026-11-16: 134504 (C), 134505 (BD).
 # ==== end of header ====
 # fine-tuning regularization tests (lead / user 2026-11-15 ~21:10 CST): the c5 fine tuning re-run on CPU from the c5 fit
 # state with P_delta = f_delta C_ref sum w (h+delta)^2 / sum w (f_delta 0.1, 1, 10; C_ref 4.2688066575e-03) and the cap

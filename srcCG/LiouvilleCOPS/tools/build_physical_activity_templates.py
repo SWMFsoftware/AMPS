@@ -207,7 +207,8 @@ def late_gauge_template(run, header, names, rows, nfaces, start, stop):
         ng_not_rg[face[point_ng & ~point_rg]] = True
 
         rh_au = kernel_header["rh"] / 149597870700.0
-        qmin, qmax = 0.2 * 600.0 / rh_au ** exponent, 600.0 / rh_au ** exponent
+        # 2026-11-18: H2O qmin/qmax = 0.02 as srcCG and fit_cops (the former 0.2 was not intended; user decision)
+        qmin, qmax = 0.02 * 600.0 / rh_au ** exponent, 600.0 / rh_au ** exponent
         cosine = np.clip(records["cos"], -1.0, 1.0)
         night = (cosine <= 0.0) | (records["shadow"] != 0)
         if sza_mode == "continuous":

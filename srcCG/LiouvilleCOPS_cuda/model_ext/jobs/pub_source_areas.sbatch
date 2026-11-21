@@ -1,10 +1,10 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/pub_source_areas.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/pub_source_areas.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 2c8d677ba5ed770d8f4ecd7a7680d033a60b3b2361f5b5319d8bfe52475f6bee
+# SHA256 of the run copy = SHA256 of this file without these header lines: a9acf85bde1953741d9a8462c0e426b1d0d5dd9a53b3e2ffaf2e15d1845a2c7c
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (GPU): pub_source_area_figures.py and cliff_importance_figures.py; MODEL_NAME, FIT, MAPS,
-#   CLIFF_GROUPS added 2026-11-13.
+#   CLIFF_GROUPS added 2026-11-13; 2026-11-20 (full sets of the new-law fits): BASE override (default unchanged)
 # RUN: STEPS=sources | STEPS=cliffs V2=... sbatch --export=ALL pub_source_areas.sbatch
 # ==== end of header ====
 # P% source-area maps (union and occurrence, NG and RG, P = 50..90) and the cliff-importance figures of the 12M softplus
@@ -38,7 +38,7 @@ export CUDA_PATH=/usr/local/cuda-12.9 CUDA_HOME=/usr/local/cuda-12.9 CUPY_CACHE_
 export PATH=$CUDA_HOME/bin:$PATH LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 O=${OUT:-$COPS_OUTPUT_ROOT/figures_cluster/12M/full_set_softplus_5cycles_v2}
-R=${RUN:-$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5}; BASE=$R/base; RUN=$R
+R=${RUN:-$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5}; BASE=${BASE:-$R/base}; RUN=$R   # 2026-11-20: BASE override (default unchanged)
 CH=${CHAIN:-$R/nonneg/softplus/chain_5cycles_20261112T012553Z}; CONTRIB=${CONTRIB:-$CH/contributions}
 TBASE=${TBASE:-$COPS_OUTPUT_ROOT/runs/shap8_012m_flat_earlier/base}
 TBUNDLE=${TBUNDLE:-$COPS_OUTPUT_ROOT/runs/shap8_012m_flat_earlier/bundle/restart_templates.npz}

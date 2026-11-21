@@ -1,14 +1,13 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_tools.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_tools.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 367514075fd9001c4e883130187821ae9b279c491f22e37f3a9b8993d49219e9
+# SHA256 of the run copy = SHA256 of this file without these header lines: 8a7e429a1c3449e2eb55a4caa72c2de0efb398971cb7ab8bbe9799e2985234fc
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, option C): export + the frozen contribution and maps tools on one localnn final state.
 # RUN: tests 125020, 125021, 125031; stage-1 125053, 125057, 125061 (chained).
-# 2026-11-15: 2026-11-17: NPY_DISABLE_CPU_FEATURES (AVX-512 off) as the chain driver: on the AVX-512 node028 (EPYC
-#   9554) np.exp differed in the last bit at 38 of the 271 held facets and the bitwise reproduction of A failed
-#   (post 136094).
-# RUN 2026-11-15: 136123 (the f10 / 1e-4 post again), 136097.
+# 2026-11-18: 2026-11-18: BASE_DIR / D2_DIR, DESIGN_DIR and CONTRIB defaults of the current law,
+#   NPY_DISABLE_CPU_FEATURES.
+# RUN 2026-11-18: the chain posts.
 # ==== end of header ====
 # Option C (local non-negative basis): the maps and contribution tools of the nonneg chains on ONE localnn final state
 # (model_ext/localnn_tools.py: export folder + the frozen nonneg_maps.py / nonneg_contrib.py, unchanged, with their
@@ -29,6 +28,8 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_tools-%j.out
 set -uo pipefail
+# 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
+# NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
 # numpy without AVX-512 kernels, as the chain driver (2026-11-17: on an AVX-512 node (node028, EPYC 9554) np.exp differs
 # in the last bit at 38 of the 271 held facets and the tools' bitwise reproduction of A failed, post 136094)
 export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
@@ -38,11 +39,12 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFER
 UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[A-Z_]*)' | sort | paste -sd' ' -)
 [ -n "$UNSET" ] && unset $UNSET
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
-BASE=$R/base; D2=$R/clip_refit/D2/final; PT=$R/late_grid_points.txt
+BASE=$(readlink -f "${BASE_DIR:-$R/base}"); D2=$(readlink -f "${D2_DIR:-$R/clip_refit/D2/final}"); PT=$R/late_grid_points.txt   # 2026-11-18: BASE_DIR / D2_DIR
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 GRID_DIR=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
 GEOM=${GEOM:-$R/maps_geometry/job_124775/geometry}
-CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261112T210012Z}
+CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261118T072729Z}
+DESIGN_DIR=${DESIGN_DIR:-$GRID_DIR/design_h2oqmin0.02}
 RUNROOT=$(readlink -f "${RUNROOT:?RUNROOT is required}")
 STEPS=${STEPS:-export contrib maps}
 FT_DIR=${FT_DIR:-}; SUF=; FTO=()
@@ -69,7 +71,7 @@ rc=0
 for step in $STEPS; do
   case $step in
     export)  run heavy "$PY" -W ignore "$MODEL_EXT/localnn_tools.py" export --seg "$RUNROOT/fit/final" --base "$BASE" \
-               --d2 "$D2" --point-table "$PT" --design "$GRID_DIR/design" "${FTO[@]}" --out "$S" > "$P/export.log" 2>&1; rc=$?
+               --d2 "$D2" --point-table "$PT" --design "$DESIGN_DIR" "${FTO[@]}" --out "$S" > "$P/export.log" 2>&1; rc=$?
              tail -n 2 "$P/export.log" | cut -c1-600;;
     contrib) run heavy "$PY" -W ignore "$MODEL_EXT/localnn_tools.py" contrib --state "$S" --contrib-code "$CONTRIB" \
                --base "$BASE" --geometry "$GEOM" --out "$RUNROOT/contributions$SUF" --procs "$PROCS" > "$P/contrib.log" 2>&1; rc=$?

@@ -1,6 +1,6 @@
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/slope_mult_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/slope_mult_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: ba22ec7cb9f7d1f5ab7362942beb47096a95ac01d1ccf504550d9dc113c75f4b
+# SHA256 of the run copy = SHA256 of this file without these header lines: 007f5fd7ffdd887f0c58b37b8969f925da3c28153aea0635a1d3914099d709d4
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Fit-level hooks of the slope-multiplier model around the unchanged grain_fit_fixed.py path: D2's
 #   treatment through clip_problem.install_core (grid rows, W10x5 from 10:33:10 UTC, start check), the start (--start
@@ -8,6 +8,7 @@
 #   diagnostics, products and restart marker.
 # USED BY: slope_mult_fit.py. This version (snapshots v6 slopemul_20261110T201212Z ... v8): the 3a chain 124008-124086;
 #   the harmonic fit 123786 ran an earlier version (slopemul_20261110T094013Z).
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): README text of the ratios (H2O 0.02)
 # ==== end of header ====
 """Fit-level part of the slope-multiplier model (user decisions 2026-11-10); the model and the GPU patch are
 model_ext/slope_mult.py, the driver slope_mult_fit.py, the bin bundle slope_bins.py.
@@ -859,7 +860,8 @@ H2O activity per facet e (slope bin b(e) of {bundle}):
   Multipliers: {mult}; {fixed} held at 1. Bounds m >= 0, no upper bound.
   Derivative convention: a facet at the floor (s <= F) contributes 0 to the a and m columns (one-sided, as the fitter's
   clip); temperature and kappa columns are the unchanged kernel's with af = A.
-  Flux and pressures: the unchanged GPU model with af = A (srcCG night/shadow ratios 0.2 H2O / 0.1 CO2, no flux floor,
+  Flux and pressures: the unchanged GPU model with af = A (the fitter's night/shadow ratios H2O 0.02 (srcCG; 0.2 before
+  2026-11-18) / CO2 0.1, no flux floor,
   CO2 = kappa x the run's CO2 map, no CO2 floor). Held: {held}.
 Base: {run} ({nrows} rows; {ngrid} model-only 1-s grid rows, reason {reason}, use 0). Fit data: {nng} NG, {nrg} RG.
 Late window (>= {late} UTC, {nlate} observations): W10x5 of the surface model (mean of five 10-s averages ending at T,

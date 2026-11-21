@@ -1,10 +1,10 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/stage2r/chain_summary.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2r/chain_summary.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 1c0dc3c6214aa3666885c82465fe9b3ff28a29ed58facee59f5c0706980b1e88
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: per-cycle summary job (localnn_chain_summary.py of localnn_s2r); CHAINS = 'LABEL=ROOT ...'.
-# RUN 2026-11-15: 135078; the stage-2r comparison.
+# RUN 2026-11-16: 135078; the stage-2r comparison.
 # ==== end of header ====
 # per-cycle summary of option C stage-2 chains (localnn_chain_summary.py of localnn_s2r); CHAINS = "LABEL=ROOT ..."
 set -uo pipefail

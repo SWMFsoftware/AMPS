@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_ft.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_ft.py)
 # SHA256 of the run copy = SHA256 of this file without these header lines: f5b0db3e7e0b654ee95c49d3e93ab9faf6a9dcb9b4c26a07a7bfff589a104d97
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
@@ -10,7 +10,7 @@
 #   optional --perturb); run (localnn_ft.json); run-nonneg (2026-11-15: the fine tuning of a nonneg chain fit, e.g.
 #   B / D, with the real NonnegFitContext and the fit-state pressures of localnn_late.py --state; control vs the GPU
 #   c5 fine tunings of B / D rel 6.3e-14 / 4.4e-16).
-# RUN 2026-11-15: verification 131977-131979; tests 131980, 132009; every cycle of the stage-2 chains; B / D control
+# RUN 2026-11-16: verification 131977-131979; tests 131980, 132009; every cycle of the stage-2 chains; B / D control
 #   134501; fine-tuning regularization tests (frozen localnn_s2ftreg_20261116T031038Z).
 # ==== end of header ====
 """Option C stage 2 (lead / user 2026-11-15): the late-facet FINE TUNING of a localnn fit on CPU, with the frozen fine

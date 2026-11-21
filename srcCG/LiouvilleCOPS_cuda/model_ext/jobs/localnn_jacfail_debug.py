@@ -1,10 +1,10 @@
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/jacfail/jac_debug.py (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/jacfail/jac_debug.py)
 # SHA256 of the run copy = SHA256 of this file without these header lines: be7433e74382a94346fa5942fadacbda6f91ba819c9cbb69772f7efac799efb2
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: diagnosis of the failed c4 Jacobian check of stage2_f1_pm1e-4: the worst columns are bound nodes, the one-
 #   sided FD error falls as 1/h (rounding noise), the analytic columns are right.
-# RUN 2026-11-15: srun 2026-11-16 16:00 UTC.
+# RUN 2026-11-16: srun 2026-11-16 16:00 UTC.
 # ==== end of header ====
 import sys, json, numpy as np
 sys.path.insert(0, "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_s2_20261115T185842Z")

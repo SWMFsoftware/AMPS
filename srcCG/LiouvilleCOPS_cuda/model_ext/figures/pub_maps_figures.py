@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/pub_maps_figures.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/pub_maps_figures.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e51a8a45c01725c179fb89574ce130390c179cb85b41e55c98995af685e1a1db
+# SHA256 of the run copy = SHA256 of this file without these header lines: 38ab4904bc80ba8e87fa3290e990bf6ba1760ac869b510f540f5952f03df2ba1
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: full / version-2 maps helper; 2026-11-17: bin_edges_from_meta and multiplier_bounds (exports of option C and
-#   D2; nonneg fits unchanged)
-# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
+#   D2; nonneg fits unchanged); 2026-11-18: H2O night-side fix (q_min/q_max 0.2 -> 0.02 as srcCG): caption q_min,H2O /
+#   q_max,H2O from the maps' law (was the literal 0.2); 2026-11-18 (source-rate maps of the new law): MODEL_TEXT, the
+#   model's own description in model_text with an optional {multipliers} placeholder (default None: the softplus text,
+#   unchanged, tested)
+# RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh); the new-law source-
+#   rate sets (jobs/source_rate_q002.sbatch)
 # ==== end of header ====
 """Publication template and ground-track figures of ONE fitted state with the surface coloured by its H2O activity
 or by its production rate (H2O, CO2, total) instead of the late-visibility (NG-only / RG-only) facets.
@@ -786,7 +790,23 @@ def mesh_text(ctx):
                 Path(ctx["gt"]["shape"]).name, thousands(len(ctx["gt"]["faces"]))))
 
 
+# 2026-11-18 (source-rate maps after the H2O night-side fix): MODEL_TEXT, when set (pub_maps_v2_figures.py
+# --model-text), replaces the description of the activity model, which otherwise is the softplus model's (the default,
+# unchanged); the models without the softplus form (A, B, C, D, D2) need their own text.
+MODEL_TEXT = None
+
+
 def model_text(ctx):
+    if MODEL_TEXT is not None:
+        txt = MODEL_TEXT
+        if "{multipliers}" in txt:            # the fitted slope-bin multipliers, as in the default text
+            f = ctx["fields"]
+            nb = len(f["mult"])
+            mult = ", ".join("[%g,%g%s %s" % (a, b, "]" if k == nb - 1 else ")", "%.3g" % m)
+                             for k, (a, b, m) in enumerate(zip(f["edges"][:-1], f["edges"][1:], f["mult"])))
+            txt = txt.replace("{multipliers}", "%s; bin edges in degrees%s" % (mult, MULT_NOTE))
+        return ("Model: %s, fitted to the COPS NG and RG data of 2016-09-30 on this model base (COPS gauges 1.5 m toward "
+                "the comet). %s" % (MODEL_NAME, txt))
     f = ctx["fields"]
     nb = len(f["mult"])
     mult = ", ".join("[%g,%g%s %s" % (a, b, "]" if k == nb - 1 else ")", "%.3g" % m)
@@ -859,12 +879,14 @@ def time_text(ctx, lab):
     return ("Time %s UTC (r_h = %.6f AU). Instantaneous emitted flux per facet, as the model computes it: F_H2O = "
             "q_H2O A and F_CO2 = κ q_CO2 A_CO2, total = F_H2O + F_CO2, all in m⁻² s⁻¹. q_s = q_min,s on the night side "
             "(cos SZA ≤ 0) and in cast shadow (Sun ray from the facet blocked by the nucleus), else q_min,s + (q_max,s "
-            "− q_min,s) cos SZA, with q_max,H2O = 600 / r_h^%.7g = %.4f and q_min,H2O = 0.2 q_max,H2O, q_max,CO2 = "
+            "− q_min,s) cos SZA, with q_max,H2O = 600 / r_h^%.7g = %.4f and q_min,H2O = %.4g q_max,H2O, q_max,CO2 = "
             "600 / r_h² = %.4f and q_min,CO2 = 0.1 q_max,CO2 (r_h in AU); facets at this time: %s day, %s night, %s "
             "in cast shadow. A_CO2: the CO2 activity map of the base (max(0, the spherical-harmonic CO2 coefficients "
             "of srcCG)); κ = %.4g: the fitted CO2 scale. Total production Q_H2O = Σ F_H2O area = %.4e s⁻¹, Q_CO2 = "
             "%.4e s⁻¹ (Q_CO2 / Q_H2O = %.1e)" % (
-                t["utc"].split("T")[1], t["rh_AU"], t["p"], qh[1], qc[1], thousands(n["day"]), thousands(n["night"]),
+                # 2026-11-18: q_min,H2O / q_max,H2O from the law the maps used (was the literal 0.2; now 0.02)
+                t["utc"].split("T")[1], t["rh_AU"], t["p"], qh[1], qh[0] / qh[1], qc[1], thousands(n["day"]),
+                thousands(n["night"]),
                 thousands(n["cast_shadow"]), ctx["fields"]["kappa"], t["Q_H2O"], t["Q_CO2"],
                 t["Q_CO2"] / t["Q_H2O"]) + (
             # data-driven (2026-11-13): the 'negligible' statement only where it holds

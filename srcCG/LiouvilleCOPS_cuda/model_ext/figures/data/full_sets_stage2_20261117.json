@@ -1,0 +1,225 @@
+{
+ "_about": "Full figure sets of the six cases of 12M_stage2_reg_best (lead 2026-11-17 15:35 CST); full_set_docs.py --spec this --key <key>",
+ "sets": {
+  "stage2_softplus_reg": {
+   "title": "Complete figure set of the 12M softplus model (slope multipliers >= 1), regularized stage-2 chain (5 cycles), final state",
+   "model_name": "the softplus activity model with slope multipliers >= 1, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136152/geometry",
+   "jobs_state": [
+    "maps 136152 (nonneg_maps.sbatch)",
+    "contributions 136153 (nonneg_contrib.sbatch)"
+   ],
+   "frozen": {
+    "maps": "model_ext_frozen/nonneg_maps_20261112T021623Z",
+    "contributions": "model_ext_frozen/nonneg_contrib_20261112T210012Z"
+   },
+   "notes": [
+    "Jobs: maps 136152, contributions 136153, figures 136154-136163 (gpu002; contrib_phase 136162 CPU); cliffs 136160 failed (NameError from an edit of cliff_importance_figures.py made while it started; empty cliffs/ kept as cliffs.incomplete_*), rerun 136206.",
+    "Tools unchanged from the c9 set (frozen nonneg_maps / nonneg_contrib of 2026-11-12)."
+   ],
+   "comparisons": [
+    "vs the c9 state (chain_5cycles_smm1/contributions_c9)",
+    "vs the other stage-2 full sets (their contributions folders)",
+    "vs the unregularized softplus chain after 5 cycles (chain_5cycles_smm1/contributions)"
+   ],
+   "state_commands": [
+    "MAPS_NAME=maps_c5 EXPECT_CYCLES=5 sbatch --export=ALL,CHAINS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z,MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261112T021623Z nonneg_maps.sbatch",
+    "CONTRIB_NAME=contributions_c5 CYCLE=5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261112T210012Z sbatch --dependency=afterok:<maps job> --export=ALL nonneg_contrib.sbatch"
+   ],
+   "submit_command": "KEY=stage2_softplus_reg CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/maps_c5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/contributions_c5 PUB=/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_stage2_softplus_reg PUBSTEM=12M_stage2_softplus_reg_NG_RG_altitude PUBTABLE=stage2_softplus_reg_c5ft.dat MX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261112T021623Z CX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261112T210012Z MODEL_NAME=\"the softplus activity model with slope multipliers >= 1, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles\" MODEL_LABEL=\"softplus activity model with slope multipliers \u2265 1, regularized stage 2, final state\" MODEL_SHORT=\"softplus model, regularized stage 2\" TITLE_PRESSURES=\"SHAP8 12M: softplus activity model with slope multipliers \u2265 1, regularized stage 2 vs COPS\" [MAPS_JOB=.. CONTRIB_JOB=..] bash full_set_submit.sh",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 bash -c \"KEY=stage2_softplus_reg FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/c5/ft/final FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/c5/fit/final MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/maps_c5 CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/contributions_c5 PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/contrib_phase_c5 CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z NCYC=5 JOB_SET4=<set1/set4 job> MODEL_NAME='the softplus activity model with slope multipliers >= 1, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles' [CAVEATS='..'] bash /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh\""
+  },
+  "stage2_B_reg": {
+   "title": "Complete figure set of the 12M option-B background model (A_bg >= 1e-2), regularized stage-2 chain (5 cycles), final state",
+   "model_name": "the option-B background model (A_bg >= 1e-2, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136166/geometry",
+   "jobs_state": [
+    "maps 136166 (nonneg_maps.sbatch)",
+    "contributions 136220 (nonneg_contrib.sbatch)"
+   ],
+   "frozen": {
+    "maps": "model_ext_frozen/nonneg_maps_20261117T224340Z",
+    "contributions": "model_ext_frozen/nonneg_contrib_20261117T224340Z"
+   },
+   "notes": [
+    "Maps job 136166 made the B and A maps and stopped at D (cycle detection took the moved-aside c5.incomplete_*; fixed in nonneg_maps.sbatch); its dependent jobs were cancelled by Slurm and resubmitted (contributions 136220, figures 136223-136232 with set1/4 136254).",
+    "Maps / contributions with the new frozen nonneg_maps / nonneg_contrib (2026-11-17, lead approval): state_activity re-derives the alternative models' A bitwise (tests/fullset_stage2_feasibility_20261117/state_check2.log: A_fit reproduced bitwise; A_final vs A_fit exp(h + delta) at the 271 tuned facets max rel 3.8e-15; the c9 state gives identical results with the old and the new code)."
+   ],
+   "comparisons": [
+    "vs the c9 state (chain_5cycles_smm1/contributions_c9)",
+    "vs the other stage-2 full sets (their contributions folders)",
+    "vs the unregularized B chain (background/stage2_bg1e-2_20261115T184949Z) after making its contributions"
+   ],
+   "state_commands": [
+    "MAPS_NAME=maps_c5 EXPECT_CYCLES=5 sbatch --export=ALL,CHAINS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z,MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261117T224340Z nonneg_maps.sbatch",
+    "CONTRIB_NAME=contributions_c5 CYCLE=5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261117T224340Z sbatch --dependency=afterok:<maps job> --export=ALL nonneg_contrib.sbatch"
+   ],
+   "submit_command": "KEY=stage2_B_reg CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/maps_c5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/contributions_c5 PUB=/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_stage2_B_reg PUBSTEM=12M_stage2_B_reg_NG_RG_altitude PUBTABLE=stage2_B_reg_c5ft.dat MX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261117T224340Z CX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261117T224340Z MODEL_NAME=\"the option-B background model (A_bg >= 1e-2, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles\" MODEL_LABEL=\"option-B background model (A_bg \u2265 1e-2), regularized stage 2, final state\" MODEL_SHORT=\"background model, regularized stage 2\" TITLE_PRESSURES=\"SHAP8 12M: option-B background model (A_bg \u2265 1e-2), regularized stage 2 vs COPS\" [MAPS_JOB=.. CONTRIB_JOB=..] bash full_set_submit.sh",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 bash -c \"KEY=stage2_B_reg FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/c5/ft/final FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/c5/fit/final MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/maps_c5 CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/contributions_c5 PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/contrib_phase_c5 CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z NCYC=5 JOB_SET4=<set1/set4 job> MODEL_NAME='the option-B background model (A_bg >= 1e-2, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles' [CAVEATS='..'] bash /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh\""
+  },
+  "stage2_A_reg": {
+   "title": "Complete figure set of the 12M option-A sum-of-squares model (rank 3), regularized stage-2 chain (5 cycles), final state",
+   "model_name": "the option-A sum-of-squares model (rank 3, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136166/geometry",
+   "jobs_state": [
+    "maps 136166 (nonneg_maps.sbatch)",
+    "contributions 136221 (nonneg_contrib.sbatch)"
+   ],
+   "frozen": {
+    "maps": "model_ext_frozen/nonneg_maps_20261117T224340Z",
+    "contributions": "model_ext_frozen/nonneg_contrib_20261117T224340Z"
+   },
+   "notes": [
+    "Maps job 136166 (B, A; see the B set); contributions 136221, figures 136233-136242 with set1/4 136255.",
+    "New frozen nonneg_maps / nonneg_contrib (2026-11-17): sos A re-derived bitwise (V = Y L_extra from the restart; state_check2.log); A_final vs A_fit exp(h + delta) max rel 3.7e-15.",
+    "The last fit stopped at max_nfev in its second segment (time limit): not converged."
+   ],
+   "comparisons": [
+    "vs the c9 state (chain_5cycles_smm1/contributions_c9)",
+    "vs the other stage-2 full sets (their contributions folders)",
+    "vs the unregularized A chain (sos/stage2_r3_20261115T184949Z) after making its contributions"
+   ],
+   "state_commands": [
+    "MAPS_NAME=maps_c5 EXPECT_CYCLES=5 sbatch --export=ALL,CHAINS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z,MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261117T224340Z nonneg_maps.sbatch",
+    "CONTRIB_NAME=contributions_c5 CYCLE=5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261117T224340Z sbatch --dependency=afterok:<maps job> --export=ALL nonneg_contrib.sbatch"
+   ],
+   "submit_command": "KEY=stage2_A_reg CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/maps_c5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/contributions_c5 PUB=/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_stage2_A_reg PUBSTEM=12M_stage2_A_reg_NG_RG_altitude PUBTABLE=stage2_A_reg_c5ft.dat MX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261117T224340Z CX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261117T224340Z MODEL_NAME=\"the option-A sum-of-squares model (rank 3, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles\" MODEL_LABEL=\"option-A sum-of-squares model (rank 3), regularized stage 2, final state\" MODEL_SHORT=\"sum-of-squares model, regularized stage 2\" TITLE_PRESSURES=\"SHAP8 12M: option-A sum-of-squares model (rank 3), regularized stage 2 vs COPS\" [MAPS_JOB=.. CONTRIB_JOB=..] bash full_set_submit.sh",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 bash -c \"KEY=stage2_A_reg FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/c5/ft/final FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/c5/fit/final MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/maps_c5 CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/contributions_c5 PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/contrib_phase_c5 CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z NCYC=5 JOB_SET4=<set1/set4 job> MODEL_NAME='the option-A sum-of-squares model (rank 3, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles' [CAVEATS='..'] bash /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh\""
+  },
+  "stage2_D_reg": {
+   "title": "Complete figure set of the 12M option-D log-spread model (f 0.1, fixed level), regularized stage-2 chain (5 cycles), final state",
+   "model_name": "the option-D log-spread model (f 0.1, fixed level, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136219/geometry",
+   "jobs_state": [
+    "maps 136219 (nonneg_maps.sbatch)",
+    "contributions 136222 (nonneg_contrib.sbatch)"
+   ],
+   "frozen": {
+    "maps": "model_ext_frozen/nonneg_maps_20261117T224340Z",
+    "contributions": "model_ext_frozen/nonneg_contrib_20261117T224340Z"
+   },
+   "notes": [
+    "c5 of the chain was redone after a disk-full stop (the first c5 kept as c5.incomplete_20261117T062850Z); the maps job 136219 (nonneg_maps.sbatch with the cycle-detection fix), contributions 136222, figures 136243-136252 with set1/4 136256.",
+    "New frozen nonneg_maps / nonneg_contrib (2026-11-17): logspread A re-derived bitwise (A_orig = elements AH2O; state_check2.log); A_final vs A_fit exp(h + delta) max rel 3.7e-15."
+   ],
+   "comparisons": [
+    "vs the c9 state (chain_5cycles_smm1/contributions_c9)",
+    "vs the other stage-2 full sets (their contributions folders)",
+    "vs the unregularized D chain (logspread/stage2_f0.1_20261115T184949Z) after making its contributions"
+   ],
+   "state_commands": [
+    "MAPS_NAME=maps_c5 EXPECT_CYCLES=5 sbatch --export=ALL,CHAINS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z,MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261117T224340Z nonneg_maps.sbatch",
+    "CONTRIB_NAME=contributions_c5 CYCLE=5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261117T224340Z sbatch --dependency=afterok:<maps job> --export=ALL nonneg_contrib.sbatch"
+   ],
+   "submit_command": "KEY=stage2_D_reg CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/maps_c5 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_<maps job>/geometry CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/contributions_c5 PUB=/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_stage2_D_reg PUBSTEM=12M_stage2_D_reg_NG_RG_altitude PUBTABLE=stage2_D_reg_c5ft.dat MX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261117T224340Z CX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261117T224340Z MODEL_NAME=\"the option-D log-spread model (f 0.1, fixed level, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles\" MODEL_LABEL=\"option-D log-spread model (f 0.1), regularized stage 2, final state\" MODEL_SHORT=\"log-spread model, regularized stage 2\" TITLE_PRESSURES=\"SHAP8 12M: option-D log-spread model (f 0.1), regularized stage 2 vs COPS\" [MAPS_JOB=.. CONTRIB_JOB=..] bash full_set_submit.sh",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 bash -c \"KEY=stage2_D_reg FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/c5/ft/final FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/c5/fit/final MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/maps_c5 CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/contributions_c5 PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/contrib_phase_c5 CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z NCYC=5 JOB_SET4=<set1/set4 job> MODEL_NAME='the option-D log-spread model (f 0.1, fixed level, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles' [CAVEATS='..'] bash /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh\""
+  },
+  "stage2_C_f1_pm1em4_reg": {
+   "title": "Complete figure set of the 12M option-C local non-negative basis (f 1, multiplier penalty f_m 1e-4, templates on), regularized stage-2 chain, final state",
+   "model_name": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/ft/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft)",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft/fit_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/maps_ft",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/contributions_ft",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/contrib_phase_ft",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/v2_total_crosscheck_ft",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_124775/geometry",
+   "jobs_state": [
+    "export + contributions: the chain's post 136097 (agent C, localnn_chain_post.sbatch, no maps)",
+    "maps 136200 (localnn_tools.sbatch STEPS=maps, frozen localnn_s2jc2_20261117T080730Z)"
+   ],
+   "frozen": {
+    "localnn tools": "model_ext_frozen/localnn_s2jc2_20261117T080730Z",
+    "maps / contributions (state_activity replaced)": "model_ext_frozen/nonneg_contrib_20261112T210012Z",
+    "contrib_phase adapter": "model_ext_frozen/localnn_s2jc2_20261117T080730Z/localnn_tools.py"
+   },
+   "notes": [
+    "The chain's cycles 1-3 and part of cycle 4 ran on CPU, the rest on the GPU (agent C's chain; README.md of the chain).",
+    "maps_ft / contributions_ft / tools_state_ft: agent C's adapter (localnn_tools.py: the frozen nonneg_maps / nonneg_contrib with state_activity replaced by the localnn one; A re-derived bitwise with NPY_DISABLE_CPU_FEATURES; the maps job's state checks passed).",
+    "Figure-script fallbacks for the export (2026-11-17, defaults unchanged): slope-bin edges from the bin names, multiplier bounds from the localnn fit_manifest (pub_maps_figures.py bin_edges_from_meta / multiplier_bounds), contrib_phase_data.py --state-adapter localnn_tools.py.",
+    "Figure jobs 136207-136216 (gpu002; contrib_phase 136215 CPU)."
+   ],
+   "comparisons": [
+    "vs the c9 state (chain_5cycles_smm1/contributions_c9)",
+    "vs the other stage-2 full sets (their contributions folders)",
+    "vs the other option-C chains (their contributions_ft)"
+   ],
+   "state_commands": [
+    "RUNROOT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5 FT_DIR=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/ft/final STEPS=maps MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_s2jc2_20261117T080730Z sbatch --export=ALL localnn_tools.sbatch   # export and contrib: the chain's post"
+   ],
+   "submit_command": "KEY=stage2_C_f1_pm1em4_reg CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5 FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft/fit_state MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/maps_ft GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_124775/geometry CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/contributions_ft XC=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/v2_total_crosscheck_ft PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/contrib_phase_ft MX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261112T021623Z CX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261112T210012Z ADAPTER=/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_s2jc2_20261117T080730Z/localnn_tools.py PUB=/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_stage2_C_f1_pm1em4_reg PUBSTEM=12M_stage2_C_f1_pm1em4_reg_NG_RG_altitude PUBTABLE=stage2_C_f1_pm1em4_reg_c5ft.dat MODEL_NAME=\"...\" MODEL_LABEL=\"...\" MODEL_SHORT=\"...\" TITLE_PRESSURES=\"...\" bash full_set_submit.sh",
+   "finish_command": "srun ... bash -c \"KEY=stage2_C_f1_pm1em4_reg FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/tools_state_ft/fit_state MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/maps_ft CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/contributions_ft PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/contrib_phase_ft CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/.. NCYC=5 JOB_SET4=136214 MODEL_NAME='...' CAVEATS='...' bash /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh\""
+  },
+  "D2": {
+   "title": "Complete figure set of the 12M clipped activity model refitted on the lategrid base (D2), final fit state",
+   "model_name": "the clipped activity model refitted on the lategrid base (D2), final fit state (no fine tuning)",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state)",
+   "chain": null,
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/maps",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/contributions",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/contrib_phase",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/v2_total_crosscheck",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_124775/geometry",
+   "jobs_state": [
+    "d2_tools.sbatch 136217 (export, contrib, verify, maps; frozen d2_tools_20261117T225752Z); the first attempt 136205 failed the contribution tool's 10-digit table check (7-digit references) and is kept as tools_state.incomplete_* / provenance-136205-d2tools.incomplete_*"
+   ],
+   "frozen": {
+    "D2 adapter": "model_ext_frozen/d2_tools_20261117T225752Z",
+    "maps / contributions (state_activity replaced)": "model_ext_frozen/nonneg_contrib_20261112T210012Z"
+   },
+   "notes": [
+    "D2 has no fine tuning; the export (d2_tools.py) gives the tools D2's activity A = max(0, activity_linear) in the nonneg layout (multipliers 1, held = delta = 0).",
+    "A vs D2's own products: activity_linear re-derived bitwise from the restart (Y a + A_s T c). D2's activity_facets.dat clipped_activity agrees to max rel 7.1e-9 (median 2.6e-15; zero pattern identical). This is NOT the file's print precision (16 digits, <= 5e-16): the file forms the field as legacy_linear + residual_linear, two separately summed fields that cancel to the small A (worst facet 10945909: A = 6.26e13 from 5.318e17 - 5.318e17; the difference 4.4e5 is 4.2e-13 of those terms; over all A > 0 facets <= 3.5e-10 of |legacy| + |residual|): summation order and cancellation (tests/fullset_stage2_feasibility_20261117/d2_activity_diff.json).",
+    "Forward model of the exported state (the contribution tool's kernel sums with the exported A and kappa, + D2's grain term) vs D2's full-precision model per row (pressure_residuals.dat model_Pa): NG max rel 3.1e-11, RG 2.4e-15 over the 1150 observation rows; late rows vs late_window_model.dat 2e-10 (its 10 printed digits); data cost 4.8864368867405e-3 = the value from D2's own per-row model to 1e-15 (fit_result.txt prints 4.886437e-3: rel 2.3e-8 = its rounding) (clip_refit/D2/tools_state_verify.json).",
+    "seen = D2's own activity_facets.dat seen (identical to the nonneg fits' seen on this base); slope bins = the c9 fit's (same base).",
+    "model_data/: this state is also the clipped reference: the two curves coincide.",
+    "Figure jobs 136257-136266 (gpu002; contrib_phase 136265 CPU, with contrib_phase_data.py --state-adapter d2_tools.py)."
+   ],
+   "comparisons": [
+    "vs the c9 state (chain_5cycles_smm1/contributions_c9)",
+    "vs the other stage-2 full sets (their contributions folders)"
+   ],
+   "state_commands": [
+    "MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/d2_tools_20261117T225752Z sbatch --export=ALL d2_tools.sbatch"
+   ],
+   "submit_command": "KEY=D2 CHAIN=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2 FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/maps GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_124775/geometry CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/contributions XC=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/v2_total_crosscheck PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/contrib_phase MX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261112T021623Z CX=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261112T210012Z ADAPTER=/data001/highresolu_vt/cops_output/model_ext_frozen/d2_tools_20261117T225752Z/d2_tools.py PUB=/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_D2 PUBSTEM=12M_D2_NG_RG_altitude PUBTABLE=D2_final.dat MODEL_NAME=\"...\" MODEL_LABEL=\"...\" MODEL_SHORT=\"...\" TITLE_PRESSURES=\"...\" bash full_set_submit.sh",
+   "finish_command": "srun ... bash -c \"KEY=D2 FT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state FIT=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/tools_state MAPS=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/maps CONTRIB=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/contributions PHASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/contrib_phase JOB_SET4=136264 MODEL_NAME='...' bash /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh\""
+  }
+ }
+}

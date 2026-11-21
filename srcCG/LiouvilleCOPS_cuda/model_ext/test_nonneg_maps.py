@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-12, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_nonneg_maps.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_nonneg_maps.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: c942f6b0be30e0a82e3f559c95efd8adea6b793b1e69db086c05b23d27feeeec
+# SHA256 of the run copy = SHA256 of this file without these header lines: d339a76bf8deb1755c5bacedda778a41f6972f5f669dda0330015e619a064830
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: tests. Unit tests of nonneg_maps.py (39): the law vs fit_cops.Model and C++ EvaluateElement, mesh order vs elements.bin,
 #   VTK / Tecplot writers and read-back, state reproduction (A_final, seen, slope bins).
 # USED BY: nonneg_maps.sbatch (every job runs them first).
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18): the independent Source.cpp statement now Qmin = 0.02/rhA^p*600 (was 10.0*0.02); 36 of 36 (srun 136395)
 # ==== end of header ====
 """Tests of nonneg_maps.py (activity and source-rate maps of the non-negative models): the law against the reference
 fitter's source text and an independent statement of Source.cpp, the illumination coding, the VTU and Tecplot writers
@@ -66,7 +67,9 @@ def test_law(fc):
             out_c = np.empty(n)
             for i in range(0, n, 997):
                 c, nt = cos[i], (cos[i] <= 0.0) or (sh[i] != 0)
-                qmin, qmax = 10.0 * 0.02 / rhA ** p * 600, 1.0 / rhA ** p * 600
+                # 2026-11-18: Source.cpp GetQ after the H2O night-side fix (Qmin = 0.02/pow(rh_AU,p)*600; it was
+                # 10.0*0.02 = 0.2 before, not intended: user decision 2026-11-18)
+                qmin, qmax = 0.02 / rhA ** p * 600, 1.0 / rhA ** p * 600
                 out_h[i] = (qmin if nt else qmin + (qmax - qmin) * min(c, 1.0)) * A[i]
                 qmin, qmax = 0.1 / rhA ** 2.0 * 600, 1.0 / rhA ** 2.0 * 600
                 out_c[i] = kappa * ((qmin if nt else qmin + (qmax - qmin) * min(c, 1.0)) * AC[i])

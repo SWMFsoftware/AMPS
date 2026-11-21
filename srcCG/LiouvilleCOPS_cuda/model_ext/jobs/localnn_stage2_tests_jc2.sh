@@ -1,10 +1,10 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-17, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/stage2/tests_s2_jc2.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/stage2/tests_s2_jc2.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 63271a7dfff79d02b29ea41839ced5696032d3d962450b8b8a00c3b8be1aa159
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test_localnn_stage2.py from the frozen snapshot localnn_s2jc2_20261117T080730Z.
-# RUN 2026-11-15: 136043.
+# RUN 2026-11-17: 136043.
 # ==== end of header ====
 export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
 export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 PYTHONUNBUFFERED=1 APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda

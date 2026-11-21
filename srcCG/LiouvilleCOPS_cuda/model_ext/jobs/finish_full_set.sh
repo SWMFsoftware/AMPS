@@ -1,11 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/finish_full_set.sh (on Voyager: /data001/highresolu_vt/cops_output/jobs/finish_full_set.sh)
-# SHA256 of the run copy = SHA256 of this file without these header lines: d4d4dbd05e2a74568805657f88717a02b06562f557cd88cfafab3650b1d0e0b2
+# SHA256 of the run copy = SHA256 of this file without these header lines: 0548789da52165f84e694dd117e33ca795f4b73d9f29ce59bd99bf81c7ec6ea7
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: last CPU steps of one full set: visibility captions, regions, model_data captions, facts, CAPTIONS.md
-#   (2026-11-17)
-# RUN: see model_ext/README.md (full sets of the stage-2 states, 2026-11-17)
+#   (2026-11-17); 2026-11-20 (full sets of the new-law fits): BASE and REF_DIR overrides (defaults unchanged)
+# RUN: see model_ext/README.md; new-law sets: jobs/full_set_q002_finish.sbatch
 # ==== end of header ====
 # Last CPU steps of ONE full figure set after its jobs (full_set_submit.sh): visibility captions (copied; set-1 figures
 # checked pixel-identical to the c9 set's), regions/ (regions_figures.py), model_data captions (model_data_captions.py),
@@ -44,18 +44,19 @@ for f in ("12M_templates_visibility_caption.txt", "12M_groundtrack_visibility_im
 PYEOF
 cat "$O/visibility/CAPTIONS_COPIED.txt"
 # 2. regions
-[ -e "$O/regions" ] || $PY "$S/regions_figures.py" --data "$PHASE" --base "$R/base" \
+BASE=${BASE:-$R/base}; REF_DIR=${REF_DIR:-$R/clip_refit/D2/final}   # 2026-11-20: overrides (defaults unchanged)
+[ -e "$O/regions" ] || $PY "$S/regions_figures.py" --data "$PHASE" --base "$BASE" \
    --bundle /data001/highresolu_vt/cops_output/runs/shap8_012m_flat_earlier/bundle/restart_templates.npz --out-dir "$O/regions" \
    --model-name "$MODEL_NAME" > "$O/checks/regions_figures.log" 2>&1 || { echo "regions FAILED"; tail -5 "$O/checks/regions_figures.log"; rc=1; }
 # 3. model_data captions
 ls "$O/model_data/"*_caption.txt >/dev/null 2>&1 || $PY "$S/model_data_captions.py" --model-data "$O/model_data" --tag "$KEY" \
-   --ft-dir "$FT" --ref-dir "$R/clip_refit/D2/final" --model-text "$MODEL_NAME" --job-set4 "$JOB_SET4" --job-pressures "$JOB_SET4" \
+   --ft-dir "$FT" --ref-dir "$REF_DIR" --model-text "$MODEL_NAME" --job-set4 "$JOB_SET4" --job-pressures "$JOB_SET4" \
    > "$O/checks/model_data_captions.log" 2>&1 || { echo "model_data captions FAILED"; tail -5 "$O/checks/model_data_captions.log"; rc=1; }
 # 4. facts
 CAV=(); IFS='|' read -ra CS <<< "${CAVEATS:-}"; for c in "${CS[@]}"; do [ -n "$c" ] && CAV+=(--caveat "$c"); done
 CHO=(); [ -n "${CHAIN:-}" ] && CHO=(--chain "$CHAIN" --cycles "${NCYC:-5}")
 [ -e "$O/checks/facts.json" ] || $PY "$S/full_set_facts.py" --set "$O" --ft "$FT" --fit "$FIT" --maps "$MAPS" --contrib "$CONTRIB" \
-   --phase "$PHASE" --base "$R/base" "${CHO[@]}" "${CAV[@]}" > "$O/checks/facts.txt" 2> "$O/checks/facts.log" || { echo "facts FAILED"; tail -5 "$O/checks/facts.log"; rc=1; }
+   --phase "$PHASE" --base "$BASE" "${CHO[@]}" "${CAV[@]}" > "$O/checks/facts.txt" 2> "$O/checks/facts.log" || { echo "facts FAILED"; tail -5 "$O/checks/facts.log"; rc=1; }
 cat "$O/checks/facts.txt"
 # 5. captions
 [ -e "$O/CAPTIONS.md" ] || $PY "$S/collect_captions.py" "$O" --order visibility,model_data,activity,production_rate,source_areas,cliffs,contribution_density,regions \

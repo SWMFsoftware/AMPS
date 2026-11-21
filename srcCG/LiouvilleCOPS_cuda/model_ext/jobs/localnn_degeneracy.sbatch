@@ -1,12 +1,12 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_degeneracy.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_degeneracy.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: dc919938375af0176f3bdc7bafacfc6d9465b52aa2ecb040b999f957b9eaa5b2
+# SHA256 of the run copy = SHA256 of this file without these header lines: c32d74d3afe57ef7c8b0576d422f3ce35c3688226ac53328ad526c68efce2116
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, option C): localnn_degeneracy.py for one run root.
 # RUN: 125362 (P_m check, chained).
-# 2026-11-15: 2026-11-17: NPY_DISABLE_CPU_FEATURES (as the chain driver; reproducible on AVX-512 nodes).
-# RUN 2026-11-15: the chain posts.
+# 2026-11-18: 2026-11-18: BASE_DIR / D2_DIR, DESIGN_DIR default of the current law, NPY_DISABLE_CPU_FEATURES.
+# RUN 2026-11-18: the chain posts.
 # ==== end of header ====
 # Option C (local non-negative basis): m_b vs c_j degeneracy diagnostics of ONE finished fit (model_ext/localnn_degeneracy.py:
 # effective activity per bin, signal share per bin, node dominance, compensation rho, the global level direction,
@@ -21,6 +21,8 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_degen-%j.out
 set -uo pipefail
+# 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
+# NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
 # numpy without AVX-512 kernels, as the chain driver (2026-11-17: on an AVX-512 node (node028, EPYC 9554) np.exp differs
 # in the last bit at 38 of the 271 held facets and the tools' bitwise reproduction of A failed, post 136094)
 export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
@@ -30,6 +32,7 @@ export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 PYTHONUNBUF
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 GRID_DIR=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
+DESIGN_DIR=${DESIGN_DIR:-$GRID_DIR/design_h2oqmin0.02}
 RUNROOT=$(readlink -f "${RUNROOT:?RUNROOT is required}")
 PY=$APP/.venv/bin/python
 P=$RUNROOT/provenance-$SLURM_JOB_ID-degeneracy; mkdir "$P" || exit 1
@@ -42,8 +45,8 @@ cp -p "$0" "$P/localnn_degeneracy.sbatch.used"; cp -p "$MODEL_EXT"/localnn_*.py 
 echo "CPU job on $(hostname): no GPU used" > "$P/nvidia_smi_q.txt"
 { gcc --version | head -1; lscpu | grep -E 'Model name|^CPU\(s\)'; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$PY" > "$P/pip_list.txt" 2>&1 || "$PY" -m pip list > "$P/pip_list.txt" 2>&1
-CMD=("$PY" -W ignore "$MODEL_EXT/localnn_degeneracy.py" --runroot "$RUNROOT" --design "$GRID_DIR/design" --grid "$GRID_DIR" \
-     --base "$R/base" --d2 "$R/clip_refit/D2/final" --point-table "$R/late_grid_points.txt" \
+CMD=("$PY" -W ignore "$MODEL_EXT/localnn_degeneracy.py" --runroot "$RUNROOT" --design "$DESIGN_DIR" --grid "$GRID_DIR" \
+     --base "${BASE_DIR:-$R/base}" --d2 "${D2_DIR:-$R/clip_refit/D2/final}" --point-table "$R/late_grid_points.txt" \
      --c9-ft "$R/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c9/ft/final")
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"; printf '%q ' "${CMD[@]}"; echo; } > "$P/commands.sh"
 "${CMD[@]}" > "$P/degeneracy.log" 2>&1; rc=$?

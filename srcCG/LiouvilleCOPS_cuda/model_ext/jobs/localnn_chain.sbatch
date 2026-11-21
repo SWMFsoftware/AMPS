@@ -1,15 +1,15 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_chain.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_chain.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 87be390c9e61576bfeae766625fc8afefb6221ef36c672de9c88a875f1aa2bff
+# SHA256 of the run copy = SHA256 of this file without these header lines: 7922b42267be9db735e7f52e7c0445321ff90ba0dce23dd7481a23b59349d6bd
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (CPU or 1 GPU, option C stage 2): ONE 5-cycle fit / fine-tuning chain (start from a state + grain
-#   + held, fit with checkpoints and the wall-time guard (exit 75), direct check, CPU fine tuning (late_only,
-#   WINDOW_MIN 5, MAXNFEV 500, validation), links); chain_events.jsonl (device per stage); HANDOVER file; DEVICE=gpu
-#   (CUDA environment, takeover with CANCEL_JOBS; 2026-11-17 TAKEOVER_AFTER_CHECKPOINT=1: the takeover cancels the
-#   CPU attempt only seconds after the active fit's next checkpoint write, or when the CPU attempts have ended);
-#   TEMPLATES, C1_START_EXTRA, FT_EXTRA, NONNEG_CODE; disk guard DISK_MIN_GB (20) before every stage, exit 4.
-# RUN 2026-11-15: stage2r f10 / f1 pm1e-4 GPU attempts 136092-136093, 136095-136096 (gpu002).
+# WHAT: job script (CPU or 1 GPU, option C stage 2): ONE 5-cycle fit / fine-tuning chain (fit with checkpoints and
+#   the wall-time guard (exit 75), direct check, CPU fine tuning (late_only, WINDOW_MIN 5, MAXNFEV 500,
+#   validation)); chain_events.jsonl (device per stage); HANDOVER / takeover (CANCEL_JOBS,
+#   TAKEOVER_AFTER_CHECKPOINT); TEMPLATES, C1_START_EXTRA, FT_EXTRA, NONNEG_CODE; disk guard; 2026-11-18: BASE_DIR /
+#   D2_DIR, C1_START=d2 (cycle 1 from the D2 projection), DESIGN_DIR / CONTRIB / LATE / NONNEG_CODE defaults of the
+#   0.02 law.
+# RUN 2026-11-18: planned: the q002 option C chains (model_ext/logs/plan_q002_stage2r_C.md).
 # ==== end of header ====
 # Option C stage 2 (user / lead 2026-11-15): ONE fit / fine-tuning chain of the local non-negative basis, cycles 1..CYCLES,
 # the layout of the nonneg chains: <CHAIN>/c<k>/fit (localnn_fit.py: segNN, final; checkpoints) and <CHAIN>/c<k>/ft
@@ -40,6 +40,8 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_chain-%j.out
 set -uo pipefail
+# 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
+# NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
 export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
 export COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
 BLAS_THREADS=${BLAS_THREADS:-16}
@@ -54,22 +56,25 @@ fi
 UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[A-Z_]*)' | sort | paste -sd' ' -)
 [ -n "$UNSET" ] && unset $UNSET
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
-BASE=$R/base; D2=$R/clip_refit/D2/final; PT=$R/late_grid_points.txt
+# 2026-11-18: BASE_DIR / D2_DIR (the new-law base_q002 and the refitted D2; default the 0.2-law ones)
+BASE=$(readlink -f "${BASE_DIR:-$R/base}"); D2=$(readlink -f "${D2_DIR:-$R/clip_refit/D2/final}"); PT=$R/late_grid_points.txt
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 GRID_DIR=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
 CHAIN=$(readlink -f "${CHAIN:?CHAIN is required}")
 LAMBDA=${LAMBDA:?LAMBDA is required}; RULE=$(readlink -f "${RULE:?RULE is required}")
 FM=${FM:?FM is required}; CYCLES=${CYCLES:-5}; NFEV=${NFEV:-4000}; FT_MAXNFEV=${FT_MAXNFEV:-500}
 WINDOW_MIN=${WINDOW_MIN:-5}; CHECKPOINT=${CHECKPOINT:-250}; DEVICE=${DEVICE:-cpu}; CHECK=${CHECK:-1}
-LATE=$(readlink -f "${LATE:-$R/nonneg/localnn/late_kernels_150m.npz}")
+LATE=$(readlink -f "${LATE:-$R/nonneg/localnn/late_kernels_150m_h2oqmin0.02.npz}")
+DESIGN_DIR=$(readlink -f "${DESIGN_DIR:-$GRID_DIR/design_h2oqmin0.02}")
 C1_FROM=${C1_FROM:-}; C1_FIT=${C1_FIT:-}
 # 2026-11-16 (user / lead: the stage-2 reruns): TEMPLATES (on | off; D2's templates in the model), C1_START_EXTRA (extra
 # arguments of the cycle-1 start, e.g. --state-drop-templates), FT_EXTRA (extra arguments of every fine tuning, e.g. the
 # regularization --delta-penalty-f 10 --delta-cref 4.2688066575e-03 --delta-cap 4.605170185988092), NONNEG_CODE (the
 # frozen nonneg_finetune snapshot of localnn_ft.py: LOCALNN_NONNEG_CODE)
 TEMPLATES=${TEMPLATES:-on}; C1_START_EXTRA=${C1_START_EXTRA:-}; FT_EXTRA=${FT_EXTRA:-}
-[ -n "${NONNEG_CODE:-}" ] && export LOCALNN_NONNEG_CODE=$(readlink -f "$NONNEG_CODE")
-CONTRIB=$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261112T210012Z
+NONNEG_CODE=${NONNEG_CODE:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_20261118T072729Z}
+export LOCALNN_NONNEG_CODE=$(readlink -f "$NONNEG_CODE")
+CONTRIB=$(readlink -f "${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261118T072729Z}")
 PY=$APP/.venv/bin/python
 stamp() { echo "$(date -u +%FT%TZ) $*"; }
 heavy() { bash -c 'echo 1000 > /proc/self/oom_score_adj; exec "$@"' heavy "$@"; }
@@ -89,14 +94,14 @@ cp -p "$0" "$P/localnn_chain.sbatch.used"; cp -p "$MODEL_EXT"/*.py "$P/" 2>/dev/
 { gcc --version | head -1; lscpu | grep -E 'Model name|^CPU\(s\)'; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$PY" > "$P/pip_list.txt" 2>&1 || "$PY" -m pip list > "$P/pip_list.txt" 2>&1
 env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|OMP_NUM_THREADS|OPENBLAS_NUM_THREADS|CUDA_VISIBLE_DEVICES)=' > "$P/env.txt"
-echo "CHAIN=$CHAIN LAMBDA=$LAMBDA RULE=$RULE FM=$FM C1_FROM=$C1_FROM C1_FIT=$C1_FIT CYCLES=$CYCLES NFEV=$NFEV FT_MAXNFEV=$FT_MAXNFEV WINDOW_MIN=$WINDOW_MIN CHECKPOINT=$CHECKPOINT LATE=$LATE DEVICE=$DEVICE GRID_DIR=$GRID_DIR CHECK=$CHECK TEMPLATES=$TEMPLATES C1_START_EXTRA=$C1_START_EXTRA FT_EXTRA=$FT_EXTRA LOCALNN_NONNEG_CODE=${LOCALNN_NONNEG_CODE:-}" >> "$P/env.txt"
+echo "CHAIN=$CHAIN BASE=$BASE D2=$D2 C1_START=${C1_START:-state} DESIGN_DIR=$DESIGN_DIR CONTRIB=$CONTRIB LAMBDA=$LAMBDA RULE=$RULE FM=$FM C1_FROM=$C1_FROM C1_FIT=$C1_FIT CYCLES=$CYCLES NFEV=$NFEV FT_MAXNFEV=$FT_MAXNFEV WINDOW_MIN=$WINDOW_MIN CHECKPOINT=$CHECKPOINT LATE=$LATE DEVICE=$DEVICE GRID_DIR=$GRID_DIR CHECK=$CHECK TEMPLATES=$TEMPLATES C1_START_EXTRA=$C1_START_EXTRA FT_EXTRA=$FT_EXTRA LOCALNN_NONNEG_CODE=${LOCALNN_NONNEG_CODE:-}" >> "$P/env.txt"
 { echo '#!/bin/bash'; grep '^export ' "$0" | sed "s/\$BLAS_THREADS/$BLAS_THREADS/g"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"
   echo "heavy() { bash -c 'echo 1000 > /proc/self/oom_score_adj; exec \"\$@\"' heavy \"\$@\"; }"; } > "$P/commands.sh"
 [ -n "${LOCALNN_NONNEG_CODE:-}" ] && echo "export LOCALNN_NONNEG_CODE=$LOCALNN_NONNEG_CODE" >> "$P/commands.sh"
 run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }
 event() { printf '{"stage": "%s", "rc": %s, "device": "%s", "host": "%s", "job": "%s", "utc": "%s", "note": "%s"}\n' \
   "$1" "$2" "$DEVICE" "$(hostname)" "$SLURM_JOB_ID" "$(date -u +%FT%TZ)" "${3:-}" >> "$CHAIN/chain_events.jsonl"; }
-COM=(--design "$GRID_DIR/design" --base "$BASE" --d2 "$D2" --point-table "$PT")
+COM=(--design "$DESIGN_DIR" --base "$BASE" --d2 "$D2" --point-table "$PT")
 DEVOPT=(); [ "$DEVICE" != cpu ] && DEVOPT=(--device "$DEVICE" --gpu-svd-mode "${GPU_SVD_MODE:-qr}")
 # disk guard (2026-11-17, after /data001/highresolu_vt filled at 2026-11-17 03:10Z): before every stage the free space of
 # the chain's file system must be >= DISK_MIN_GB (20); otherwise the job stops cleanly with exit 4 (event "disk_guard";
@@ -152,16 +157,21 @@ for k in $(seq 1 "$CYCLES"); do
     if [ "$k" -gt 1 ]; then
       PF=$CHAIN/c$((k-1)); PFT=$(readlink -f "$PF/ft/final")
       HELD=(--held "$PFT/finetune_state.npz" --late-kernels "$LATE")
-      SRC=(--state-file "$(readlink -f "$PF/fit/final")/localnn_state.npz" --grain-from "$PFT/finetune_state.npz")
+      SRC=(--start state --state-file "$(readlink -f "$PF/fit/final")/localnn_state.npz" --grain-from "$PFT/finetune_state.npz")
     else
-      [ -n "$C1_FROM" ] || { stamp "c1: neither C1_FROM nor C1_FIT"; exit 2; }
-      SRC=(--state-file "$(readlink -f "$C1_FROM")")
+      # 2026-11-18: C1_START=d2: cycle 1 starts at the NNLS projection of D2_DIR's activity (localnn_fit start --start d2,
+      # the start rule of the stage-1 fits; templates per TEMPLATES); otherwise at the state C1_FROM
+      if [ "${C1_START:-state}" = d2 ]; then SRC=(--start d2)
+      else
+        [ -n "$C1_FROM" ] || { stamp "c1: neither C1_FROM nor C1_FIT nor C1_START=d2"; exit 2; }
+        SRC=(--start state --state-file "$(readlink -f "$C1_FROM")")
+      fi
       # shellcheck disable=SC2206
       [ -n "$C1_START_EXTRA" ] && SRC+=($C1_START_EXTRA)
     fi
     if [ ! -e "$FIT/start" ]; then
       stamp "c$k start"
-      run heavy "$PY" -W ignore "$MODEL_EXT/localnn_fit.py" start "${COM[@]}" --grid "$GRID_DIR" --templates "$TEMPLATES" --start state \
+      run heavy "$PY" -W ignore "$MODEL_EXT/localnn_fit.py" start "${COM[@]}" --grid "$GRID_DIR" --templates "$TEMPLATES" \
         "${SRC[@]}" "${HELD[@]}" --out "$FIT/start" > "$P/c${k}_start.log" 2>&1; rc=$?
       event "c${k}start" $rc; [ $rc -eq 0 ] || { tail -5 "$P/c${k}_start.log"; exit $rc; }
     fi
@@ -183,7 +193,7 @@ for k in $(seq 1 "$CYCLES"); do
   if [ ! -e "$FIT/direct_check_$FSEG" ]; then
     diskguard "c${k}direct"
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 run heavy "$PY" -W ignore "$MODEL_EXT/localnn_direct.py" --seg "$(readlink -f "$FIT/final")" \
-      --base "$BASE" --d2 "$D2" --point-table "$PT" --design "$GRID_DIR/design" --contrib-code "$CONTRIB" \
+      --base "$BASE" --d2 "$D2" --point-table "$PT" --design "$DESIGN_DIR" --contrib-code "$CONTRIB" \
       --procs "${SLURM_CPUS_PER_TASK:-16}" > "$P/c${k}_direct.log" 2>&1; rc=$?
     event "c${k}direct" $rc; tail -n 1 "$P/c${k}_direct.log" | cut -c1-300; [ $rc -eq 0 ] || exit $rc
   fi
@@ -193,7 +203,7 @@ for k in $(seq 1 "$CYCLES"); do
     if [ -e "$FT/seg01" ]; then mv "$FT/seg01" "$FT/seg01.incomplete_$(date -u +%Y%m%dT%H%M%SZ)"; fi
     stamp "c$k fine tuning"
     run heavy "$PY" -W ignore "$MODEL_EXT/localnn_ft.py" run --fit "$(readlink -f "$FIT/final")" --late "$LATE" \
-      --design "$GRID_DIR/design" --base "$BASE" --d2 "$D2" --out "$FT/seg01" --facets late_only --window-min "$WINDOW_MIN" \
+      --design "$DESIGN_DIR" --base "$BASE" --d2 "$D2" --out "$FT/seg01" --facets late_only --window-min "$WINDOW_MIN" \
       --max-nfev "$FT_MAXNFEV" --lsmr-maxiter 50 --ftol 1e-10 --xtol 1e-10 --gtol 1e-10 --x-scale-grain 1.0 --validate \
       --seed 20261110 --save-seconds 900 ${FT_EXTRA} > "$P/c${k}_ft.log" 2>&1; rc=$?
     event "c${k}ft" $rc; tail -n 2 "$P/c${k}_ft.log" | cut -c1-300

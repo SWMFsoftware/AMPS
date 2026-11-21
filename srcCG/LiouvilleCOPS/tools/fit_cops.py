@@ -475,7 +475,8 @@ class Model:
             ang = np.minimum(np.floor(np.degrees(np.arccos(c))), 89.0)
             cz = np.cos(np.radians(ang))
         self.Q = {}
-        for s, (qmin, qmax) in (("H2O", (0.2 * 600 / rhA ** p, 600 / rhA ** p)), ("CO2", (0.1 * 600 / rhA ** 2, 600 / rhA ** 2))):
+        # 2026-11-18: H2O night/shadow fraction qmin/qmax = 0.02 as srcCG (the former 0.2 was not intended; user decision)
+        for s, (qmin, qmax) in (("H2O", (0.02 * 600 / rhA ** p, 600 / rhA ** p)), ("CO2", (0.1 * 600 / rhA ** 2, 600 / rhA ** 2))):
             qmin, qmax = qmin[self.pt], qmax[self.pt]
             self.Q[s] = np.where(self.night, qmin, qmin + (qmax - qmin) * cz)
         self.VB = self.VdotB[self.pt]

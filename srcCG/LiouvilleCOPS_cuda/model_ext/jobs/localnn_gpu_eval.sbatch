@@ -1,14 +1,13 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_gpu_eval.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_gpu_eval.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: b32a4972bd435c423c781a5135c74c15f2a620b4540d563a01d68dcc094de9f7
+# SHA256 of the run copy = SHA256 of this file without these header lines: bb825d9edc69beaa9e8d8d2c1b8303cefb902b6d1c2059f8ca1d4d47e09bfb4a
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (gpu002, 8 GPUs, 1 h, option C): GPU standard evaluation of one final state (SEG) -> <run root>/gpu_eval;
 #   grain free (2026-11-14 22:2x UTC fix).
 # RUN: failed with held grain: 125052, 125123; fixed: 125183 (f10, passed), 125185 (f0.1), 125181 (f1, chained).
-# 2026-11-15: stage 2: FT_DIR (the chain's final fine-tuned state; OUT default gpu_eval_ft); #SBATCH
-#   --exclude=gpu003 instead of --nodelist=gpu002 (2026-11-15 14:00 CST: any GPU node but gpu003).
-# RUN 2026-11-15: 132813 (f10 / 0.01 final state).
+# 2026-11-18: 2026-11-18: BASE_DIR / D2_DIR, DESIGN_DIR default of the current law.
+# RUN 2026-11-18: planned: the cross-check of the q002 final states.
 # ==== end of header ====
 # Option C (local non-negative basis, lead 2026-11-14): GPU cross-check of ONE localnn fit segment's final per-facet
 # activity through the standard fitter path, writing the standard products (model_ext/localnn_gpu_eval.py docstring):
@@ -37,6 +36,8 @@
 #SBATCH --exclude=gpu003
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_gpu-%j.out
 set -uo pipefail
+# 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
+# NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
 export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
 export T=/data001/highresolu_vt/cops_cluster_transfer_20261026 COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
 export COPS_DATA_ROOT=$T/rosetta_data_end_of_mission_cops
@@ -46,7 +47,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1
 UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[A-Z_]*)' | sort | paste -sd' ' -)
 [ -n "$UNSET" ] && unset $UNSET
-R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; BASE=$R/base; PTS=$R/late_grid_points.txt
+R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; BASE=$(readlink -f "${BASE_DIR:-$R/base}"); PTS=$R/late_grid_points.txt   # 2026-11-18: BASE_DIR / D2_DIR
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 CX=$(readlink -f "${CLIP_EXT:-$COPS_OUTPUT_ROOT/model_ext_frozen/clip_20261108T234013Z}")
 SEG=$(readlink -f "${SEG:?SEG is required}")
@@ -96,7 +97,7 @@ tail -4 "$P/fit.log" | cut -c1-300
 if [ $rc -eq 0 ]; then
   stamp "3. compare"
   GD=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
-  CC=(compare --seg "$SEG" --gpu "$OUT/fit" --design "$GD/design" --base "$BASE" --d2 "$R/clip_refit/D2/final" --point-table "$PTS" "${FTO[@]}" --out "$OUT/gpu_check.json")
+  CC=(compare --seg "$SEG" --gpu "$OUT/fit" --design "${DESIGN_DIR:-$GD/design_h2oqmin0.02}" --base "$BASE" --d2 "${D2_DIR:-$R/clip_refit/D2/final}" --point-table "$PTS" "${FTO[@]}" --out "$OUT/gpu_check.json")
   rec $PY "$MODEL_EXT/localnn_gpu_eval.py" "${CC[@]}"
   $PY "$MODEL_EXT/localnn_gpu_eval.py" "${CC[@]}" > "$P/compare.log" 2>&1; rc=$?
   tail -1 "$P/compare.log" | cut -c1-1500

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_fit.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_fit.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: b517de09f5188526cd941720d7d3d7220e51e355e1bae873a37597934176dec4
+# SHA256 of the run copy = SHA256 of this file without these header lines: e553bcd74384cf83fcbcb372a08edfb65de65945058a9ea2e470825098531092
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: driver (option C): verify (D2 and c9 reproduced), start (NNLS projection of D2 or --start state: another
 #   fit's end point; lambda rule), fit (scipy TRF, segments with wall-time stop / exit 75, products fit_result.txt,
@@ -9,14 +9,13 @@
 #   HOW-TO-RERUN.md); --smooth-rule-file (the rule that gave --smooth-lambda); --mult-penalty-f (P_m, user 2026-11-14
 #   ~17:30 CST; recorded separately); jacobian_check's node step scaled by the state's median x_c.
 # RUN: jobs/localnn_build.sbatch, jobs/localnn_fit.sbatch (anchored stage 1: localnn_anch_20261114T090437Z; P_m check: model_ext_frozen/localnn_mp_20261115T020233Z).
-# 2026-11-15: stage 2: start --start state --grain-from --held --late-kernels (--state-drop-templates); fit --held
-#   --late-kernels --checkpoint-every and --device gpu / --gpu-svd-mode; jacobian_check: node FD step =
-#   node_fd_scale (75th percentile of the positive x_c), a noise floor of the step h >= eps max|f| / (1e-8
-#   max|J_col|) capped at 1000 x the base step, and (2026-11-17) the second-order one-sided difference whenever the
-#   lower point is clipped by a bound (the asymmetric two-point difference at m = 1 + 5e-5 had failed the c4 checks
-#   of the stage2r 1e-4 chains, 2.2e-5 / 2.5e-5).
-# RUN 2026-11-15: localnn_s2jc2_20261117T080730Z: stage2r f10 / 1e-4 136032-136036, f1 / 1e-4 136037-136041; tests
-#   136043.
+# 2026-11-18: stage 2: start --start state --grain-from --held --late-kernels (--state-drop-templates); fit --held
+#   --late-kernels --checkpoint-every and --device gpu / --gpu-svd-mode; jacobian_check (2026-11-18): several FD
+#   steps per column, the smallest discrepancy counts (1e-4 max(|x|, s), s = 1 and the state scale, each also noise-
+#   floored), the one-sided second-order difference whenever a bound clips; regression fixed: the state-scaled steps
+#   of 2026-11-15..17 failed test_localnn check 5 at the D2-projection start (6.0e-3 / 9.4e-3), the analytic
+#   Jacobian is unchanged and right.
+# RUN 2026-11-18: localnn_s2jc3_20261118T081235Z, localnn_s2law_20261118T081952Z; tests 136504, 136507.
 # ==== end of header ====
 """Option C (local non-negative basis, user 2026-11-14): driver. CPU only; the model and the cost are in
 localnn_problem.py, the design matrices come from localnn_design.py, the grid from localnn_mesh.py.
@@ -507,35 +506,48 @@ def jacobian_check(P, x, ncols=24, seed=1):
     # 1000 h; the analytic columns are right). The floor keeps eps max|f| / h <= 1e-8 of the column's max |J|
     # (capped at 1000 x the base step; 2026-11-17: 100 x left 6.7e-6 at the stage2r f1 / 1e-4 c4 start; at 1000 h the
     # truncation error of those columns was 3e-8).
+    # 2026-11-18: SEVERAL steps per column, the smallest discrepancy counts (regression found by the night-fix tests:
+    # at the D2-projection start of test_localnn check 5 the state-scaled steps (median / 75th percentile, from
+    # localnn_mp_20261115T020233Z on) and their noise floor gave 1.08 / 5.7e-2 / 6.2e-3 where the 2026-11-14 step
+    # 1e-4 max(|x|, 1) gives 6.8e-6; at the converged stage-2 states the 1e-4 x 1 step is too large and the scaled /
+    # noise-floored steps are needed). Candidates: 1e-4 max(|x|, s) for s = 1 and s = the scale typ (75th percentile of
+    # the positive x_c for the nodes; 1 / 1e-3 for the other parameters), each also with the noise floor
+    # eps max|f| / (1e-8 max|J_col|) (at most 1000 x). A wrong analytic column disagrees at every step.
     fmax = float(np.max(np.abs(P.fun(x))))
     eps = np.finfo(float).eps
+    steps_used = {}
     for k in cols:
-        h = 1e-4 * max(abs(x[k]), typ[k])
         colmax = float(np.max(np.abs(J[:, k])))
-        if colmax > 0:
-            h = max(h, min(eps * fmax / (1e-8 * colmax), 1000.0 * h))    # at most 1000 x the base step
-        xp, xm = x.copy(), x.copy()
-        xp[k] += h
-        xm[k] = max(x[k] - h, P.lo[k]) if np.isfinite(P.lo[k]) else x[k] - h
-        if xm[k] > x[k] - h:
-            # 2026-11-17: whenever the lower point is clipped by the bound (not only within h/2 of it): the asymmetric
-            # two-point difference (f(x+h) - f(lo)) / (x+h - lo) is first-order; at m = 1 + 5e-5 (chains
-            # stage2r_f*_pm1e-4_tplon, c4 starts) its error (h - (x - lo)) / 2 / m reached 2.2e-5 / 2.5e-5
-            # at (or within h of) the lower bound: second-order one-sided difference from x (2026-11-15: with P_m the
-            # multipliers sit at the bound m = 1, where the first-order (ln(1 + h) - 0) / h has the truncation error h/2
-            # = 5e-5 of the ln m rows)
-            xp2 = x.copy()
-            xp2[k] += 2.0 * h
-            num = (-3.0 * P.fun(x) + 4.0 * P.fun(xp) - P.fun(xp2)) / (2.0 * h)
-        else:
-            num = (P.fun(xp) - P.fun(xm)) / (xp[k] - xm[k])
-        den = max(np.max(np.abs(J[:, k])), 1e-300)
-        e = float(np.max(np.abs(num - J[:, k])) / den)
-        rep[P.names[k]] = e
-        worst = max(worst, e)
+        den = max(colmax, 1e-300)
+        cand = set()
+        for s_ in (1.0, typ[k]):
+            h0 = 1e-4 * max(abs(x[k]), s_)
+            cand.add(h0)
+            if colmax > 0:
+                cand.add(max(h0, min(eps * fmax / (1e-8 * colmax), 1000.0 * h0)))
+        best_e, best_h = np.inf, None
+        for h in sorted(cand):
+            xp, xm = x.copy(), x.copy()
+            xp[k] += h
+            xm[k] = max(x[k] - h, P.lo[k]) if np.isfinite(P.lo[k]) else x[k] - h
+            if xm[k] > x[k] - h:
+                # the lower point clipped by the bound: second-order one-sided difference from x (2026-11-15 / 17: the
+                # asymmetric two-point difference is first-order; at m = 1 + 5e-5 its error reached 2.2e-5 / 2.5e-5)
+                xp2 = x.copy()
+                xp2[k] += 2.0 * h
+                num = (-3.0 * P.fun(x) + 4.0 * P.fun(xp) - P.fun(xp2)) / (2.0 * h)
+            else:
+                num = (P.fun(xp) - P.fun(xm)) / (xp[k] - xm[k])
+            e = float(np.max(np.abs(num - J[:, k])) / den)
+            if e < best_e:
+                best_e, best_h = e, h
+        rep[P.names[k]] = best_e
+        steps_used[P.names[k]] = best_h
+        worst = max(worst, best_e)
     P.nfev = nf0
     P.best = None
-    return {"columns": len(cols), "max_rel_error": worst, "per_column": rep, "passed": bool(worst < 1e-5)}
+    return {"columns": len(cols), "max_rel_error": worst, "per_column": rep, "passed": bool(worst < 1e-5),
+            "steps": steps_used}
 
 
 # ------------------------------------------------------------------------------------------------ products

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-07, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/late_response_eval.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/late_response_eval.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 58158de1b4c1f0785aa9e9d8b6fb5f01b96ac490a9ed6568b44102b1ac0279f5
+# SHA256 of the run copy = SHA256 of this file without these header lines: 693d9d5fb4a88f53b9b8767a329ebb2dd3edcd160cf2ea83dc763e053fcb7610
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: tool. Forward evaluation (no fit) of finished grain fits and their fine tunings on late-window bases built
 #   on a fine time grid (late_time_grid.py + native/liouville_cops_cuda, optional GaugeOffsetSC), with the COPS time
@@ -11,6 +11,7 @@
 # USED BY: jobs/late_response.sbatch (step 3); figures/late_response_figures.py reads its output.
 # RUN: .venv/bin/python late_response_eval.py --points late_grid_points.txt --base dz0=<base> [--base dz1.5=<base> ...]
 #   --model NAME=<fit dir>,<fine-tuning dir> [...] --out <new dir>
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): named constant H2O_QMIN_RATIO = 0.02 instead of the literal 0.2 in q_H2O
 # ==== end of header ====
 """Forward evaluation of finished 12M fits on late-window bases built on a fine time grid, with the COPS time response
 (user 2026-11-07: "1: both" = 10-s running average and 10 s + DPU 5-readout running average; "3: make the sensitivity
@@ -24,7 +25,8 @@ CO2 scale kappa and dust-grain term; only the geometry (time grid, gauge offset)
 
 Pressures (the formulas of tools/fit_cops.py Model.evaluate, SZAMode continuous, flat surface BC; checked on the fitting
 base to 1e-6 relative): per kernel record of a point, night = (cos SZA <= 0 or cast shadow);
-  q_H2O = 600 r_h^-4.2143229 (0.2 + 0.8 cos SZA | 0.2 night),  q_CO2 = 600 r_h^-2 (0.1 + 0.9 cos SZA | 0.1 night);
+  q_H2O = 600 r_h^-4.2143229 (r + (1 - r) cos SZA | r night), r = H2O_QMIN_RATIO = 0.02 (2026-11-18, as srcCG and the
+  fixed fit_cops; 0.2 before, not intended),  q_CO2 = 600 r_h^-2 (0.1 + 0.9 cos SZA | 0.1 night);
   T: analytical law of the fit (Tmax, T75, Tmin), u = T^-1/2;
   pNG = kT_NG [ (sqrt(m/2k) sqrt(pi)/2) sum q A Kn u ]_H2O / 0.893 + kappa [ ... A_CO2 ... ]_CO2 / 0.704  + grain(t)
   pRG = sqrt(2 pi m k T_RG) [ sum q A (KPhi + VdotB sqrt(m/2k) sqrt(pi)/2 u KV) ] / S, the same species sum;
@@ -60,6 +62,9 @@ COS75 = np.cos(np.radians(75.0))
 M_H, M_C = fc.MASS["H2O"], fc.MASS["CO2"]
 BM_H, BM_C = (np.sqrt(m / (2.0 * fc.KB)) * fc.SQRTPI / 2.0 for m in (M_H, M_C))
 S_H, S_C, T_NG = 0.893, 0.704, 293.0
+# 2026-11-18 (user decision): H2O night/shadow ratio q_min/q_max = 0.02 as srcCG and the fixed fit_cops.py (it was the
+# literal 0.2 here before, not intended); the same value as nonneg_maps.H2O_QMIN_RATIO
+H2O_QMIN_RATIO = 0.02
 WINDOWS = ("inst", "W4", "W10", "W10x5")
 
 
@@ -114,7 +119,7 @@ def evaluate_base(base, models):
         rhA = h["rh"] / fc.AU
         c = np.minimum(rec["cos"], 1.0)
         night = (rec["cos"] <= 0.0) | (rec["shadow"] == 1)
-        qH = np.where(night, 0.2, 0.2 + 0.8 * c) * 600.0 / rhA ** 4.2143229
+        qH = np.where(night, H2O_QMIN_RATIO, H2O_QMIN_RATIO + (1.0 - H2O_QMIN_RATIO) * c) * 600.0 / rhA ** 4.2143229
         qC = np.where(night, 0.1, 0.1 + 0.9 * c) * 600.0 / rhA ** 2
         cc = np.where(night, -1.0, np.clip(rec["cos"], -1.0, 1.0))
         lit = cc >= COS75

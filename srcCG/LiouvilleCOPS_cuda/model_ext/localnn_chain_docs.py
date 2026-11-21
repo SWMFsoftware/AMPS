@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_chain_docs.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_chain_docs.py)
 # SHA256 of the run copy = SHA256 of this file without these header lines: efdf760e95e6cfd6ba123d6653effdd49107a94807a3730ef26df781593246da
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
@@ -7,7 +7,7 @@
 #   cycle's fit meta and fine_tuning.json); earlier versions kept as *.before_<UTC>; the README text names the
 #   templates setting, the nonneg code and the fine-tuning regularization (2026-11-16); HOW-TO-RERUN names the
 #   continuation (--chain) and the GPU move.
-# RUN 2026-11-15: localnn_chain_submit.sh, the chain post jobs.
+# RUN 2026-11-16: localnn_chain_submit.sh, the chain post jobs.
 # ==== end of header ====
 """README.md / HOW-TO-RERUN.md of ONE option C stage-2 chain (jobs/localnn_chain.sbatch layout), from its files only.
 

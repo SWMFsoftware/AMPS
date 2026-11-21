@@ -1,5 +1,5 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-17, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_chain_post.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_chain_post.sbatch)
 # SHA256 of the run copy = SHA256 of this file without these header lines: d6d0e94536b66bca376e8558f9cbdee7df531e8c196db96035d7b6b6c553fd86
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
@@ -7,8 +7,8 @@
 #   (TOOLS_STEPS, default export contrib maps; 2026-11-17 the reruns without maps, ~15-20 GB each), chain docs;
 #   POST_STEPS; disk guard (>= 20 GB per step, maps 45 GB; else the step is skipped, rc 4); exits 0 when the chain
 #   is not complete.
-# 2026-11-15: 2026-11-17: NPY_DISABLE_CPU_FEATURES exported for all steps (the bitwise A check of the tools).
-# RUN 2026-11-15: 136123, 136097.
+# 2026-11-17: 2026-11-17: NPY_DISABLE_CPU_FEATURES exported for all steps (the bitwise A check of the tools).
+# RUN 2026-11-17: 136123, 136097.
 # ==== end of header ====
 # Option C stage 2 (lead 2026-11-15): the post-fit tools of ONE finished localnn chain (jobs/localnn_chain.sbatch), CPU:
 #   1. localnn_degeneracy.sbatch on <CHAIN>/c<CYCLES>       (m_b vs c_j diagnostics of the last fit)

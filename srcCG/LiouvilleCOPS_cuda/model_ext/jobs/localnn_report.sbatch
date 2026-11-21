@@ -1,12 +1,13 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_report.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_report.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: d19388b2b24e030557adae0e5d7e362548d4f53ef0f170c7ae38fb2bb704cafc
+# SHA256 of the run copy = SHA256 of this file without these header lines: a0310c5046ab388de3a7da02f4a27920ebfe1d58bb0a9f7824bec7cb10005b7f
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, option C): localnn_report.py for one run root (DOCS_ONLY=1: only README.md / HOW-TO-RERUN.md).
 # RUN: test 125019; stage-1 125054/125056, 125058/125060, 125062/125064 (chained).
-# 2026-11-15: 2026-11-17: NPY_DISABLE_CPU_FEATURES (as the chain driver; reproducible on AVX-512 nodes).
-# RUN 2026-11-15: the chain posts.
+# 2026-11-18: 2026-11-18: BASE_DIR / D2_DIR (the new-law base and D2), DESIGN_DIR and CONTRIB defaults of the
+#   current law, NPY_DISABLE_CPU_FEATURES.
+# RUN 2026-11-18: the chain posts.
 # ==== end of header ====
 # Option C (local non-negative basis, lead 2026-11-14 item 5): summary numbers of ONE finished fit, the bins table in
 # fit/final and the run root's README.md / HOW-TO-RERUN.md (model_ext/localnn_report.py). CPU (normal128cores): one pass
@@ -24,6 +25,8 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_report-%j.out
 set -uo pipefail
+# 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
+# NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
 # numpy without AVX-512 kernels, as the chain driver (2026-11-17: on an AVX-512 node (node028, EPYC 9554) np.exp differs
 # in the last bit at 38 of the 271 held facets and the tools' bitwise reproduction of A failed, post 136094)
 export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
@@ -33,12 +36,13 @@ export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 PYTHONUNBUFFER
 UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[A-Z_]*)' | sort | paste -sd' ' -)
 [ -n "$UNSET" ] && unset $UNSET
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
-BASE=$R/base; D2=$R/clip_refit/D2/final; PT=$R/late_grid_points.txt
+BASE=$(readlink -f "${BASE_DIR:-$R/base}"); D2=$(readlink -f "${D2_DIR:-$R/clip_refit/D2/final}"); PT=$R/late_grid_points.txt   # 2026-11-18: BASE_DIR / D2_DIR
 C9=$R/nonneg/softplus/chain_5cycles_smm1_20261113T041215Z/c9
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 GRID_DIR=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
 GEOM=${GEOM:-$R/maps_geometry/job_124775/geometry}
-CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261112T210012Z}
+CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261118T072729Z}
+DESIGN_DIR=${DESIGN_DIR:-$GRID_DIR/design_h2oqmin0.02}
 RUNROOT=$(readlink -f "${RUNROOT:?RUNROOT is required}")
 PROCS=${PROCS:-${SLURM_CPUS_PER_TASK:-8}}
 PY=$APP/.venv/bin/python
@@ -56,7 +60,7 @@ echo "CPU job on $(hostname): no GPU used" > "$P/nvidia_smi_q.txt"
 ~/.local/bin/uv pip list --python "$PY" > "$P/pip_list.txt" 2>&1 || "$PY" -m pip list > "$P/pip_list.txt" 2>&1
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"; } > "$P/commands.sh"
 CMD=("$PY" -W ignore "$MODEL_EXT/localnn_report.py" --runroot "$RUNROOT" --base "$BASE" --d2 "$D2" --point-table "$PT" \
-     --design "$GRID_DIR/design" --grid "$GRID_DIR" --geometry "$GEOM" --contrib-code "$CONTRIB" --c9-ft "$C9/ft/final" \
+     --design "$DESIGN_DIR" --grid "$GRID_DIR" --geometry "$GEOM" --contrib-code "$CONTRIB" --c9-ft "$C9/ft/final" \
      --c9-fit "$C9/fit/final" --procs "$PROCS")
 [ "${DOCS_ONLY:-0}" = 1 ] && CMD+=(--docs-only)
 printf '%q ' "${CMD[@]}" >> "$P/commands.sh"; echo >> "$P/commands.sh"

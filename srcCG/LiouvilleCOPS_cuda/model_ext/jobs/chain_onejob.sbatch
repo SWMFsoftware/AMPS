@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/chain_onejob.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/chain_onejob.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: bb9a7e7e1a2e5851160fdfaf1b5bba713a8215d18264b77fd6a1f1e2bc386eb1
+# SHA256 of the run copy = SHA256 of this file without these header lines: 1a4f1937377f36a3bacbb274fd14a3f6068cacc894e83ab0f430a88f6c8eb502
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job. ONE job for a whole fit / fine-tuning chain (user decision 2026-11-10 "yes, implement (b)"): environment,
 #   job-level provenance and code copy, then model_ext/chain_onejob.py; KIND=positive | slope | nonneg (v6, 2026-11-11),
@@ -15,6 +15,7 @@
 #   stage-2 chains 131989-131997.
 # 2026-11-16: FT_DELTA_F, FT_DELTA_CREF, FT_DELTA_CAP (kind nonneg); reruns 135367-135378.
 # 2026-11-17: MIN_FREE_GB (default 20 GiB; exit 5 before writing anything below it; --min-free-gb to the driver).
+# 2026-11-18: BASE (passed as --base when set).
 # ==== end of header ====
 # ONE job for a whole positive-activity fit / fine-tuning chain of ONE lambda (user decision 2026-11-10, "yes,
 # implement (b)"): one driver process (model_ext/chain_onejob.py) binds the 12M lategrid base's records on the node's
@@ -43,6 +44,8 @@
 #   CHAIN_ROOT      the chain's directory (default <run>/positive_r<RATIO>/lam<LAMBDA>, as positive_cycles.sh);
 #                   tests: a directory under $COPS_OUTPUT_ROOT/tests
 #   MIN_FIT_MINUTES, MIN_FT_MINUTES (25), BIND_MINUTES (4): a stage starts only with that much time left
+#   BASE            (2026-11-18) the base every fit runs on (default <run>/base; the H2O q_min 0.02 campaign:
+#                   <run>/base_q002); passed as --base only when set
 #   MIN_FREE_GB     (2026-11-17, after the disk-full event of 2026-11-16 21:10 CST; default 20): the job exits 5 before
 #                   writing anything when $COPS_OUTPUT_ROOT's file system has less than this many GiB free, and the
 #                   driver stops (exit 5) before any later stage that would start below it (--min-free-gb); 0 = off
@@ -112,6 +115,7 @@ export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 CHAIN_CODE=$(readlink -f "${CHAIN_CODE:-$COPS_OUTPUT_ROOT/model_ext}")
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; X=$MODEL_EXT; PY="$APP/.venv/bin/python -W ignore"
 PTS=$R/late_grid_points.txt
+BASE_SET=${BASE:-}; BASE=$(readlink -f "${BASE:-$R/base}")
 [ -n "$FT_MAXNFEV" ] || die "set FT_MAXNFEV (the fine tuning's MAXNFEV; no default here)"
 case $FT_FACETS in
     late_only) [ -n "$FT_WINDOW_MIN" ] || die "FT_FACETS=late_only needs FT_WINDOW_MIN";;
@@ -186,7 +190,7 @@ KFILES+=("$SLOPE_BUNDLE")
 fi
 case $SOURCE in /*) ;; *) die "SOURCE must be an absolute path";; esac
 case $CHAIN_ROOT in "$R"/*|"$COPS_OUTPUT_ROOT"/tests/*) ;; *) die "CHAIN_ROOT=$CHAIN_ROOT: under $R or $COPS_OUTPUT_ROOT/tests";; esac
-for f in "$R/base/COPS_model.dat" "$R/base/elements.bin" "$PTS" "$SOURCE" "$CHAIN_CODE/chain_onejob.py" "${KFILES[@]}"; do
+for f in "$BASE/COPS_model.dat" "$BASE/elements.bin" "$BASE/kernels" "$PTS" "$SOURCE" "$CHAIN_CODE/chain_onejob.py" "${KFILES[@]}"; do
     [ -e "$f" ] || die "missing: $f"; done
 FREE_GB=$(df -P -B1G "$COPS_OUTPUT_ROOT" | awk 'NR == 2 {print $4}')
 if awk -v f="$FREE_GB" -v m="$MIN_FREE_GB" 'BEGIN {exit !(m > 0 && f < m)}'; then
@@ -212,7 +216,7 @@ module list > "$P/module_list.txt" 2>&1 || true
 nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 { nvcc --version; gcc --version | head -1; grep -m1 CSPICE /home/vtenishev/SPICE/cspice/doc/version.txt; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z0-9_]*|KIND|LAMBDA|RATIO|SOURCE|CYCLES|NFEV|CHECK|CHECKPARAMS|C1_START_SET|C1_FROM|SOS_RANK|BG_MIN|SPREAD_[A-Z0-9]*|FT_[A-Z_]*|SLOPE_[A-Z_]*|START_FILE|L_THREADS|L_MODE|BUMPS|MODEL_EXT|CHAIN_[A-Z_]*|MIN_[A-Z_]*|BIND_MINUTES|FREE_GB|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
+env | grep -E '^(CUDA_[A-Z_]*|CUPY_[A-Z_]*|COPS_[A-Z0-9_]*|KIND|LAMBDA|RATIO|SOURCE|CYCLES|NFEV|CHECK|CHECKPARAMS|C1_START_SET|C1_FROM|SOS_RANK|BG_MIN|SPREAD_[A-Z0-9]*|FT_[A-Z_]*|SLOPE_[A-Z_]*|START_FILE|L_THREADS|L_MODE|BUMPS|MODEL_EXT|CHAIN_[A-Z_]*|MIN_[A-Z_]*|BIND_MINUTES|FREE_GB|BASE|OMP_[A-Z_]*|OPENBLAS_[A-Z_]*|MKL_[A-Z_]*|PYTHONUNBUFFERED|LD_LIBRARY_PATH|PATH|SLURM_JOB_GPUS|CUDA_VISIBLE_DEVICES)=' | sort > "$P/environment.txt"
 free -g > "$P/free_at_start.txt"; df -h "$CHAIN_ROOT" > "$P/df_at_start.txt" 2>&1
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then NG=$(echo "$CUDA_VISIBLE_DEVICES" | tr , "\n" | wc -l); else NG=$(nvidia-smi -L | wc -l); fi
 DEV=$(seq -s, 0 $((NG - 1)))
@@ -223,6 +227,7 @@ CMD=($PY "$P/code/chain_onejob.py" --kind "$KIND" --chain-root "$CHAIN_ROOT" --c
      --point-table "$PTS" --run "$R"
      --min-fit-minutes "$MIN_FIT_MINUTES" --min-ft-minutes "$MIN_FT_MINUTES" --bind-minutes "$BIND_MINUTES")
 awk -v m="$MIN_FREE_GB" 'BEGIN {exit !(m > 0)}' && CMD+=(--min-free-gb "$MIN_FREE_GB")
+[ -n "$BASE_SET" ] && CMD+=(--base "$BASE")
 [ -n "$FT_WINDOW_MIN" ] && CMD+=(--ft-window-min "$FT_WINDOW_MIN")
 if [ "$KIND" = positive ]; then
     CMD+=(--lambda "$LAMBDA" --ratio "$RATIO" --bundle "$BUNDLE")

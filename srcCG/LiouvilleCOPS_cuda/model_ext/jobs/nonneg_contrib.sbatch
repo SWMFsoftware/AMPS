@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/nonneg_contrib.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/nonneg_contrib.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 0ebab40a10b614d6586003a31a0c328d943811764d4cf7f87825db2ee2a80bbd
+# SHA256 of the run copy = SHA256 of this file without these header lines: 012c8dcc8567e943222bce322e8d1b8362ae76494ab87f2b35a4be15c346371b
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, normal128cores). Per-facet contributions of a final state to the modelled NG / RG signals
 #   (P% source areas, occurrence, slope-bin fractions) with the frozen nonneg_contrib code; the bitwise state check
@@ -9,6 +9,7 @@
 #   contributions; 2026-11-13 option CONTRIB_NAME, e.g. contributions_c9), CYCLE selects c<CYCLE>/ft/final.
 # RUN: 124549 (softplus 5 cycles), 124668 (softplus, multipliers >= 1, c5); 124776 (the same chain, c9:
 #   CONTRIB_NAME=contributions_c9 CYCLE=9)
+# 2026-11-18 (agent 3): BASE override (default $R/base; q002 states: base_q002); q002 posts 136625/136631/136637/136643.
 # ==== end of header ====
 # Per-facet contributions of the fitted model to the NG and RG surface pressures, P% source areas of the 95 post-gap
 # observations (P = 50..90) with the per-facet source-area occurrence, and the slope-bin fractions of every fit point,
@@ -40,7 +41,7 @@ UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[
 # path of the GPU nodes where the fit ran (see jobs/nonneg_maps.sbatch, maps_geometry/job_124318/diag_cpu_dispatch.txt)
 export NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL"
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
-BASE=$R/base
+BASE=$(readlink -f "${BASE:-$R/base}")   # BASE: 2026-11-18 (agent 3, lead): default $R/base; the H2O q_min 0.02 states: $R/base_q002
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 PROCS=${PROCS:-${SLURM_CPUS_PER_TASK:-8}}
 CHAIN=${CHAIN%/}
@@ -73,7 +74,7 @@ for f in nonneg_contrib.py test_nonneg_contrib.py nonneg_maps.py; do cp -p "$MOD
 { command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -q; } > "$P/nvidia_smi_q.txt" 2>&1 || echo "CPU job on $(hostname): no GPU used (nvidia-smi not available)" >> "$P/nvidia_smi_q.txt"
 { gcc --version | head -1; echo "CSPICE: not used"; echo "nvcc: not used"; lscpu | grep -E 'Model name|^CPU\(s\)'; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$PY" > "$P/pip_list.txt" 2>&1 || "$PY" -m pip list > "$P/pip_list.txt" 2>&1
-env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|CHAIN|CYCLE|GEOM|PROCS|OMP_NUM_THREADS|NPY_DISABLE_CPU_FEATURES|CONTRIB_NAME)=' > "$P/env.txt"
+env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|MODEL_EXT|CHAIN|CYCLE|GEOM|PROCS|OMP_NUM_THREADS|NPY_DISABLE_CPU_FEATURES|CONTRIB_NAME|BASE)=' > "$P/env.txt"
 echo "CONTRIB_NAME=$CONTRIB_NAME OUT=$OUT" >> "$P/env.txt"
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "export MODEL_EXT=$MODEL_EXT"; echo "cd $APP"; } > "$P/commands.sh"
 run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }

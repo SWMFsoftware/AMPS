@@ -1,6 +1,6 @@
 # ==== version-controlled copy: header added 2026-11-11, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/slope_mult.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/slope_mult.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e6127bf5b9baa5d7bd919b7755755e798237c580cb53fd5ffc3cc1c9a2f06a03
+# SHA256 of the run copy = SHA256 of this file without these header lines: 30d76f0da6c3e83195372f9c0e3a24b3a17293203e41f3bc1c89fd4db1fffe8c
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Slope-binned H2O activity multipliers with an activity floor (user decisions 2026-11-10: A = max(1e-5
 #   A_orig, m_b L), one multiplier >= 0 per slope bin, 0-40 deg held at 1): model math, CPU stand-in and the GPU patch
@@ -11,6 +11,7 @@
 # USED BY: slope_mult_fit.py, slope_finetune.py; helpers imported by nonneg_mult.py. v8: the 3a chain from the c1 fine
 #   tuning on (124064-124086); the c1 fit 124008 ran v6 and the harmonic slope-multiplier fit 123786 an earlier version
 #   (snapshot slopemul_20261110T094013Z).
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): ORIGINAL_SHA256 evaluator.py pin = the fixed evaluator.py (only HostConstants.qmin changed; patched methods unchanged); docstring ratio text
 # ==== end of header ====
 """Slope-binned H2O activity multipliers with an activity floor (user decisions 2026-11-10): model, CPU stand-in and the
 GPU patch of the host-activity path. The fit-level part is slope_mult_problem.py, the driver slope_mult_fit.py, the
@@ -36,8 +37,8 @@ Model, per facet e with slope bin b(e):
     s(e)     = m_b(e) * L(e)
     A_H2O(e) = max(F(e), s(e)),  F(e) = f * A_orig(e),  f = 1e-5
     m_{slope_00_40} = 1 (held, fixed_parameters), m_b >= 0 free for the other 6 bins
-The flux and pressures are the unchanged GPU model with af = A_H2O (q(SZA) A, srcCG night/shadow ratios 0.2 H2O /
-0.1 CO2, no flux floor, CO2 = kappa x the run's CO2 map, no CO2 floor). Pressures are linear in af.
+The flux and pressures are the unchanged GPU model with af = A_H2O (q(SZA) A, the fitter's night/shadow ratios H2O 0.02
+(srcCG; since 2026-11-18, 0.2 before, not intended) / CO2 0.1, no flux floor, CO2 = kappa x the run's CO2 map, no CO2 floor). Pressures are linear in af.
 
 Derivatives (the fitter's one-sided clip convention): active(e) = s(e) > F(e) (strict);
     dA/da_j = active * m_b(e) * Y_j(e),   dA/dm_k = active * [b(e) = k] * L(e).
@@ -113,7 +114,10 @@ CHECK_EVERY = 100                   # device af/active vs the host expression: f
 BYTES_PER_FACE = 240                # device scratch per facet: Y^T (25 x 8), L, mrow, s, F (4 x 8), bins (4), bool (1)
 # Tracked sources the patch is written against (AMPS master; unchanged since 47fccd5): refused if any changed.
 ORIGINAL_SHA256 = {
-    "evaluator.py": "2f1e9d5fadbc4111e3e5222d32f8098e51e8fd01c1e85f5266730689ec53d52e",
+    # 2026-11-18: evaluator.py of the H2O night-side fix (user decision 2026-11-18); its only change against the
+    # version pinned before (2f1e9d5fadbc4111e3e5222d32f8098e51e8fd01c1e85f5266730689ec53d52e) is HostConstants.qmin
+    # H2O 0.2 -> 0.02 and its comment: the patched methods are unchanged
+    "evaluator.py": "16386bdcf49e7d61cad3875b13fa53f7b3ad2918a4566b1f4010b60aebe56fed",
     "multi_gpu.py": "1c3a9c1a377784f680a1dcb7a8f58e0c58f925ced241529d8f4c89a07dd516fc",
     "transport.py": "605ed2546625b0e029d277fac0757635ff978081b24526def324d18cb0256304",
     "backend.py": "84b54395fb4f590859f6648ade5ea6e356229653e8482795a2b96ef2127a5c89",

@@ -1,11 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/jacfail/replace_pending.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/jacfail/replace_pending.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 804a92e2321ef376b3079d66bfaf400f8cc1c90bedc679f5845ae1b34375f2b0
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: replace the pending attempts and post job of a running localnn chain by attempts with another MODEL_EXT,
 #   afternotok on the running attempt (settings from the chain's submission.json).
-# RUN 2026-11-15: 2026-11-16: stage2r_f10_pm1e-4_tplon (135875-135882), stage2r_f1_pm1e-4_tplon (135883-135890),
+# RUN 2026-11-16: 2026-11-16: stage2r_f10_pm1e-4_tplon (135875-135882), stage2r_f1_pm1e-4_tplon (135883-135890),
 #   stage2_f10_pm1e-4 (135891-135897).
 # ==== end of header ====
 # replace the PENDING attempts (and the post job) of a running localnn chain by attempts with another MODEL_EXT

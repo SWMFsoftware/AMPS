@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_localnn_stage2.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_localnn_stage2.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 7885ab3ff3fb03242c80fec49b1edeb9a55d9c1120cbd42302e1dd515a90b10f
+# SHA256 of the run copy = SHA256 of this file without these header lines: 221b38e0ff193b2d50397177ba8121ca0f02b23eafed9df2ff85156a77159d5a
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: tests of option C stage 2 (CPU): 1 held h = 0 bitwise; 2 held term vs direct facet sums; 3 Jacobian vs FD
-#   with held + P_m; 4 checkpoint resume after SIGKILL; 5 localnn_ft run --validate-only (validation checks 1-8).
-# RUN 2026-11-15: 131980 (test 3 failed: FD step from the median x_c 8e-20, fixed), 132009 (frozen
-#   localnn_s2_20261115T185842Z: 5 of 5 passed).
+# WHAT: tests of option C stage 2 (held term, checkpoints, CPU fine tuning); 2026-11-18: --design (the law-specific
+#   design folders).
+# RUN 2026-11-18: 136504, 136507.
 # ==== end of header ====
 """Tests of option C stage 2 (CPU): the held fine-tuning term, the checkpoints and the CPU fine tuning of a localnn fit.
 
@@ -58,11 +57,13 @@ def main(argv=None):
     for k in ("grid", "base", "d2", "point-table", "late", "contrib-code", "state", "rule", "work"):
         ap.add_argument("--" + k, required=True)
     ap.add_argument("--out")
+    ap.add_argument("--design", help="design folder (default GRID/design; 2026-11-18: the law-specific designs)")
     args = ap.parse_args(argv)
+    ddir = Path(args.design) if args.design else Path(args.grid) / "design"
     work = Path(args.work)
     work.mkdir(parents=True, exist_ok=False)
     grid = lp.load_grid(args.grid)
-    design = lp.load_design(Path(args.grid) / "design")
+    design = lp.load_design(ddir)
     D = lp.Data(args.base, args.d2, args.point_table, design)
     seg = Path(args.state).resolve()
     with np.load(seg / "localnn_state.npz", allow_pickle=False) as z:
@@ -124,7 +125,7 @@ def main(argv=None):
     # 4 checkpoint resume (subprocesses: the real CLI)
     held_file = work / "held_test.npz"
     np.savez(held_file, held_next=h)
-    com = ["--design", str(Path(args.grid) / "design"), "--base", args.base, "--d2", args.d2, "--point-table",
+    com = ["--design", str(ddir), "--base", args.base, "--d2", args.d2, "--point-table",
            args.point_table, "--grid", args.grid, "--templates", "on"]
     hel = ["--held", str(held_file), "--late-kernels", args.late]
     env = dict(os.environ)
@@ -178,7 +179,7 @@ def main(argv=None):
     check("4 checkpoint resume after SIGKILL", ok4, **info4)
     # 5 the CPU fine tuning of a localnn fit: validation checks 1-8
     v = subprocess.run([PY, "-W", "ignore", str(HERE / "localnn_ft.py"), "run", "--fit", str(seg), "--late", args.late,
-                        "--design", str(Path(args.grid) / "design"), "--base", args.base, "--d2", args.d2, "--out",
+                        "--design", str(ddir), "--base", args.base, "--d2", args.d2, "--out",
                         str(work / "ft_validate"), "--facets", "late_only", "--window-min", "5", "--validate-only"],
                        capture_output=True, text=True, env=env)
     vj = {}

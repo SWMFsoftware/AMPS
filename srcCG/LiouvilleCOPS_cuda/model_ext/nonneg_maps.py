@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/nonneg_maps.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/nonneg_maps.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: b4e9a0da8a86360cf5869c20eaaa22b3aec98f4652f18304128a695113080aec
+# SHA256 of the run copy = SHA256 of this file without these header lines: 7bbe34a447c4f14859c54e28e827d0faef449d2bd3eb76162035cb5e9a68a2a0
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: activity and source-rate maps of the non-negative models; 2026-11-17: state_activity also reproduces the
 #   alternative models sos / background / logspread (alt_inputs), --expect-model choices extended; softplus / squared
 #   unchanged (tested)
 # RUN: jobs/nonneg_maps.sbatch (frozen model_ext_frozen/nonneg_maps_20261117T224340Z for the stage-2 B/A/D full sets)
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): H2O_QMIN_RATIO / CO2_QMIN_RATIO constants (the one model_ext place for the ratio), q_factors and the law_guard line use them, README unit text; snapshot model_ext_frozen/nonneg_maps_20261118*
+# 2026-11-18 13:21 CST: validate-geometry --shape-manifest / --shape-manifest-must-equal (explicit; default unchanged; for base_q002, which has no run_manifest.json); snapshots nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z
 # ==== end of header ====
 """Activity and instantaneous source-rate maps of the non-negative H2O activity models (softplus and squared harmonics
 x slope multipliers, model_ext/nonneg_*.py) of ONE final state, for visualization: VTK XML (.vtu, ParaView) and
@@ -25,7 +27,8 @@ THE LAW (read from the code; law_guard() checks that these expressions are still
   EvaluateElement, = cops_cuda/kernels/pressure.cu), per facet e at time t:
     rhA = r_h / AU (r_h = |Sun - nucleus| of the base's SPICE geometry [m], AU = 149597870700 m)
     p = 4.2143229 (HeliocentricModel shap5 of the base) else 4.8
-    H2O: qmin = 0.2 * 600 / rhA**p, qmax = 600 / rhA**p;  CO2: qmin = 0.1 * 600 / rhA**2, qmax = 600 / rhA**2
+    H2O: qmin = H2O_QMIN_RATIO * 600 / rhA**p, qmax = 600 / rhA**p;  CO2: qmin = 0.1 * 600 / rhA**2, qmax = 600 / rhA**2
+         (H2O_QMIN_RATIO = 0.02 since 2026-11-18 as srcCG; 0.2 before, not intended: user decision 2026-11-18)
     night = (cos SZA <= 0) | cast shadow                      (the kernel records' fields cos and shadow)
     q_s = qmin_s if night else qmin_s + (qmax_s - qmin_s) * min(cos SZA, 1)        (SZAMode continuous)
     F_H2O = q_H2O * A_H2O          (A_H2O = the model's activity, af = max(A, 0) = A for these models)
@@ -126,6 +129,12 @@ def fit_cops_module():
 
 
 # ------------------------------------------------------------------------------------------------ the law
+# 2026-11-18 (user decision: "(b) -- use 0.02; x10 was not intended"): the H2O night/shadow production ratio
+# q_min/q_max = 0.02 as srcCG Comet::GetTotalProductionRateBjornNASTRAN and the fixed fit_cops.py / Source.cpp /
+# cops_cuda evaluator.py (it was 0.2 = 10 x 0.02 before). The ONE place in model_ext that holds it: q_factors and the
+# law_guard line below use it, and the tools that need the ratio read it from here. CO2 unchanged (0.1).
+H2O_QMIN_RATIO = 0.02
+CO2_QMIN_RATIO = 0.1
 LAW_SOURCE_LINES = {
     "load_kernels": (
         'cs.append(rec["cos"]), night.append((rec["cos"] <= 0.0) | (rec["shadow"] != 0))',
@@ -134,8 +143,8 @@ LAW_SOURCE_LINES = {
         'c = np.minimum(self.cos, 1.0)',
         'if self.SZAMode == "continuous":',
         'cz = c',
-        'for s, (qmin, qmax) in (("H2O", (0.2 * 600 / rhA ** p, 600 / rhA ** p)), ("CO2", (0.1 * 600 / rhA ** 2, '
-        '600 / rhA ** 2))):',
+        'for s, (qmin, qmax) in (("H2O", (%r * 600 / rhA ** p, 600 / rhA ** p)), ("CO2", (%r * 600 / rhA ** 2, '
+        '600 / rhA ** 2))):' % (H2O_QMIN_RATIO, CO2_QMIN_RATIO),       # 2026-11-18: from the constants above
         'self.Q[s] = np.where(self.night, qmin, qmin + (qmax - qmin) * cz)'),
     "prepare": (
         'ACO2 = self.ACO2[self.face]',
@@ -163,10 +172,11 @@ def law_guard(fit_cops):
 
 
 def q_factors(rh_m, helio, AU):
-    """(qmin, qmax) of H2O and CO2 at r_h [m]: fit_cops.Model.load_kernels' expressions."""
+    """(qmin, qmax) of H2O and CO2 at r_h [m]: fit_cops.Model.load_kernels' expressions (2026-11-18: the ratios from
+    H2O_QMIN_RATIO / CO2_QMIN_RATIO, read at call time; same operations, so bitwise the fitter's values)."""
     rhA = np.float64(rh_m) / AU
     p = 4.2143229 if helio == "shap5" else 4.8
-    return {"H2O": (0.2 * 600 / rhA ** p, 600 / rhA ** p), "CO2": (0.1 * 600 / rhA ** 2, 600 / rhA ** 2),
+    return {"H2O": (H2O_QMIN_RATIO * 600 / rhA ** p, 600 / rhA ** p), "CO2": (CO2_QMIN_RATIO * 600 / rhA ** 2, 600 / rhA ** 2),
             "p": p, "rhA": float(rhA)}
 
 
@@ -364,9 +374,42 @@ def cmd_validate_geometry(args):
         mm = re.search(r"shape (\S+) \(", line)
         if mm:
             bdf = mm.group(1)
-    manifest = json.load(open(base / "run_manifest.json"))
-    shape_dep = [d for d in manifest["dependencies"] if d["role"] == "shape_model"][0]["file"]
-    b = {"bdf": bdf, "manifest_shape_model": shape_dep["path"]}
+    # 2026-11-18 (lead): the shape model's path and sha256 come from the base's run_manifest.json (default, unchanged) or
+    # EXPLICITLY from --shape-manifest (e.g. base_q002, which has no run_manifest.json by design: its COPS_model.dat is the
+    # output of a C++ run whose manifest is kept as base_q002/cpp_run_manifest.json). No silent fallback: without the
+    # option a missing base/run_manifest.json is an error as before. With the option: the manifest must record the
+    # base's COPS_model.dat (outputs.model_table sha256), the BDF hash check is mandatory, an existing
+    # base/run_manifest.json must name the same shape model, and --shape-manifest-must-equal (optional) is a manifest
+    # whose shape_model path and sha256 must be identical (e.g. the original base's).
+    def _shape_entry(m):
+        return [d for d in m["dependencies"] if d["role"] == "shape_model"][0]["file"]
+    mpath = Path(args.shape_manifest) if getattr(args, "shape_manifest", None) else base / "run_manifest.json"
+    manifest = json.load(open(mpath))
+    shape_dep = _shape_entry(manifest)
+    b = {"bdf": bdf, "manifest_shape_model": shape_dep["path"], "shape_manifest": str(mpath.resolve()),
+         "shape_manifest_sha256": sha256_file(mpath), "shape_manifest_explicit": bool(getattr(args, "shape_manifest", None))}
+    if b["shape_manifest_explicit"]:
+        if args.skip_bdf_hash:
+            raise SystemExit("--shape-manifest requires the BDF hash check (no --skip-bdf-hash)")
+        tab = sha256_file(base / "COPS_model.dat")
+        rec = ((manifest.get("outputs") or {}).get("model_table") or {}).get("sha256")
+        if rec != tab:
+            raise SystemExit("--shape-manifest %s records the model table %s, %s/COPS_model.dat is %s: not this base's "
+                             "manifest" % (mpath, rec, base, tab))
+        b["shape_manifest_model_table_equals_base_table"] = True
+        if (base / "run_manifest.json").exists():
+            own = _shape_entry(json.load(open(base / "run_manifest.json")))
+            if (own["path"], own["sha256"]) != (shape_dep["path"], shape_dep["sha256"]):
+                raise SystemExit("--shape-manifest names %s, the base's own run_manifest.json %s" % (shape_dep, own))
+        if getattr(args, "shape_manifest_must_equal", None):
+            ref = _shape_entry(json.load(open(args.shape_manifest_must_equal)))
+            same = (ref["path"], ref["sha256"], ref.get("size_bytes")) == (shape_dep["path"], shape_dep["sha256"],
+                                                                           shape_dep.get("size_bytes"))
+            b["shape_manifest_must_equal"] = {"manifest": str(Path(args.shape_manifest_must_equal).resolve()),
+                                              "shape_model": ref, "equal": same}
+            if not same:
+                raise SystemExit("--shape-manifest shape model %s differs from %s's %s" % (
+                    shape_dep, args.shape_manifest_must_equal, ref))
     if bdf != shape_dep["path"]:
         raise SystemExit("geometry shape %s is not the base's %s" % (bdf, shape_dep["path"]))
     if not args.skip_bdf_hash:
@@ -929,7 +972,7 @@ def cmd_maps(args):
                 "  F_H2O = q_H2O(cos SZA, night/shadow, r_h) * A_H2O, F_CO2 = kappa * q_CO2 * ACO2 (fit_cops.Model "
                 "load_kernels / prepare)\n"
                 "  q_s = qmin_s (night or cast shadow) else qmin_s + (qmax_s - qmin_s) min(cos SZA, 1);\n"
-                "  H2O qmin = 0.2*600/rhA^p, qmax = 600/rhA^p, p = %s; CO2 qmin = 0.1*600/rhA^2, qmax = 600/rhA^2; "
+                "  H2O qmin = %r*600/rhA^p, qmax = 600/rhA^p, p = %s; CO2 qmin = 0.1*600/rhA^2, qmax = 600/rhA^2; "
                 "rhA = r_h/AU\n"
                 "A_H2O: the model's H2O activity factor (%s model, final state after the last fine tuning); "
                 "CO2_activity_kappa_ACO2: kappa * ACO2 (kappa = %.17g).\n"
@@ -941,7 +984,7 @@ def cmd_maps(args):
                 "slope_bin: effective-gravitational-slope bin of the multipliers: %s\n"
                 "area_m2: facet area [m^2]; coordinates X Y Z [m] in the body frame 67P/C-G_CK\n"
                 "TimeValue / SOLUTIONTIME: seconds after 2016-09-30T00:00:00 UTC") % (
-        "%.8g" % q_factors(1.0, helio, 1.0)["p"], model, kappa, ill_txt, bins_txt)
+        H2O_QMIN_RATIO, "%.8g" % q_factors(1.0, helio, 1.0)["p"], model, kappa, ill_txt, bins_txt)   # 2026-11-18: ratio
     pool = mp.get_context("fork").Pool(args.procs)
     files, man_times = [], []
     try:
@@ -1148,6 +1191,10 @@ def main(argv=None):
     a.add_argument("--geometry", required=True)
     a.add_argument("--base", required=True)
     a.add_argument("--skip-bdf-hash", action="store_true")
+    a.add_argument("--shape-manifest", help="2026-11-18: manifest holding the shape model's path and sha256 instead of "
+                   "<base>/run_manifest.json (explicit only; e.g. base_q002/cpp_run_manifest.json)")
+    a.add_argument("--shape-manifest-must-equal", help="2026-11-18: a manifest whose shape_model entry (path, sha256, "
+                   "size) must equal --shape-manifest's (e.g. the original base's run_manifest.json)")
     a = sub.add_parser("maps")
     a.add_argument("--ft-dir", required=True, help="c<N>/ft/final of the chain's last cycle")
     a.add_argument("--fit-dir", required=True, help="c<N>/fit/final (the fit the fine tuning started from)")

@@ -1,12 +1,13 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/pub_maps_figures.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/pub_maps_figures.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: dbbfd55bc1ea4af2f42200208f781e60a8461ffa096dc94aa9a052b1da19c951
+# SHA256 of the run copy = SHA256 of this file without these header lines: 3998cd87c131f58035aa3251f7050c824e707c1ce9dc2469605fdda9e32b7791
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (GPU): full figure set 3.4 (set1 visibility, set4 model/data, pressures, maps with fixed ranges);
-#   inputs from the environment since 2026-11-13.
-# RUN: STEPS=set1,set4,pressures CHAIN=... PUB=... PUBSTEM=... TAG=... MODEL_LABEL=... sbatch --export=ALL
-#   pub_maps_figures.sbatch
+#   inputs from the environment since 2026-11-13; 2026-11-20 (full sets of the new-law fits): BASE and D2REF (the
+#   model-data reference fit) overrides (defaults unchanged)
+# RUN: STEPS=set1,set4,pressures CHAIN=... PUB=... PUBSTEM=... TAG=... MODEL_LABEL=... [BASE, D2REF] sbatch
+#   --export=ALL pub_maps_figures.sbatch
 # ==== end of header ====
 # Full publication figure set of the 12M softplus activity model after 5 fit / fine-tuning cycles (final state).
 # User request 2026-11-12: "generate the full set of plots that you have done before (templates, gravity, ground
@@ -55,11 +56,11 @@ export PATH=$CUDA_HOME/bin:$PATH LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PA
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 STEPS=${STEPS:-set1,set4,pressures,maps}; SETS=${SETS:-activity,production}; PREVIEW=${PREVIEW:-0}
 O=${OUT:-$COPS_OUTPUT_ROOT/figures_cluster/12M/full_set_softplus_5cycles}
-R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; BASE=$R/base; BUNDLE=$R/bundle/restart_templates.npz
+R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; BASE=${BASE:-$R/base}; BUNDLE=$R/bundle/restart_templates.npz   # 2026-11-20: BASE override
 CH=${CHAIN:-$R/nonneg/softplus/chain_5cycles_20261112T012553Z}; NCYC=${NCYC:-5}
 FT=${FT:-$CH/c$NCYC/ft/final}; FIT=${FIT:-$CH/c$NCYC/fit/final}; MAPS=${MAPS:-$CH/maps}
 GEOM=${GEOM:-$R/maps_geometry/job_124324/geometry}; MX=$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_maps_20261112T021623Z
-D2=$R/clip_refit/D2/final; S=$COPS_OUTPUT_ROOT/figures_cluster/scripts
+D2=${D2REF:-$R/clip_refit/D2/final}; S=$COPS_OUTPUT_ROOT/figures_cluster/scripts   # 2026-11-20: D2REF = the reference fit (default the old D2)
 TBASE=$COPS_OUTPUT_ROOT/runs/shap8_012m_flat_earlier/base; TBUNDLE=$COPS_OUTPUT_ROOT/runs/shap8_012m_flat_earlier/bundle/restart_templates.npz
 RANGES=(--range A=13,23 --range F_H2O=12,22 --range F_CO2=-28,-18 --range total=12,22)
 PUB=${PUB:-$COPS_OUTPUT_ROOT/figures_cluster/12M/publication_softplus}; PUBSTEM=${PUBSTEM:-12M_softplus_NG_RG_altitude}
@@ -90,7 +91,7 @@ nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 { nvcc --version; gcc --version | head -1; grep -m1 CSPICE /home/vtenishev/SPICE/cspice/doc/version.txt; lscpu | grep -E 'Model name|^CPU\(s\)'; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1 || $PY -m pip list > "$P/pip_list.txt" 2>&1
 env | grep -E '^(SLURM_JOB_ID|SLURM_JOB_NODELIST|SLURM_CPUS_PER_TASK|CUDA_[A-Z_]*|CUPY_[A-Z_]*|STEPS|SETS|PREVIEW|OUT|OMP_NUM_THREADS|MPLBACKEND)=' | sort > "$P/env.txt"
-for v in CH NCYC FT FIT MAPS GEOM PUB PUBSTEM PUBTABLE TAG MODEL_LABEL MODEL_SHORT TITLE_PRESSURES O STEPS SETS; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
+for v in CH NCYC FT FIT MAPS GEOM PUB PUBSTEM PUBTABLE TAG MODEL_LABEL MODEL_SHORT TITLE_PRESSURES O STEPS SETS BASE D2; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "cd $APP"; } > "$P/commands.sh"
 run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }
 free -g > "$P/free_start.txt" 2>&1; df -h "$COPS_OUTPUT_ROOT" > "$P/df_start.txt" 2>&1

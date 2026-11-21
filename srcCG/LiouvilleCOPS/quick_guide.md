@@ -954,7 +954,7 @@ parameters are independently constrained by the data.
 | Rotation and trajectory | SPICE orientation, spacecraft motion, observation times, gauge position and pointing. Spin period, pole, phase, and timing offsets are not fitted. |
 | Angular emission | `SurfaceBC = flat` or `rough` chosen for the base, not selected by the optimizer. |
 | Illumination | Cached solar angles/shadows and the chosen `CastShadows`/`SZAMode` prescriptions. |
-| Source-rate law | Heliocentric-distance laws and night/day ratios: 0.2 for H2O and 0.1 for CO2. |
+| Source-rate law | Heliocentric-distance laws and night/day ratios: 0.02 for H2O (as srcCG; 0.2 before 2026-11-18, not intended) and 0.1 for CO2. |
 | CO2 map shape | Spatial pattern stays fixed; only its overall kappa multiplier can vary. |
 | Temperature-law structure | Analytical solar-angle law, its 75-degree transition and floor; only the three temperature parameters can vary. |
 | Gauge response | NG/RG acceptance, shielding, head-on weighting, offsets, pressure-conversion model, and species sensitivities. |

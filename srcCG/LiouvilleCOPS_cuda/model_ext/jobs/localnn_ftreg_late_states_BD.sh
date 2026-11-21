@@ -1,11 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/ftreg/late_states_BD.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/ftreg/late_states_BD.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 331cb24eccad8390f51582a3e6c44ba03e2e007eeded49420fa20507ec7d5609
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: late kernels + fit-state pressures of the B and D c5 fits for the CPU fine-tuning engine (localnn_late.py
 #   --state; G bitwise = late_kernels_150m.npz).
-# RUN 2026-11-15: 134495.
+# RUN 2026-11-16: 134495.
 # ==== end of header ====
 # fine-tuning regularization test (lead / user 2026-11-15 ~21:10 CST): fit-state pressures of every base row for the B and
 # D c5 fits (agent 3's chains), for the CPU fine-tuning engine (localnn_late.py --state; frozen localnn_s2post snapshot)

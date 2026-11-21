@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_late.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_late.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 6564c7bd5f267611b671b532b2ef6571dd8910a9c293d794233cbfa98f1d2876
+# SHA256 of the run copy = SHA256 of this file without these header lines: d6b3e8fae6bfdd6ca963657dec6011b4284b6c377bada22418759ebf7eee695d
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: late kernels of the CPU fine tuning (option C stage 2): the 9 row masks the frozen
-#   positive_finetune.late_only_facets asks for (recorded with a RecordingEngine; structural = Kn | KPhi | KV != 0,
-#   else > 0), the 271 late facets and G_NG / G_RG = dp/dA of every row on them (the frozen nonneg_contrib kernel
-#   arithmetic); build_rows (NonnegFitContext's Rows), AnswerEngine, load; optional --state NAME=npz:kappa all-row
-#   pressures.
-# RUN 2026-11-15: dev 131976, 131979; production late_kernels_150m.npz job 132008 (frozen
-#   localnn_s2_20261115T185842Z).
+# WHAT: late kernels of the CPU fine tuning (the 9 row masks of the frozen positive_finetune.late_only_facets, the
+#   271 late facets, G_NG / G_RG of every row; optional --state pressures); 2026-11-18: meta law record (h2o / co2
+#   q_min ratios) and the law check in load().
+# RUN 2026-11-18: late_kernels_150m_h2oqmin0.02.npz (136507).
 # ==== end of header ====
 """Option C stage 2 (lead / user 2026-11-15): the LATE-FACET KERNELS of the base for the CPU fine tuning of the localnn
 chains (localnn_ft.py) and for the held fine-tuning term exp(h_e) of the localnn fits (localnn_problem.py held=).
@@ -237,6 +234,7 @@ def main(argv=None):
             "base": str(Path(args.base).resolve()), "d2": str(Path(args.d2).resolve()),
             "point_table": {"path": str(Path(args.point_table).resolve()), "sha256": sha(args.point_table)},
             "contrib_code": str(Path(args.contrib_code).resolve()), "nonneg_code": str(Path(args.nonneg_code).resolve()),
+            "law": CS["law"],
             "nonneg_code_sha256": {m: sha(Path(args.nonneg_code) / m) for m in ("positive_finetune.py",
                                                                               "positive_problem.py", "grain_crossing.py",
                                                                               "nonneg_finetune.py")},
@@ -270,6 +268,14 @@ def load(path, nf):
     """(late mask, late_idx, G_NG, G_RG, AnswerEngine, support dict, meta, state pressures)."""
     with np.load(path, allow_pickle=False) as z:
         meta = json.loads(str(z["meta_json"]))
+    # 2026-11-18: the production law of the late kernels vs the fitter's (localnn_problem.law_check)
+    if "h2o_qmin_ratio" in (meta.get("law") or {}):
+        ratio, src = float(meta["law"]["h2o_qmin_ratio"]), "late-kernel meta law.h2o_qmin_ratio"
+    else:
+        ratio, src = lp.contrib_code_h2o_qmin_ratio(meta["contrib_code"]), "its contrib code %s" % meta["contrib_code"]
+    import localnn_problem as lp
+    law_rec = lp.law_check("late kernels", Path(path).resolve(), ratio, src)
+    with np.load(path, allow_pickle=False) as z:
         rows = np.asarray(z["req_rows"])
         st = np.asarray(z["req_structural"])
         answers = []
@@ -282,7 +288,7 @@ def load(path, nf):
                                                                      answers),
                "support": {"before_rows": np.asarray(z["support_before"]), "inside_rows": np.asarray(z["support_inside"]),
                            "t_start": float(z["support_t"][0]), "t_end": float(z["support_t"][1])},
-               "meta": meta, "states": {}}
+               "meta": meta, "states": {}, "law_check": law_rec}
         for k in z.files:
             if k.startswith("P_") and k.endswith("_NG"):
                 name = k[2:-3]

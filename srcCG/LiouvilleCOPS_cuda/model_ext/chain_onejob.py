@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/chain_onejob.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/chain_onejob.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: eca15cf58f0cc6c7c695fe9ce66e7ea43180a614978f720054bd4e56fad80de1
+# SHA256 of the run copy = SHA256 of this file without these header lines: f91b66bc4c3d06bac2dff0dcc273faf67c8b07d25f354a155a79540f5469e5bf
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: driver. One Slurm job, one process: a whole fit / fine-tuning chain (c1 fit -> c1 ft -> ... -> c<N> ft) on ONE
 #   bound multi-GPU backend (user decision 2026-11-10 "yes, implement (b)"): the records are bound once, the template
@@ -27,6 +27,10 @@
 #   StopIteration, gate 135365); frozen chain_onejob_20261116T160712Z; gate 135861/135862; reruns 135863-135874.
 # 2026-11-17: v7.3: --min-free-gb (stop with exit 5 before the process setup / a stage below G GiB free; after the
 #   disk-full event of 2026-11-16 21:10 CST); frozen chain_onejob_20261117T063334Z; D 136016-136018, A 136019-136021.
+# 2026-11-18: v7.4: --base DIR (every fit's base; default <run>/base); frozen chain_onejob_20261118T084311Z (prepared
+#   for the H2O q_min 0.02 chains, plan model_ext/logs/plan_q002_stage2r_nonneg.md).
+# 2026-11-18: v7.5: --allow-legacy-base for a nonneg fit on a base without run_manifest.json (base_q002); frozen
+#   chain_onejob_20261118T191837Z.
 # ==== end of header ====
 """One Slurm job, one driver process: a whole fit / fine-tuning chain on ONE bound multi-GPU backend
 (user decision 2026-11-10, "yes, implement (b)").
@@ -148,6 +152,9 @@ commands are unchanged.
 v7.1 (2026-11-16, lead / user): --ft-delta-penalty-f F --ft-delta-cref C [--ft-delta-cap X] (kind nonneg) -> every
 fine tuning gets --delta-penalty-f / --delta-cref / --delta-cap (verbatim, after --l-threads, as jobs/nonneg_finetune.sbatch
 DELTA_F / DELTA_CREF / DELTA_CAP); an existing fine-tuning segment of another delta setting (incl. off) is refused.
+v7.4 (2026-11-18, the H2O q_min 0.02 campaign): --base DIR = the base of every fit (default <--run>/base, unchanged).
+v7.5 (2026-11-18): a nonneg fit on a base without run_manifest.json (base_q002, by the lead's decision) gets fit_cops'
+--allow-legacy-base before --out, as jobs/nonneg_fit.sbatch / jobs/clip_refit_q002.sbatch (gate 136662 failed without).
 v7.3 (2026-11-17, lead, after the 2026-11-16 21:10 CST disk-full event): --min-free-gb G: before the process setup and
 before every stage that is not yet complete, the chain stops with exit 5 (nothing of the stage written) when the chain
 root's file system has less than G GiB free. Default off; commands unchanged.
@@ -1534,6 +1541,9 @@ class NonnegFitStage(SlopeFitStage):
                 tail += [opt, getattr(a, attr)]
         k = argv.index(SOPT[0]) if SOPT else len(argv)
         argv[k:k] = tail
+        if not (self.chain.base / "run_manifest.json").exists():  # v7.5: base_q002 (no manifest), as nonneg_fit.sbatch
+            k = len(argv) - 1 - argv[::-1].index("--out")
+            argv[k:k] = ["--allow-legacy-base"]
         return argv
 
     def start_file(self):
@@ -1907,7 +1917,7 @@ class Chain:
     def __init__(self, args):
         self.args = args
         self.root = Path(os.path.abspath(args.chain_root))
-        self.base = Path(args.run) / "base"
+        self.base = Path(os.path.abspath(args.base)) if getattr(args, "base", None) else Path(args.run) / "base"
         self.point_table = Path(args.point_table)
         self.bundle = Path(args.bundle)
         self.model_ext = Path(args.model_ext)
@@ -2554,6 +2564,8 @@ def parse_args(argv):
     ap.add_argument("--ft-validate", type=int, default=1, choices=(0, 1))
     ap.add_argument("--ft-floor-ratio", default=None)
     ap.add_argument("--run", default=str(RUN))
+    ap.add_argument("--base", default=None, help="v7.4: the base every fit runs on (fit_cops' run directory; default "
+                                                 "<--run>/base; the H2O q_min 0.02 campaign: <run>/base_q002)")
     ap.add_argument("--point-table", default=str(RUN / "late_grid_points.txt"))
     ap.add_argument("--bundle", default=str(BUNDLE))
     ap.add_argument("--model-ext", required=True, help="the MODEL_EXT source the job's code copy was taken from")

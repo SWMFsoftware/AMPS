@@ -10,6 +10,186 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A18. CORRECTION: every result so far used H2O q_min = 0.2 q_max; with the intended 0.02 (srcCG) and the activity held fixed every final state misfits, data cost x3.3 to x53 (2026-11-18)
+
+* **Correction notice.** The H2O night-side / cast-shadow production of EVERY fit, map, figure and finding so far
+  (A1-A17 here, handoff.md, STATUS.md, all full sets, contributions, cliff and illumination products) was
+  q_min = 0.2 q_max (LiouvilleCOPS Source.cpp `10.0*0.02`, the same 0.2 in fit_cops.py, cops_cuda/evaluator.py,
+  build_physical_activity_templates.py and model_ext). srcCG (Comet::GetTotalProductionRateBjornNASTRAN) has 0.02. User
+  decision 2026-11-18: "(b) -- use 0.02; x10 was not intended; use the same law but with decreased activity". The code
+  now uses 0.02. The CO2 law (q_min = 0.1 q_max, r_h^-2) also differs from srcCG; it was not changed (not asked).
+  Every number of A1-A17 holds for the 0.2 law only. Most affected: A1 (dark overhangs at the 0.2 floor), A15 / A17
+  (Q_H2O and its dark / unseen shares; the x5 illumination factor becomes x50), A16 (the activities were fitted with 0.2).
+* **Diagnostic, no refit** (lead 2026-11-18): the eight final states re-evaluated with A, T, kappa, grain and the
+  fine-tuning factors held fixed, old law first (reproduces every recorded data cost to its printed digits; per-row model
+  vs the states' tables <= 4.9e-10), then the new law:
+
+  | state | data cost 0.2 -> 0.02 | rms ln NG | rms ln RG | late rms ln RG | Q_H2O(10:33:10) [s^-1] | seen Q | dark share of Q |
+  |---|---|---|---|---|---|---|---|
+  | softplus reg | 4.59e-3 -> 6.18e-2 (x13) | 0.074 -> 0.278 | 0.061 -> 0.215 | 0.042 -> 0.152 | 2.56e26 -> 3.54e25 | 1.48e25 -> 8.57e24 | 95 -> 69 % |
+  | A reg | 1.07e-2 -> 3.55e-2 (x3.3) | 0.110 -> 0.243 | 0.097 -> 0.110 | 0.120 -> 0.123 | 1.84e26 -> 2.81e25 | 1.17e25 -> 5.11e24 | 93 -> 61 % |
+  | B reg | 5.12e-3 -> 6.04e-2 (x12) | 0.078 -> 0.279 | 0.065 -> 0.207 | 0.052 -> 0.124 | 2.53e26 -> 3.51e25 | 1.49e25 -> 8.60e24 | 95 -> 68 % |
+  | D reg | 8.12e-3 -> 4.44e-2 (x5.5) | 0.100 -> 0.263 | 0.079 -> 0.140 | 0.077 -> 0.122 | 2.70e26 -> 3.19e25 | 1.54e25 -> 5.40e24 | 98 -> 83 % |
+  | C f1 / P_m 1e-4 reg | 2.44e-3 -> 1.30e-1 (x53) | 0.052 -> 0.340 | 0.047 -> 0.380 | 0.032 -> 0.535 | 3.32e27 -> 2.19e27 | 3.07e25 -> 1.65e25 | 27 -> 4 % |
+  | D2 | 4.89e-3 -> 7.98e-2 (x16) | 0.078 -> 0.304 | 0.061 -> 0.259 | 0.045 -> 0.313 | 2.11e26 -> 2.75e25 | 1.21e25 -> 6.51e24 | 96 -> 73 % |
+  | C f10 / P_m 0.01 reg | 3.20e-3 -> 9.61e-2 (x30) | 0.061 -> 0.311 | 0.052 -> 0.309 | 0.046 -> 0.368 | 1.51e25 -> 8.26e24 | 1.29e25 -> 7.40e24 | 44 -> 8 % |
+  | softplus c9 | 4.27e-3 -> 6.48e-2 (x15) | 0.069 -> 0.262 | 0.061 -> 0.247 | 0.036 -> 0.525 | 5.38e26 -> 6.15e25 | 2.28e25 -> 7.62e24 | 98 -> 86 % |
+
+* **What changes:** at fixed A the model is too low everywhere: mean ln(model/obs) over all used rows -0.21 ... -0.32
+  (NG), -0.09 ... -0.37 (RG). Not only the dark records (7-18 % of the modelled surface pressure with 0.2, 2-21 % in the
+  late window; 1-3 % with 0.02) but also the lit facets lose, since q_lit drops by 0.18 (1 - cos SZA) q_max. The seen
+  production at 10:33:10 falls to 33-58 %, Q_H2O to 11-15 % (55-66 % in the two option-C states, whose Q came mostly
+  from lit steep unseen terrain); the dark share of the seen production falls from 35-68 % to 6-20 %.
+* **A level change alone does not restore the fits:** the best single factor on A (post-hoc bound, not a refit) is
+  s = 1.17-1.43 and leaves the data cost 1.2 (A) ... 4.2 (C f1) times the old fit's. Every state needs a refit; the
+  ranking of the models may change.
+* **Caveats:** fixed-A numbers are not refit results (T, kappa, the multipliers and the shape of A will adapt); kappa
+  is ~0 in all states, so CO2 does not compensate here; the unseen facets' activity (most of Q) is unconstrained.
+* Evidence: `tests/nightfix_diagnostic_20261118/` (README.txt, table.txt / .csv / .json, results_v2/*.rows.npz; jobs
+  136436-136443 v1, 136457-136464 v2; base check 136444); tool `model_ext/nightfix_diag.py`.
+* **First refit with the new law: D2 (2026-11-18, user "(ii); refit D2 first, then all stage-2 chains", warm start "as
+  recommended").** On `runs/shap8_012m_lategrid_dz1.5/base_q002` (the same kernels, hard links, bitwise-verified on 29
+  re-run rows; COPS_model.dat of the rebuilt C++; fit_cops' base check NG 2.16e-9 / RG 4.12e-9; `--allow-legacy-base`
+  because the base has no run_manifest.json), D2's settings unchanged, start = D2's final state (start data cost
+  7.9817e-2 = the fixed-A diagnostic): data cost **5.671e-3** after 4000 evaluations (max_nfev, not converged;
+  first-order optimality 1.2e-5), i.e. 1.16x D2's 4.886e-3 under the old law (and 0.071x D2's fixed-A value under the
+  new law). rms ln NG / RG 0.0849 / 0.0643 (D2 0.0778 / 0.0610); late window (95 observations) NG 0.1763 / RG 0.0389
+  (D2 0.1575 / 0.0446). c_cliff 3.727 -> 2.883; kappa and grain B at their lower bound 0 (as in D2); grain A 6.89 ->
+  6.82 uPa; the harmonic coefficients moved little (22 of 25 within x0.81-1.18), active area 0.0755 -> 0.0859. So the
+  intended law costs D2 about 16 % in data cost at its re-optimized state, much less than the fixed-A x16 suggested.
+  Caveats: one model only; not converged; ft_c1..ft_c6 are held corrections from old-law fits; Q_H2O of the refit not yet
+  computed. Evidence: `clip_refit/D2_q002_warm/` (README.txt, seg01/, provenance-136543); acceptance job 136542.
+  Q_H2O of the refit (maps job 136692, 2026-11-18 13:28 CST): **3.12e25 s^-1 at 10:33:10** (3.23e25 at 10:39:26) vs
+  D2's 2.11e26 with the old law: the re-optimized activity does NOT restore the total production; Q stays at ~15 % of
+  D2's, close to D2's A evaluated with the new law (2.75e25). So the intended law lowers the model's Q_H2O by ~7x for D2
+  while the fit to the gauges changes by only 16 %.
+  Where the refit's production comes from (lead 2026-11-18 14:45 CST; source-rate figure set
+  `figures_cluster/12M/source_rate_q002/D2_q002_warm/`, inspection/checks/inspect_103310.txt and _103926.txt, jobs
+  136737 / 136741; new law, old-law D2 in brackets): at 10:33:10 the seen facets give 8.60e24 s^-1 (1.21e25) = 27.6 %
+  of Q (5.8 %); night + cast-shadow facets give 68.8 % of Q (95.7 %) but only 6.5 % of the seen Q (39.4 %); dark area
+  69.7 % of the surface, 60.2 % of the seen area; active area 8.59 % of the surface (7.55 %), 6.40 % of the seen area
+  (5.31 %); 10:39:26 nearly the same (seen 28.0 %, dark 66.3 % / 6.0 %). So with the intended law the gauges' seen
+  production is mostly lit (94 %), but about 2/3 of the total Q_H2O still comes from night-side facets, nearly all of
+  them unseen, whose activity the data do not constrain: the total Q remains an extrapolation (A15 still applies).
+  Caveats: D2 only (stage-2 chains pending); not converged (max_nfev); ft templates from old-law fits.
+  First new-law stage-2 chain, softplus regularized (lead 2026-11-18 18:10 CST; chain
+  nonneg/softplus/stage2r_q002_smm1_20261118T193956Z, job 136704; c5 fit ftol after 591 evaluations; figures
+  source_rate_q002/softplus_q002_reg, inspect_103310.txt): data cost per cycle 5.256 / 5.229 / 5.221 / 5.218 / 5.216e-3
+  (-8 % vs the new D2, +14 % vs the old-law softplus 4.593e-3). At 10:33:10: Q_H2O 6.08e25 s^-1 (old law 2.56e26,
+  x0.24); seen facets 1.18e25 = 19.4 % of Q (5.8 %); night + cast shadow 76.6 % of Q (94.9 %) and 18.2 % of the seen Q
+  (35.5 %); active area 5.71 % of the surface (5.99 %). Same pattern as the new D2: the seen production is mostly lit,
+  the total is dominated by unseen dark facets (softplus more so than D2: 18 % vs 6.5 % dark in the seen Q).
+  Option C f10 / P_m 1e-4 regularized with the new law (lead 2026-11-18 19:45 CST; chain
+  nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z; c5/analysis/report.json; figures
+  source_rate_q002/C_f10_pm1em4_q002_reg): data cost per cycle 2.780 / 2.551 / 2.528 / 2.511 / 2.4988e-3, -56 % vs the
+  new D2 and only +1.6 % vs its old-law counterpart (2.4586e-3): the local basis absorbs the law change almost fully
+  (D2 +16 %, softplus +14 %). Q_H2O(10:33:10) 4.84e26 s^-1 (old law 1.3e27), seen 2.14e25 = 4.4 % of Q; multipliers
+  70-80 / 80-90 / 90-180 deg 5.46e4 / 1.79e5 / 38.2 (undetermined at f_m 1e-4, A12): the total Q is again set by
+  unseen steep terrain times these factors, not by the data; kappa at its bound.
+  Option C f1 / P_m 1e-4 and option D with the new law (lead 2026-11-18 21:30 CST; source_rate_q002/C_f1_pm1em4_q002_reg
+  inspect_103310.txt; chains stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z and logspread/stage2r_q002_f0.1_20261118T193956Z):
+  C f1 final data cost 2.5005e-3 (+2.7 % vs old law 2.4358e-3); Q_H2O(10:33:10) 6.69e26 (old 3.32e27), seen 2.14e25 =
+  3.2 % of Q; night + shadow only 3.7 % of Q (27 % old) and 13.4 % of the seen Q (44 %): C's total is lit unseen steep
+  terrain times the undetermined multipliers, not dark facets; A > 0 on 100 % of the surface. D: every fit ftol, data cost
+  8.388 / 8.359 / 8.307 / 8.283 / 8.277e-3 (+2 % vs old law 8.119e-3). D source rates at 10:33:10 (source_rate_q002/
+  D_q002_reg): Q_H2O 3.25e25 (old 2.70e26), seen 41.1 % of Q (5.7 %); night + shadow 80.1 % of Q (97.6 %) and 52.9 % of
+  the seen Q (67.6 %): unlike D2, softplus and C, D keeps half of its seen production on dark facets (its activity is
+  A_orig exp(u), tied to the srcCG map); D is also the worst fit of the new-law runs so far (data cost 8.28e-3).
+  Option C with P_m 0.01, new law (lead 2026-11-18 22:40 CST; chains stage2r_q002_*_pm0.01_*_20261118T162407Z, final
+  c5/ft data cost): f10 templates on 3.5863e-3 (old law 3.1996e-3, +12 %), f1 templates on 4.1726e-3 (3.3779e-3, +24 %),
+  f10 templates off 5.6734e-3 (3.6519e-3, +55 %; equal to the new D2, 5.671e-3). So with the stronger multiplier
+  penalty the law change costs 12-55 %, while with P_m 1e-4 option C absorbs it (+2-3 %) through the steep multipliers.
+  Their source rates at 10:33:10 (source_rate_q002/C_*_pm0p01_*/inspection/checks/inspect_103310.txt; new law, old law in
+  brackets): f10 on Q_H2O 9.71e24 (1.51e25), seen 88.4 % of Q, dark 9.6 % of Q / 6.1 % of the seen Q (43.6 / 40.8 %);
+  f1 on 7.36e24 (1.52e25), seen 92.5 %, dark 10.7 / 7.0 %; f10 off 7.41e24 (1.98e25), seen 90.9 %, dark 9.9 / 5.5 %.
+  So with P_m 0.01 option C's total production is ~90 % the production the gauges see, mostly lit: the one family of
+  fits whose total Q (0.74-0.97e25 s^-1) is constrained by the data. D2, softplus, D and C with P_m 1e-4 put 59-97 % of
+  Q on unseen terrain (totals 3.1e25 ... 6.7e26). The seen production of all runs is 0.68-2.1e25 s^-1.
+  Option B (background bg-min 1e-2) with the new law (lead 2026-11-19 01:25 CST; chain
+  nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z; c5 fit max_nfev, not converged; source_rate_q002/B_q002_reg):
+  data cost per cycle 5.841 / 5.766 / 5.703 / 5.672 / 5.646e-3 (+10 % vs old law 5.120e-3; -0.4 % vs the new D2);
+  Q_H2O(10:33:10) 4.28e25 (2.53e26), seen 1.05e25 = 24.6 % of Q (5.9 %), dark 67.7 % of Q (94.8 %) and 9.3 % of the
+  seen Q (35.3 %): the D2 / softplus pattern (total dominated by unseen dark facets).
+  Option A (sum of squares rank 3) with the new law, the last chain of the campaign (lead 2026-11-19 14:40 CST; chain
+  nonneg/sos/stage2r_q002_r3_20261118T193956Z, every fit max_nfev; source_rate_q002/A_q002_reg): data cost per cycle
+  11.57 / 10.79 / 10.36 / 9.982 / 9.640e-3, the only model that fits better than with the old law (-10 % vs 1.0694e-2),
+  still the worst (+70 % vs the new D2). Q_H2O(10:33:10) 3.04e25 (1.84e26), seen 6.22e24 = 20.4 % of Q (6.4 %), dark
+  50.6 % of Q (92.5 %) and 11.7 % of the seen Q (56.9 %).
+  Campaign summary (all ten new-law states, 2026-11-19; comparison page source_rate_q002/cluster): data costs C 1e-4
+  2.50e-3 (both f) < C f10 0.01 3.59e-3 < C f1 0.01 4.17e-3 < softplus 5.22e-3 < B 5.65e-3 ~ D2 5.67e-3 ~ C off 5.67e-3 <
+  D 8.28e-3 < A 9.64e-3. The seen production at 10:33:10 is 0.62-2.1e25 s^-1 in every model; the totals span 7.4e24 ...
+  6.7e26; only option C with P_m 0.01 has its total ~90 % seen (0.74-0.97e25). kappa at its bound in every fit.
+  The slope multipliers move with the law (comparison set figures_cluster/12M/model_vs_observations_nonneg_options_
+  stage2_q002/summary.txt, last fits, bins 40-50 / 50-60 / 60-70 / 70-80 / 80-90 / 90-180 deg, new law [old law]):
+  softplus 9.68 / 10.4 / 3.03 / 1 / 6.75 / 44.2 [1 / 1 / 16.2 / 1 / 1 / 4.39]; A 2.34 / 1.05 / 1 / 1 / 1 / 1 [all 1];
+  B 1 / 6.69 / 1 / 1 / 8.10 / 13.0 [1 / 1 / 11.85 / 1 / 1 / 4.37]; D 4.48 / 1 / 1 / 1 / 1 / 86.6 [14.6 / 1 / 14.9 / 1 / 1 /
+  10.1]; C f1 / P_m 0.01 99.3 / 1.07 / 1.07 / 1.04 / 1.01 / 1.60 [1 / 1 / 1.02 / 290 / 1.01 / 1.66]; C f10 / P_m 0.01
+  1 / 456 / 1.01 / 1.01 / 1.00 / 1.51 [1 / 1 / 1.01 / 759 / 1.00 / 1.50]; C P_m 1e-4 keep their large 70-80 / 80-90
+  factors (f10 5.5e4 / 1.8e5, f1 2.5e4 / 8.1e4). So which slope bins carry extra activity (A16) is not robust to the
+  night-side law: the bins with a factor > 1 change in every model with free multipliers. Caveats: several last fits at
+  max_nfev (A, B, C f1 / 1e-4); the multipliers of C at P_m 1e-4 are undetermined (A12); bin factors trade off against the
+  harmonic map and the fine tuning.
+  Full figure sets of the ten new-law states (2026-11-20, figures_cluster/12M/full_set_q002_<key>/checks/facts.json; old-law
+  full sets in brackets where they exist): before the late window the big lobe (body) gives a median 87-96 % of the modelled NG
+  [87-91 %] in every model; in the late window the small lobe (head) gives NG 25-64 %, RG 52-84 % [25-61 / 56-82 %]; the P50
+  source-area unions of the 95 post-gap observations span 1.7e3 m^2 (C, P_m 1e-4) ... 7.1e5 m^2 (A) [1.5e3 ... 7.6e5]. The
+  90-180 deg (overhang) bin gives 63-86 % of NG at the last observation (5.5 m) in softplus, A, B, D and C with templates
+  [59-80 %], but only 7 % for the refitted D2 [38 %] and 0 % for C f10 / P_m 0.01 with the templates off; RG 0-1 % in all.
+  So the NG overhang dominance at touchdown is a property of models with activity on overhangs (multiplier or template), not
+  required by the data. Caveats: A, B, D2 and C f1 / 1e-4 stopped at max_nfev; ft templates held from old-law fits; the
+  C 1e-4 multipliers are undetermined.
+
+### A17. Night and cast shadow lower the modelled production by up to x5, and at the map times most of the production is dark (2026-11-18)
+
+* **Question** (user 2026-11-17): the production-rate maps do not show the night-side / shadow decrease; is it there?
+* **Correction 2026-11-18 (A18):** this entry describes the q_min = 0.2 q_max law of all fits so far; the intended law
+  (srcCG, the code since 2026-11-18) has 0.02, i.e. a factor up to 50 (1.70 decade) between dark and overhead-Sun facets.
+* **The law** (checked on every facet at 10:33:10 and 10:39:26 UTC): F_H2O = q_H2O A, q_H2O/q_max = 0.2 on night and
+  cast-shadow facets, 0.2 + 0.8 cos SZA on day facets (F = q A bitwise; q_min/q_max = 0.2). At a given A illumination changes
+  F by at most a factor 5 (0.70 decade), ~2.8 of the 0.25-decade colour classes of the maps.
+* **Why it is not visible:** the map colour is set by A: on the seen facets with F > 0 (10:33:10, softplus reg) log10 F spans
+  3.25 decades (area-weighted 2-98 %), log10 A 3.01, log10 q/q_max 0.66; A = 0 on 96.4 % of the seen area.
+* **Most of the production is dark at these times:** 66.5 % of the seen area with F > 0 is night or cast shadow (35.5 % of
+  the seen production); on the whole surface night / shadow is 69.7 % of the area, 85.4 % of the area with F > 0 and 94.9 % of
+  Q_H2O (94.2 % of Q_H2O from facets no fitted observation sees, 98.5 % of that from their dark facets). Production-weighted
+  q/q_max = production / (q_max sum A area) = 0.207 (whole), 0.347 (seen): Q_H2O is ~21 % of what the same A would give under
+  an overhead Sun. The impact-area active patch is lit (72 % of its drawn area at q/q_max >= 0.8, 0.9 % dark).
+* **Fit-independent geometry:** cos SZA, illumination and the seen mask are bitwise identical in the maps of all six full-set
+  states; 30.3 % day / 51.6 % night / 18.1 % cast shadow by area at 10:33:10; the Sun moves 2.92 deg between the two map times
+  and 4.3 % of the area changes class.
+* **Caveats:** the activity of the unseen facets (which carry ~94 % of Q_H2O) is not constrained by the data; A is constant in
+  time while the illumination rotates, so a facet dark at 10:33 was lit at other fitted times; the numbers are for the softplus
+  reg state (the illumination itself holds for all six).
+* Evidence: `figures_cluster/12M/illumination_maps_103310_103926/` (README.txt, checks/illumination_numbers.txt,
+  checks/illumination_crosscase.txt, side_by_side/); jobs 136359 (numbers), 136369 / 136370 (figures).
+
+### A16. At the same illumination the fitted source rate depends on the slope in all six final states; the size and the bins are the model's (2026-11-17)
+
+* **Question** (user 2026-11-17): at the same illumination, does the source rate depend on the slope angle? Definitions
+  0-40 (reference), 40-50 ... 80-90, >40, >60, >80 (and 90-180 separately). In the model F = A q with q = Qmin + (Qmax -
+  Qmin) cos SZA on the lit side and Qmin at night / in cast shadow, so at equal SZA and shadow state the slope dependence of
+  F is that of the fitted A (`figures_cluster/12M/cliff_effect_stage2/`, answer.json per case; document
+  12M_stage2_cliff_effect.docx).
+* **SZA-controlled ratio F(category) / F(0-40)** (area-weighted average over 10-deg SZA classes + shadowed + night of the
+  per-class ratio), whole surface, 10:33:10 UTC, >40 / >60 / >80: softplus 4.66 / 8.84 / 2.48, A 1.43 / 1.39 / 1.52,
+  B 4.12 / 7.55 / 2.73, D 12.6 / 10.2 / 3.83, C (f 1, P_m 1e-4) 9.86e4 / 2.16e5 / 5.44e5, D2 1.92 / 2.50 / 1.72. Single bins:
+  softplus 60-70 18.6 and 90-180 4.11 (fitted multipliers 16.2, 4.389), B 15.2 / 4.38 (11.85, 4.372), D 40-50 24.9, 60-70
+  21.2, 90-180 7.65 (14.64, 14.92, 10.1), C 70-80 1.9e5, 80-90 1.01e6 (7.904e4, 3.303e5); A (multipliers all at 1) 0.867-2.07
+  and D2 (no multipliers) 1.32-2.93: the map's own slope trend. F and A ratios agree to <= 0.42 % (whole surface).
+* **So:** in every model the >40, >60 and >80 categories emit more than the 0-40 deg facets at the same illumination
+  (single bins can be below 1: A 90-180 0.867, D 70-80 0.745 and 80-90 0.586), but how much and in which bins is set by the
+  fitted multipliers (where they are free) and is not robust across models: 1.4x (A) to 8-10x (softplus, B, D) for >60
+  deg, and 2e5 for C, whose multipliers are not determined (A12).
+* **In the signal** (P4, >60 deg, NG, 10:33:10; 15.3 % of the seen area): share / area share 0.779 A, 2.00 D, 3.73
+  softplus, 4.24 D2, 4.50 B, 6.53 C. The illumination factor (0.696) and the geometry factor (0.617) are the same in every
+  model (vs the 0-40 deg facets the >60 deg facets are farther from the gauge, 1/r^2 x 0.41, but face it better, cos theta
+  x 1.48); the activity factor (1.13 A ... 6.53 C) and the covariance (1.6-2.4) make the difference.
+* **Caveats:** a model property, not a measurement: the slope dependence comes from multipliers and maps the data constrain
+  only on the seen surface; A, B, C and D2 stopped at max_nfev (not converged); C's multipliers are undetermined at f_m 1e-4;
+  kappa at its lower bound everywhere. On the gauge-seen surface the 0-40 reference is sparse at night / high SZA and at 20 m
+  and 5.5 m in several classes; there the specified ratio is unstable (it can exceed 1e100), so the whole-surface numbers
+  above are the robust ones (variant ratios over well-sampled classes in answer.csv).
+
 ### A15. Full figure sets of the six final states: what is common to all models and what is not (2026-11-17; corrected 19:00 CST)
 
 * **States:** the regularized stage-2 chains softplus, A (sum of squares r3), B (background 1e-2), D (log spread f 0.1),
@@ -208,6 +388,11 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   all option C runs (regularized 2.44-2.46e-3 vs 3.20-3.38e-3 at f_m = 0.01), bought with steep-bin multipliers of
   1e5 and Q_H2O 1e27+: Q is then set by unseen steep terrain multiplied by those factors, not by the data (caveat), and
   the multipliers are only weakly determined (the global-level degeneracy).
+* **Night law 0.02 (2026-11-18, A18): option C design** (job 136507): with H2O q_min = 0.02 q_max the design columns of
+  the hat functions fall to 0.1 - 1 of the 0.2-law values (median 0.79 NG, 0.80 RG; the template columns 0.71; CO2
+  unchanged) and the late-facet kernels to a median 0.1 (most records of the 271 late facets are night / shadow), so the
+  late fine tuning acts on activity that now produces about 10 x less. The 0.2-law D2 / c9 states evaluated with the
+  new design: data cost 0.0798 / 0.0648 (were 4.89e-3 / 4.27e-3); all option C results above are 0.2-law results.
 * **kappa = 0 in every option C stage-2 state - and in every other fit** (c5 fits, 2026-11-17; widened 2026-11-17 15:00
   CST: kappa is at its lower bound in all 59 fits checked, all options, the softplus chains, D2 and the stage-1 fits, and
   was so before stage 2; values in A14 and `figures_cluster/12M/model_vs_observations_nonneg_options_stage2_final/
@@ -377,6 +562,8 @@ it a significant part close to the surface?
 * **Mechanism:** with the gauge a few metres above the surface next to the cliff at the impact site, the nearest
   facets dominate (contribution ∝ facet area / distance², times the gauge's angular response), and those are dark
   overhangs producing at the night-side floor times the fitted multiplier.
+* **Correction 2026-11-18 (A18):** the 0.2 floor was not intended; srcCG and the fixed code use 0.02, which makes dark
+  overhangs produce 10x less at the same A. To be re-evaluated after a refit with the 0.02 law.
 * **Caveat for interpretation:** this is a consequence of the 20 % night/shadow floor plus a free overhang multiplier;
   the fit uses the overhang multiplier mainly to reproduce the last seconds of NG and RG. Not yet tested: a fit with
   the overhang multiplier held at 1 or 0, or without a night/shadow floor for overhangs.
@@ -506,7 +693,8 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
   per-facet transport kernels Kn (NG), KΦ and KV (RG) (LiouvilleCOPS src/Liouville.h), cos SZA and cast shadow per
   record; 1551 base rows (1150 observations + 401 model-only 1-s grid rows in the late window).
 * Production law (srcCG): q = q_min (night or cast shadow) else q_min + (q_max − q_min) cos SZA; H2O q_max =
-  600 / r_h^p (r_h in AU, p = 4.2143229), q_min = 0.2 q_max; CO2 q_max = 600 / r_h², q_min = 0.1 q_max; flux
+  600 / r_h^p (r_h in AU, p = 4.2143229), q_min = 0.02 q_max as srcCG (since 2026-11-18; EVERY fit up to 2026-11-18
+  used 0.2 q_max, not intended: A18); CO2 q_max = 600 / r_h², q_min = 0.1 q_max; flux
   F = q × A [m^-2 s^-1].
 * Gauge time response in the late window (W10x5): mean of five 10-s running averages ending at T, T−2, …, T−8 s,
   T = the L2 STOP time; gauge 1.5 m along +Z from the trajectory point; dust-grain term in NG; NG = RG crossing
@@ -521,6 +709,9 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## C. Open questions (physics)
 
+* (2026-11-18, A18) How do the fits change with the intended q_min = 0.02 q_max: costs, ranking of the models, the late
+  NG/RG, where the activity goes (seen vs unseen, steep vs flat)? Needs refits (and, first, bases whose COPS_model.dat
+  is consistent with the new law: tests/nightfix_diagnostic_20261118/README.txt).
 * Should dark overhangs produce at the night-side floor times a free multiplier (A1)? Tests: overhang multiplier
   held at 1 or 0; no floor for overhangs; merge the 90–180° bin into 80–90°.
 * Is the switch-off of sunlit surface (A4) physical (dust mantle) or a basis limitation?
@@ -537,6 +728,27 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## D. Change log of this file
 
+* 2026-11-20 (16:00 CST): A18: the full figure sets of the ten new-law states (lobe, shell, P50 and overhang shares vs the old law).
+* 2026-11-19 (17:30 CST): A18: the slope multipliers of the new-law fits vs the old law (comparison set stage2_q002).
+* 2026-11-19 (14:40 CST): A18 addendum: option A with the new law and the campaign summary of all ten new-law states.
+* 2026-11-19 (01:25 CST): A18 addendum: option B with the new law (5.646e-3; Q_H2O 4.28e25, 25 % seen).
+* 2026-11-18 (23:10 CST): A18 addendum: source rates of the three option C chains with P_m 0.01 (total Q ~90 % seen).
+* 2026-11-18 (22:40 CST): A18 addendum: the three option C chains with P_m 0.01 under the new law (+12 / +24 / +55 %).
+* 2026-11-18 (21:30 CST): A18 addendum: option C f1 / P_m 1e-4 and option D with the new law.
+* 2026-11-18 (19:45 CST): A18 addendum: option C f10 / P_m 1e-4 with the new law (2.4988e-3, +1.6 % vs old law;
+  Q_H2O 4.84e26 set by the undetermined steep multipliers).
+* 2026-11-18 (18:10 CST): A18 addendum: the first new-law stage-2 chain (softplus regularized): costs per cycle and its
+  source rates (Q_H2O 6.08e25 at 10:33:10; dark 76.6 % of Q, 18.2 % of the seen Q).
+* 2026-11-18 (14:45 CST): A18 addendum: where the D2 refit's production comes from (seen 27.6 % of Q; dark 68.8 % of Q
+  but 6.5 % of the seen Q; source_rate_q002/D2_q002_warm).
+* 2026-11-18 (13:35 CST): A18 addendum: Q_H2O of the D2 refit (3.12e25 at 10:33:10 vs D2's 2.11e26).
+* 2026-11-18 (04:40 CST): A18 addendum: the D2 refit with the new law on base_q002 (data cost 5.671e-3 vs 4.886e-3).
+* 2026-11-18 (01:45 CST): A18 correction notice (all results used H2O q_min = 0.2 q_max; intended 0.02) with the
+  fixed-A diagnostic of the eight final states; correction notes in A1 and A17; B production law; C open question.
+* 2026-11-18 (00:40 CST): A17 (night / cast-shadow factor of the production: present, up to x5, hidden by the A range; most of
+  the production is dark at the map times; illumination identical in the six states).
+* 2026-11-18 (00:10 CST): A16 (slope at equal illumination: SZA-controlled source-rate ratios of the six final states).
+* 2026-11-18 (02:35 CST): A12: option C design matrices of the 0.02 night law.
 * 2026-11-17 (14:50 CST): A12: the regularized f_m = 1e-4 chains (f = 10, f = 1).
 * 2026-11-17 (18:30 CST): A15 (full figure sets of the six final states: the seen surface gives ~6 % of Q_H2O in every
   model; robust and model-dependent quantities).

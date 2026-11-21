@@ -1,10 +1,11 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/d2_tools.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/d2_tools.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 1b47f4674316a7e98b29933b0ec085074b213a29f8f1ce2e8ee4efa25f3d98c3
+# SHA256 of the run copy = SHA256 of this file without these header lines: ec5e40f854a90ccf6438247191297beac9e292323bbd9c61eea1f1988a0551a4
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: D2 export / contributions / verify / maps (2026-11-17)
 # RUN: see model_ext/README.md (full sets of the stage-2 states, 2026-11-17)
+# 2026-11-18 13:21 CST: D2_BASE / D2DIR overrides (default unchanged), for the new-law D2 refit on base_q002
 # ==== end of header ====
 # The clipped refit D2: the maps and contribution tools of the nonneg chains on D2's final state (model_ext/d2_tools.py:
 # export folder + the frozen nonneg_maps.py / nonneg_contrib.py, unchanged, with state_activity replaced by the D2 one;
@@ -31,7 +32,9 @@ export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/Li
 export COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
-BASE=$R/base; D2DIR=$R/clip_refit/D2; D2=$D2DIR/final
+# 2026-11-18 (night-side fix): D2_BASE / D2DIR override the base and the D2 folder (default unchanged); the new-law
+# D2 refit: D2DIR=$R/clip_refit/D2_q002_warm D2_BASE=$R/base_q002 (GEOM = a geometry validated against base_q002)
+BASE=${D2_BASE:-$R/base}; D2DIR=${D2DIR:-$R/clip_refit/D2}; D2=$D2DIR/final
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
 GEOM=${GEOM:-$R/maps_geometry/job_124775/geometry}
 CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261112T210012Z}

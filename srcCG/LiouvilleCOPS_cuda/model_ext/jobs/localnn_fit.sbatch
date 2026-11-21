@@ -1,13 +1,16 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_fit.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_fit.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 09d57052e3294bc7af1a5c4cd56d0c2a26cc2bbec7e3128871ec4bc08889053d
+# SHA256 of the run copy = SHA256 of this file without these header lines: ae493f51a27da71e0016b0e034c22d4652e1e1244af5ca743544e10e448eb6fc
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU, normal128cores, option C): one fit (TEMPLATES on|off, SMOOTH_FACTOR or SMOOTH_LAMBDA [+
 #   SMOOTH_RULE_FILE], MULT_PENALTY_F (P_m, 2026-11-14), START, NFEV), wall-time stop / exit 75 / RUNROOT resume, then
 #   localnn_direct.py; run root runs/.../nonneg/localnn/<RUN>_<UTC>.
 # RUN: timing test 124995; start-rule stage 1 125014-125016 (cancelled); pilot 125071; anchored stage 1 125107, 125119,
 #   125113 (node failure) -> 125177; P_m check 125360.
+# 2026-11-18: 2026-11-18: DESIGN_DIR and CONTRIB defaults of the current law (design_h2oqmin0.02,
+#   nonneg_contrib_20261118T072729Z).
+# RUN 2026-11-18: no job since the change (no C fit started).
 # ==== end of header ====
 # Option C (local non-negative basis, user 2026-11-14): ONE fit on a CPU node (normal128cores), no GPU.
 #   A_e = m_b(e) (sum_j c_j phi_j(e) [+ A_s sum_k ft_ck]),  c_j >= 0, m_[0,40) = 1, six multipliers >= 1, kappa >= 0,
@@ -43,6 +46,8 @@
 #SBATCH --time=08:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_fit-%j.out
 set -uo pipefail
+# 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
+# NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
 export AMPS=/data001/highresolu_vt/AMPS APP=/data001/highresolu_vt/AMPS/srcCG/LiouvilleCOPS_cuda
 export COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output
 BLAS_THREADS=${BLAS_THREADS:-16}
@@ -52,7 +57,8 @@ UNSET=$(env | grep -o -E '^(COPS_POS_[A-Z_]*|COPS_SLOPEMUL_[A-Z_]*|COPS_NONNEG_[
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5
 BASE=$R/base; D2=$R/clip_refit/D2/final; PT=$R/late_grid_points.txt
 export MODEL_EXT=$(readlink -f "${MODEL_EXT:-$COPS_OUTPUT_ROOT/model_ext}")
-CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261112T210012Z}
+CONTRIB=${CONTRIB:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_contrib_20261118T072729Z}
+DESIGN_DIR=${DESIGN_DIR:-$GRID_DIR/design_h2oqmin0.02}
 TEMPLATES=${TEMPLATES:-}; SMOOTH_FACTOR=${SMOOTH_FACTOR:-}; SMOOTH_LAMBDA=${SMOOTH_LAMBDA:-}; NFEV=${NFEV:-}
 CHECK=${CHECK:-1}; RUNROOT=${RUNROOT:-}; SMOOTH_RULE_FILE=${SMOOTH_RULE_FILE:-}; MULT_PENALTY_F=${MULT_PENALTY_F:-}
 GRID_DIR=${GRID_DIR:-$R/nonneg/localnn/grid_150m}
@@ -98,7 +104,7 @@ run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }
 free -g > "$P/free_start.txt" 2>&1
 JC=(); [ "$CHECK" = 1 ] && ! ls -d "$RUNROOT"/fit/seg[0-9][0-9] >/dev/null 2>&1 && JC=(--check-jacobian)
 stamp "fit -> $RUNROOT/fit"
-run heavy "$PY" -W ignore "$MODEL_EXT/localnn_fit.py" fit --design "$GRID_DIR/design" --base "$BASE" --d2 "$D2" \
+run heavy "$PY" -W ignore "$MODEL_EXT/localnn_fit.py" fit --design "$DESIGN_DIR" --base "$BASE" --d2 "$D2" \
   --point-table "$PT" --grid "$GRID_DIR" --templates "$TEMPLATES" --slope-mult-min 1 --start-file "$START" "${SM[@]}" \
   --max-nfev "$NFEV" --wall-time "$WALL" "${JC[@]}" --out "$RUNROOT/fit" > "$P/fit.log" 2>&1; rc=$?
 tail -n 6 "$P/fit.log" | cut -c1-600
@@ -106,7 +112,7 @@ if [ $rc -eq 0 ] && [ -e "$RUNROOT/fit/final" ] && [ ! -e "$RUNROOT/fit/direct_c
   stamp "direct facet-sum check of the final state"
   OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 run heavy "$PY" -W ignore "$MODEL_EXT/localnn_direct.py" \
     --seg "$RUNROOT/fit/$(readlink "$RUNROOT/fit/final")" --base "$BASE" --d2 "$D2" --point-table "$PT" \
-    --design "$GRID_DIR/design" --contrib-code "$CONTRIB" --procs "${SLURM_CPUS_PER_TASK:-16}" > "$P/direct.log" 2>&1; rc=$?
+    --design "$DESIGN_DIR" --contrib-code "$CONTRIB" --procs "${SLURM_CPUS_PER_TASK:-16}" > "$P/direct.log" 2>&1; rc=$?
   tail -n 2 "$P/direct.log" | cut -c1-800
 fi
 free -g > "$P/free_end.txt" 2>&1

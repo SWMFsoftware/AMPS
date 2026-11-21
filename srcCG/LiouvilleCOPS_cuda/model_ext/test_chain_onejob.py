@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/test_chain_onejob.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/test_chain_onejob.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 64154a0101597f1bb232095d3797b00a965af65c597ffcd520a4217f5410d8a9
+# SHA256 of the run copy = SHA256 of this file without these header lines: 03d397db14f2e93a9f85562cd755e585ee403fef3c2c84331e85c3d9f9bd422a
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. CPU tests of chain_onejob.py (the planned stage commands equal, token by token, the commands.sh of the
 #   split chains: positive jobs 123035-123052, the 3a chain 124008-124074, the nonneg job scripts; stage states; module
@@ -16,6 +16,9 @@
 # 2026-11-16: + 1e (the fine-tuning delta regularization options, token-for-token; refusals).
 # 2026-11-16: the configuration stage for --cycles 1 / 2 (1d, nonnegstage2 incl. a real --cycles 1 parent setup).
 # 2026-11-17: + 1f (the free-space guard of the driver and of jobs/chain_onejob.sbatch).
+# 2026-11-18: + 1g (--base / BASE).
+# 2026-11-18: 1g also compares the c1 fit with jobs/nonneg_fit.sbatch BASE= (4 models).
+# 2026-11-18: 1g base without manifest (split vs driver, --allow-legacy-base).
 # ==== end of header ====
 """Tests of model_ext/chain_onejob.py (CPU) and the split-vs-one-job comparison (after the GPU test jobs).
 
@@ -773,6 +776,86 @@ def test_disk_guard(scratch):
     cmd0 = emulate_sbatch("chain_onejob.sbatch", dict(env, CHAIN_ROOT=str(d / "sbatch_off"), MIN_FREE_GB="0"), d, "disk_off")
     check(a4.min_free_gb == 20.0 and "--min-free-gb" not in cmd0,
           "disk guard: chain_onejob.sbatch passes --min-free-gb 20 by default, nothing with MIN_FREE_GB=0")
+
+
+# ------------------------------------------------------------------------------------------------ 1g --base
+# v7.4 (2026-11-18, the H2O q_min 0.02 campaign): --base / BASE = the base of every fit (base_q002); default <run>/base.
+def test_base_option(scratch):
+    import chain_onejob as co
+    d = scratch / "base_option"
+    d.mkdir()
+    fake = d / "base_fake"                       # links to the real base files (read only), as base_q002 hard-links
+    fake.mkdir()
+    for f in ("COPS_model.dat", "elements.bin", "kernels", "run_manifest.json"):
+        os.symlink(str(RUN / "base" / f), str(fake / f))
+    nomani = d / "base_nomanifest"               # as base_q002: no run_manifest.json -> --allow-legacy-base (v7.5)
+    nomani.mkdir()
+    for f in ("COPS_model.dat", "elements.bin", "kernels"):
+        os.symlink(str(RUN / "base" / f), str(nomani / f))
+    toks = {"softplus": {}, "background": {"BG_MIN": "0.01"}, "logspread": {"SPREAD_F": "0.1", "SPREAD_CREF":
+            "4.2688066575e-03", "SPREAD_U0": "-1.864126788612443"}, "sos": {"SOS_RANK": "3"}}
+    for model, tok in toks.items():
+        for stage, done in (("c1fit", None), ("c1ft", 0), ("c2fit", 1)):
+            argvs = {}
+            for tag, extra in (("old", []), ("new", ["--base", str(fake)])):
+                root = d / ("%s_%s_%s" % (model, stage, tag))
+                if done is None:
+                    root.mkdir()
+                else:
+                    _fake_chain(root, done)
+                a = co.parse_args(["--kind", "nonneg", "--slope-model", model, "--chain-root", str(root), "--cycles",
+                                   "2", "--nfev", "5", "--check", "1", "--ft-maxnfev", "3", "--ft-facets", "late_only",
+                                   "--ft-window-min", "5", "--l-threads", "32", "--model-ext", str(NONNEG_SNAP3),
+                                   "--devices", "0", "--source", str(RUN / "clip_refit" / "D2" / "final" /
+                                                                      "fit_restart.npz"), "--slope-mult-min", "1"]
+                                  + _tok_args(tok) + DELTA_ARGS + extra)
+                ch = co.Chain(a)
+                plan = next(st for st in ch.stages if st.name == stage).prepare()
+                argvs[tag] = [t.replace(str(root), "<root>") for t in (plan.argv or [])]
+            o, n = argvs["old"], argvs["new"]
+            diff = [i for i in range(min(len(o), len(n))) if o[i] != n[i]]
+            if stage.endswith("fit"):
+                k = o.index("--") + 1 if "--" in o else -1
+                check(len(o) == len(n) and diff == [k] and o[k] == str(RUN / "base") and n[k] == str(fake),
+                      "--base %s %s: the fit command differs from the default only in fit_cops' run directory "
+                      "(token %d: %s -> base_fake)" % (model, stage, k, o[k] if k >= 0 else "-"))
+            else:
+                check(o == n and len(o) > 0, "--base %s %s: the fine-tuning command is unchanged (the fit's run is "
+                                             "read from its manifest)" % (model, stage))
+    # jobs/nonneg_fit.sbatch with BASE (2026-11-18 override line): the split command = the driver's with --base
+    if 'BASE=$(readlink -f "${BASE:-$R/base}")' in (ROOT_OUT / "jobs" / "nonneg_fit.sbatch").read_text():
+        for model, tok in toks.items():
+            split, mine = d / ("bsplit_%s" % model), d / ("bmine_%s" % model)
+            split.mkdir(), mine.mkdir()
+            ref = emulate_sbatch("nonneg_fit.sbatch", dict({"NFEV": "5", "CHECK": "1", "CHAIN": "1", "L_THREADS": "32",
+                                                            "MODEL_EXT": str(NONNEG_SNAP3), "SLOPE_MULT_MIN": "1"},
+                                                           MODEL=model, FITDIR=str(split / "c1" / "fit"), BASE=str(nomani),
+                                                           **tok), d, "bsplit_%s" % model)
+            a = co.parse_args(["--kind", "nonneg", "--slope-model", model, "--chain-root", str(mine), "--cycles", "2",
+                               "--nfev", "5", "--check", "1", "--ft-maxnfev", "3", "--ft-facets", "late_only",
+                               "--ft-window-min", "5", "--l-threads", "32", "--model-ext", str(NONNEG_SNAP3),
+                               "--devices", "0,1,2,3,4,5,6,7", "--source", str(RUN / "clip_refit" / "D2" / "final" /
+                                                                                "fit_restart.npz"),
+                               "--slope-mult-min", "1", "--base", str(nomani)] + _tok_args(tok) + DELTA_ARGS)
+            pl = co.Chain(a).stages[0].prepare()
+            _compare_plan(co, pl, ref, mine, split,
+                          "--base %s c1fit (base without run_manifest.json) vs jobs/nonneg_fit.sbatch BASE=" % model,
+                          "nonneg_fit.sbatch")
+            if pl.argv:
+                k = pl.argv.index("--allow-legacy-base") if "--allow-legacy-base" in pl.argv else -1
+                check(k > pl.argv.index("--") and pl.argv[k + 1] == "--out",
+                      "--base %s: a base without run_manifest.json gets --allow-legacy-base before --out" % model)
+    else:
+        check(False, "--base: jobs/nonneg_fit.sbatch has no BASE override")
+    env = dict(KIND="nonneg", SLOPE_MODEL="softplus", CYCLES="5", NFEV="4000", CHECK="1", FT_MAXNFEV="500",
+               FT_FACETS="late_only", FT_WINDOW_MIN="5", L_THREADS="32", SLOPE_MULT_MIN="1",
+               MODEL_EXT=str(NONNEG_SNAP3), CHAIN_CODE=str(HERE))
+    c1 = emulate_sbatch("chain_onejob.sbatch", dict(env, CHAIN_ROOT=str(d / "sb_base"), BASE=str(fake)), d, "base_set")
+    c0 = emulate_sbatch("chain_onejob.sbatch", dict(env, CHAIN_ROOT=str(d / "sb_nobase")), d, "base_unset")
+    i = next(k for k, t in enumerate(c1) if t.endswith("chain_onejob.py"))
+    a1 = co.parse_args(c1[i + 1:])
+    check(a1.base == readlink(fake) and "--base" not in c0 and co.Chain(a1).base == Path(readlink(fake)),
+          "--base: chain_onejob.sbatch passes BASE (resolved) as --base; nothing without BASE")
 
 
 # ------------------------------------------------------------------------------------------------ 2 states
@@ -1838,7 +1921,7 @@ def main():
     base.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix="test_chain_onejob_cpu_", dir=str(base)))
     print("scratch %s" % scratch)
-    for t in (test_commands, test_slope_commands, test_nonneg_commands, test_nonneg_stage2, test_nonneg_delta, test_disk_guard, test_states, test_baseline, test_real_modules, test_spawn,
+    for t in (test_commands, test_slope_commands, test_nonneg_commands, test_nonneg_stage2, test_nonneg_delta, test_disk_guard, test_base_option, test_states, test_baseline, test_real_modules, test_spawn,
               test_slope_kind, test_tee):
         try:
             t(scratch)

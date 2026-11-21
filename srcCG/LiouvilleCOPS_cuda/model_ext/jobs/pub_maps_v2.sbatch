@@ -1,11 +1,12 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/pub_maps_v2.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/pub_maps_v2.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 1d4cef12e40f9cac607cad18ecda8d52680fb3349208d74d90a4a8b2d4a16e33
+# SHA256 of the run copy = SHA256 of this file without these header lines: ed5b843d0c7a3557efec02d7adf29f8aef9a1b134ecf9470ebe319acd7a04cb7
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: job script (GPU): pub_maps_v2_figures.py, one quantity per job; MODEL_NAME added 2026-11-13.
-# RUN: QUANTITY=activity | QUANTITY=h2o TIME=HH:MM:SS [OUT, CHAIN, GEOM, MODEL_NAME, LOWCUT] sbatch --export=ALL
-#   pub_maps_v2.sbatch
+# WHAT: job script (GPU): pub_maps_v2_figures.py, one quantity per job; MODEL_NAME added 2026-11-13; 2026-11-20 (full
+#   sets of the new-law fits): BASE override, MODEL_TEXT passed as --model-text (defaults unchanged)
+# RUN: QUANTITY=activity | QUANTITY=h2o TIME=HH:MM:SS [OUT, CHAIN, GEOM, MODEL_NAME, MODEL_TEXT, BASE, LOWCUT] sbatch
+#   --export=ALL pub_maps_v2.sbatch
 # ==== end of header ====
 # Version 2 of the activity / total-production-rate template and ground-track figures of the 12M softplus model after
 # 5 cycles (user request 2026-11-12, second round): colour only on the facets seen during the fit, per-panel discrete
@@ -50,7 +51,7 @@ export PATH=$CUDA_HOME/bin:$PATH LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PA
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 QUANTITY=${QUANTITY:?set QUANTITY=activity, or QUANTITY=total and TIME=HH:MM:SS}; TIME=${TIME:-}; CLASSES=${CLASSES:-15,20}
 O=${OUT:-$COPS_OUTPUT_ROOT/figures_cluster/12M/full_set_softplus_5cycles_v2}
-R=${RUN:-$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5}; BASE=$R/base
+R=${RUN:-$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5}; BASE=${BASE:-$R/base}   # 2026-11-20: BASE override (default unchanged)
 CH=${CHAIN:-$R/nonneg/softplus/chain_5cycles_20261112T012553Z}; NCYC=${NCYC:-5}
 FT=${FT:-$CH/c$NCYC/ft/final}; FIT=${FIT:-$CH/c$NCYC/fit/final}; MAPS=${MAPS:-$CH/maps}
 GEOM=${GEOM:-$R/maps_geometry/job_124324/geometry}; MX=${MX:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_maps_20261112T021623Z}
@@ -89,7 +90,7 @@ run() { printf '%q ' "$@" >> "$P/commands.sh"; echo >> "$P/commands.sh"; "$@"; }
 free -g > "$P/free_start.txt" 2>&1; df -h "$COPS_OUTPUT_ROOT" > "$P/df_start.txt" 2>&1
 run heavy $PY "$S/pub_maps_v2_figures.py" --base "$BASE" --track-base "$TBASE" --bundle "$TBUNDLE" --ft-dir "$FT" \
     --fit-dir "$FIT" --maps-dir "$MAPS" --geometry "$GEOM" --maps-code "$MX/nonneg_maps.py" --out-dir "$O" \
-    "${QARGS[@]}" --classes "$CLASSES" --model-name "$MODEL_NAME" --device 0 > "$P/v2_$TAG.log" 2>&1; rc=$?
+    "${QARGS[@]}" --classes "$CLASSES" --model-name "$MODEL_NAME" ${MODEL_TEXT:+--model-text "$MODEL_TEXT"} --device 0 > "$P/v2_$TAG.log" 2>&1; rc=$?
 tail -n 25 "$P/v2_$TAG.log"
 free -g > "$P/free_end.txt" 2>&1; df -h "$COPS_OUTPUT_ROOT" > "$P/df_end.txt" 2>&1
 stamp "done: rc $rc"

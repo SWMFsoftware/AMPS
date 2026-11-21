@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_ftreg_summary.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_ftreg_summary.py)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 38fa5335dd39ec8d49b5de936c1097af76031a288594919c83f837a39a25f56b
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
@@ -7,7 +7,7 @@
 #   late-window rms ln NG / RG, P_delta, max |h+delta| and facets at the cap, the seen area holding 50 % / 90 % of
 #   the seen production and Q_H2O at 10:33:10 (localnn_report.production_stats), the share of the late-window
 #   surface pressure from the tuned facets.
-# RUN 2026-11-15: reference 134496; the test runs.
+# RUN 2026-11-16: reference 134496; the test runs.
 # ==== end of header ====
 """Fine-tuning regularization tests (lead / user 2026-11-15 ~21:10 CST): the per-run numbers of the c5 fine tunings
 with P_delta = f_delta C_ref sum w (h+delta)^2 / sum w and the cap |h+delta| <= ln 100, against the unregularized c5

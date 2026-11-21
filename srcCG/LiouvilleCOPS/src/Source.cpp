@@ -210,7 +210,9 @@ void cSourceModel::GetQ(int spec,double rh_AU,double& Qmin,double& Qmax) const {
   if (spec==Const::H2O) {
     double p=(HeliocentricModel=="shap5") ? 4.2143229 : 4.8;
 
-    Qmin=10.0*0.02/pow(rh_AU,p)*600;
+    //2026-11-18: night/shadow fraction Qmin/Qmax = 0.02 as srcCG Comet::GetTotalProductionRateBjornNASTRAN
+    //(the former 10.0*0.02 = 0.2 was not intended; user decision 2026-11-18)
+    Qmin=0.02/pow(rh_AU,p)*600;
     Qmax=1.0/pow(rh_AU,p)*600;
   }
   else {

@@ -1,6 +1,6 @@
 # ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/positive_problem.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/positive_problem.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: b234281c22bebe49dc4078b52b2b1dbd2bb37f1146cae5cf942dfb2a741570f9
+# SHA256 of the run copy = SHA256 of this file without these header lines: 563384a178730b5d15f6d9b6a08052ae0b270017adbe0ce314d59ae93cc6fbb1
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Fit driver of the positive-activity fits (user decisions 2026-11-07/08): exp(Y a + c T_cliff + held), c >= 0; start and prior
 #   = emission-weighted projection of ln A_orig; area-weighted log Tikhonov on the total ln A (held: Lt (x - x0 + h_B) plus
@@ -8,6 +8,7 @@
 #   marker (ratio, held file sha256).
 # USED BY: positive_fit.py, positive_finetune.py.
 # 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): README text of the reference ratios (H2O 0.02)
 # ==== end of header ====
 """Positive H2O activity A = exp(s), start from the original map, log-space Tikhonov term and the COPS time response
 in the late window (user decisions 2026-11-07). Fit-level part; the GPU side is model_ext/positive_activity.py.
@@ -1698,7 +1699,7 @@ PARAMETERIZATION_TEXT = """\
 H2O activity per facet:  A = exp(s),  s = sum_j a_j Y_j + c * T_cliff   (Y: the 25 degree-<=4 real spherical harmonics
 of the fitter; T_cliff: template {templates} of {bundle}; c = ln of the cliff factor, >= 0).
 Production per kernel record (GPU, model_ext/positive_activity.py): night/shadow ratio {night} (H2O and CO2; reference
-0.2 and 0.1); H2O flux floor F >= {floor} q_max A_orig (A_orig = the run's activity, elements.bin column 32; records at
+0.02 and 0.1, H2O 0.2 before 2026-11-18); H2O flux floor F >= {floor} q_max A_orig (A_orig = the run's activity, elements.bin column 32; records at
 the floor do not depend on the activity parameters; {co2_text}). Temperature law held: Tmax {T0[0]},
 T75 {T0[1]}, Tmin {T0[2]} K. Late window (>= {late} UTC): model = W10x5 of the surface model (+ grain at the time stamp).
 Tikhonov: D^2 = sum area (s - s0)^2 / sum area (nepers; s0 = the start and prior = the emission-weighted, w = area A_orig,

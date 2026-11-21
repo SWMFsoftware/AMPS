@@ -1,10 +1,10 @@
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-17, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/jacfail/jac_fixtest2.py (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/jacfail/jac_fixtest2.py)
 # SHA256 of the run copy = SHA256 of this file without these header lines: c19a3d227ba3394b8fe76776ad4eec02a221022b9c4afb6ef8ecae064173ace9
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: the corrected jacobian_check at 5 stage-2 states (the two failed stage2r c4 starts, the failed f1 / 1e-4 c4
 #   start, two others): all <= 8.2e-7.
-# RUN 2026-11-15: srun 2026-11-17 08:05 UTC (jac_fixtest3.out).
+# RUN 2026-11-17: srun 2026-11-17 08:05 UTC (jac_fixtest3.out).
 # ==== end of header ====
 # the fixed jacobian_check at the failing state (f1 / 1e-4 c4 start) and at the stage-1 / stage-2 states of the earlier tests
 import sys, json, os, numpy as np

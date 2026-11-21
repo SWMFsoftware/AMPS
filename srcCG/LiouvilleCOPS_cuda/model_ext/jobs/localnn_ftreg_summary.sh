@@ -1,11 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/ftreg/ftreg_summary.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/ftreg/ftreg_summary.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: 77d9fc9659d056f1eff75548c5bac5933b6983a27a8ae2fabfe43a71e10cbe89
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: the per-run summary of the fine-tuning regularization tests (C, B, D; regularized runs, CPU controls and the
 #   chains' c5 fine tunings as references) with localnn_ftreg_summary.py of localnn_s2ftreg.
-# RUN 2026-11-15: 134507.
+# RUN 2026-11-16: 134507.
 # ==== end of header ====
 # the per-run numbers of the fine-tuning regularization tests (localnn_ftreg_summary.py of localnn_s2ftreg)
 set -uo pipefail

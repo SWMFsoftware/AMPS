@@ -157,6 +157,11 @@ Notes:
 | `contrib_phase_data.sbatch`, `pub_contrib_density.sbatch` | 2026-11-14 full set of the c9 state: contribution per unit area at snapshot rows and phase means (data, CPU) and their maps (GPU, short); region shares by lobe / distance (`regions_figures.py`, CPU) | 124979, 124990 |
 | `options_activity_maps.sbatch` | 2026-11-14 activity maps of the best stage-1 setting of each non-negative option and the bounded softplus c9 (`figures/pub_options_activity_maps.py`; 1 GPU, ~3 min) | 125205; final 131968 |
 | `full_set_submit.sh`, `finish_full_set.sh`, `d2_tools.sbatch`; `nonneg_maps.sbatch` (cycle detection skips c<N>.incomplete_*), `contrib_phase_data.sbatch` (optional FT / FIT / SBINS / ADAPTER) | 2026-11-17 full figure sets of the six cases of 12M_stage2_reg_best (softplus, A, B, D regularized, best C, D2): the c9 set's figure jobs parameterized, the last CPU steps, the D2 export / contributions / verify / maps (defaults unchanged) | maps 136152, 136166, 136219, C 136200, D2 136217; figures 136154-136266 (see each set's HOW-TO-RERUN.md) |
+| `cliff_effect_data.sbatch`, `cliff_effect_figures.sbatch` | 2026-11-17 slope at equal illumination (user: does the source rate depend on the slope angle at the same illumination?): data per case, figures and answer tables of all six stage-2 cases (CPU) | data 136324-136329, figures 136332, document 136339 |
+| `illumination_numbers.sbatch`, `illumination_maps.sbatch` | 2026-11-18 illumination maps at the production-rate map times (user: "i dont see the effect of the shadow or night side decrease of the productions -- is it there? generate illumination maps ..."): numbers and cross-case check (CPU), then the maps of one time in every production-rate layout plus the side-by-side figure (1 GPU, `TIME=`) | numbers 136359, figures 136369 (10:33:10), 136370 (10:39:26); tests 136360, 136367 |
+| `source_rate_q002.sbatch` | 2026-11-18 source-rate maps of the runs fitted with the new H2O law (q_min = 0.02 q_max; user: "prepare the surface source rate maps for completed runs for inspection of the source rate"): pub_maps_v2 activity + H2O rate at both map times and the new-vs-old-law inspection figures of one run (GPU; submitted by `figures/source_rate_q002_submit.py`) | D2_q002_warm 136737, 136741 (136740 superseded) |
+| `stage2_q002_figures.sbatch` | 2026-11-19 comparison set of the new-law stage-2 round (user: "prepare a full set of comparison plots for the last round of fitting"): stage2_q002_figures.py on CPU | 137248 (test 137230) |
+| `full_set_q002_finish.sbatch`; `full_set_submit.sh` (MEM_CAP, SKIP), `finish_full_set.sh` (BASE, REF_DIR), `pub_maps_v2.sbatch` (BASE, MODEL_TEXT), `pub_source_areas.sbatch`, `pub_maps_figures.sbatch` (BASE, D2REF), `contrib_phase_data.sbatch`, `pub_contrib_density.sbatch` (BASE, MCODE) | 2026-11-20 full figure sets of the ten new-law states (user: "prepare the full set of plots for the last round of fits with the fixed surface source distribution"); the overrides keep every default | figure jobs 137598-137668, finish 137669-137678, D2 contributions 137493 |
 | `fov_share.sbatch`, `source_area_compare.sbatch` | signal share outside the IK FOVs; source areas of two fits (CPU) | 124731, 124727; c9: 124789, 124784, 124785 |
 | `mpi_fit.sbatch`, `mpi_fit_submit.sh`, `mpi_probe.sbatch` | one fit over 1 or 2 nodes with MPI (SPEC in `mpi_multinode/specs/`, NODES=1\|2\|auto); submit helper; MPI probe | tests 123629–123649 (earlier script versions; the current one not submitted); probe 123623 |
 | `grain_rough.sbatch`, `prepare_12m_rough.sbatch` | 12M rough-surface base and the C30 fit on it | 122033, 122034 |
@@ -165,6 +170,7 @@ Notes:
 | `localnn_build.sbatch`, `localnn_fit.sbatch` | option C (local non-negative basis): CPU build (coarse mesh, design matrices, D2 / c9 verification, starts, tests) and one CPU fit (wall-time stop / exit 75, RUNROOT resume, direct facet-sum check) | build 125004; timing test 124995 (dev grid); start-rule stage 1 125014-125016 (cancelled, superseded); pilot 125071; anchored stage 1 125107, 125113, 125119 (+ continuations 125108, 125114, 125120) |
 | `localnn_gpu_eval.sbatch`, `localnn_tools.sbatch`, `localnn_report.sbatch` | option C after a fit: GPU standard evaluation (gpu002, D2's path, 1 h), the frozen maps / contribution tools through the localnn adapter (CPU), the item-5 numbers and run-root README.md / HOW-TO-RERUN.md (CPU) | tests 125017, 125052, 125019-125031; start-rule stage 1 125053-125064 (cancelled); anchored stage 1 125109-125112, 125115-125118, 125121-125124 |
 | `localnn_chain.sbatch`, `localnn_chain_submit.sh`, `localnn_chain_post.sbatch`, `localnn_late.sbatch`; tests `localnn_stage2_tests.sh`, `localnn_ft_verify_softplus.sh`, `localnn_ft_verify_c9_perturb.sh`, `localnn_gpu_solver_{cpuref,bitwise}.sh`, `localnn_gpu_solver_verify.sbatch` | option C stage 2: 5-cycle fit / CPU fine-tuning chains (held term, checkpoints, HANDOVER), their submission and post-fit tools, the late kernels; tests and verifications; FT_DIR in `localnn_gpu_eval.sbatch` / `localnn_tools.sbatch` | late kernels 132008; tests 131980, 132009; verification 131977-131979; chains 132010-132045; GPU solver 132047-132049 |
+| `localnn_q002_preflight.sbatch`, `localnn_q002_preflight_compare.py`, `localnn_q002_d2check.sh`, `localnn_q002_posts_maps.sh` | option C for the H2O night law q_min = 0.02 q_max: preflight of the new D2 (selection, templates, base, start files, test_localnn), the design built against the new D2 + verification, the five posts with maps (geometry validated against base_q002, contribution code nonneg_contrib_20261118T192126Z) | preflight 136557, d2check 136558; posts 136694-136698 |
 
 The job scripts in this folder itself (`grain*.sbatch`, `area_scaling.sbatch`) ran from `$COPS_OUTPUT_ROOT/model_ext/`.
 
@@ -197,6 +203,14 @@ They run on the login node (no GPU), from `$APP` with `.venv/bin/python`. `late_
 `figures_12m_nonneg_options_stage1.sh` (2026-11-14) compares the stage-1 fits of the non-negative activity options (A sum of squares, B background, C local basis, D log spread) with the COPS data, the bounded softplus c9 and D2 in `12M/model_vs_observations_nonneg_options_stage1/` (per option all settings, the best of each, CPU); `options_table.py` (summary.txt / .csv / best.json from the runs' summaries), `options_captions.py` (captions), `options_howto.py` (HOW-TO-RERUN.md, README.txt), `pub_options_activity_maps.py` (activity maps of the best settings and c9; job `jobs/options_activity_maps.sbatch`, 1 GPU). v2 (2026-11-14 evening, `..._stage1_v2/`): wrapper variables `DIAG` (convergence verdicts of the CPU diagnosis, `figures/data/stage1_convergence_20261114.json` -> `options_table.py --diag`), `RESID=1` (`options_residual_figure.py`: ln(model/obs) vs altitude, NG and RG) and `ACT_FROM` (copy unchanged activity maps); defaults unchanged (tested). Final (2026-11-15, `..._stage1_final/`): `RUNS` (candidate list file, `figures/data/stage1_final_runs_20261115.json`: the latest completed fit per setting), `TEXTS` (`figures/data/stage1_final_texts_20261115.json`, `options_captions.py --texts`), `CONV_TERM=1` (convergence from the terminations); continuation rows carry the stage-1 costs they started from (prev_*); activity maps job 131968; defaults unchanged (tested).
 `stage2_figures.py` + `stage2_howto.py` (2026-11-17) draw the final stage-2 comparison (regularized and unregularized chains: model/data figures, residuals, cost table with terminations and bounds; spec `figures/data/stage2_final_spec_20261117.json`; CPU, no maps, stops below 25 GB free) into `12M/model_vs_observations_nonneg_options_stage2_final/`. `kappa_table.py` (2026-11-17) lists kappa (value, at the lower bound) of every stage-2 chain, the stage-1 fits, the softplus chains and D2 (`<folder>/kappa_check/`).
 `full_set_facts.py` + `full_set_docs.py` (2026-11-17) compute the Facts of one full figure set from its data (cycles, multipliers, kappa, A = 0 shares, Q_H2O and its seen / unseen split, slope-bin production and pressure shares, P50 / P90 source areas, lobe / shell shares) and write its README.txt, HOW-TO-RERUN.md and code/ (spec `figures/data/full_sets_stage2_20261117.json`); `pub_maps_figures.py` (`bin_edges_from_meta`, `multiplier_bounds`), `pub_maps_v2_figures.py`, `cliff_importance_figures.py`, `contrib_phase_data.py` (`--state-adapter`) and `model_data_captions.py` accept the option-C and D2 exports (2026-11-17; the nonneg sets unchanged).
+`fullsets_comparison_docx.py` (2026-11-17) writes the Word document that compares the six stage-2 full figure sets plot by plot (`12M/full_sets_stage2_comparison/12M_stage2_full_sets_comparison.docx`: per plot type the six PNGs in one grid, numbers from captions / checks / manifests / facts / summary.csv with their sources in `numbers_used.json`, Appendix A source paths) and validates it (`validate`: counts, page fit, layout previews); runs in the separate venv `$COPS_OUTPUT_ROOT/tools/docx_venv` (python-docx, Pillow), not the project `.venv`; CPU job, ~20 s.
+`cliff_effect_data.py` + `cliff_effect_figures.py` + `cliff_effect_docx.py` (2026-11-17) answer whether the source rate depends on the slope angle at the same illumination, for the six stage-2 final states (`12M/cliff_effect_stage2/`): the data script recomputes each kernel record with the fit's arithmetic (equal to `record_contributions` bitwise) and accumulates per illumination class (lit SZA 10-deg classes, shadowed, night) x slope bin the area, A, F, the observation-weight split (1/r^2, cos theta, gauge weight, visible fraction) and the matched-cell and decomposition sums on the gauge-seen surface (snapshot rows, phase means) and, from the maps' .vtu, on the whole surface; the figure script draws P1 (F and A at equal illumination), P2 (observation weight), P3 (matched cells), P4 (exact decomposition) and the SZA-controlled ratio tables (spec `figures/data/cliff_effect_cases_20261117.json`: labels, caveats); the docx script packs each plot of the six cases into one cluster with summaries (imports `fullsets_comparison_docx.py`; docx_venv).
+`illumination_maps_figures.py` (2026-11-18) answers whether the night-side / cast-shadow decrease is in the production-rate maps (`12M/illumination_maps_103310_103926/`): `numbers` (CPU job `jobs/illumination_numbers.sbatch`) verifies the reference state's fields against its maps (.vtu, bitwise), checks F_H2O = q_H2O A bitwise and q_min/q_max = 0.2, computes per time the area per illumination class, the mean q/q_max, the night / shadow shares of the non-zero production area and of the production (whole and seen surface) and the class changes between the times, and checks that cos_SZA, illumination and the seen mask are bitwise identical in the maps of the six full-set cases; `figures` (GPU job `jobs/illumination_maps.sbatch`, one time) draws the illumination class, cos SZA (0.1 classes) and the source-rate factor q/q_max (linear and log10) for the whole surface and the seen facets in every layout of the full sets' production-rate figures (imports `pub_maps_v2_figures.py` / `pub_maps_figures.py` unchanged; layouts copied) and the side-by-side figure (production rate | q/q_max on the same facets | q/q_max on the whole surface; classes checked equal to the production-rate manifest); `docs` writes README.txt (answer, numbers), CAPTIONS.md (`collect_captions.py`), HOW-TO-RERUN.md and code/.
+`source_rate_q002_inspect.py` + `source_rate_q002_submit.py` + `source_rate_q002_docs.py` + `source_rate_q002_cluster.py` (2026-11-18) make the source-rate figure sets of the runs fitted with the new H2O law (`12M/source_rate_q002/<run>/`): the submit script takes every input of a run from its maps manifest and the runs spec `figures/data/source_rate_q002_runs_20261118.json` (maps, old-law counterpart, model name, the model's own caption text per model); the inspection figure shows the new-law H2O production rate next to the old-law counterpart's (common log classes) and the new q/q_max, with Q_H2O total / seen, night + shadow shares and active area (the old-law state is read from its maps' .vtu: the old maps code's law guard refuses to run under the new reference law); docs writes README / CAPTIONS / HOW-TO-RERUN / code; cluster composes the production-rate panels of all completed runs. `pub_maps_figures.py` / `pub_maps_v2_figures.py` (2026-11-18): `--model-text` (MODEL_TEXT, optional {multipliers}) replaces the softplus description in the map captions (default unchanged).
+`stage2_q002_figures.py` + `stage2_q002_docs.py` (2026-11-19) draw the comparison set of the new-law (H2O q_min = 0.02 q_max) stage-2 round (`12M/model_vs_observations_nonneg_options_stage2_q002/`; spec `figures/data/stage2_q002_spec_20261119.json` with each run's old-law counterpart from `stage2_final_spec_20261117.json`): best of each option and the five C chains vs COPS, new vs old law per run (model/data and residuals), the data cost per cycle per chain, summary.txt / .csv with kappa, Q_H2O total / seen at 10:33:10 (source_rate_q002 inspection files, the C report / maps for C f10 1e-4) and the cost change; the readers of `stage2_figures.py` and `kappa_table.py` imported unchanged.
+`full_set_q002.py` (2026-11-20) makes the full figure sets of the ten new-law states (`12M/full_set_q002_<key>/`, spec `figures/data/full_sets_q002_20261120.json`): `spec` (inputs from each state's maps manifest), `prepare` (publication NG/RG figure folders `publication_q002_<key>/`; activity/, production_rate/, inspection/ copied from `source_rate_q002/<run>/` with sha256 checks), `submit` (`jobs/full_set_submit.sh` with BASE = base_q002, the new-law snapshots, the model's own `--model-text`, MEM_CAP 24G, SKIP activity,h2o), `finish` (`jobs/full_set_q002_finish.sbatch`), `docs` (`full_set_docs.py` with the new optional spec fields intro / reference / pub / written / extra_dirs).
+`q002_comparison_docx.py` (2026-11-19) writes the Word document that clusters the same plot of the ten new-law runs (D2_q002_warm and the nine regularized stage-2 chains, H2O q_min = 0.02 q_max) with per-plot summaries (`12M/stage2_q002_comparison/12M_stage2_q002_comparison.docx`: overview of the multi-run figures, then per plot type the runs in a fixed order with placeholders for runs without the plot; numbers with sources in `numbers_used.json`; Appendix A SHA-256 of every source PNG) and validates it (captions state the law, counts, page fit, previews); derived from `fullsets_comparison_docx.py`, separate venv `$COPS_OUTPUT_ROOT/tools/docx_venv`; CPU job, ~20 s.
+`q002_all_fits_summary_docx.py` (2026-11-20) writes ONE Word document summarizing all fits of the new-law round (`12M/q002_all_fits_summary/12M_q002_all_fits_summary.docx`; supersedes the q002 comparison document for this round): runs table new vs old, A18 summary with the full-set facts, the multi-run and per-run comparison-set figures, one cluster per full-set plot type for the ten runs, the source-rate inspection, an old-law appendix; `check` (inputs, gaps, extractor dry run), `build`, `validate`; observations from the images in `figures/data/q002_all_fits_observations_20261120.json`, viewing sheets by `q002_all_fits_sheets.py`; separate venv `$COPS_OUTPUT_ROOT/tools/docx_venv`; CPU job, ~1 min.
 
 ## MPI helpers (`mpi_multinode/`, run copies in `$COPS_OUTPUT_ROOT/mpi_multinode/`)
 
@@ -211,6 +225,52 @@ per-rank wrapper `mpi_support.py`; results in `PERFORMANCE.md`.
 | `mpi_multinode/specs/slope_mult.sh` | SPEC for `jobs/mpi_fit.sbatch`: the slope-multiplier fit over MPI (host activity) | 123646, 123648 (bitwise = 123635) |
 | `mpi_multinode/compare_tests.py` | comparison of the launcher's test fits (local / 8 / 16 ranks: costs, SHA-256 of x / residuals / Jacobian, timing, memory) | `clip_refit_tests/mpi_20261110/compare_*` |
 | `mpi_multinode/compare_slope.py` | slope-multiplier MPI tests vs the one-node test 123635 | `slope_mult_tests/mpi_*_srccg_20261110T094013Z/compare_vs_123635.json` |
+
+## H2O night-side fix (2026-11-18): what changed here and what it means for old code
+
+User decision 2026-11-18: "(b) -- use 0.02; x10 was not intended; use the same law but with decreased activity". The
+H2O night / cast-shadow production is q_min = 0.02 q_max (as srcCG `Comet::GetTotalProductionRateBjornNASTRAN`); it was
+0.2 q_max (`10.0*0.02`) in Source.cpp, fit_cops.py, cops_cuda/evaluator.py and build_physical_activity_templates.py, and
+**every fit, map and figure up to 2026-11-18 used 0.2**. CO2 unchanged (0.1, r_h^-2; differs from srcCG too, not asked).
+
+* `nonneg_maps.py`: `H2O_QMIN_RATIO = 0.02` / `CO2_QMIN_RATIO = 0.1` are the one model_ext place for the ratio
+  (`q_factors`, the law_guard line); tools that need it read it from there (`figures/illumination_maps_figures.py`:
+  `QRATIO` = the maps' own `nonneg_maps.H2O_QMIN_RATIO`). `late_response_eval.py` has its own named constant
+  (`H2O_QMIN_RATIO`, it imports only fit_cops). `positive_activity.py` `REFERENCE_QMIN_RATIO` H2O 0.02;
+  `positive_activity_check.py` reads it. Captions of `figures/pub_maps_figures.py`, `pub_maps_v2_figures.py` take
+  q_min / q_max from the maps' law. `test_nonneg_maps.py`: Source.cpp statement 0.02 (36 of 36).
+* `slope_mult.py` / `positive_activity.py`: `ORIGINAL_SHA256["evaluator.py"]` = the fixed evaluator.py (its only change
+  is `HostConstants.qmin`); without it `nonneg_mult.install` (every nonneg fit and fine tuning) and `positive_activity`
+  refuse on the fixed tree.
+* New snapshots: `model_ext_frozen/nonneg_20261118T072729Z` (fits / fine tunings), `nonneg_maps_20261118T072729Z`,
+  `nonneg_contrib_20261118T072729Z`.
+* **Old frozen snapshots** take fit_cops and cops_cuda from the LIVE tree (`$APP`, `$APP/../LiouvilleCOPS/tools`), not
+  from a copy: (a) nonneg fit / fine-tuning snapshots before 20261118 refuse (`slope_mult._check_sources`: evaluator.py
+  changed); (b) nonneg_maps / nonneg_contrib snapshots before 20261118 refuse wherever `law_guard` runs (maps,
+  contributions, `localnn_design.py`, `pub_maps_figures.load_fields`); (c) tools that call `nonneg_maps.source_rates` /
+  `q_factors` without the guard (`nonneg_alt_summary.py`, `nonneg_ft_summary.py`, `localnn_report.py`,
+  `localnn_chain_summary.py`, `figures/cliff_effect_data.py`, `figures/frame_contrib.py`, `full_set_facts.py`) keep the
+  0.2 of the snapshot they load; (d) code that uses the GPU evaluator or fit_cops directly (grain fits, clip_refit / D2,
+  the runner, gpu_fit) silently uses 0.02; (e) option C (`localnn_*`) evaluates through the stored design matrices
+  (`grid_150m/design/design.npz`, `late_kernels_150m.npz`, built with 0.2 by the frozen contribution code) and has no law
+  check: a C fit on them keeps 0.2 silently until the design is rebuilt with `nonneg_contrib_20261118T072729Z`.
+* **Fits on an existing base:** `fit_cops.main` (also through gpu_fit) first checks its model at the base's own
+  parameters against the base's `COPS_model.dat`, which the C++ wrote with 0.2: on the 12M lategrid base that check now
+  gives max rel 28 % (NG) / 25 % (RG) > 1e-6 and stops every fit (old law: 4.8e-11 / 9.9e-10). The base must be rebuilt
+  with the rebuilt `native/liouville_cops_cuda` (user decision), see `tests/nightfix_diagnostic_20261118/README.txt`.
+* Diagnostic / checks (new): `nightfix_diag.py` (fixed-A re-evaluation of a final state with both laws; `--base-run`:
+  the base consistency check), `nightfix_cpu_gpu_check.py` (fit_cops vs the GPU evaluator on real 12M rows at the B29
+  state, VALIDATION.md budgets), jobs `jobs/nightfix_*.sbatch` (the build job's copy is `jobs/nightfix_binaries.sbatch`:
+  the repository's `*build*` ignore pattern would hide `nightfix_build.sbatch`) / `jobs/nightfix_diag_submit_all*.sh`,
+  `jobs/nightfix_getq_probe.cpp`, `nightfix_make_table.py`. Results: `tests/nightfix_diagnostic_20261118/`,
+  `tests/nightfix_20261118/`; FINDINGS A18.
+
+* **base_q002 (2026-11-18):** the lategrid base with the new-law COPS_model.dat (hard-linked kernels; no
+  run_manifest.json: fits use fit_cops' `--allow-legacy-base`). Maps / contributions: `nonneg_maps.py validate-geometry
+  --shape-manifest base_q002/cpp_run_manifest.json --shape-manifest-must-equal base/run_manifest.json` (snapshots
+  `nonneg_maps_20261118T192126Z`, `nonneg_contrib_20261118T192126Z`; `jobs/nonneg_maps.sbatch` SHAPE_MANIFEST /
+  SHAPE_REFERENCE; `jobs/d2_tools.sbatch` D2DIR / D2_BASE); validated geometry `maps_geometry/job_136691`. Tools:
+  `nightfix_base_q002.py`, `jobs/q002_*.sbatch`, `jobs/clip_refit_q002.sbatch` (the D2 refit `clip_refit/D2_q002_warm`).
 
 ## Physics findings: `FINDINGS.md`
 
@@ -718,6 +778,43 @@ lambda 0, MAXNFEV 500, LSMR 50, ftol/xtol/gtol 1e-10); the accumulated h held in
   c1 (linked) - c3 and c4 up to its checkpoint at 3250 evaluations on CPU, the rest of c4 and c5 on gpu002
   (chain_events.jsonl). Per-cycle numbers of both 1e-4 chains and their unregularized references:
   `tests/localnn_20261114/stage2r/chain_summary_136129.txt`; FINDINGS.md A12.
+- 2026-11-18 (H2O night law q_min = 0.02 q_max, user decision; FINDINGS.md A18): every option C product above holds
+  the 0.2 law. (1) Regression of test_localnn check 5 (Jacobian vs FD at the D2-projection start, 6.0e-3 / 9.4e-3): the
+  check, not the Jacobian (bisect `tests/localnn_20261118_jacreg/bisect.out`: the 2026-11-14 code passes, the
+  state-scaled node steps from `localnn_mp_20261115T020233Z` on fail; the 2026-11-14 check on the current Problem passes,
+  6.8e-6): jacobian_check now tries several steps per column (1e-4 max(|x|, 1), 1e-4 max(|x|, scale), each also
+  noise-floored), the smallest discrepancy counts; 2.3e-8 / 2.5e-8 at the check-5 states, <= 5.9e-7 at five converged
+  stage-2 states (`model_ext_frozen/localnn_s2jc3_20261118T081235Z`). The stage-2 C fits are not affected (the check
+  only reads the model). (2) Design matrices and late kernels of the new law, new folders (the 0.2 ones kept):
+  `grid_150m/design_h2oqmin0.02` (137 MB) and `late_kernels_150m_h2oqmin0.02.npz` (158 MB), job 136507 (contribution
+  code `nonneg_contrib_20261118T072729Z`, late facets of `nonneg_20261118T072729Z`, the same grid, bins, seen mask and
+  D2 templates TS as the 0.2 build; 2 + 1 min). Checks: design vs direct facet sums with the new law 3a / 3b <= 9.4e-15 /
+  2.4e-15; held term vs direct sums 2.4e-15; Jacobian 2.4e-8; the same 271 late facets. Expected failures (the law):
+  test_localnn 8 (the 0.2-law D2 / c9 tables: data cost 0.0798 / 0.0648 vs 4.89e-3 / 4.27e-3) and test_localnn_stage2
+  5 (start cost of a 0.2-law fit). New / 0.2 design columns: G 0.1 - 1 (median 0.79 NG, 0.80 RG), templates median
+  0.71, CO2 1.0; the late kernels median 0.1 (most late-facet records are night / shadow). Law check
+  (`model_ext_frozen/localnn_s2law_20261118T081952Z`): localnn_problem.load_design and localnn_late.load compare the
+  product's H2O q_min ratio (meta law.h2o_qmin_ratio; older products: the fit_cops law line / contribution code of
+  their build) with tools/fit_cops.py and refuse a mismatch (LOCALNN_ALLOW_LAW_MISMATCH=1 reads it on purpose, with a
+  warning and a record); job-script defaults (DESIGN_DIR, CONTRIB, LATE, NONNEG_CODE) now point to the new-law products.
+  Open: the data selection (clip_refit/D2/final) and the D2 templates TS are the 0.2-law D2's until the new D2 exists.
+  Preflight against the new D2 (`clip_refit/D2_q002_warm/final`, 2026-11-18 10:36Z, jobs 136557 / 136558; plan
+  `cops_output/model_ext/logs/plan_q002_stage2r_C.md`): data selection, references, ft templates, enhancement scale
+  and TS equal to the 0.2-law D2's (TS diff 8192 on 7.9e23); base_q002 kernels (1551), elements and observation columns
+  equal to base: no rebuild of the design matrices or the late kernels. The design built with the new D2 (test folder
+  `tests/localnn_q002/d2check_136558/design_d2q002`) has bitwise the matrices of `design_h2oqmin0.02` and reproduces
+  the new D2: data cost 5.6707116011472e-3 (rel 6.7e-16), COPS_model.dat 0 printed differences, late window <= 3.5e-10
+  (`localnn_fit verify` compares with the design's STORED direct sums of its build-time D2, so with design_h2oqmin0.02
+  (old D2's sums) that check is not meaningful for the new D2). Start files of the new D2: `grid_150m/start_q002_templates_on`
+  (data cost 0.168; 0.114 with the 0.2-law D2), `start_q002_templates_off` (1.551; 1.609).
+  Lead decision 2026-11-18: that design is the design of the q002 chains, copied to
+  `grid_150m/design_h2oqmin0.02_d2q002` (provenance in `design_h2oqmin0.02_d2q002.provenance/`, sha256 in SHA256SUMS)
+  and passed with `jobs/localnn_chain_submit.sh --design-dir` (DESIGN_DIR of the attempts and the post job;
+  `jobs/localnn_chain_to_gpu.sh` carries it).
+  SUBMITTED 2026-11-18 16:24Z (user OK, posts with maps): the five chains
+  `nonneg/localnn/stage2r_q002_{f1_pm1e-4_tplon,f10_pm1e-4_tplon,f1_pm0.01_tplon,f10_pm0.01_tplon,f10_pm0.01_tploff}_20261118T162407Z`
+  (code `model_ext_frozen/localnn_q002_20261118T162327Z`; CPU attempts 136589-136610, gpu001 takeover of the P_m 1e-4 chains
+  136612-136615, posts 136601/136606/136611/136616/136619; job table in `cops_output/model_ext/logs/plan_q002_stage2r_C.md`).
 - NFS note (Voyager): `/data001` is mounted with `acregmin=acregmax=600`: for up to 10 min after an edit a compute
   node can see the old size / mtime of a .py file and import its stale `__pycache__` .pyc (seen 2026-11-15: a test ran
   the previous `jacobian_check`). Frozen snapshots are new files and not affected; tests of freshly edited run copies

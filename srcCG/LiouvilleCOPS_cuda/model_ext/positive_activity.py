@@ -1,6 +1,6 @@
 # ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/positive_activity.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/positive_activity.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 90d57cab3c29df18fcfcb83b469fbcb79327a82954866a95b70e4e712297c8d8
+# SHA256 of the run copy = SHA256 of this file without these header lines: 5f9d063a52272d4a6edd7854c44fb254b89e301d1b7451dac602358146bd9f5d
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module. Positive H2O activity on the GPU (user decisions 2026-11-07): installs patched kernels (kernels/pressure.cu,
 #   kernels/activity.cu) into the GpuModel workers. Env: COPS_POS_ENABLE=1; COPS_POS_NIGHT_RATIO (night/shadow ratio,
@@ -9,6 +9,7 @@
 #   fine tuning) when active. With everything off the kernels are bitwise identical to the unchanged ones.
 # USED BY: positive_problem.py / positive_fit.py (jobs/positive_fit.sbatch), positive_activity_check.py.
 # 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): REFERENCE_QMIN_RATIO H2O 0.02; ORIGINAL_SHA256 evaluator.py pin = the fixed evaluator.py (only HostConstants.qmin changed)
 # ==== end of header ====
 """Positive H2O activity, night/shadow production ratio, per-record H2O and (optional) CO2 flux floors in the GPU evaluator.
 
@@ -25,8 +26,8 @@ COPS_POS_ENABLE=1          required for any effect; unset/0: ``install()`` does 
 COPS_POS_NIGHT_RATIO=r     night/shadow production ratio, 0 <= r <= 1: qmin = r * 600 / rhA**p for H2O (p = 4.8, or
                            4.2143229 for HeliocentricModel shap5) and qmin = r * 600 / rhA**2 for CO2 (both species;
                            user: 0.02 "as in srcCG"). UNSET = unchanged per species (fit_cops Model.load_kernels:
-                           0.2 for H2O, 0.1 for CO2). The expression form is the reference's, so r = 0.2 reproduces
-                           the H2O qmin bitwise.
+                           0.02 for H2O since 2026-11-18 (0.2 before, not intended), 0.1 for CO2). The expression
+                           form is the reference's, so r = 0.02 reproduces the H2O qmin bitwise.
 COPS_POS_ACTIVITY=clip|exp clip (default): af = max(act_lin, 0), d af/dc = [act_lin > 0] * basis (unchanged).
                            exp: af = exp(act_lin) for every facet (positive by construction, no clip, no reference
                            constant), d af/dc = af * basis. act_lin = Y a + A_scale * (B b) is unchanged (templates
@@ -144,7 +145,10 @@ REFUSED_MODULES = ("restart",)
 ORIGINAL_SHA256 = {
     "kernels/pressure.cu": "dc4b6f4ceeba96bcd2df335c6dff607d6e545c2c363b8bf897836652010798f2",
     "kernels/activity.cu": "61dc45410249f76d42c7b27fa773a08840f6ae7b759ae911c9335322de913048",
-    "evaluator.py": "2f1e9d5fadbc4111e3e5222d32f8098e51e8fd01c1e85f5266730689ec53d52e",
+    # 2026-11-18: evaluator.py of the H2O night-side fix (user decision 2026-11-18); its only change against the
+    # version pinned before (2f1e9d5fadbc4111e3e5222d32f8098e51e8fd01c1e85f5266730689ec53d52e) is HostConstants.qmin
+    # H2O 0.2 -> 0.02 and its comment: the copied / wrapped methods are unchanged
+    "evaluator.py": "16386bdcf49e7d61cad3875b13fa53f7b3ad2918a4566b1f4010b60aebe56fed",
     "transport.py": "605ed2546625b0e029d277fac0757635ff978081b24526def324d18cb0256304",
     "multi_gpu.py": "1c3a9c1a377784f680a1dcb7a8f58e0c58f925ced241529d8f4c89a07dd516fc",
     "cuda_sources.py": "16d67d1a536a153891bd28df43c09eccf0db1239c2ee4c212e0827f326312719",
@@ -158,7 +162,7 @@ ENV_FLOOR_CO2 = "COPS_POS_FLOOR_CO2"
 ENV_FROZEN = "COPS_POS_FROZEN_CONFIG"
 ENV_VARIABLES = (ENV_ENABLE, ENV_NIGHT, ENV_ACTIVITY, ENV_FLOOR, ENV_FLOOR_CO2)
 ACTIVITY_MODES = ("clip", "exp")
-REFERENCE_QMIN_RATIO = {"H2O": 0.2, "CO2": 0.1}      # fit_cops Model.load_kernels
+REFERENCE_QMIN_RATIO = {"H2O": 0.02, "CO2": 0.1}     # fit_cops Model.load_kernels (2026-11-18: H2O 0.02, was 0.2)
 FLOOR_BYTES_PER_FACE = 8
 EXP_ACTIVE = 2                                       # active[] marker of the exp activity (pressure.cu copy)
 POLICY = ("user 2026-11-07: night/shadow production ratio qmin = r qmax for H2O and CO2 (r = 0.02 'as in srcCG'); "
@@ -257,7 +261,7 @@ def config():
                                "original_sha256": ORIGINAL_SHA256["kernels/%s.cu" % name]}
                         for name, sha in kernel_sha256().items()},
                definitions={
-                   "night": "qmin = r * 600 / rhA**p (H2O), r * 600 / rhA**2 (CO2); unset: 0.2 (H2O), 0.1 (CO2)",
+                   "night": "qmin = r * 600 / rhA**p (H2O), r * 600 / rhA**2 (CO2); unset: 0.02 (H2O; 0.2 before 2026-11-18), 0.1 (CO2)",
                    "activity": {"clip": "af = max(act_lin, 0), dA/dc = [act_lin > 0] basis",
                                 "exp": "af = exp(act_lin), dA/dc = af basis"},
                    "floor": "F = max(q_H2O af, F_min), F_min = qmax_H(p) * (floor_ratio * AH2O(face)); "

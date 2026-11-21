@@ -1,10 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/pub_contrib_density.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/pub_contrib_density.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e489197ce4fc4db81540235015e3e750d25cd4869ef63931f6dd1e3b698147ad
+# SHA256 of the run copy = SHA256 of this file without these header lines: 2b26a412e17c5395cc94ccfccc613640884ce445db615ec31da9da0ef02da2d7
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
-# WHAT: Job of pub_contrib_density_figures.py with provenance.
-# RUN: sbatch --nodelist=gpu002 --export=ALL (DATA, OUTF)
+# WHAT: Job of pub_contrib_density_figures.py with provenance; 2026-11-20 (full sets of the new-law fits): BASE and
+#   MCODE overrides (defaults unchanged)
+# RUN: sbatch --nodelist=gpu002 --export=ALL (DATA, OUTF [, BASE, MCODE])
 # ==== end of header ====
 # Contribution-density maps (figures_cluster/scripts/pub_contrib_density_figures.py; 2026-11-14). One GPU (lon/lat face
 # images only; short). Environment: DATA (contrib_phase_data output), OUTF (figure folder), MODEL_NAME.
@@ -25,12 +26,13 @@ export CUDA_PATH=/usr/local/cuda-12.9 CUDA_HOME=/usr/local/cuda-12.9 CUPY_CACHE_
 export PATH=$CUDA_HOME/bin:$PATH LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 R=$COPS_OUTPUT_ROOT/runs/shap8_012m_lategrid_dz1.5; DATA=${DATA:?}; OUTF=${OUTF:?}
+BASE=${BASE:-$R/base}   # 2026-11-20: BASE override (default unchanged)
 MODEL_NAME=${MODEL_NAME:-the softplus activity model with slope multipliers >= 1, final state after 9 fit and fine-tuning cycles}
 S=$COPS_OUTPUT_ROOT/figures_cluster/scripts; PY="$APP/.venv/bin/python -W ignore"
-MCODE=$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_maps_20261112T021623Z/nonneg_maps.py
+MCODE=${MCODE:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_maps_20261112T021623Z/nonneg_maps.py}   # 2026-11-20: MCODE, BASE overrides
 P=$OUTF/provenance-$SLURM_JOB_ID; mkdir -p "$P" || exit 1
 cd "$APP" || exit 1
-for v in DATA OUTF MODEL_NAME MCODE; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
+for v in DATA OUTF MODEL_NAME MCODE BASE; do printf '%s=%s\n' "$v" "${!v}"; done > "$P/inputs.txt"
 cp -p "$0" "$P/pub_contrib_density.sbatch.used"
 mkdir "$P/code" && cp -p "$S/pub_contrib_density_figures.py" "$S/pub_maps_figures.py" "$S/pub_maps_v2_figures.py" "$MCODE" "$P/code/" && (cd "$P/code" && sha256sum * > SHA256SUMS)
 { git -C "$AMPS" rev-parse HEAD; git -C "$AMPS" status --short; } > "$P/git.txt" 2>&1
@@ -38,7 +40,7 @@ mkdir "$P/code" && cp -p "$S/pub_contrib_density_figures.py" "$S/pub_maps_figure
 nvidia-smi -q > "$P/nvidia_smi_q.txt" 2>&1
 { nvcc --version; gcc --version | head -1; } > "$P/toolchain.txt" 2>&1
 ~/.local/bin/uv pip list --python "$APP/.venv/bin/python" > "$P/pip_list.txt" 2>&1
-cmd=($PY "$S/pub_contrib_density_figures.py" --base "$R/base" --track-base "$R/../shap8_012m_flat_earlier/base"
+cmd=($PY "$S/pub_contrib_density_figures.py" --base "$BASE" --track-base "$R/../shap8_012m_flat_earlier/base"
      --bundle "$R/../shap8_012m_flat_earlier/bundle/restart_templates.npz" --data "$DATA" --maps-code "$MCODE" --out-dir "$OUTF"
      --model-name "$MODEL_NAME")
 { echo '#!/bin/bash'; grep '^export ' "$0"; echo "cd $APP"; printf '%q ' "${cmd[@]}"; echo; } > "$P/commands.sh"

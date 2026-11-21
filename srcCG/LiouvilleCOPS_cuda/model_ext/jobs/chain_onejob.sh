@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/chain_onejob.sh (on Voyager: /data001/highresolu_vt/cops_output/jobs/chain_onejob.sh)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 955d61466127e432e9237ddddbc6341047af7f1bf3398427da6706e308c8cb94
+# SHA256 of the run copy = SHA256 of this file without these header lines: bfd8f5238d68721737f8732e61a3b594f13082a042284aa7738fa0b03463d141
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: submit helper. Submits one-job chains (jobs/chain_onejob.sbatch; user decision 2026-11-10): dry run by default,
 #   --submit logs every job in model_ext/logs/submissions.txt; attempts with afterok:<after>,afternotok:A1:.. (an
@@ -15,6 +15,8 @@
 #   --c1-from; --slope-mult-min also for these; stage-2 chains 131989-131997 (via jobs/nonneg_stage2_chains.sh).
 # 2026-11-16: --ft-delta-penalty-f / --ft-delta-cref / --ft-delta-cap (kind nonneg); reruns via jobs/nonneg_stage2r_chains.sh.
 # 2026-11-17: --min-free-gb G -> MIN_FREE_GB; D 136016-136018 and A 136019-136021 on gpu002.
+# 2026-11-18: --base DIR -> BASE.
+# 2026-11-18: --after-any ID[:ID...] (strict chain order); q002 chains 136620-136640.
 # ==== end of header ====
 # Submit ONE-JOB fit / fine-tuning chains (jobs/chain_onejob.sbatch, model_ext/chain_onejob.py; user decision
 # 2026-11-10 "yes, implement (b)"): the whole chain c1 fit -> c1 ft -> ... -> c<N> ft of one lambda in one job that
@@ -54,6 +56,9 @@
 #   --ft-delta-penalty-f F --ft-delta-cref C [--ft-delta-cap X] (2026-11-16, kind nonneg): every fine tuning's delta
 #   regularization (nonneg_finetune.py --delta-penalty-f / --delta-cref / --delta-cap, verbatim); absent: off.
 #   --lambda / --ratio / --c1-start-set are positive-only; --chain-root is required for these kinds.
+# --base DIR (2026-11-18): BASE of the job (every fit's base; default <run>/base).
+# --after-any ID[:ID...] (2026-11-18, lead: strict chain order on one node): every attempt also depends on afterany of
+#   these jobs (e.g. all attempts of the previous chain; a cancelled attempt counts as ended).
 # --min-free-gb G (2026-11-17): MIN_FREE_GB of the job (default there 20 GiB; 0 = off): no write below G GiB free.
 set -uo pipefail
 ROOT_OUT=/data001/highresolu_vt/cops_output
@@ -63,7 +68,7 @@ LAMBDA=""; RATIO=""; SOURCE=""; CYCLES=3; NFEV=4000; CHECK=1; C1_START_SET=""; M
 CHAIN_ROOT=""; NODE=""; GPUS=""; TIME="08:00:00"; ATTEMPTS=3; OPTS_EXTRA=""; FT_MAXNFEV=""; FT_FACETS=""
 FT_WINDOW_MIN=""; FT_EXPORT=""; MINMIN=""; AFTER=""; SUBMIT=0
 KIND=positive; SMODEL=""; SSTART=""; START_FILE=""; LT=""; LMODE=chunked; CHECKPARAMS=""; SBUNDLE=""; FTT=""; BUMPS=""
-SMM=""; SOSR=""; BGMIN=""; SPF=""; SPC=""; SPU=""; C1FROM=""; DF=""; DC=""; DX=""; MINFREE=""
+SMM=""; SOSR=""; BGMIN=""; SPF=""; SPC=""; SPU=""; C1FROM=""; DF=""; DC=""; DX=""; MINFREE=""; BASEDIR=""; AFTERANY=""
 die() { echo "chain_onejob.sh: $*" >&2; exit 2; }
 while [ $# -gt 0 ]; do
     case $1 in
@@ -90,7 +95,8 @@ while [ $# -gt 0 ]; do
         --spread-u0) SPU=$2; shift 2;;          --c1-from) C1FROM=$2; shift 2;;
         --ft-delta-penalty-f) DF=$2; shift 2;;  --ft-delta-cref) DC=$2; shift 2;;
         --ft-delta-cap) DX=$2; shift 2;;      --min-free-gb) MINFREE=$2; shift 2;;
-        -h|--help) sed -n '2,40p' "$0"; exit 0;;
+        --base) BASEDIR=$2; shift 2;;          --after-any) AFTERANY=$2; shift 2;;
+        -h|--help) sed -n '2,43p' "$0"; exit 0;;
         *) die "unknown argument $1 (--help)";;
     esac
 done
@@ -139,6 +145,7 @@ case $FT_FACETS in
 esac
 case $TIME in [0-9]*:[0-9][0-9]:[0-9][0-9]|[0-9]*-[0-9]*:[0-9][0-9]:[0-9][0-9]) ;; *) die "--time HH:MM:SS";; esac
 case $AFTER in ""|*[!0-9]*) [ -z "$AFTER" ] || die "--after takes ONE job id (Slurm cannot AND it with the attempts' afternotok when it is an OR list)";; esac
+case $AFTERANY in ""|*[!0-9:]*|:*|*:|*::*) [ -z "$AFTERANY" ] || die "--after-any ID[:ID...]";; esac
 if [ -n "$C1_START_SET" ]; then
     C1_START_SET=${C1_START_SET//,/:}
     case $C1_START_SET in *[!A-Za-z0-9_=.:+-]*) die "--c1-start-set NAME=VALUE[:NAME=VALUE...]";; esac
@@ -211,6 +218,15 @@ fi
 [ -n "$FT_WINDOW_MIN" ] && VARS+=",FT_WINDOW_MIN=$FT_WINDOW_MIN"
 case $MINFREE in ""|*[!0-9.]*) [ -z "$MINFREE" ] || die "--min-free-gb G (GiB)";; esac
 [ -n "$MINFREE" ] && VARS+=",MIN_FREE_GB=$MINFREE"
+if [ -n "$BASEDIR" ]; then
+    BASEDIR=$(readlink -f "$BASEDIR")
+    for f in COPS_model.dat elements.bin kernels; do
+        if [ ! -e "$BASEDIR/$f" ]; then
+            [ "$SUBMIT" = 1 ] && die "--base $BASEDIR has no $f"; echo "# NOTE: --base $BASEDIR has no $f (yet): --submit refuses"
+        fi
+    done
+    VARS+=",BASE=$BASEDIR"
+fi
 [ -n "$MODEL_EXT" ] && VARS+=",MODEL_EXT=$MODEL_EXT"
 [ -n "$C1_START_SET" ] && VARS+=",C1_START_SET=$C1_START_SET"
 [ -n "$FT_EXPORT" ] && VARS+=",$FT_EXPORT"
@@ -229,6 +245,7 @@ else KARGS=(--kind "$KIND" --slope-model "$SMODEL")
      [ -n "$SPC" ] && KARGS+=(--spread-cref "$SPC"); [ -n "$SPU" ] && KARGS+=(--spread-u0 "$SPU")
      [ -n "$C1FROM" ] && KARGS+=(--c1-from "$C1FROM"); [ -n "$DF" ] && KARGS+=(--ft-delta-penalty-f "$DF")
      [ -n "$DC" ] && KARGS+=(--ft-delta-cref "$DC"); [ -n "$DX" ] && KARGS+=(--ft-delta-cap "$DX"); fi
+[ -n "$BASEDIR" ] && KARGS+=(--base "$BASEDIR")
 $PY "$CHAIN_CODE/chain_onejob.py" --plan-only --chain-root "$CHAIN_ROOT" "${KARGS[@]}" \
     --cycles "$CYCLES" --source "$SOURCE" --ft-maxnfev "$FT_MAXNFEV" --ft-facets "$FT_FACETS" \
     ${FT_WINDOW_MIN:+--ft-window-min "$FT_WINDOW_MIN"} --model-ext "${MODEL_EXT:-$ROOT_OUT/model_ext}" | sed 's/^/#   /'
@@ -239,6 +256,7 @@ for a in $(seq 1 "$ATTEMPTS"); do
     # count as "not ok" and start attempt 2 (seen by the lead on Slurm 22.05.9, 2026-11-10).
     if [ "$a" = 1 ]; then d=${AFTER:+afterok:$AFTER}
     else d="${AFTER:+afterok:$AFTER,}afternotok:$(IFS=:; echo "${ids[*]}")"; fi
+    [ -n "$AFTERANY" ] && d="${d:+$d,}afterany:$AFTERANY"
     if [ "$KIND" = positive ]; then JN="chain_l${LAMBDA}_r${RATIO}_$a"; else JN="chain_${SMODEL}_$a"; fi
     args=("${OPTS[@]}" ${d:+--dependency=$d} --job-name="$JN" --export="$VARS" "$J/chain_onejob.sbatch")
     if [ "$SUBMIT" = 1 ]; then

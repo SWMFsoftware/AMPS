@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-# ==== version-controlled copy: header added 2026-11-14, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_design.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_design.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 8b360f326ae5431d526014bc3e8483df881dcd723246211bc1cb677885e8f07e
+# SHA256 of the run copy = SHA256 of this file without these header lines: 687e270aa71a98b608b2294b2cab069db7ca8fcd7596e477126affaf9a5464ad
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: module + CLI (option C). Design matrices G^(b)[row, node] (NG, RG, 7 slope bins), template and CO2 columns
 #   from the base's kernel records with the frozen nonneg_contrib arithmetic (FP32 records, FP64), and the direct facet
 #   sums of D2, the softplus c9 state and two test activities; contrib_setup / direct_row used by the tests.
 # RUN: jobs/localnn_build.sbatch STEP design (frozen model_ext_frozen/localnn_20261114T081912Z).
+# 2026-11-18: 2026-11-18: contrib_setup records law.h2o_qmin_ratio / co2_qmin_ratio of the contribution code in
+#   every product (the loads compare them with the fitter's law).
+# RUN 2026-11-18: grid_150m/design_h2oqmin0.02 (136507).
 # ==== end of header ====
 """Option C (local non-negative basis, user 2026-11-14): the design matrices of the coarse hat functions, built ONCE from
 the fitting base's kernel records with exactly the arithmetic of the frozen contribution code, plus the direct facet
@@ -113,7 +116,11 @@ def contrib_setup(base, ccode, T):
     if Path(NM.__file__).resolve().parent != Path(ccode).resolve():
         raise SystemExit("nonneg_maps imported from %s, not from the frozen folder %s" % (NM.__file__, ccode))
     fc, header, cols, rows = NM.base_table(base)
-    law = NM.law_guard(fc)
+    law = dict(NM.law_guard(fc))
+    # 2026-11-18: the H2O q_min / q_max ratio of this contribution code, recorded with every product built here (the
+    # loads compare it with the fitter's law: localnn_problem.law_check); the codes before 2026-11-18 had 0.2
+    law["h2o_qmin_ratio"] = float(getattr(NM, "H2O_QMIN_RATIO", 0.2))
+    law["co2_qmin_ratio"] = float(getattr(NM, "CO2_QMIN_RATIO", 0.1))
     helio, sza = fc.header_value(header, "HeliocentricModel"), fc.header_value(header, "SZAMode")
     if sza != "continuous":
         raise SystemExit("SZAMode %s" % sza)

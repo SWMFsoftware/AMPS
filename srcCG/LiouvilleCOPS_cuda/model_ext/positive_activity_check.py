@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-09, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/positive_activity_check.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/positive_activity_check.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 81f0fae66623b6dc3858e777ccb815fc8704b78b23a65f49cc0d6ccd8cca81c2
+# SHA256 of the run copy = SHA256 of this file without these header lines: 5b03cdb752ada36b80f7d1f665d4860422d5a9f08f492f54bdef4b0744009285
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: test. Checks of positive_activity.py on a fitting base: kernels with the options off bitwise identical to
 #   the unchanged ones; NumPy reference of night ratio / exp / floor; Jacobian against finite differences. user decisions 2026-11-07.
 # USED BY: jobs/positive_activity_check.sbatch (job 122298).
 # 2026-11-09 update: ratio 1e-5 (user 2026-11-08), CO2 flux floor (COPS_POS_FLOOR_CO2), start override --start-set (kappa = 1).
+# 2026-11-18: H2O night-side fix (user decision 2026-11-18, q_min/q_max 0.2 -> 0.02 as srcCG): NumPy reference of the unmodified phases reads positive_activity.REFERENCE_QMIN_RATIO (was the literal 0.2)
 # ==== end of header ====
 """Validation of model_ext/positive_activity.py on the SHAP8 12M fitting base (mixed precision, FP32 record store).
 
@@ -115,7 +116,8 @@ OLD_MODEL_EXT = Path("/data001/highresolu_vt/cops_output/model_ext_frozen/c1_202
 OLD_SHA256 = {"positive_activity.py": "6f353bcb43992541b1abe90cc60e1f6e9c2eb7a77c6cc250bd94c1eab3e6cb7e",
               "kernels/pressure.cu": "714b9d908fee29c8135931ecd8a5209fba5ef1dd6905bec5b219cf5a0a4280f3",
               "kernels/activity.cu": "4d53c184e697967effa6d8311577159666d0f5d623ad9024ad43bf7ee26357a4"}
-# NumPy model settings of each phase: (night ratio or None = 0.2/0.1, activity, floor ratio, state)
+# NumPy model settings of each phase: (night ratio or None = the fitter's ratios, positive_activity.REFERENCE_QMIN_RATIO
+# (H2O 0.02 since 2026-11-18, 0.2 before) / CO2 0.1, activity, floor ratio, state)
 MODEL = {"ref": (None, "clip", 0.0, "fit"), "def": (None, "clip", 0.0, "fit"), "mod": (0.02, "exp", 0.02, "exp"),
          "nofloor": (0.02, "exp", 0.0, "exp"), "clipfloor": (0.02, "clip", 0.02, "fit"),
          "oldmod": (0.02, "exp", 0.02, "exp"), "r002": (0.002, "exp", 0.002, "exp"),
@@ -464,7 +466,10 @@ def numpy_pressures(fit_cops, el, M, base, store, point_ids, act_lin, night_rati
     from cops_cuda.record_store import split_fields, store_file_name
     AU, KT, COS75 = fit_cops.AU, fit_cops.KT, fit_cops.COS75
     p_exp = 4.2143229 if M.helio == "shap5" else 4.8
-    rH, rC = (0.2, 0.1) if night_ratio is None else (night_ratio, night_ratio)
+    # 2026-11-18: the unmodified fitter's ratios from positive_activity (H2O 0.02 since the night-side fix; was 0.2 here)
+    import positive_activity
+    ref = positive_activity.REFERENCE_QMIN_RATIO
+    rH, rC = (ref["H2O"], ref["CO2"]) if night_ratio is None else (night_ratio, night_ratio)
     Tmax, T75, Tmin = T
     A = np.exp(act_lin) if activity == "exp" else np.maximum(act_lin, 0.0)
     cNG, cRG, bm = M.cNG, M.cRG, M.bm

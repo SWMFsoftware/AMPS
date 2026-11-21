@@ -1,11 +1,11 @@
 #!/bin/bash
-# ==== version-controlled copy: header added 2026-11-15, not part of the code that ran ====
+# ==== version-controlled copy: header added 2026-11-16, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/tests/localnn_20261114/ftreg/bd_control.sh (on Voyager: /data001/highresolu_vt/cops_output/tests/localnn_20261114/ftreg/bd_control.sh)
 # SHA256 of the run copy = SHA256 of this file without these header lines: b06dd3d63a92c13fa8d23b07a243d9aeb781c3caaba969b384227235b4b89589
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: CPU engine control: the B and D c5 fine tunings unregularized on CPU (nonneg_20261115T020314Z) vs their GPU
 #   runs.
-# RUN 2026-11-15: 134501 (B rel 6.3e-14, D 4.4e-16; same evaluations).
+# RUN 2026-11-16: 134501 (B rel 6.3e-14, D 4.4e-16; same evaluations).
 # ==== end of header ====
 # CPU engine on the B and D c5 fits (agent 3's chains), UNREGULARIZED, with the nonneg code that ran those chains
 # (model_ext_frozen/nonneg_20261115T020314Z): compare with their GPU c5 fine tuning before the regularization tests

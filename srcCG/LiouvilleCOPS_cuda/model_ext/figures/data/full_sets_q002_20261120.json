@@ -1,0 +1,858 @@
+{
+ "_about": "Full figure sets of the ten new-law states (lead 2026-11-20 14:45 CST); full_set_q002.py; full_set_docs.py --spec this --key <key>",
+ "sets": {
+  "q002_D2": {
+   "title": "Complete figure set (12M) of the clipped activity model D2 refitted, new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the clipped activity model D2 refitted with the new law (D2_q002_warm: warm start from D2, one segment of 4000 evaluations, max_nfev, not converged), new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state)",
+   "chain": null,
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/maps",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/contributions",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/contrib_phase",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/v2_total_crosscheck",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+   "srkey": "D2_q002_warm",
+   "jobs_state": [
+    "maps job 136692",
+    "contributions 137493 (d2_tools.sbatch)"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z",
+    "adapter": "/data001/highresolu_vt/cops_output/model_ext_frozen/d2_tools_20261117T225752Z/d2_tools.py"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/maps (job 136692), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/D2_q002_warm/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit max_nfev (4000): not converged; no slope multipliers (clipped linear activity, no fine tuning); kappa at its lower bound (CO2 negligible).",
+    "The same state with the old law (q_min = 0.2 q_max): ../full_set_D2/.",
+    "contributions: d2_tools.sbatch STEPS='contrib verify' job 137493 (2026-11-20; verify: NG model vs D2's per-row model 5.1e-12, RG 2.2e-15, data cost 5.6707116e-3 = fit_result to its print precision)."
+   ],
+   "comparisons": [
+    "vs the old-law full set of the same model (../full_set_D2/)"
+   ],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_D2",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/D2_q002_warm/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_D2",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/maps",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/contributions",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/v2_total_crosscheck",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/contrib_phase",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "/data001/highresolu_vt/cops_output/model_ext_frozen/d2_tools_20261117T225752Z/d2_tools.py",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_D2",
+    "PUBSTEM": "12M_q002_D2_NG_RG_altitude",
+    "PUBTABLE": "q002_D2_final.dat",
+    "MODEL_NAME": "the clipped activity model D2 refitted with the new law (D2_q002_warm: warm start from D2, one segment of 4000 evaluations, max_nfev, not converged), new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "clipped D2 refitted, new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "clipped D2 refitted, new law",
+    "TITLE_PRESSURES": "SHAP8 12M: clipped D2 refitted, new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the clipped linear activity A = max(0, Y a + A_s sum_k c_k T_k): Y a the spherical-harmonic expansion (25 coefficients, degree <= 4), T_k the cliff template (slope >= 60 deg; its coefficient c_cliff fitted, >= 0) and the six fine-tuning correction templates ft_c1..ft_c6 of earlier fits (held at 1), A_s the enhancement scale; no slope multipliers and no fine tuning (the D2 export gives the tools this A with multipliers 1). The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002"
+   },
+   "finish_env": {
+    "KEY": "q002_D2",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/tools_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/maps",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/contributions",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/contrib_phase",
+    "MODEL_NAME": "the clipped activity model D2 refitted with the new law (D2_q002_warm: warm start from D2, one segment of 4000 evaluations, max_nfev, not converged), new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit max_nfev (4000): not converged|no slope multipliers (clipped linear activity, no fine tuning)|kappa at its lower bound (CO2 negligible)"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_D2 (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_D2 --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "STEPS='contrib verify' MODEL_EXT=/data001/highresolu_vt/cops_output/model_ext_frozen/d2_tools_20261117T225752Z D2DIR=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm D2_BASE=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002 GEOM=/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry CONTRIB=/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z sbatch --export=ALL d2_tools.sbatch"
+   ]
+  },
+  "q002_softplus": {
+   "title": "Complete figure set (12M) of the softplus activity model, new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the softplus activity model (slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136708/geometry",
+   "srkey": "softplus_q002_reg",
+   "jobs_state": [
+    "maps job 136708"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/maps_c5 (job 136708), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136708/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/softplus_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit ftol (591); kappa at its lower bound (CO2 negligible).",
+    "The same state with the old law (q_min = 0.2 q_max): ../full_set_stage2_softplus_reg/."
+   ],
+   "comparisons": [
+    "vs the old-law full set of the same model (../full_set_stage2_softplus_reg/)"
+   ],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_softplus",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/softplus_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_softplus",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/maps_c5",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136708/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/contributions_c5",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/v2_total_crosscheck_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/contrib_phase_c5",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_softplus",
+    "PUBSTEM": "12M_q002_softplus_NG_RG_altitude",
+    "PUBTABLE": "q002_softplus_final.dat",
+    "MODEL_NAME": "the softplus activity model (slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "softplus model, new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "softplus model, new law",
+    "TITLE_PRESSURES": "SHAP8 12M: softplus model, new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_softplus",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/maps_c5",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/contributions_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/contrib_phase_c5",
+    "MODEL_NAME": "the softplus activity model (slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit ftol (591)|kappa at its lower bound (CO2 negligible)",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_softplus (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_softplus --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_A": {
+   "title": "Complete figure set (12M) of the option-A sum-of-squares model (rank 3), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-A sum-of-squares model (rank 3, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136720/geometry",
+   "srkey": "A_q002_reg",
+   "jobs_state": [
+    "maps job 136720"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/maps_c5 (job 136720), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136720/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/A_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit max_nfev (4000): not converged; kappa at its lower bound (CO2 negligible).",
+    "The same state with the old law (q_min = 0.2 q_max): ../full_set_stage2_A_reg/."
+   ],
+   "comparisons": [
+    "vs the old-law full set of the same model (../full_set_stage2_A_reg/)"
+   ],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_A",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/A_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_A",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/maps_c5",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136720/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/contributions_c5",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/v2_total_crosscheck_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/contrib_phase_c5",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_A",
+    "PUBSTEM": "12M_q002_A_NG_RG_altitude",
+    "PUBTABLE": "q002_A_final.dat",
+    "MODEL_NAME": "the option-A sum-of-squares model (rank 3, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "sum-of-squares model (A), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "sum-of-squares model (A), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: sum-of-squares model (A), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the sum-of-squares model (option A) A = m_b (|L^T y|^2 / A_s + A_s T) exp(h): y the 25 real spherical harmonics (degree <= 4), L a 25 x 3 lower-trapezoidal coefficient matrix (rank 3), A_s D2's enhancement scale, T the sum of the six held correction templates, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_A",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/maps_c5",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/contributions_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/contrib_phase_c5",
+    "MODEL_NAME": "the option-A sum-of-squares model (rank 3, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit max_nfev (4000): not converged|kappa at its lower bound (CO2 negligible)",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_A (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_A --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_B": {
+   "title": "Complete figure set (12M) of the option-B background model (A_bg >= 1e-2), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-B background model (A_bg >= 1e-2, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136714/geometry",
+   "srkey": "B_q002_reg",
+   "jobs_state": [
+    "maps job 136714"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/maps_c5 (job 136714), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136714/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/B_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit max_nfev (4000): not converged; kappa and A_bg at their lower bounds.",
+    "The same state with the old law (q_min = 0.2 q_max): ../full_set_stage2_B_reg/."
+   ],
+   "comparisons": [
+    "vs the old-law full set of the same model (../full_set_stage2_B_reg/)"
+   ],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_B",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/B_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_B",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/maps_c5",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136714/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/contributions_c5",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/v2_total_crosscheck_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/contrib_phase_c5",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_B",
+    "PUBSTEM": "12M_q002_B_NG_RG_altitude",
+    "PUBTABLE": "q002_B_final.dat",
+    "MODEL_NAME": "the option-B background model (A_bg >= 1e-2, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "background model (B), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "background model (B), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: background model (B), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the background model (option B) A = m_b (A_bg A_orig + s ln(1 + exp(L/s))) exp(h): A_orig the srcCG activity map, A_bg the fitted background level (lower bound 1e-2), L = Y a + A_s T (the spherical-harmonic expansion, 25 coefficients, plus the six held correction templates times D2's enhancement scale A_s), s = 1e-5 A_orig, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_B",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/maps_c5",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/contributions_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/contrib_phase_c5",
+    "MODEL_NAME": "the option-B background model (A_bg >= 1e-2, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit max_nfev (4000): not converged|kappa and A_bg at their lower bounds",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_B (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_B --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_D": {
+   "title": "Complete figure set (12M) of the option-D log-spread model (f 0.1), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-D log-spread model (f 0.1, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/ft/final",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/ft/final",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/fit/final",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/maps_c5",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/contributions_c5",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/contrib_phase_c5",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/v2_total_crosscheck_c5",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136726/geometry",
+   "srkey": "D_q002_reg",
+   "jobs_state": [
+    "maps job 136726"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/maps_c5 (job 136726), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136726/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/D_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit ftol (31); kappa at its lower bound (CO2 negligible).",
+    "The same state with the old law (q_min = 0.2 q_max): ../full_set_stage2_D_reg/."
+   ],
+   "comparisons": [
+    "vs the old-law full set of the same model (../full_set_stage2_D_reg/)"
+   ],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_D",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/D_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_D",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/maps_c5",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136726/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/contributions_c5",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/v2_total_crosscheck_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/contrib_phase_c5",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_D",
+    "PUBSTEM": "12M_q002_D_NG_RG_altitude",
+    "PUBTABLE": "q002_D_final.dat",
+    "MODEL_NAME": "the option-D log-spread model (f 0.1, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "log-spread model (D), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "log-spread model (D), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: log-spread model (D), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the log-spread model (option D) A = m_b (A_orig exp(u) + A_s T) exp(h): A_orig the srcCG activity map, u = Y a / A_s the spherical-harmonic expansion (25 coefficients) over D2's enhancement scale A_s (spread penalty f 0.1), T the sum of the six held correction templates, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_D",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/ft/final",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/c5/fit/final",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/maps_c5",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/contributions_c5",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/contrib_phase_c5",
+    "MODEL_NAME": "the option-D log-spread model (f 0.1, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit ftol (31)|kappa at its lower bound (CO2 negligible)",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_D (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_D --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_C_f1_pm1em4": {
+   "title": "Complete figure set (12M) of the option-C local non-negative basis (f 1, f_m 1e-4, templates on), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/ft/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft)",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/contributions_ft",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/contrib_phase_ft",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+   "srkey": "C_f1_pm1em4_q002_reg",
+   "jobs_state": [
+    "maps job 136694"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z",
+    "adapter": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/maps_ft (job 136694), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/C_f1_pm1em4_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit max_nfev (4000): not converged; slope multipliers not determined at f_m 1e-4 (70-80 / 80-90 deg 2.5e4 / 8.1e4); kappa at its lower bound.",
+    "The same state with the old law (q_min = 0.2 q_max): ../full_set_stage2_C_f1_pm1em4_reg/."
+   ],
+   "comparisons": [
+    "vs the old-law full set of the same model (../full_set_stage2_C_f1_pm1em4_reg/)"
+   ],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_C_f1_pm1em4",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/C_f1_pm1em4_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_C_f1_pm1em4",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/contributions_ft",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_C_f1_pm1em4",
+    "PUBSTEM": "12M_q002_C_f1_pm1em4_NG_RG_altitude",
+    "PUBTABLE": "q002_C_f1_pm1em4_final.dat",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "local basis C (f 1, f_m 1e-4), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "local basis C (f 1, f_m 1e-4), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: local basis C (f 1, f_m 1e-4), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the local non-negative basis (option C) A = m_b (sum_j c_j phi_j + A_s sum_k ft_ck) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), ft_ck the six held correction templates times D2's enhancement scale A_s, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_C_f1_pm1em4",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/contributions_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit max_nfev (4000): not converged|slope multipliers not determined at f_m 1e-4 (70-80 / 80-90 deg 2.5e4 / 8.1e4)|kappa at its lower bound",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/..",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_C_f1_pm1em4 (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_C_f1_pm1em4 --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_C_f10_pm1em4": {
+   "title": "Complete figure set (12M) of the option-C local non-negative basis (f 10, f_m 1e-4, templates on), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/ft/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft)",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/contributions_ft",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/contrib_phase_ft",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+   "srkey": "C_f10_pm1em4_q002_reg",
+   "jobs_state": [
+    "maps job 136695"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z",
+    "adapter": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/maps_ft (job 136695), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/C_f10_pm1em4_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit ftol (812, segment 2); slope multipliers not determined at f_m 1e-4 (70-80 / 80-90 deg 5.5e4 / 1.8e5); kappa at its lower bound."
+   ],
+   "comparisons": [],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_C_f10_pm1em4",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        not made (no old-law maps of this setting)"
+   ],
+   "env": {
+    "KEY": "q002_C_f10_pm1em4",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/contributions_ft",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_C_f10_pm1em4",
+    "PUBSTEM": "12M_q002_C_f10_pm1em4_NG_RG_altitude",
+    "PUBTABLE": "q002_C_f10_pm1em4_final.dat",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "local basis C (f 10, f_m 1e-4), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "local basis C (f 10, f_m 1e-4), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: local basis C (f 10, f_m 1e-4), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the local non-negative basis (option C) A = m_b (sum_j c_j phi_j + A_s sum_k ft_ck) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), ft_ck the six held correction templates times D2's enhancement scale A_s, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_C_f10_pm1em4",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/contributions_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 1e-4, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit ftol (812, segment 2)|slope multipliers not determined at f_m 1e-4 (70-80 / 80-90 deg 5.5e4 / 1.8e5)|kappa at its lower bound",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/..",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_C_f10_pm1em4 (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_C_f10_pm1em4 --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_C_f1_pm0p01": {
+   "title": "Complete figure set (12M) of the option-C local non-negative basis (f 1, f_m 0.01, templates on), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 0.01, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/ft/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft)",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/contributions_ft",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/contrib_phase_ft",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+   "srkey": "C_f1_pm0p01_q002_reg",
+   "jobs_state": [
+    "maps job 136696"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z",
+    "adapter": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/maps_ft (job 136696), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/C_f1_pm0p01_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit ftol (7); kappa at its lower bound."
+   ],
+   "comparisons": [],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_C_f1_pm0p01",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/C_f1_pm0p01_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_C_f1_pm0p01",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/contributions_ft",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_C_f1_pm0p01",
+    "PUBSTEM": "12M_q002_C_f1_pm0p01_NG_RG_altitude",
+    "PUBTABLE": "q002_C_f1_pm0p01_final.dat",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 0.01, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "local basis C (f 1, f_m 0.01), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "local basis C (f 1, f_m 0.01), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: local basis C (f 1, f_m 0.01), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the local non-negative basis (option C) A = m_b (sum_j c_j phi_j + A_s sum_k ft_ck) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), ft_ck the six held correction templates times D2's enhancement scale A_s, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_C_f1_pm0p01",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/contributions_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 1, multiplier penalty f_m 0.01, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit ftol (7)|kappa at its lower bound",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/..",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_C_f1_pm0p01 (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_C_f1_pm0p01 --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_C_f10_pm0p01": {
+   "title": "Complete figure set (12M) of the option-C local non-negative basis (f 10, f_m 0.01, templates on), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 0.01, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/ft/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft)",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/contributions_ft",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/contrib_phase_ft",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+   "srkey": "C_f10_pm0p01_q002_reg",
+   "jobs_state": [
+    "maps job 136697"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z",
+    "adapter": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/maps_ft (job 136697), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/C_f10_pm0p01_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit ftol (6); kappa at its lower bound."
+   ],
+   "comparisons": [],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_C_f10_pm0p01",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/C_f10_pm0p01_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_C_f10_pm0p01",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/contributions_ft",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/v2_total_crosscheck_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_C_f10_pm0p01",
+    "PUBSTEM": "12M_q002_C_f10_pm0p01_NG_RG_altitude",
+    "PUBTABLE": "q002_C_f10_pm0p01_final.dat",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 0.01, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "local basis C (f 10, f_m 0.01), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "local basis C (f 10, f_m 0.01), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: local basis C (f 10, f_m 0.01), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the local non-negative basis (option C) A = m_b (sum_j c_j phi_j + A_s sum_k ft_ck) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), ft_ck the six held correction templates times D2's enhancement scale A_s, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_C_f10_pm0p01",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/contributions_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/contrib_phase_ft",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 0.01, templates on, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit ftol (6)|kappa at its lower bound",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/..",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_C_f10_pm0p01 (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_C_f10_pm0p01 --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  },
+  "q002_C_f10_pm0p01_tploff": {
+   "title": "Complete figure set (12M) of the option-C local non-negative basis (f 10, f_m 0.01, templates off), new H2O law (q_min = 0.02 q_max), final state",
+   "model_name": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 0.01, templates off, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+   "state": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/ft/final (tools: /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft)",
+   "chain": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5",
+   "ft": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft",
+   "fit": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft/fit_state",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/maps_ft",
+   "contrib": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/contributions_ft",
+   "phase": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/contrib_phase_ft",
+   "xc": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/v2_total_crosscheck_ft",
+   "geom": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+   "srkey": "C_f10_pm0p01_tploff_q002_reg",
+   "jobs_state": [
+    "maps job 136698"
+   ],
+   "frozen": {
+    "maps / contributions": "model_ext_frozen/nonneg_maps_20261118T192126Z, nonneg_contrib_20261118T192126Z",
+    "adapter": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py"
+   },
+   "notes": [
+    "Law: new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max.",
+    "State inputs from its maps manifest: maps /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/maps_ft (job 136698), geometry /data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry (content identical to maps_geometry/job_136691/geometry, checked: all cos / shadow / mesh files).",
+    "activity/, production_rate/, inspection/ and their checks/ files copied from ../source_rate_q002/C_f10_pm0p01_tploff_q002_reg/ (COPIED_FROM_source_rate_q002.txt); the jobs that made them: the copied provenance-<job>/ folders.",
+    "Model-data reference (model_data/, regions): the refitted D2 with the same law (/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final).",
+    "Caveats: last fit ftol (3); kappa at its lower bound."
+   ],
+   "comparisons": [],
+   "intro": "Lead 2026-11-20 14:45 CST (user: \"prepare the full set of plots for the last round of fits with the fixed surface source distribution\"): a FULL figure set of a NEW-LAW state (H2O q_min = 0.02 q_max, the night-side fix of 2026-11-18; base_q002, new-law snapshots nonneg_maps / nonneg_contrib_20261118T192126Z), exactly like the 2026-11-17 full sets (../full_set_stage2_*/, ../full_set_D2/; same tools, styles and user decisions), no movies. activity/, production_rate/ and inspection/ are copies (cp -p, sha256 in COPIED_FROM_source_rate_q002.txt) of ../source_rate_q002/<run>/ (the same tool, settings, state, maps, geometry and code); every other folder was made for this set.",
+   "reference": "the refitted D2 with the same law (reference)",
+   "pub": "publication_q002_C_f10_pm0p01_tploff",
+   "written": "2026-11-20 (CST)",
+   "extra_dirs": [
+    "inspection/        copy of ../source_rate_q002/C_f10_pm0p01_tploff_q002_reg/inspection/ (new-law vs old-law production rate, q/q_max)"
+   ],
+   "env": {
+    "KEY": "q002_C_f10_pm0p01_tploff",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/maps_ft",
+    "GEOM": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/maps_geometry/job_136691/geometry",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/contributions_ft",
+    "XC": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/v2_total_crosscheck_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/contrib_phase_ft",
+    "MX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z",
+    "CX": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_contrib_20261118T192126Z",
+    "ADAPTER": "/data001/highresolu_vt/cops_output/model_ext_frozen/localnn_q002_20261118T162327Z/localnn_tools.py",
+    "PUB": "/data001/highresolu_vt/cops_output/figures_cluster/12M/publication_q002_C_f10_pm0p01_tploff",
+    "PUBSTEM": "12M_q002_C_f10_pm0p01_tploff_NG_RG_altitude",
+    "PUBTABLE": "q002_C_f10_pm0p01_tploff_final.dat",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 0.01, templates off, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "MODEL_LABEL": "local basis C (f 10, f_m 0.01, templates off), new law q_min 0.02 q_max, final state",
+    "MODEL_SHORT": "local basis C (f 10, f_m 0.01, templates off), new law",
+    "TITLE_PRESSURES": "SHAP8 12M: local basis C (f 10, f_m 0.01, templates off), new H2O law (q_min 0.02 q_max) vs COPS",
+    "MODEL_TEXT": "Its H2O activity factor is the local non-negative basis (option C, templates off) A = m_b (sum_j c_j phi_j) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "D2REF": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "MCODE": "/data001/highresolu_vt/cops_output/model_ext_frozen/nonneg_maps_20261118T192126Z/nonneg_maps.py",
+    "MEM_CAP": "24G",
+    "SKIP": "activity,h2o",
+    "NODE": "gpu002",
+    "NCYC": "5"
+   },
+   "finish_env": {
+    "KEY": "q002_C_f10_pm0p01_tploff",
+    "FT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft",
+    "FIT": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/tools_state_ft/fit_state",
+    "MAPS": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/maps_ft",
+    "CONTRIB": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/contributions_ft",
+    "PHASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/contrib_phase_ft",
+    "MODEL_NAME": "the option-C local non-negative basis model (f 10, multiplier penalty f_m 0.01, templates off, slope multipliers >= 1) refitted with the new law, regularized stage-2 chain, final state after 5 fit and fine-tuning cycles, new H2O law q_min = 0.02 q_max (srcCG's value; the night-side fix of 2026-11-18); the earlier full sets used q_min = 0.2 q_max",
+    "BASE": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/base_q002",
+    "REF_DIR": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/final",
+    "CAVEATS": "last fit ftol (3)|kappa at its lower bound",
+    "CHAIN": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/..",
+    "NCYC": "5"
+   },
+   "submit_command": "full_set_q002.py submit --keys q002_C_f10_pm0p01_tploff (the environment: env of this spec entry; bash full_set_submit.sh)",
+   "finish_command": "srun -p normal128cores -A general -N1 -n1 -c 8 --mem=96G -t 00:45:00 <full_set_q002.py finish --key q002_C_f10_pm0p01_tploff --job-set4 <set1/set4 job>>",
+   "state_commands": [
+    "# maps / contributions: the chain's post (its README.md / HOW-TO-RERUN.md)"
+   ]
+  }
+ }
+}
