@@ -12,6 +12,17 @@ The application currently supports:
 - a reserved DIM2 axisymmetric model type whose execution backend is not yet
   implemented.
 
+## I3 run guide (keep it current)
+
+[README_I3_RUN.md](README_I3_RUN.md) is the step-by-step guide for building and running the 3I/ATLAS (I3) cases:
+build, case selection, chemical-model (variant) selection, g-factor models, run and output.
+
+**Rule:** any change to the comet model that affects how I3 is built, configured or run must update
+`README_I3_RUN.md` in the same change. This includes compile-time records in `input/i3.conf` (species, reaction,
+group or rate-table records and their build-time constants), runtime keys in `input/i3.in`, command-line options
+of `amps`, chemistry groups and variants, brightness/g-factor models and their required inputs, case-generator
+options of `i3/prepare_i3_cases.py`, and output file names or locations.
+
 ## Collisionless reference and I3 comparison documentation
 
 - [Collisionless reference model](COLLISIONLESS_REFERENCE.md): independent
@@ -134,6 +145,28 @@ cp -p amps input/i3.in "$RUN/"
 
 All cases share the same executable and runtime file; only `-case` and the run
 directory change. An unknown case is fatal and lists the available names.
+
+The OH loss has two compiled variants (`srcHartley2/CHEMISTRY_VARIANTS.md`):
+`STATE_RESOLVED`, the default and the chemistry of all earlier campaigns, and
+`SA1982_VH`, one lumped OH -> O + H channel plus OH ionization with the
+heliocentric-velocity-dependent lifetime of a table file. The variant is
+selected by `chemistry.variant.OH_LOSS` in `i3.in` (global or case block) or by
+`--chemistry-variant OH_LOSS=SA1982_VH` on the command line, which wins.
+`SA1982_VH` reads the file named by `chemistry.table.OH_TAU_SA1982.file`; a
+relative path is resolved against the directory of the input file, so copy the
+table next to a frozen `i3.in`:
+
+```sh
+cp -p srcHartley2/i3/reference/oh_lifetime_sa1982.csv "$RUN/"
+sed -i 's#^\(  chemistry.table.OH_TAU_SA1982.file = \).*#\1oh_lifetime_sa1982.csv#' "$RUN/i3.in"
+( cd "$RUN" && mpiexec -n 12 ./amps -i i3.in -case "$CASE" \
+    --chemistry-variant OH_LOSS=SA1982_VH 2>&1 | tee "case${CASE}.run.log" )
+```
+
+The run log (`chemistry Chemistry.*` lines) and the brightness file headers
+(`DATASETAUXDATA Chemistry.*`) record the effective variant, where it was
+selected, the table file and its SHA-256, and the rates derived from it.
+`./amps --help` lists the compiled chemistry groups and variants.
 
 The generated inputs currently request 200 brightness rays, a 10,000-
 iteration sampling window, and at most 30,000 iterations.  Raw radial and

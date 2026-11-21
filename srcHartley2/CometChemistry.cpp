@@ -592,8 +592,40 @@ bool RefreshParentReactionRates(std::string *error) {
       }
       if (!(rate>0.0) && Comet::Chemistry::
           ChannelImportanceGenerated::Configured[reaction]!=0) {
-        if (error!=NULL)
+        if (error!=NULL) {
           *error="channel importance targets a reaction with zero runtime rate";
+          // A reaction of an inactive chemistry variant has A=0 by design.
+          // The Stage-7 family is fixed when the executable is built, so it
+          // cannot follow a runtime variant switch: explain the mismatch and
+          // the ways forward instead of renormalizing silently.
+          const Comet::Chemistry::cCompiledReactionVariant &variant=
+              Comet::Chemistry::GetCompiledReactionVariant(reaction);
+          if (variant.Group>=0 &&
+              !Comet::Chemistry::IsReactionVariantActive(reaction)) {
+            const std::size_t group=static_cast<std::size_t>(variant.Group);
+            const Comet::Chemistry::cCompiledGroup &record=
+                Comet::Chemistry::GetCompiledGroup(group);
+            const std::string configuredVariant=
+                record.VariantNames[variant.Variant];
+            const std::string activeVariant=record.VariantNames[
+                Comet::Chemistry::GetActiveVariant(group)];
+            char parent[_MAX_STRING_LENGTH_PIC_];
+            PIC::MolecularData::GetChemSymbol(parent,species);
+            *error=std::string("channel importance sampling (Stage 7) is configured for reaction '")+
+                network.GetReaction(reaction).Id+"', which belongs to variant '"+
+                configuredVariant+"' of chemistry group '"+record.Id+
+                "', but variant '"+activeVariant+"' is active (selected by "+
+                Comet::Chemistry::GetActiveVariantSource(group)+
+                "), so the reaction has zero rate in this run. The Stage-7 family of parent "+
+                parent+" is fixed when the executable is built and cannot follow a runtime "
+                "variant switch. To proceed, either select variant '"+configuredVariant+
+                "' (chemistry.variant."+record.Id+" in the runtime input, or --chemistry-variant "+
+                record.Id+"="+configuredVariant+"), or rebuild without the "
+                "ChemistryChannelBiasedProbability records of the "+parent+
+                " family (or with ChemistryChannelImportanceMode=off) to run variant '"+
+                activeVariant+"'. See srcHartley2/CHEMISTRY_VARIANTS.md.";
+          }
+        }
         return false;
       }
       if (rate>0.0) {
@@ -771,6 +803,12 @@ void Comet::Chemistry::CloseResidualDiagnosticWindow() {
 const ChemicalSolver::cReactionNetwork& Comet::Chemistry::GetNetwork() {
   if (!RuntimeReactionNetwork) {
     std::vector<ChemicalSolver::cReaction> &reactions=RuntimeReactionTable();
+    // Chemistry variants: a reaction of an inactive variant keeps its place
+    // (index, generated policies, diagnostics row) but has A=0.  The parent
+    // channel cache skips zero-rate channels, so it never takes part in
+    // selection.  The active variants are final once the network exists.
+    for (std::size_t reaction=0;reaction<reactions.size();reaction++)
+      if (!IsReactionVariantActive(reaction)) reactions[reaction].A=0.0;
     RuntimeReactionNetwork.reset(new ChemicalSolver::cReactionNetwork(
         Generated::Terms,Generated::TermCount,reactions.data(),reactions.size(),
         PIC::nTotalSpecies));
@@ -786,6 +824,108 @@ std::size_t Comet::Chemistry::GetCompiledReactionCount() {
 const char* Comet::Chemistry::GetCompiledReactionId(std::size_t reaction) {
   return reaction<Generated::ReactionCount ? Generated::Reactions[reaction].Id :
       NULL;
+}
+
+namespace {
+// Active variant of every compiled group; initialized lazily to the compiled
+// defaults so that legacy compile-time inputs (no runtime selection) and the
+// runtime input share one rule.
+struct cActiveVariantState {
+  std::vector<int> Variant;
+  std::vector<std::string> Source;
+  std::vector<std::pair<std::string,std::string>> Provenance;
+};
+
+cActiveVariantState& ActiveVariants() {
+  static cActiveVariantState state;
+  if (state.Variant.size()!=Comet::Chemistry::Generated::GroupCount) {
+    state.Variant.assign(Comet::Chemistry::Generated::GroupCount,0);
+    state.Source.assign(Comet::Chemistry::Generated::GroupCount,
+        std::string("compiled default"));
+    for (std::size_t group=0;group<Comet::Chemistry::Generated::GroupCount;group++)
+      state.Variant[group]=Comet::Chemistry::Generated::Groups[group].DefaultVariant;
+  }
+  return state;
+}
+}  // namespace
+
+std::size_t Comet::Chemistry::GetCompiledGroupCount() {
+  return Generated::GroupCount;
+}
+
+const Comet::Chemistry::cCompiledGroup& Comet::Chemistry::GetCompiledGroup(
+    std::size_t group) {
+  if (group>=Generated::GroupCount) {
+    std::fprintf(stderr,"invalid compiled chemistry group index %zu\n",group);
+    std::abort();
+  }
+  return Generated::Groups[group];
+}
+
+std::size_t Comet::Chemistry::GetCompiledRateTableCount() {
+  return Generated::RateTableCount;
+}
+
+const Comet::Chemistry::cCompiledRateTable&
+Comet::Chemistry::GetCompiledRateTable(std::size_t table) {
+  if (table>=Generated::RateTableCount) {
+    std::fprintf(stderr,"invalid compiled chemistry rate table index %zu\n",table);
+    std::abort();
+  }
+  return Generated::RateTables[table];
+}
+
+const Comet::Chemistry::cCompiledReactionVariant&
+Comet::Chemistry::GetCompiledReactionVariant(std::size_t reaction) {
+  static const cCompiledReactionVariant ungrouped={-1,-1,-1,RateRole::None};
+  return reaction<Generated::ReactionCount ?
+      Generated::ReactionVariants[reaction] : ungrouped;
+}
+
+bool Comet::Chemistry::SetActiveVariant(std::size_t group,int variant,
+    const std::string &source,std::string *error) {
+  if (RuntimeReactionNetworkConstructed) {
+    if (error!=NULL)
+      *error="chemistry variants must be selected before the chemistry network is first accessed";
+    return false;
+  }
+  if (group>=Generated::GroupCount || variant<0 ||
+      variant>=Generated::Groups[group].VariantCount) {
+    if (error!=NULL) *error="invalid chemistry group or variant index";
+    return false;
+  }
+  cActiveVariantState &state=ActiveVariants();
+  state.Variant[group]=variant;
+  state.Source[group]=source;
+  return true;
+}
+
+int Comet::Chemistry::GetActiveVariant(std::size_t group) {
+  if (group>=Generated::GroupCount) return -1;
+  return ActiveVariants().Variant[group];
+}
+
+const std::string& Comet::Chemistry::GetActiveVariantSource(std::size_t group) {
+  static const std::string none;
+  if (group>=Generated::GroupCount) return none;
+  return ActiveVariants().Source[group];
+}
+
+bool Comet::Chemistry::IsReactionVariantActive(std::size_t reaction) {
+  const cCompiledReactionVariant &entry=GetCompiledReactionVariant(reaction);
+  if (entry.Group<0) return true;
+  return ActiveVariants().Variant[static_cast<std::size_t>(entry.Group)]==
+      entry.Variant;
+}
+
+void Comet::Chemistry::SetVariantProvenance(
+    const std::vector<std::pair<std::string,std::string>> &records) {
+  ActiveVariants().Provenance=records;
+}
+
+const std::vector<std::pair<std::string,std::string>>&
+Comet::Chemistry::GetVariantProvenance() {
+  return ActiveVariants().Provenance;
 }
 
 bool Comet::Chemistry::ConfigureReactionRate(const std::string &id,

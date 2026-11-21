@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 #if __has_include("models/chemical_solver/ReactionNetwork.h")
 #include "models/chemical_solver/ReactionNetwork.h"
@@ -98,6 +100,59 @@ std::size_t GetCompiledReactionCount();
 const char* GetCompiledReactionId(std::size_t reaction);
 bool ConfigureReactionRate(const std::string &id,double rateCoefficient,
     std::string *error=NULL);
+// Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md).  A reaction group
+// holds alternative complete definitions of one physical process, for example
+// OH_LOSS = STATE_RESOLVED | SA1982_VH; exactly one variant per group is
+// active in a run.  GetNetwork() sets the rate coefficient of every reaction
+// of an inactive variant to zero when it constructs the network, and the
+// per-parent channel cache keeps only positive-rate channels in input order,
+// so an inactive variant never takes part in channel selection and the
+// active variant's selection thresholds and random-number use are unchanged.
+// The compiled tables below are generated from the build input by
+// input/CometReactionNetwork.pm.  Ungrouped reactions are always active.
+namespace RateRole {
+enum Type {None=0,Dissociation=1,Ionization=2};
+}
+struct cCompiledGroup {
+  const char *Id;
+  int DefaultVariant;              // index into VariantNames
+  int VariantCount;
+  const char *const *VariantNames;
+};
+struct cCompiledRateTable {
+  const char *Id;
+  const char *Model;               // e.g. "SA1982_OH_LIFETIME"
+  double ScaleS;                   // [s] per table unit (model parameter)
+  double IonFraction;              // k_ion/k_d (model parameter)
+};
+struct cCompiledReactionVariant {
+  int Group;                       // compiled group index, -1 = ungrouped
+  int Variant;                     // index into that group's VariantNames
+  int RateTable;                   // compiled table index, -1 = input rate
+  int RateRole;                    // RateRole::Type
+};
+std::size_t GetCompiledGroupCount();
+const cCompiledGroup& GetCompiledGroup(std::size_t group);
+std::size_t GetCompiledRateTableCount();
+const cCompiledRateTable& GetCompiledRateTable(std::size_t table);
+const cCompiledReactionVariant& GetCompiledReactionVariant(std::size_t reaction);
+// Select the active variant of a group before the network is first accessed
+// (runtime input).  source describes where the choice came from, for the
+// provenance record and error messages ("command line", "runtime input
+// i3.in:123", "compiled default").  Without a call the compiled default is
+// active.
+bool SetActiveVariant(std::size_t group,int variant,const std::string &source,
+    std::string *error=NULL);
+int GetActiveVariant(std::size_t group);
+const std::string& GetActiveVariantSource(std::size_t group);
+// True when the reaction is ungrouped or belongs to its group's active variant.
+bool IsReactionVariantActive(std::size_t reaction);
+// Provenance of the effective variants, rate tables, and table-derived rates,
+// set once by the runtime input and written to the run log and to the
+// brightness output headers.  Each entry is (Tecplot aux-data name, value).
+void SetVariantProvenance(
+    const std::vector<std::pair<std::string,std::string>> &records);
+const std::vector<std::pair<std::string,std::string>>& GetVariantProvenance();
 bool Validate(std::string *error=NULL);
 
 // Reserve owner-block accumulator storage after core local timestep/weight

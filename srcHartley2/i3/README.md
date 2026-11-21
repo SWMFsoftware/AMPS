@@ -211,6 +211,34 @@ silently averaging the sources.
 CO and CO2 are direct collision partners only. No CO/CO2 photochemistry is
 invented.
 
+## OH loss variants
+
+The OH loss is a chemistry group with two variants, both compiled into the I3
+executable (design, decisions, and tests: `srcHartley2/CHEMISTRY_VARIANTS.md`):
+
+- `STATE_RESOLVED` (default): `OH_O3P_H`, `OH_O1S_H`, `OH_O1D_H`, and `OH_ION`
+  with the per-case F10.7P-scaled rates above. All campaigns before
+  2026-11-21 used it.
+- `SA1982_VH`: one OH -> O + H channel (`OH_O_H_SA1982`, 0.36 eV) with
+  k_d = 1/tau_FUV + 1/(S * OHTAUS(v_h)) at 1 AU and OH ionization
+  (`OH_ION_SA1982`) at 0.05 k_d, both scaled by (1 AU / r_h)^2 and not by
+  solar activity. OHTAUS and tau_FUV = 4.24e5 s come from
+  `reference/oh_lifetime_sa1982.csv` (the legacy `BLOCKDATA OHPHOT` table,
+  -60..+60 km/s in steps of 2 km/s, linear interpolation, clamped outside);
+  S = 0.833e5 s and the fraction 0.05 are fixed in `input/i3.conf`. v_h is the
+  case's `brightness.heliocentric_radial_velocity_km_s`. For the six cases the
+  OH lifetime at 1 AU is 1.7-2.5 times that of `STATE_RESOLVED`.
+
+`prepare_i3_cases.py` writes `chemistry.variant.OH_LOSS` (option `--oh-loss`,
+per case `--oh-loss-case CASE=VARIANT`) and the table path
+(`--oh-lifetime-table`, written relative to the output directory) into
+`input/i3.in`, and always writes the state-resolved rates, so either variant
+can also be chosen at run time with `--chemistry-variant OH_LOSS=...`. Another
+solar-activity condition is represented by another table file of the same
+format named in the input. `input/i3-test.in` has no variant keys and runs the
+default. The edge correction (`srcHartley2/visualization/comet_edge_correction.py`)
+takes the variant recorded in the run's brightness header.
+
 ## Source distribution, mesh, and collisions
 
 All parents use a uniform 175-K, zero-drift surface source. This does not

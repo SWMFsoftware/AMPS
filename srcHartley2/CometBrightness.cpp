@@ -1,4 +1,5 @@
 #include "CometBrightness.h"
+#include "CometChemistry.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -775,6 +776,15 @@ void Comet::Brightness::OutputSampledBrightness(int outputIndex) {
           "DATASETAUXDATA ImpactParameterDirection=\"%.17e %.17e %.17e\"\n",
           ImpactParameterDirection[0],ImpactParameterDirection[1],
           ImpactParameterDirection[2]);
+      // Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md): the effective
+      // variant of every compiled group, the rate tables, and table-derived
+      // rates, so an output file identifies the chemistry that produced it.
+      for (const auto &record:Comet::Chemistry::GetVariantProvenance()) {
+        std::string value=record.second;
+        for (char &c:value) if (c=='"') c='\'';
+        std::fprintf(output,"DATASETAUXDATA %s=\"%s\"\n",record.first.c_str(),
+            value.c_str());
+      }
       for (std::size_t entry=0;entry<lines.size();entry++) {
         const int line=lines[entry];
         const AMPS::ResonanceFluorescence::ModelMetadata *metadata=

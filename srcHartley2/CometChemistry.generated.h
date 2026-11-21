@@ -13,6 +13,15 @@ static const ChemicalSolver::cStoichiometricTerm Terms[]={{0,1.0}};
 static const ChemicalSolver::cReaction Reactions[]={
     {"none",0,0,0,0,ChemicalSolver::RateLaw::Constant,
         0.0,0.0,0.0,1.0,0.0}};
+// Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md): no groups or rate
+// tables; the sentinels below are never read because the counts are zero.
+static const std::size_t GroupCount=0;
+static const Comet::Chemistry::cCompiledGroup Groups[]={{"none",0,0,0}};
+static const std::size_t RateTableCount=0;
+static const Comet::Chemistry::cCompiledRateTable RateTables[]={
+    {"none","none",0.0,0.0}};
+static const Comet::Chemistry::cCompiledReactionVariant ReactionVariants[]={
+    {-1,-1,-1,0}};
 }}}
 
 #endif

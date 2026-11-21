@@ -14,8 +14,10 @@ and the checksum-bound JSON result. The directory must not already exist.
 The orchestrator runs the application-independent runtime-input grammar, I3
 six-case generation, MAVEN/IUVS reference regeneration, the spherical
 outer-boundary brightness correction (`test_comet_edge_correction.py`; see
-`srcHartley2/EDGE_CORRECTION.md`), resonance-fluorescence and brightness
-tests, and every Stage 0--10 chemistry/transport test. The
+`srcHartley2/EDGE_CORRECTION.md`), the chemistry variants
+(`run_chemistry_variants_tests.sh`; see `srcHartley2/CHEMISTRY_VARIANTS.md`),
+resonance-fluorescence and brightness tests, and every Stage 0--10
+chemistry/transport test. The
 `run_stage*.sh` scripts and Python/C++ checkers remain small implementation
 components, but they are not separate operator steps. This prevents a partial
 selection of individually successful tests from being reported as the model

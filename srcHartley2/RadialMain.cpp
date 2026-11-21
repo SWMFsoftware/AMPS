@@ -35,7 +35,26 @@ void PrintUsage(const char *program) {
       "[--chemistry-validation-events N] [--random-seed N] "
       "[--chemistry-residual-sampling bernoulli|systematic] "
       "[--chemistry-estimator-mode configured|analog|enhanced] "
-      "[--validate-runtime-input] [-i FILE [-case CASE]]\n",program);
+      "[--validate-runtime-input] [-i FILE [-case CASE] "
+      "[--chemistry-variant GROUP=VARIANT ...]]\n",program);
+  // Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md): list what this
+  // executable was built with, so the valid names are visible without the
+  // build input.
+  std::printf("\n--chemistry-variant GROUP=VARIANT (repeatable; requires -i)\n"
+      "  selects the active variant of a compiled chemistry group for this run.\n"
+      "  Precedence: command line > case block > global block of the runtime\n"
+      "  input (chemistry.variant.GROUP = VARIANT) > compiled default.\n");
+  if (Comet::Chemistry::GetCompiledGroupCount()==0)
+    std::printf("  This executable has no chemistry groups.\n");
+  for (std::size_t group=0;group<Comet::Chemistry::GetCompiledGroupCount();group++) {
+    const Comet::Chemistry::cCompiledGroup &record=
+        Comet::Chemistry::GetCompiledGroup(group);
+    std::printf("  %s:",record.Id);
+    for (int variant=0;variant<record.VariantCount;variant++)
+      std::printf(" %s%s",record.VariantNames[variant],
+          variant==record.DefaultVariant ? " (default)" : "");
+    std::printf("\n");
+  }
 }
 
 // Return the compiled species number without depending on application-specific
@@ -610,6 +629,18 @@ int main(int argc,char **argv) {
       }
       runtimeInputPath=argv[argument];
     }
+    else if (option=="--chemistry-variant") {
+      std::string variantError;
+      if (++argument>=argc) {
+        PrintUsage(argv[0]);
+        return EXIT_FAILURE;
+      }
+      if (!Comet::RuntimeInput::AddChemistryVariantOverride(argv[argument],
+          &variantError)) {
+        std::fprintf(stderr,"%s\n",variantError.c_str());
+        return EXIT_FAILURE;
+      }
+    }
     else if (option=="-case" || option=="--case") {
       if (++argument>=argc || !runtimeCaseName.empty()) {
         std::fprintf(stderr,"-case/--case requires exactly one case name\n");
@@ -726,6 +757,13 @@ int main(int argc,char **argv) {
         "--validation-unit-corrections requires --validate-local-timestep\n");
     return EXIT_FAILURE;
   }
+  // Checked before the general "requires runtime model input" message so that
+  // the option named on the command line is the one reported.
+  if (runtimeInputPath.empty() &&
+      Comet::RuntimeInput::HasChemistryVariantOverrides()) {
+    std::fprintf(stderr,"--chemistry-variant requires -i FILE\n");
+    return EXIT_FAILURE;
+  }
   if (Comet::RuntimeInput::Required && runtimeInputPath.empty()) {
     std::fprintf(stderr,
         "this executable requires runtime model input: use -i FILE -case CASE\n");
@@ -759,6 +797,16 @@ int main(int argc,char **argv) {
     if (PIC::ThisThread==0) {
       std::printf("$PREFIX: comet runtime input=%s case=%s\n",
           runtimeInputPath.c_str(),runtimeCaseName.c_str());
+      // Chemistry variants: effective selection, rate tables, and
+      // table-derived rates (also written to the brightness file headers).
+      for (const auto &record:Comet::Chemistry::GetVariantProvenance()) {
+        std::printf("$PREFIX: chemistry %s=%s\n",record.first.c_str(),
+            record.second.c_str());
+        if (record.second.find("clamped=yes")!=std::string::npos)
+          std::printf("$PREFIX: WARNING: %s: the heliocentric radial velocity is "
+              "outside the rate table; the end value of the table is used\n",
+              record.first.c_str());
+      }
       std::fflush(stdout);
     }
   }

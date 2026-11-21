@@ -21,6 +21,12 @@
   collision.minimum_sample_particles = 1.0
   chemistry.enabled = true
   chemistry.residual_sampling = systematic
+  ! OH loss (srcHartley2/CHEMISTRY_VARIANTS.md): STATE_RESOLVED uses the
+  ! per-case rates of the four OH channels; SA1982_VH computes the OH rates
+  ! from this table at the case's heliocentric radial velocity.  A relative
+  ! path is resolved against the directory of this file.
+  chemistry.variant.OH_LOSS = STATE_RESOLVED
+  chemistry.table.OH_TAU_SA1982.file = ../srcHartley2/i3/reference/oh_lifetime_sa1982.csv
   diagnostics.enabled = true
   cooling.H2O.model = GOMBOSI1986_H2O
 

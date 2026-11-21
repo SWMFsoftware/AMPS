@@ -14,6 +14,20 @@ use warnings;
 # literal NONE is accepted only for products and represents loss from the
 # tracked neutral system, for example photoionization.  Excess energy is
 # converted from eV to joules at generation time.
+#
+# Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md).  Optional KEY=VALUE
+# fields may follow the nine fields:
+#   GROUP=<GROUP>:<VARIANT>        the reaction belongs to one variant of a
+#                                  reaction group; it is active only when that
+#                                  variant is selected at run time
+#   RATE=TABLE:<TABLE>:<ROLE>      the runtime rate at 1 AU is computed from a
+#                                  rate table (ChemistryRateTable) instead of a
+#                                  chemistry.rate.<ID>_1au_s-1 input key
+# Group and table records:
+#   ChemistryGroup=<GROUP> | DEFAULT=<VARIANT> | VARIANTS=<V1>,<V2>,...
+#   ChemistryRateTable=<TABLE> | MODEL=SA1982_OH_LIFETIME | SCALE_S=<s> | ION_FRACTION=<f>
+# The checks in validate_variants() run before any header is written.  Records
+# without the optional fields keep their exact previous meaning and order.
 
 sub new {
   my ($class,%args)=@_;
@@ -33,7 +47,165 @@ sub new {
     species_index=>\%species_index,
     reactions=>[],
     ids=>{},
+    groups=>[],        # in input order: {id,default,variants=>[...],location}
+    group_index=>{},
+    tables=>[],        # in input order: {id,model,scale_s,ion_fraction,location}
+    table_index=>{},
   },$class;
+}
+
+# Rate-table models known to the runtime (CometRuntimeInput.cpp) and the roles
+# a reaction may take in each.  SA1982_OH_LIFETIME: OH loss with the
+# heliocentric-velocity-dependent lifetime of the legacy BLOCKDATA OHPHOT;
+# DISSOCIATION is k_d = 1/tau_FUV + 1/(SCALE_S*OHTAUS(v_h)), IONIZATION is
+# ION_FRACTION*k_d (srcHartley2/CHEMISTRY_VARIANTS.md, section 3).
+my %TABLE_MODEL_ROLES=(
+  SA1982_OH_LIFETIME=>{DISSOCIATION=>1,IONIZATION=>2},
+);
+
+sub add_group {
+  my ($self,$text,$location)=@_;
+  $location='' unless defined $location;
+  my @field=map {_trim($_)} split(/\|/,_trim($text),-1);
+  die "invalid ChemistryGroup at $location: expected " .
+      "GROUP | DEFAULT=<VARIANT> | VARIANTS=<V1>,<V2>,...\n" unless @field==3;
+  my $id=uc($field[0]);
+  die "invalid ChemistryGroup name '$field[0]' at $location\n"
+      unless $id=~/^[A-Z][A-Z0-9_]*$/;
+  die "duplicate ChemistryGroup '$id' at $location\n"
+      if exists $self->{group_index}->{$id};
+  my %option=_parse_options([@field[1..2]],"ChemistryGroup '$id'",$location,
+      {DEFAULT=>1,VARIANTS=>1});
+  die "ChemistryGroup '$id' at $location requires DEFAULT and VARIANTS\n"
+      unless defined($option{DEFAULT}) && defined($option{VARIANTS});
+  my @variants=map {uc(_trim($_))} split(/,/,$option{VARIANTS},-1);
+  my %seen;
+  for my $variant (@variants) {
+    die "invalid variant name '$variant' in ChemistryGroup '$id' at $location\n"
+        unless $variant=~/^[A-Z][A-Z0-9_]*$/;
+    die "duplicate variant '$variant' in ChemistryGroup '$id' at $location\n"
+        if $seen{$variant}++;
+  }
+  die "ChemistryGroup '$id' at $location needs at least two variants\n"
+      unless @variants>=2;
+  my $default=uc($option{DEFAULT});
+  die "DEFAULT=$default of ChemistryGroup '$id' at $location is not one of its VARIANTS\n"
+      unless $seen{$default};
+  push @{$self->{groups}},{id=>$id,default=>$default,variants=>\@variants,
+      location=>$location};
+  $self->{group_index}->{$id}=$#{$self->{groups}};
+}
+
+sub add_rate_table {
+  my ($self,$text,$location)=@_;
+  $location='' unless defined $location;
+  my @field=map {_trim($_)} split(/\|/,_trim($text),-1);
+  die "invalid ChemistryRateTable at $location: expected " .
+      "TABLE | MODEL=<MODEL> | SCALE_S=<s> | ION_FRACTION=<f>\n" unless @field==4;
+  my $id=uc($field[0]);
+  die "invalid ChemistryRateTable name '$field[0]' at $location\n"
+      unless $id=~/^[A-Z][A-Z0-9_]*$/;
+  die "duplicate ChemistryRateTable '$id' at $location\n"
+      if exists $self->{table_index}->{$id};
+  my %option=_parse_options([@field[1..3]],"ChemistryRateTable '$id'",$location,
+      {MODEL=>1,SCALE_S=>1,ION_FRACTION=>1});
+  for my $key ('MODEL','SCALE_S','ION_FRACTION') {
+    die "ChemistryRateTable '$id' at $location requires $key\n"
+        unless defined $option{$key};
+  }
+  my $model=uc($option{MODEL});
+  die "unknown MODEL=$model of ChemistryRateTable '$id' at $location; known: " .
+      join(', ',sort keys %TABLE_MODEL_ROLES)."\n"
+      unless exists $TABLE_MODEL_ROLES{$model};
+  for my $key ('SCALE_S','ION_FRACTION') {
+    die "invalid numeric $key '$option{$key}' of ChemistryRateTable '$id' at $location\n"
+        unless _is_number($option{$key});
+  }
+  die "SCALE_S of ChemistryRateTable '$id' at $location must be positive\n"
+      unless $option{SCALE_S}>0.0;
+  die "ION_FRACTION of ChemistryRateTable '$id' at $location must be non-negative\n"
+      unless $option{ION_FRACTION}>=0.0;
+  push @{$self->{tables}},{id=>$id,model=>$model,scale_s=>$option{SCALE_S}+0.0,
+      ion_fraction=>$option{ION_FRACTION}+0.0,location=>$location};
+  $self->{table_index}->{$id}=$#{$self->{tables}};
+}
+
+# Check every group, variant, and rate-table reference after all records have
+# been read (records may appear in any order).  Dies with the record location
+# and the violated rule.
+sub validate_variants {
+  my ($self)=@_;
+  my %members;     # group -> variant -> [reactions]
+  my %table_used;
+  for my $reaction (@{$self->{reactions}}) {
+    my $where="reaction '$reaction->{id}' at $reaction->{location}";
+    if (defined $reaction->{group}) {
+      my $group=$reaction->{group};
+      die "$where names undeclared ChemistryGroup '$group'\n"
+          unless exists $self->{group_index}->{$group};
+      my $record=$self->{groups}->[$self->{group_index}->{$group}];
+      die "$where names variant '$reaction->{variant}', which ChemistryGroup '$group' does not list\n"
+          unless grep {$_ eq $reaction->{variant}} @{$record->{variants}};
+      # A variant selects mutually exclusive channels of one parent; a
+      # unit-unimolecular reaction is the only kind the particle executor
+      # treats as a parent channel.
+      die "$where: grouped reactions must have exactly one reactant with coefficient 1\n"
+          unless @{$reaction->{reactants}}==1 &&
+              $reaction->{reactants}->[0]->{coefficient}==1.0;
+      push @{$members{$group}->{$reaction->{variant}}},$reaction;
+    }
+    if (defined $reaction->{rate_table}) {
+      my $table=$reaction->{rate_table};
+      die "$where names undeclared ChemistryRateTable '$table'\n"
+          unless exists $self->{table_index}->{$table};
+      my $record=$self->{tables}->[$self->{table_index}->{$table}];
+      my $roles=$TABLE_MODEL_ROLES{$record->{model}};
+      die "$where: role '$reaction->{rate_role}' is not defined for MODEL=$record->{model}; known: " .
+          join(', ',sort keys %$roles)."\n"
+          unless exists $roles->{$reaction->{rate_role}};
+      # The table gives the rate at 1 AU; the heliocentric law with RREF_AU=1
+      # applies the (1 AU/r_h)^2 scaling.
+      die "$where: a table rate requires LAW=HELIOCENTRIC and RREF_AU=1\n"
+          unless $reaction->{law} eq 'HELIOCENTRIC' && $reaction->{rref}==1.0;
+      die "$where: an IONIZATION table rate requires PRODUCTS=NONE\n"
+          if $reaction->{rate_role} eq 'IONIZATION' && @{$reaction->{products}};
+      die "$where: a DISSOCIATION table rate requires products\n"
+          if $reaction->{rate_role} eq 'DISSOCIATION' && !@{$reaction->{products}};
+      $table_used{$table}=1;
+    }
+  }
+  for my $group (@{$self->{groups}}) {
+    my %parent;
+    for my $variant (@{$group->{variants}}) {
+      die "variant '$variant' of ChemistryGroup '$group->{id}' at $group->{location} has no reaction\n"
+          unless $members{$group->{id}}->{$variant};
+      $parent{$_->{reactants}->[0]->{species}}=1
+          for @{$members{$group->{id}}->{$variant}};
+    }
+    die "the reactions of ChemistryGroup '$group->{id}' at $group->{location} must share one parent species\n"
+        unless keys(%parent)==1;
+  }
+  for my $table (@{$self->{tables}}) {
+    die "ChemistryRateTable '$table->{id}' at $table->{location} is not used by any reaction\n"
+        unless $table_used{$table->{id}};
+  }
+}
+
+sub _parse_options {
+  my ($fields,$what,$location,$allowed)=@_;
+  my %option;
+  for my $field (@$fields) {
+    die "invalid option '$field' of $what at $location: expected KEY=VALUE\n"
+        unless $field=~/^([A-Za-z_]+)\s*=\s*(.*)$/;
+    my ($key,$value)=(uc($1),_trim($2));
+    die "unknown option '$key' of $what at $location\n"
+        unless $allowed->{$key};
+    die "duplicate option '$key' of $what at $location\n"
+        if exists $option{$key};
+    die "empty option '$key' of $what at $location\n" if $value eq '';
+    $option{$key}=$value;
+  }
+  return %option;
 }
 
 sub add_reaction {
@@ -43,10 +215,24 @@ sub add_reaction {
 
   my @field=map {_trim($_)} split(/\|/,$text,-1);
   die "invalid ChemistryReaction at $location: expected " .
-      "ID | REACTANTS | PRODUCTS | LAW | A | BETA | TA_K | RREF_AU | EXCESS_EV\n"
-      unless @field==9;
+      "ID | REACTANTS | PRODUCTS | LAW | A | BETA | TA_K | RREF_AU | EXCESS_EV " .
+      "[| GROUP=<GROUP>:<VARIANT>] [| RATE=TABLE:<TABLE>:<ROLE>]\n"
+      unless @field>=9 && @field<=11;
 
-  my ($id,$reactants,$products,$law,$a,$beta,$ta,$rref,$energy_ev)=@field;
+  my ($id,$reactants,$products,$law,$a,$beta,$ta,$rref,$energy_ev)=@field[0..8];
+  my %extra=_parse_options([@field[9..$#field]],"reaction '$id'",$location,
+      {GROUP=>1,RATE=>1});
+  my ($group,$variant,$rate_table,$rate_role);
+  if (defined $extra{GROUP}) {
+    die "GROUP of reaction '$id' at $location must be <GROUP>:<VARIANT>\n"
+        unless $extra{GROUP}=~/^([A-Za-z][A-Za-z0-9_]*):([A-Za-z][A-Za-z0-9_]*)$/;
+    ($group,$variant)=(uc($1),uc($2));
+  }
+  if (defined $extra{RATE}) {
+    die "RATE of reaction '$id' at $location must be TABLE:<TABLE>:<ROLE>\n"
+        unless $extra{RATE}=~/^TABLE:([A-Za-z][A-Za-z0-9_]*):([A-Za-z][A-Za-z0-9_]*)$/i;
+    ($rate_table,$rate_role)=(uc($1),uc($2));
+  }
   die "empty reaction ID at $location\n" if $id eq '';
   die "duplicate reaction ID '$id' at $location\n" if $self->{ids}->{$id};
 
@@ -81,10 +267,24 @@ sub add_reaction {
     ta=>$ta,
     rref=>$rref,
     energy_j=>$energy_ev*1.602176634e-19,
+    group=>$group,
+    variant=>$variant,
+    rate_table=>$rate_table,
+    rate_role=>$rate_role,
+    location=>$location,
   };
 
   push @{$self->{reactions}},$reaction;
   $self->{ids}->{$id}=1;
+}
+
+# True when any reaction takes its rate from a ChemistryRateTable.
+sub has_table_rates {
+  my ($self)=@_;
+  for my $reaction (@{$self->{reactions}}) {
+    return 1 if defined $reaction->{rate_table};
+  }
+  return 0;
 }
 
 sub reaction_count {
@@ -181,6 +381,7 @@ sub reachable_species_from {
 
 sub write_header {
   my ($self,$path)=@_;
+  $self->validate_variants();
   open(my $out,'>',$path) or die "cannot write '$path': $!\n";
 
   # Flatten both sides into one table.  Offsets and counts make the generated
@@ -240,6 +441,63 @@ sub write_header {
   else {
     print $out "  {\"none\",0,0,0,0,ChemicalSolver::RateLaw::Constant,".
         "0.0,0.0,0.0,1.0,0.0}\n";
+  }
+  print $out "};\n\n";
+
+  # Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md).  One entry per
+  # reaction in the order above; Group/Variant/RateTable are indices into the
+  # arrays below (-1 = none), RateRole is Comet::Chemistry::RateRole.
+  my @groups=@{$self->{groups}};
+  my @tables=@{$self->{tables}};
+  print $out "static const std::size_t GroupCount=".(scalar @groups).";\n";
+  for (my $g=0;$g<@groups;$g++) {
+    print $out "static const char *const GroupVariants$g\[\] = {".
+        join(',',map {"\"$_\""} @{$groups[$g]->{variants}})."};\n";
+  }
+  print $out "static const Comet::Chemistry::cCompiledGroup Groups[] = {\n";
+  if (@groups) {
+    for (my $g=0;$g<@groups;$g++) {
+      my $group=$groups[$g];
+      my ($default)=grep {$group->{variants}->[$_] eq $group->{default}}
+          0..$#{$group->{variants}};
+      print $out "  {\"$group->{id}\",$default,".
+          scalar(@{$group->{variants}}).",GroupVariants$g},\n";
+    }
+  }
+  else {
+    print $out "  {\"none\",0,0,0}\n";
+  }
+  print $out "};\n";
+  print $out "static const std::size_t RateTableCount=".(scalar @tables).";\n";
+  print $out "static const Comet::Chemistry::cCompiledRateTable RateTables[] = {\n";
+  if (@tables) {
+    for my $table (@tables) {
+      print $out "  {\"$table->{id}\",\"$table->{model}\",".
+          _number($table->{scale_s}).","._number($table->{ion_fraction})."},\n";
+    }
+  }
+  else {
+    print $out "  {\"none\",\"none\",0.0,0.0}\n";
+  }
+  print $out "};\n";
+  print $out "static const Comet::Chemistry::cCompiledReactionVariant ReactionVariants[] = {\n";
+  if (@reactions) {
+    for my $reaction (@reactions) {
+      my ($group,$variant,$table,$role)=(-1,-1,-1,0);
+      if (defined $reaction->{group}) {
+        $group=$self->{group_index}->{$reaction->{group}};
+        ($variant)=grep {$groups[$group]->{variants}->[$_] eq $reaction->{variant}}
+            0..$#{$groups[$group]->{variants}};
+      }
+      if (defined $reaction->{rate_table}) {
+        $table=$self->{table_index}->{$reaction->{rate_table}};
+        $role=$TABLE_MODEL_ROLES{$tables[$table]->{model}}->{$reaction->{rate_role}};
+      }
+      print $out "  {$group,$variant,$table,$role},\n";
+    }
+  }
+  else {
+    print $out "  {-1,-1,-1,0}\n";
   }
   print $out "};\n";
   print $out "}}} // namespace Comet::Chemistry::Generated\n\n";

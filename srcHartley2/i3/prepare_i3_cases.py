@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,6 +62,17 @@ O_I_1304_EMISSIONS = (
      "O_I_1304_SUMER2001_LYB_BOWEN_J2", "CORE_SUMER2001_LYB_CASE_FISM2"),
 )
 DIRECT_PARENTS = ("H2O", "CO", "CO2")
+
+# OH loss variants (srcHartley2/CHEMISTRY_VARIANTS.md).  STATE_RESOLVED, the
+# default, uses the chemistry.rate.OH_* keys written for every case below.
+# SA1982_VH makes AMPS compute one lumped OH -> O + H rate and the OH
+# ionization rate from the table file at the case's
+# brightness.heliocentric_radial_velocity_km_s.  The generator always writes the
+# state-resolved rates and the table path, so either variant can be selected
+# later (in the input or with --chemistry-variant) without regenerating; it
+# never writes the table-derived rates, so the table stays their only source.
+OH_LOSS_VARIANTS = {"state_resolved": "STATE_RESOLVED", "sa1982_vh": "SA1982_VH"}
+DEFAULT_OH_LIFETIME_TABLE = Path("srcHartley2/i3/reference/oh_lifetime_sa1982.csv")
 
 
 @dataclass(frozen=True)
@@ -361,10 +373,29 @@ def _runtime_reaction_records(reactions: list[Reaction], f107p: float) -> list[s
 
 
 def render_runtime_input(
-    cases: list[dict[str, str]], reactions: list[Reaction]
+    cases: list[dict[str, str]],
+    reactions: list[Reaction],
+    oh_lifetime_table: str = "../" + DEFAULT_OH_LIFETIME_TABLE.as_posix(),
+    oh_loss: str = "state_resolved",
+    oh_loss_cases: dict[str, str] | None = None,
 ) -> str:
-    """Render common run settings plus six explicit case overlays."""
+    """Render common run settings plus six explicit case overlays.
 
+    oh_lifetime_table is written as given; AMPS resolves a relative path against
+    the directory of the runtime input.  oh_loss selects the OH-loss variant of
+    the common block and oh_loss_cases maps case IDs to per-case variants (both
+    use the lower-case names of OH_LOSS_VARIANTS).
+    """
+
+    oh_loss_cases = oh_loss_cases or {}
+    for variant in [oh_loss, *oh_loss_cases.values()]:
+        if variant not in OH_LOSS_VARIANTS:
+            raise ValueError(f"unknown OH-loss variant {variant!r}; "
+                             f"known: {', '.join(OH_LOSS_VARIANTS)}")
+    unknown_cases = set(oh_loss_cases) - {case["case_id"] for case in cases}
+    if unknown_cases:
+        raise ValueError("unknown case IDs in the per-case OH-loss selection: "
+                         + ", ".join(sorted(unknown_cases)))
     speeds = derive_characteristic_speeds(reactions)
     lines = [
         "! Generated deterministically by srcHartley2/i3/prepare_i3_cases.py.",
@@ -390,6 +421,12 @@ def render_runtime_input(
         "  collision.minimum_sample_particles = 1.0",
         "  chemistry.enabled = true",
         "  chemistry.residual_sampling = systematic",
+        "  ! OH loss (srcHartley2/CHEMISTRY_VARIANTS.md): STATE_RESOLVED uses the",
+        "  ! per-case rates of the four OH channels; SA1982_VH computes the OH rates",
+        "  ! from this table at the case's heliocentric radial velocity.  A relative",
+        "  ! path is resolved against the directory of this file.",
+        f"  chemistry.variant.OH_LOSS = {OH_LOSS_VARIANTS[oh_loss]}",
+        f"  chemistry.table.OH_TAU_SA1982.file = {oh_lifetime_table}",
         "  diagnostics.enabled = true",
         "  cooling.H2O.model = GOMBOSI1986_H2O",
         "",
@@ -483,6 +520,9 @@ def render_runtime_input(
                 f"    mesh.surface_resolution_m = {_format_number(surface_request)}",
             ]
         )
+        if case["case_id"] in oh_loss_cases:
+            lines.append("    chemistry.variant.OH_LOSS = "
+                         f"{OH_LOSS_VARIANTS[oh_loss_cases[case['case_id']]]}")
         lines.extend(_runtime_reaction_records(reactions, f107p))
         lines.extend(
             [
@@ -503,8 +543,17 @@ def render_runtime_input(
     return "\n".join(lines)
 
 
-def generate(repository: Path, output_directory: Path) -> list[Path]:
+def generate(
+    repository: Path,
+    output_directory: Path,
+    oh_loss: str = "state_resolved",
+    oh_loss_cases: dict[str, str] | None = None,
+    oh_lifetime_table: Path | None = None,
+) -> list[Path]:
     i3_directory = repository / "srcHartley2" / "i3"
+    table = (oh_lifetime_table or repository / DEFAULT_OH_LIFETIME_TABLE).resolve()
+    if not table.is_file():
+        raise FileNotFoundError(f"OH lifetime table {table} does not exist")
     cases = attach_solar_fuv_lines(
         apply_rate_scaling(
             _load_csv(i3_directory / "reference" / "i3_cases.csv"),
@@ -515,18 +564,58 @@ def generate(repository: Path, output_directory: Path) -> list[Path]:
     reactions = _load_reactions(i3_directory / "reference" / "photochemistry_channels.csv")
     output_directory.mkdir(parents=True, exist_ok=True)
     output = output_directory / "i3.in"
-    output.write_text(render_runtime_input(cases, reactions), encoding="utf-8")
+    # Written relative to the output directory, where AMPS resolves it.
+    table_text = Path(os.path.relpath(table, output_directory.resolve())).as_posix()
+    output.write_text(
+        render_runtime_input(cases, reactions, table_text, oh_loss, oh_loss_cases),
+        encoding="utf-8",
+    )
     return [output]
+
+
+def _parse_case_variant(text: str) -> tuple[str, str]:
+    case_id, separator, variant = text.partition("=")
+    if not separator or not case_id.strip() or variant.strip() not in OH_LOSS_VARIANTS:
+        raise argparse.ArgumentTypeError(
+            f"expected CASE=VARIANT with VARIANT one of {', '.join(OH_LOSS_VARIANTS)}, "
+            f"got {text!r}")
+    return case_id.strip(), variant.strip()
 
 
 def main() -> None:
     default_repository = Path(__file__).resolve().parents[2]
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repository", type=Path, default=default_repository)
     parser.add_argument("--output-directory", type=Path)
+    parser.add_argument(
+        "--oh-loss", choices=sorted(OH_LOSS_VARIANTS), default="state_resolved",
+        help="OH-loss variant of the common block (srcHartley2/CHEMISTRY_VARIANTS.md): "
+             "state_resolved (default) uses the four state-resolved OH channels with "
+             "the rates of photochemistry_channels.csv; sa1982_vh uses one OH -> O + H "
+             "channel and OH ionization with the heliocentric-velocity-dependent "
+             "lifetime table. AMPS can also select the variant at run time "
+             "(--chemistry-variant OH_LOSS=SA1982_VH).")
+    parser.add_argument(
+        "--oh-loss-case", type=_parse_case_variant, action="append", default=[],
+        metavar="CASE=VARIANT",
+        help="per-case OH-loss variant, overriding --oh-loss for that case "
+             "(repeatable), e.g. --oh-loss-case 3=sa1982_vh")
+    parser.add_argument(
+        "--oh-lifetime-table", type=Path, default=None,
+        help="OH lifetime table for sa1982_vh (default: "
+             f"{DEFAULT_OH_LIFETIME_TABLE}); written into i3.in relative to the "
+             "output directory. Another solar-activity case is another table file "
+             "with the same format.")
     arguments = parser.parse_args()
     output_directory = arguments.output_directory or arguments.repository / "input"
-    for output in generate(arguments.repository.resolve(), output_directory.resolve()):
+    for output in generate(
+        arguments.repository.resolve(),
+        output_directory.resolve(),
+        arguments.oh_loss,
+        dict(arguments.oh_loss_case),
+        arguments.oh_lifetime_table,
+    ):
         print(output)
 
 

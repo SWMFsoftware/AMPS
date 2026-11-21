@@ -142,33 +142,180 @@ def parse_runtime_input(path: Path, case: str | int) -> Dict[str, str]:
     return common
 
 
-def parse_reactions(path: Path) -> Dict[str, Tuple[str, List[str], float]]:
-    """``ChemistryReaction=ID | parent | products | ... | energy_eV``."""
+@dataclass
+class ReactionRecord:
+    """One ``ChemistryReaction`` record of the build input."""
 
-    reactions: Dict[str, Tuple[str, List[str], float]] = {}
+    parent: str
+    products: List[str]
+    energy_ev: float
+    group: str | None = None       # GROUP=<group>:<variant>
+    variant: str | None = None
+    rate_table: str | None = None  # RATE=TABLE:<table>:<role>
+    rate_role: str | None = None
+
+
+@dataclass
+class BuildInput:
+    """Reactions plus the chemistry-variant records (srcHartley2/CHEMISTRY_VARIANTS.md)."""
+
+    reactions: Dict[str, ReactionRecord]
+    groups: Dict[str, Tuple[str, List[str]]]               # id -> (default, variants)
+    tables: Dict[str, Tuple[str, float, float]]            # id -> (model, scale_s, ion_fraction)
+
+
+def _options(fields: Sequence[str], where: str) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for item in fields:
+        key, separator, value = item.partition("=")
+        if not separator or not key.strip() or not value.strip():
+            raise ValueError(f"{where}: expected KEY=VALUE, got {item!r}")
+        result[key.strip().upper()] = value.strip()
+    return result
+
+
+def parse_build_input(path: Path) -> BuildInput:
+    """``ChemistryReaction``, ``ChemistryGroup`` and ``ChemistryRateTable`` records.
+
+    The excess energy is field 9 of a reaction record; optional ``GROUP=`` and
+    ``RATE=TABLE:`` fields may follow it (input/CometReactionNetwork.pm).
+    """
+
+    reactions: Dict[str, ReactionRecord] = {}
+    groups: Dict[str, Tuple[str, List[str]]] = {}
+    tables: Dict[str, Tuple[str, float, float]] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split("!", 1)[0].strip()
-        if not line.startswith("ChemistryReaction="):
-            continue
-        fields = [f.strip() for f in line.partition("=")[2].split("|")]
-        if len(fields) < 4:
-            raise ValueError(f"{path}: malformed reaction line {raw!r}")
-        reactions[fields[0]] = (fields[1], parse_products(fields[2]), float(fields[-1]))
+        record, _, body = line.partition("=")
+        fields = [f.strip() for f in body.split("|")]
+        if record == "ChemistryReaction":
+            if not 9 <= len(fields) <= 11:
+                raise ValueError(f"{path}: malformed reaction line {raw!r}")
+            extra = _options(fields[9:], f"{path}: reaction {fields[0]}")
+            reaction = ReactionRecord(fields[1], parse_products(fields[2]), float(fields[8]))
+            if "GROUP" in extra:
+                reaction.group, reaction.variant = [x.upper() for x in extra["GROUP"].split(":")]
+            if "RATE" in extra:
+                kind, reaction.rate_table, reaction.rate_role = [
+                    x.upper() for x in extra["RATE"].split(":")]
+                if kind != "TABLE":
+                    raise ValueError(f"{path}: reaction {fields[0]}: unknown RATE {extra['RATE']!r}")
+            reactions[fields[0]] = reaction
+        elif record == "ChemistryGroup":
+            options = _options(fields[1:], f"{path}: group {fields[0]}")
+            groups[fields[0].upper()] = (
+                options["DEFAULT"].upper(),
+                [v.strip().upper() for v in options["VARIANTS"].split(",")])
+        elif record == "ChemistryRateTable":
+            options = _options(fields[1:], f"{path}: rate table {fields[0]}")
+            tables[fields[0].upper()] = (options["MODEL"].upper(), float(options["SCALE_S"]),
+                                         float(options["ION_FRACTION"]))
     if not reactions:
         raise ValueError(f"{path}: no ChemistryReaction lines")
-    return reactions
+    return BuildInput(reactions, groups, tables)
 
 
-def load_run_inputs(runtime_input: Path, build_input: Path, case: str | int) -> RunInputs:
+def parse_reactions(path: Path) -> Dict[str, Tuple[str, List[str], float]]:
+    """``ChemistryReaction=ID | parent | products | ... | energy_eV`` (all records)."""
+
+    return {rid: (r.parent, r.products, r.energy_ev)
+            for rid, r in parse_build_input(path).reactions.items()}
+
+
+def read_sa1982_table(path: Path) -> Tuple[float, List[float], List[float]]:
+    """(tau_FUV [s], v_h [km/s], OHTAUS) of an OH lifetime table (see
+    srcHartley2/i3/reference/oh_lifetime_sa1982.csv)."""
+
+    tau_fuv = None
+    velocity: List[float] = []
+    ohtaus: List[float] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        first, second = [x.strip() for x in line.split(",")]
+        if first == "tau_fuv_s":
+            tau_fuv = float(second)
+        elif first != "v_h_km_s":
+            velocity.append(float(first))
+            ohtaus.append(float(second))
+    if tau_fuv is None or len(velocity) < 2 or any(b <= a for a, b in zip(velocity, velocity[1:])):
+        raise ValueError(f"{path}: not a valid OH lifetime table")
+    return tau_fuv, velocity, ohtaus
+
+
+def sa1982_rates_1au(path: Path, velocity_km_s: float, scale_s: float,
+                     ion_fraction: float) -> Tuple[float, float]:
+    """(k_d, k_ion) at 1 AU: k_d = 1/tau_FUV + 1/(S*OHTAUS(v_h)), linear in v_h,
+    clamped to the table ends; k_ion = ion_fraction*k_d."""
+
+    tau_fuv, velocity, ohtaus = read_sa1982_table(path)
+    value = float(np.interp(velocity_km_s, velocity, ohtaus))  # np.interp clamps
+    k_d = 1.0 / tau_fuv + 1.0 / (scale_s * value)
+    return k_d, ion_fraction * k_d
+
+
+def variants_from_output(path: Path) -> Dict[str, str]:
+    """Effective chemistry variants recorded by AMPS in an output header
+    (``DATASETAUXDATA Chemistry.Variant.<GROUP>="<VARIANT>; source=..."``)."""
+
+    result: Dict[str, str] = {}
+    with path.open(encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            if line.startswith("ZONE"):
+                break
+            match = re.match(r'DATASETAUXDATA Chemistry\.Variant\.(\w+)="([^;"]+)', line)
+            if match:
+                result[match.group(1).upper()] = match.group(2).strip().upper()
+    return result
+
+
+def load_run_inputs(runtime_input: Path, build_input: Path, case: str | int,
+                    variants: Dict[str, str] | None = None) -> RunInputs:
+    """Run inputs of one case.  The active variant of a chemistry group is
+    ``variants[group]`` if given (e.g. from the run's output header, which also
+    records a command-line selection), else ``chemistry.variant.<group>`` of the
+    runtime input, else the compiled default.  Reactions of inactive variants
+    are omitted; table-rate reactions are evaluated from the table file named in
+    the runtime input, at the case's heliocentric radial velocity."""
+
     values = parse_runtime_input(runtime_input, case)
     rh = float(values["heliocentric_distance_au"])
+    build = parse_build_input(build_input)
+    variants = {k.upper(): v.upper() for k, v in (variants or {}).items()}
+    active: Dict[str, str] = {}
+    for group, (default, names) in build.groups.items():
+        chosen = variants.get(group) or values.get(f"chemistry.variant.{group}", default).upper()
+        if chosen not in names:
+            raise ValueError(f"unknown variant {chosen!r} of chemistry group {group}; "
+                             f"variants: {', '.join(names)}")
+        active[group] = chosen
     channels: Dict[str, List[Channel]] = {}
-    for rid, (parent, products, energy_ev) in parse_reactions(build_input).items():
-        key = f"chemistry.rate.{rid}_1au_s-1"
-        if key not in values:
-            raise ValueError(f"{runtime_input}: case {case} has no {key}")
-        channel = Channel(rid, parent, products, energy_ev * EV, float(values[key]) / rh**2)
-        channels.setdefault(parent, []).append(channel)
+    for rid, reaction in build.reactions.items():
+        if reaction.group is not None and active.get(reaction.group) != reaction.variant:
+            continue
+        if reaction.rate_table is not None:
+            model, scale_s, ion_fraction = build.tables[reaction.rate_table]
+            if model != "SA1982_OH_LIFETIME":
+                raise ValueError(f"rate table {reaction.rate_table}: unsupported model {model}")
+            key = f"chemistry.table.{reaction.rate_table}.file"
+            if key not in values:
+                raise ValueError(f"{runtime_input}: case {case} has no {key}")
+            table = Path(values[key])
+            if not table.is_absolute():
+                table = runtime_input.parent / table
+            k_d, k_ion = sa1982_rates_1au(
+                table, float(values["brightness.heliocentric_radial_velocity_km_s"]),
+                scale_s, ion_fraction)
+            rate_1au = {"DISSOCIATION": k_d, "IONIZATION": k_ion}[reaction.rate_role]
+        else:
+            key = f"chemistry.rate.{rid}_1au_s-1"
+            if key not in values:
+                raise ValueError(f"{runtime_input}: case {case} has no {key}")
+            rate_1au = float(values[key])
+        channel = Channel(rid, reaction.parent, reaction.products, reaction.energy_ev * EV,
+                          rate_1au / rh**2)
+        channels.setdefault(reaction.parent, []).append(channel)
     sources = {
         m.group(1): float(v)
         for k, v in values.items()
@@ -401,12 +548,23 @@ def correction_for_run(
     seed: int = DEFAULT_SEED,
     runtime_input: Path | None = None,
     build_input: Path | None = None,
+    variants: Dict[str, str] | None = None,
 ) -> Tuple[Dict[str, np.ndarray], RunInputs]:
-    """Edge-correction factor for each observed species at impact parameters b."""
+    """Edge-correction factor for each observed species at impact parameters b.
+
+    Chemistry variants: ``variants`` if given, else those recorded in the run's
+    brightness output header of this output (AMPS writes the effective variant,
+    including a command-line selection), else the runtime input."""
 
     runtime_input = runtime_input or run_dir / "i3.in"
     build_input = build_input or default_build_input(run_dir)
-    inputs = load_run_inputs(runtime_input, build_input, case)
+    if variants is None:
+        variants = {}
+        for header in sorted((run_dir / "PT/plots").glob(f"pic.*.brightness.s=*.out={output}.dat")):
+            variants = variants_from_output(header)
+            if variants:
+                break
+    inputs = load_run_inputs(runtime_input, build_input, case, variants)
     profiles = {}
     for source in inputs.sources:
         path = find_profile(run_dir / "PT/plots", source, output)
@@ -434,7 +592,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--parents", type=int, default=DEFAULT_PARENTS, help="parent test particles per source")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--csv", type=Path, help="write b, AMPS kR, factor, corrected kR")
+    parser.add_argument("--chemistry-variant", action="append", default=[], metavar="GROUP=VARIANT",
+                        help="active chemistry variant (default: as recorded in the run's output "
+                             "header, else the runtime input; srcHartley2/CHEMISTRY_VARIANTS.md)")
     args = parser.parse_args(argv)
+    variants = None
+    if args.chemistry_variant:
+        variants = dict(item.split("=", 1) for item in args.chemistry_variant)
 
     species = "OH" if re.search(r"pic\.OH\.brightness", args.brightness_file.name) else "H"
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -447,7 +611,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     case = args.case or infer_case(args.brightness_file)
     factors, inputs = correction_for_run(
         run_dir, case, output_index(args.brightness_file), b, (species,), args.parents, args.seed,
-        args.runtime_input, args.build_input)
+        args.runtime_input, args.build_input, variants)
     factor = factors[species]
     print(f"run {run_dir}  case {case}  species {species}  edge {inputs.outer_radius_m:.3e} m  "
           f"parents {args.parents}")

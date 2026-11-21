@@ -1189,6 +1189,10 @@ run_test i3 i3.maven-reference env PYTHONDONTWRITEBYTECODE=1 \
   python3 -m unittest "$script_dir/test_i3_brightness_reference.py"
 run_test i3 i3.edge-correction env PYTHONDONTWRITEBYTECODE=1 \
   python3 -m unittest "$script_dir/test_comet_edge_correction.py"
+# Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md): the OH lifetime table
+# module against an independent evaluation, and the build-input records.
+run_test i3 i3.chemistry-variants \
+  "$script_dir/run_chemistry_variants_tests.sh"
 
 run_test stage0 stage0.complete env \
   HARTLEY2_MPIEXEC="$resolved_mpi_launcher" \

@@ -23,6 +23,16 @@ bool LoadAndApply(const std::string &path,const std::string &caseName,
 const std::string& LoadedPath();
 const std::string& SelectedCase();
 
+// Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md): record one
+// command-line selection '--chemistry-variant GROUP=VARIANT' before
+// LoadAndApply.  It takes precedence over chemistry.variant.GROUP in the
+// runtime input (which in turn overrides the compiled default).  The group and
+// variant names are checked against the compiled groups by LoadAndApply;
+// here only the GROUP=VARIANT form and duplicates are rejected.
+bool AddChemistryVariantOverride(const std::string &assignment,
+    std::string *error=NULL);
+bool HasChemistryVariantOverrides();
+
 }
 }
 

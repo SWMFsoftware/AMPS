@@ -10,6 +10,10 @@ requirements below remain controlling. The broader
 [design proposal](../doc/CHEMISTRY_DATABASE_PROPOSAL.md) describes the remaining
 second-consumer migration and its required verification.
 
+Alternative reaction definitions selected at run time (reaction groups and
+variants, first used for the OH loss) are documented separately in
+`srcHartley2/CHEMISTRY_VARIANTS.md`.
+
 ## Purpose and scope
 
 This roadmap describes how to improve the statistical quality of chemically

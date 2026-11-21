@@ -128,6 +128,13 @@ class I3CaseGeneratorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not orthogonal"):
             MODULE._validate_observation_geometry(invalid)
 
+    TABLE_KEY = "chemistry.table.OH_TAU_SA1982.file = "
+
+    def _table_line(self, text: str) -> str:
+        lines = [line for line in text.splitlines() if line.strip().startswith(self.TABLE_KEY)]
+        self.assertEqual(len(lines), 1)
+        return lines[0]
+
     def test_generated_runtime_input_matches_tracked_file(self) -> None:
         with tempfile.TemporaryDirectory(prefix="amps-i3-input-test-") as directory:
             outputs = MODULE.generate(REPOSITORY, Path(directory))
@@ -135,7 +142,21 @@ class I3CaseGeneratorTest(unittest.TestCase):
             output = outputs[0]
             tracked = REPOSITORY / "input" / "i3.in"
             text = output.read_text(encoding="utf-8")
-            self.assertEqual(text, tracked.read_text(encoding="utf-8"))
+            tracked_text = tracked.read_text(encoding="utf-8")
+            # The OH lifetime table path is written relative to the output
+            # directory (AMPS resolves it against the directory of the input),
+            # so it differs between a temporary directory and input/.  Both
+            # must name the same file; everything else must be identical.
+            table = (REPOSITORY / MODULE.DEFAULT_OH_LIFETIME_TABLE).resolve()
+            generated_line = self._table_line(text)
+            tracked_line = self._table_line(tracked_text)
+            self.assertEqual(
+                (Path(directory) / generated_line.split("= ", 1)[1]).resolve(), table)
+            self.assertEqual(
+                (tracked.parent / tracked_line.split("= ", 1)[1]).resolve(), table)
+            self.assertEqual(text.replace(generated_line, tracked_line), tracked_text)
+            self.assertIn("  chemistry.variant.OH_LOSS = STATE_RESOLVED\n", text)
+            self.assertEqual(text.count("chemistry.variant.OH_LOSS"), 1)
             self.assertNotIn("@", text)
             self.assertEqual(text.count("#begin case:"), 6)
             self.assertEqual(text.count("#end case"), 6)
@@ -202,11 +223,53 @@ class I3CaseGeneratorTest(unittest.TestCase):
         text = (REPOSITORY / "input" / "i3.conf").read_text(encoding="utf-8")
         self.assertIn("RuntimeInputMode=on", text)
         self.assertIn("MaxMeshRefinmentLevel=30", text)
-        self.assertEqual(text.count("ChemistryReaction="), 17)
-        self.assertEqual(text.count(" | HELIOCENTRIC | 0 |"), 17)
+        # 17 reactions plus the two of the SA1982_VH OH-loss variant
+        # (srcHartley2/CHEMISTRY_VARIANTS.md).
+        self.assertEqual(text.count("ChemistryReaction="), 19)
+        self.assertEqual(text.count(" | HELIOCENTRIC | 0 |"), 19)
+        self.assertEqual(text.count("GROUP=OH_LOSS:STATE_RESOLVED"), 4)
+        self.assertEqual(text.count("GROUP=OH_LOSS:SA1982_VH"), 2)
+        self.assertIn("ChemistryGroup=OH_LOSS | DEFAULT=STATE_RESOLVED", text)
+        self.assertIn("ChemistryRateTable=OH_TAU_SA1982 | MODEL=SA1982_OH_LIFETIME"
+                      " | SCALE_S=0.833e5 | ION_FRACTION=0.05", text)
         self.assertIn("BrightnessMode=off", text)
         self.assertNotIn("2025-", text)
         self.assertNotIn("8.0e27", text)
+
+
+    def test_oh_loss_variant_selection(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="amps-i3-oh-loss-") as directory:
+            output = MODULE.generate(REPOSITORY, Path(directory), "sa1982_vh",
+                                     {"3": "state_resolved"})[0]
+            common = output.read_text(encoding="utf-8")
+            table_path = self._table_line(common).split("= ", 1)[1]
+            self.assertEqual((Path(directory) / table_path).resolve(),
+                             (REPOSITORY / MODULE.DEFAULT_OH_LIFETIME_TABLE).resolve())
+        self.assertIn("  chemistry.variant.OH_LOSS = SA1982_VH\n", common)
+        self.assertEqual(common.count("    chemistry.variant.OH_LOSS = STATE_RESOLVED\n"), 1)
+        case3 = common[common.index("#begin case: 3"):common.index("#begin case: 4")]
+        self.assertIn("chemistry.variant.OH_LOSS = STATE_RESOLVED", case3)
+        # State-resolved rates are always written; table-derived rates never.
+        self.assertEqual(common.count("chemistry.rate."), 6 * 17)
+        self.assertNotIn("SA1982_1au_s-1", common)
+        with tempfile.TemporaryDirectory(prefix="amps-i3-oh-loss-") as directory:
+            with self.assertRaisesRegex(ValueError, "unknown OH-loss variant"):
+                MODULE.generate(REPOSITORY, Path(directory), "foo")
+            with self.assertRaisesRegex(ValueError, "unknown case IDs"):
+                MODULE.generate(REPOSITORY, Path(directory), "state_resolved",
+                                {"9": "sa1982_vh"})
+            with self.assertRaises(FileNotFoundError):
+                MODULE.generate(REPOSITORY, Path(directory), "sa1982_vh", None,
+                                Path(directory) / "missing.csv")
+
+    def test_oh_lifetime_table_is_the_legacy_table(self) -> None:
+        rows = [
+            line.split(",")
+            for line in (REPOSITORY / MODULE.DEFAULT_OH_LIFETIME_TABLE).read_text().splitlines()
+            if line[:1] in "-0123456789"
+        ]
+        self.assertEqual(len(rows), 61)
+        self.assertEqual([float(v) for v, _ in rows], [-60.0 + 2 * i for i in range(61)])
 
 
 if __name__ == "__main__":

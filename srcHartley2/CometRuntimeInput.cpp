@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
 #include <map>
 #include <set>
@@ -15,6 +16,7 @@
 
 #include "CometBrightness.h"
 #include "CometChemistry.h"
+#include "CometChemistryVariants.h"
 #include "CometDiagnostics.h"
 #include "CometModel.h"
 #include "CometPhysics.h"
@@ -31,6 +33,13 @@ namespace In=AMPS::Input;
 
 std::string LoadedInputPath;
 std::string LoadedCaseName;
+// Chemistry variants (srcHartley2/CHEMISTRY_VARIANTS.md): command-line
+// selections, in the order given; the directory of the runtime input, against
+// which relative rate-table paths are resolved; and a digest of every table
+// and table-derived rate, compared across MPI ranks after the input is applied.
+std::vector<std::pair<std::string,std::string>> ChemistryVariantOverrides;
+std::string LoadedInputDirectory;
+std::string LoadedChemistryTableDigest;
 
 bool Fail(const std::string &message,std::string *error) {
   if (error!=NULL) *error=message;
@@ -375,16 +384,163 @@ bool ApplyCometBlock(const In::Block &block,const std::string &selectedCase,
     Comet::Chemistry::ResidualSamplingMode=
         Comet::Chemistry::ResidualSampling::IndependentBernoulli;
   else return FailAt(*item,"chemistry.residual_sampling must be systematic or bernoulli",error);
+  // ---- Chemistry variants and rates (srcHartley2/CHEMISTRY_VARIANTS.md).
+  // 1. The active variant of every compiled group: compiled default, then
+  //    chemistry.variant.<GROUP> of the resolved input (the case block already
+  //    overlays the global block), then --chemistry-variant on the command line.
+  std::vector<std::pair<std::string,std::string>> provenance;
+  std::string chemistryError;
+  const std::size_t groupCount=Comet::Chemistry::GetCompiledGroupCount();
+  auto variantList=[](const Comet::Chemistry::cCompiledGroup &group) {
+    std::string names;
+    for (int variant=0;variant<group.VariantCount;variant++)
+      names+=(variant==0 ? "" : ", ")+std::string(group.VariantNames[variant]);
+    return names;
+  };
+  auto groupList=[groupCount]() {
+    std::string names;
+    for (std::size_t group=0;group<groupCount;group++)
+      names+=(group==0 ? "" : ", ")+
+          std::string(Comet::Chemistry::GetCompiledGroup(group).Id);
+    return names.empty() ? std::string("none") : names;
+  };
+  auto findVariant=[](const Comet::Chemistry::cCompiledGroup &group,
+      const std::string &name) {
+    for (int variant=0;variant<group.VariantCount;variant++)
+      if (name==group.VariantNames[variant]) return variant;
+    return -1;
+  };
+  for (const auto &selection:ChemistryVariantOverrides) {
+    bool known=false;
+    for (std::size_t group=0;group<groupCount;group++)
+      known=known || Upper(selection.first)==Comet::Chemistry::GetCompiledGroup(group).Id;
+    if (!known)
+      return Fail("--chemistry-variant "+selection.first+"="+selection.second+
+          ": unknown chemistry group '"+selection.first+"'; compiled groups: "+
+          groupList(),error);
+  }
+  for (std::size_t group=0;group<groupCount;group++) {
+    const Comet::Chemistry::cCompiledGroup &record=
+        Comet::Chemistry::GetCompiledGroup(group);
+    int variant=record.DefaultVariant;
+    std::string source="compiled default";
+    const std::string key=std::string("chemistry.variant.")+record.Id;
+    if (input.Has(key)) {
+      item=input.Take(key,error);
+      variant=findVariant(record,Upper(item->value));
+      if (variant<0)
+        return FailAt(*item,"unknown variant '"+item->value+"' of chemistry group "+
+            record.Id+"; compiled variants: "+variantList(record),error);
+      source="runtime input "+item->where.file+":"+std::to_string(item->where.line);
+    }
+    for (const auto &selection:ChemistryVariantOverrides) {
+      if (Upper(selection.first)!=record.Id) continue;
+      variant=findVariant(record,Upper(selection.second));
+      if (variant<0)
+        return Fail("--chemistry-variant "+selection.first+"="+selection.second+
+            ": unknown variant of chemistry group "+record.Id+"; compiled variants: "+
+            variantList(record),error);
+      source="command line";
+    }
+    if (!Comet::Chemistry::SetActiveVariant(group,variant,source,&chemistryError))
+      return Fail(chemistryError,error);
+    provenance.push_back({std::string("Chemistry.Variant.")+record.Id,
+        std::string(record.VariantNames[variant])+"; source="+source});
+  }
+  for (const std::string &key:input.PendingWithPrefix("chemistry.variant.")) {
+    item=input.Take(key,error);
+    return FailAt(*item,"unknown chemistry group '"+
+        key.substr(std::string("chemistry.variant.").size())+
+        "'; compiled groups: "+groupList(),error);
+  }
+
+  // 2. Rate keys.  Active reactions with an input rate require
+  //    chemistry.rate.<ID>_1au_s-1 (as before variants existed).  Reactions of
+  //    an inactive variant get A=0; their keys are optional, checked, and
+  //    recorded as ignored.  A table-rate reaction takes no rate key.
+  std::vector<bool> tableNeeded(Comet::Chemistry::GetCompiledRateTableCount(),false);
+  std::string ignoredRates;
   for (std::size_t reaction=0;
        reaction<Comet::Chemistry::GetCompiledReactionCount();reaction++) {
     const char *id=Comet::Chemistry::GetCompiledReactionId(reaction);
     if (id==NULL) return Fail("compiled chemistry contains an unnamed reaction",error);
+    const Comet::Chemistry::cCompiledReactionVariant &variant=
+        Comet::Chemistry::GetCompiledReactionVariant(reaction);
+    const bool active=Comet::Chemistry::IsReactionVariantActive(reaction);
+    const std::string key=std::string("chemistry.rate.")+id+"_1au_s-1";
     double rate=0.0;
-    if (!ReadPositiveDouble(input,std::string("chemistry.rate.")+id+
-        "_1au_s-1",&rate,error)) return false;
-    std::string chemistryError;
+    if (variant.RateTable>=0) {
+      if (input.Has(key)) {
+        item=input.Take(key,error);
+        const std::string tableId=Comet::Chemistry::GetCompiledRateTable(
+            static_cast<std::size_t>(variant.RateTable)).Id;
+        return FailAt(*item,std::string("the rate of reaction ")+id+
+            " is computed from rate table "+tableId+" (chemistry.table."+tableId+
+            ".file); remove this key",error);
+      }
+      if (active) tableNeeded[static_cast<std::size_t>(variant.RateTable)]=true;
+    }
+    else if (active) {
+      if (!ReadPositiveDouble(input,key,&rate,error)) return false;
+    }
+    else if (input.Has(key)) {
+      double unused=0.0;
+      if (!ReadPositiveDouble(input,key,&unused,error,true)) return false;
+      ignoredRates+=(ignoredRates.empty() ? "" : ", ")+std::string(id);
+    }
     if (!Comet::Chemistry::ConfigureReactionRate(id,rate,&chemistryError))
       return Fail(chemistryError,error);
+  }
+  if (!ignoredRates.empty())
+    provenance.push_back({"Chemistry.IgnoredRates",
+        ignoredRates+" (inactive variant; rate set to 0)"});
+
+  // 3. Rate tables: chemistry.table.<TABLE>.file is required when an active
+  //    reaction uses the table and accepted, but not read, otherwise (so the
+  //    variant can be switched on the command line without editing the input).
+  //    A relative path is resolved against the directory of the runtime input.
+  std::vector<Comet::ChemistryVariants::cLifetimeTable> tables(tableNeeded.size());
+  LoadedChemistryTableDigest.clear();
+  for (std::size_t table=0;table<tableNeeded.size();table++) {
+    const Comet::Chemistry::cCompiledRateTable &record=
+        Comet::Chemistry::GetCompiledRateTable(table);
+    const std::string key=std::string("chemistry.table.")+record.Id+".file";
+    if (!input.Has(key)) {
+      if (tableNeeded[table])
+        return Fail(std::string("the active chemistry variant needs rate table ")+
+            record.Id+": add '"+key+" = <file>' to the runtime input",error);
+      continue;
+    }
+    item=input.Take(key,error);
+    std::filesystem::path path(item->value);
+    if (path.is_relative() && !LoadedInputDirectory.empty())
+      path=std::filesystem::path(LoadedInputDirectory)/path;
+    const std::string resolved=path.lexically_normal().string();
+    if (!tableNeeded[table]) {
+      provenance.push_back({std::string("Chemistry.RateTable.")+record.Id,
+          "file="+item->value+"; used=no (no active reaction uses it; not read)"});
+      continue;
+    }
+    if (Upper(record.Model)!="SA1982_OH_LIFETIME")
+      return FailAt(*item,std::string("rate table ")+record.Id+" has model "+
+          record.Model+", which this executable cannot evaluate",error);
+    std::string tableError;
+    if (!Comet::ChemistryVariants::ReadLifetimeTable(resolved,&tables[table],
+        &tableError))
+      return FailAt(*item,tableError+" (resolved from '"+item->value+
+          "' against the directory of the runtime input)",error);
+    char text[256];
+    std::snprintf(text,sizeof(text),"; tau_fuv_s=%.17g; v_h_range_km_s=%.17g..%.17g; rows=%zu",
+        tables[table].TauFuvS,tables[table].VelocityKmS.front(),
+        tables[table].VelocityKmS.back(),tables[table].VelocityKmS.size());
+    provenance.push_back({std::string("Chemistry.RateTable.")+record.Id,
+        "file="+resolved+"; sha256="+tables[table].Sha256+text+
+        "; model="+record.Model});
+    LoadedChemistryTableDigest+=std::string(record.Id)+":"+tables[table].Sha256+";";
+  }
+  for (const std::string &key:input.PendingWithPrefix("chemistry.table.")) {
+    item=input.Take(key,error);
+    return FailAt(*item,"unknown chemistry rate-table key '"+key+"'",error);
   }
 
   item=input.Take("diagnostics.enabled",error);
@@ -534,6 +690,48 @@ bool ApplyCometBlock(const In::Block &block,const std::string &selectedCase,
   if (!Comet::Brightness::SetCometHeliocentricVelocity(cometVelocity,error))
     return false;
 
+  // Table-derived rates of the active variants (srcHartley2/CHEMISTRY_VARIANTS.md,
+  // section 3).  v_h is the case's heliocentric radial velocity, the same value
+  // as used for the brightness g factors.  The rates are at 1 AU; the
+  // heliocentric law of the compiled reaction (RREF_AU=1) applies (1 AU/r_h)^2.
+  for (std::size_t reaction=0;
+       reaction<Comet::Chemistry::GetCompiledReactionCount();reaction++) {
+    const Comet::Chemistry::cCompiledReactionVariant &variant=
+        Comet::Chemistry::GetCompiledReactionVariant(reaction);
+    if (variant.RateTable<0 || !Comet::Chemistry::IsReactionVariantActive(reaction))
+      continue;
+    const std::size_t table=static_cast<std::size_t>(variant.RateTable);
+    const Comet::Chemistry::cCompiledRateTable &record=
+        Comet::Chemistry::GetCompiledRateTable(table);
+    Comet::ChemistryVariants::cSA1982Rates rates;
+    std::string rateError;
+    if (!Comet::ChemistryVariants::EvaluateSA1982(tables[table],radialVelocityKmS,
+        record.ScaleS,record.IonFraction,&rates,&rateError))
+      return Fail(std::string("rate table ")+record.Id+": "+rateError,error);
+    double rate=0.0;
+    if (variant.RateRole==Comet::Chemistry::RateRole::Dissociation)
+      rate=rates.Dissociation1AU;
+    else if (variant.RateRole==Comet::Chemistry::RateRole::Ionization)
+      rate=rates.Ionization1AU;
+    else return Fail("compiled chemistry has a table-rate reaction without a role",error);
+    if (!(rate>0.0) || !std::isfinite(rate))
+      return Fail(std::string("rate table ")+record.Id+" gives a non-positive rate for "+
+          Comet::Chemistry::GetCompiledReactionId(reaction),error);
+    const char *id=Comet::Chemistry::GetCompiledReactionId(reaction);
+    if (!Comet::Chemistry::ConfigureReactionRate(id,rate,&chemistryError))
+      return Fail(chemistryError,error);
+    char text[512];
+    std::snprintf(text,sizeof(text),
+        "rate_1au_s-1=%.17g; v_h_km_s=%.17g; ohtaus_1e5_s=%.17g; clamped=%s; "
+        "scale_s=%.17g; ion_fraction=%.17g; table=%s",
+        rate,rates.VelocityKmS,rates.Ohtaus,rates.Clamped ?
+            "yes (v_h outside the table; end value used)" : "no",
+        record.ScaleS,record.IonFraction,record.Id);
+    provenance.push_back({std::string("Chemistry.TableRate.")+id,text});
+    std::snprintf(text,sizeof(text),"%s=%.17g;",id,rate);
+    LoadedChemistryTableDigest+=text;
+  }
+
   double solarFluxCm2=0.0;
   if (!ReadPositiveDouble(input,
       "brightness.solar_lya_flux_1au_photon_cm-2_s-1",&solarFluxCm2,error))
@@ -603,6 +801,7 @@ bool ApplyCometBlock(const In::Block &block,const std::string &selectedCase,
   if (item==NULL || !ParseBool(*item,&dust,error)) return false;
   if (dust) return FailAt(*item,"dust is not compiled into the I3 executable",error);
 
+  Comet::Chemistry::SetVariantProvenance(provenance);
   return input.Finish(error);
 }
 
@@ -656,11 +855,23 @@ bool Comet::RuntimeInput::LoadAndApply(const std::string &path,
     return Fail("MPI ranks resolved different runtime comet inputs",error);
 
   std::string applyError;
+  LoadedInputDirectory=std::filesystem::path(path).parent_path().string();
   localOK=ApplyCometBlock(resolved,caseName,&applyError) ? 1 : 0;
   MPI_Allreduce(&localOK,&globalOK,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
   if (!globalOK)
     return Fail(localOK ? "another MPI rank rejected the runtime comet input" :
         applyError,error);
+
+  // Every rank read the chemistry rate tables itself; they must have read the
+  // same bytes and derived the same rates.
+  const unsigned long long localTableHash=
+      HashCanonical(LoadedChemistryTableDigest);
+  MPI_Allreduce(&localTableHash,&minimumHash,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,
+      MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&localTableHash,&maximumHash,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,
+      MPI_GLOBAL_COMMUNICATOR);
+  if (minimumHash!=maximumHash)
+    return Fail("MPI ranks read different chemistry rate tables",error);
 
   LoadedInputPath=path;
   LoadedCaseName=caseName;
@@ -668,4 +879,24 @@ bool Comet::RuntimeInput::LoadAndApply(const std::string &path,
 }
 
 const std::string& Comet::RuntimeInput::LoadedPath() { return LoadedInputPath; }
+
+bool Comet::RuntimeInput::AddChemistryVariantOverride(
+    const std::string &assignment,std::string *error) {
+  const std::size_t equal=assignment.find('=');
+  const std::string group=equal==std::string::npos ? std::string() :
+      Trim(assignment.substr(0,equal));
+  const std::string variant=equal==std::string::npos ? std::string() :
+      Trim(assignment.substr(equal+1));
+  if (group.empty() || variant.empty())
+    return Fail("--chemistry-variant expects GROUP=VARIANT, got '"+assignment+"'",error);
+  for (const auto &selection:ChemistryVariantOverrides)
+    if (Upper(selection.first)==Upper(group))
+      return Fail("--chemistry-variant selects group "+group+" more than once",error);
+  ChemistryVariantOverrides.push_back({group,variant});
+  return true;
+}
+
+bool Comet::RuntimeInput::HasChemistryVariantOverrides() {
+  return !ChemistryVariantOverrides.empty();
+}
 const std::string& Comet::RuntimeInput::SelectedCase() { return LoadedCaseName; }

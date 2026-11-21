@@ -70,6 +70,7 @@ my $ChemistryResidualSamplingIsSet=0;
 my $ChemistryResidualSampling="BERNOULLI";
 my $ConfiguredGeometry="";
 my $RuntimeInputModeIsSet=0;
+my $RuntimeInputModeOn=0;
 my $PhysicsDatabaseName="NONE";
 my $NeutralCollisionCompletion="NONE";
 my $Rubin2011OHGroundRate;
@@ -182,7 +183,7 @@ while ($line=<InputFile>) {
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_","(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
       ampsConfigLib::RedefineMacroFunction("_PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_FACE_","(ptr,LocalTimeStep,node,FirstBoundaryFlag,InjectionFace) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(ptr,LocalTimeStep,node,FirstBoundaryFlag);","pic/picGlobal.dfn");
 
-      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o CometBrightness.o CometRuntimeInput.o","main/makefile");
+      ampsConfigLib::SubstituteCodeLine('^MAINLIBOBJ =',"MAINLIBOBJ = RadialMesh.o RadialMeshProfile.o RadialSimulation.o LocalTimeStepValidation.o CometModel.o CometChemistry.o CometDiagnostics.o CometPhysics.o CometRadiativeCooling.o CometBrightness.o CometRuntimeInput.o CometChemistryVariants.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('^MAINOBJ =',"MAINOBJ = RadialMain.o","main/makefile");
       ampsConfigLib::SubstituteCodeLine('#include "Comet.h"',"// The radial mesh build does not use the 3D Comet model header.","pic/pic.h");
       ampsConfigLib::ChangeValueOfVariable("int Comet::Model::GeometryMode","Comet::Model::Geometry::Spherical","main/CometModel.cpp");
@@ -222,6 +223,7 @@ while ($line=<InputFile>) {
         $InputLine eq "ON" ? "true" : "false",
         "main/CometRuntimeInput.cpp");
     $RuntimeInputModeIsSet=1;
+    $RuntimeInputModeOn=($InputLine eq "ON") ? 1 : 0;
   }
   elsif ($InputLine eq "HELIOCENTRICDISTANCEAU") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -348,6 +350,20 @@ while ($line=<InputFile>) {
     $value=~s/^\s*ChemistryReaction\s*[=:]\s*//i;
     $ReactionNetwork->add_reaction($value,
         "$FileName:$InputFileLineNumber");
+  }
+  elsif ($InputLine eq "CHEMISTRYGROUP") {
+    # Alternative reaction definitions selected at run time; see
+    # input/CometReactionNetwork.pm and srcHartley2/CHEMISTRY_VARIANTS.md.
+    my $value=$LineOriginal;
+    $value=~s/!.*$//;
+    $value=~s/^\s*ChemistryGroup\s*[=:]\s*//i;
+    $ReactionNetwork->add_group($value,"$FileName:$InputFileLineNumber");
+  }
+  elsif ($InputLine eq "CHEMISTRYRATETABLE") {
+    my $value=$LineOriginal;
+    $value=~s/!.*$//;
+    $value=~s/^\s*ChemistryRateTable\s*[=:]\s*//i;
+    $ReactionNetwork->add_rate_table($value,"$FileName:$InputFileLineNumber");
   }
   elsif ($InputLine eq "COMETDIAGNOSTICS") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
@@ -1772,6 +1788,11 @@ ampsConfigLib::ChangeValueOfArray("double Comet::Model::ExtendedProductionRate\\
 ampsConfigLib::ChangeValueOfArray("int Comet::Model::ExtendedDistributionMode\\[PIC::nTotalSpecies\\]",\@ExtendedDistributionMode,"main/CometModel.cpp");
 ampsConfigLib::ChangeValueOfArray("double Comet::RadialSimulation::CharacteristicSpeed\\[PIC::nTotalSpecies\\]",\@RadialCharacteristicSpeed,"main/RadialSimulation.cpp");
 ampsConfigLib::ChangeValueOfArray("int Comet::RadiativeCooling::SpeciesModel\\[PIC::nTotalSpecies\\]",\@RadiativeCoolingModel,"main/CometRadiativeCooling.cpp");
+# A table rate is evaluated by the runtime-input layer (CometRuntimeInput.cpp)
+# from a file named in the runtime input; a compile-time-only build has no
+# place to read it.
+die "ChemistryReaction records with RATE=TABLE require RuntimeInputMode=on\n"
+    if $ReactionNetwork->has_table_rates() && !$RuntimeInputModeOn;
 $ReactionNetwork->write_header(
     "$WorkingSourceDirectory/main/CometChemistry.generated.h");
 $PhysicsDatabase->write_collision_header(

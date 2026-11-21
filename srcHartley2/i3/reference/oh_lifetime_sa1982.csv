@@ -1,0 +1,80 @@
+# OH photodissociation lifetime, heliocentric-velocity-dependent part.
+# Array OHTAUS of the legacy Fortran BLOCKDATA OHPHOT, reproduced verbatim in
+# srcHartley2/CHEMISTRY_VARIANTS.md (section 1); that code cites Schleicher and
+# A'Hearn (1982), ApJ 258, 864. Grid: -60 to +60 km/s in steps of 2 km/s, as
+# stated in the legacy comment.
+#
+# Used by the OH_LOSS variant SA1982_VH (srcHartley2/CHEMISTRY_VARIANTS.md):
+#   k_d(1 AU) = 1/tau_fuv_s + 1/(S * OHTAUS(v_h)),   k_ion(1 AU) = f_ion * k_d
+# with S (seconds per table unit) and f_ion fixed at build time in input/i3.conf
+# (ChemistryRateTable record) and both rates scaled by (1 AU / r_h)^2.
+# OHTAUS is interpolated linearly in v_h and clamped to the end values outside
+# the tabulated range.
+#
+# Units: v_h_km_s in km/s (positive away from the Sun); ohtaus_1e5_s in the
+# legacy table unit (10^5 s before the scale S); tau_fuv_s in seconds (FUV/EUV,
+# mostly Lyman-alpha, lifetime at 1 AU for the same solar conditions).
+# Another solar-activity case is represented by another file with this format.
+tau_fuv_s,4.24e5
+v_h_km_s,ohtaus_1e5_s
+-60,2.85
+-58,3.15
+-56,3.10
+-54,2.85
+-52,2.60
+-50,2.45
+-48,2.55
+-46,2.95
+-44,3.70
+-42,4.00
+-40,3.80
+-38,3.50
+-36,3.30
+-34,3.05
+-32,2.80
+-30,2.80
+-28,3.10
+-26,3.45
+-24,3.45
+-22,3.25
+-20,3.45
+-18,3.50
+-16,2.80
+-14,2.45
+-12,2.30
+-10,2.00
+-8,1.90
+-6,2.00
+-4,2.35
+-2,2.66
+0,2.75
+2,2.80
+4,2.90
+6,3.20
+8,3.60
+10,3.40
+12,3.10
+14,2.95
+16,3.00
+18,2.95
+20,2.85
+22,2.75
+24,2.60
+26,2.30
+28,2.25
+30,2.25
+32,2.30
+34,2.35
+36,2.25
+38,2.20
+40,2.25
+42,2.40
+44,2.55
+46,2.55
+48,2.45
+50,2.35
+52,2.30
+54,2.40
+56,2.55
+58,2.70
+60,2.85

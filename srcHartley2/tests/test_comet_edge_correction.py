@@ -105,6 +105,83 @@ class ParsingTest(unittest.TestCase):
                 EDGE.load_run_inputs(run / "i3.in", run / "i3.conf", 2)
 
 
+class ChemistryVariantTest(unittest.TestCase):
+    """Groups and table rates (srcHartley2/CHEMISTRY_VARIANTS.md, section 9)."""
+
+    VARIANT_CONF = CONF.replace(
+        "  ChemistryReaction=OH_O_H | OH | O + H | HELIOCENTRIC | 0 | 0 | 0 | 1 | 1.27\n",
+        "  ChemistryReaction=OH_O_H | OH | O + H | HELIOCENTRIC | 0 | 0 | 0 | 1 | 1.27"
+        " | GROUP=OH_LOSS:STATE_RESOLVED\n").replace(
+        "  ChemistryReaction=OH_ION | OH | NONE | HELIOCENTRIC | 0 | 0 | 0 | 1 | 0\n",
+        "  ChemistryReaction=OH_ION | OH | NONE | HELIOCENTRIC | 0 | 0 | 0 | 1 | 0"
+        " | GROUP=OH_LOSS:STATE_RESOLVED\n"
+        "  ChemistryGroup=OH_LOSS | DEFAULT=STATE_RESOLVED | VARIANTS=STATE_RESOLVED,SA1982_VH\n"
+        "  ChemistryReaction=OH_O_H_SA1982 | OH | O + H | HELIOCENTRIC | 0 | 0 | 0 | 1 | 0.36"
+        " | GROUP=OH_LOSS:SA1982_VH | RATE=TABLE:OH_TAU_SA1982:DISSOCIATION\n"
+        "  ChemistryReaction=OH_ION_SA1982 | OH | NONE | HELIOCENTRIC | 0 | 0 | 0 | 1 | 0"
+        " | GROUP=OH_LOSS:SA1982_VH | RATE=TABLE:OH_TAU_SA1982:IONIZATION\n"
+        "  ChemistryRateTable=OH_TAU_SA1982 | MODEL=SA1982_OH_LIFETIME | SCALE_S=0.833e5"
+        " | ION_FRACTION=0.05\n")
+
+    def make_variant_run(self, root: Path, variant_line: str) -> Path:
+        run = make_run(root)
+        (run / "i3.conf").write_text(self.VARIANT_CONF, encoding="utf-8")
+        (run / "oh.csv").write_text(
+            "# test table\ntau_fuv_s,4.24e5\nv_h_km_s,ohtaus_1e5_s\n-2,2.66\n0,2.75\n2,2.80\n",
+            encoding="utf-8")
+        text = (run / "i3.in").read_text(encoding="utf-8").replace(
+            "  #begin case: 1\n",
+            f"{variant_line}  chemistry.table.OH_TAU_SA1982.file = oh.csv\n  #begin case: 1\n"
+            "    brightness.heliocentric_radial_velocity_km_s = 0.4\n")
+        (run / "i3.in").write_text(text, encoding="utf-8")
+        return run
+
+    def test_build_input_records(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="edge-variants-") as temporary:
+            run = self.make_variant_run(Path(temporary), "")
+            build = EDGE.parse_build_input(run / "i3.conf")
+            self.assertEqual(build.groups["OH_LOSS"], ("STATE_RESOLVED", ["STATE_RESOLVED", "SA1982_VH"]))
+            self.assertEqual(build.tables["OH_TAU_SA1982"], ("SA1982_OH_LIFETIME", 0.833e5, 0.05))
+            # The excess energy is field 9, not the trailing GROUP/RATE field.
+            self.assertEqual(build.reactions["OH_O_H"].energy_ev, 1.27)
+            self.assertEqual(build.reactions["OH_O_H_SA1982"].energy_ev, 0.36)
+            self.assertEqual(EDGE.parse_reactions(run / "i3.conf")["OH_ION"], ("OH", [], 0.0))
+
+    def test_default_variant_uses_input_rates(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="edge-variants-") as temporary:
+            run = self.make_variant_run(Path(temporary), "")
+            inputs = EDGE.load_run_inputs(run / "i3.in", run / "i3.conf", 1)
+            self.assertEqual([c.reaction_id for c in inputs.channels["OH"]], ["OH_O_H", "OH_ION"])
+            self.assertAlmostEqual(inputs.loss_rate("OH"), 1.0e-5)
+
+    def test_table_variant_from_input_and_override(self) -> None:
+        k_d = 1.0 / 4.24e5 + 1.0 / (0.833e5 * (2.75 + 0.2 * 0.05))
+        with tempfile.TemporaryDirectory(prefix="edge-variants-") as temporary:
+            run = self.make_variant_run(Path(temporary), "  chemistry.variant.OH_LOSS = SA1982_VH\n")
+            inputs = EDGE.load_run_inputs(run / "i3.in", run / "i3.conf", 1)
+            channels = {c.reaction_id: c for c in inputs.channels["OH"]}
+            self.assertEqual(sorted(channels), ["OH_ION_SA1982", "OH_O_H_SA1982"])
+            self.assertAlmostEqual(channels["OH_O_H_SA1982"].rate_s / k_d, 1.0, delta=1e-12)
+            self.assertAlmostEqual(channels["OH_ION_SA1982"].rate_s / (0.05 * k_d), 1.0, delta=1e-12)
+            self.assertAlmostEqual(channels["OH_O_H_SA1982"].energy_j, 0.36 * EDGE.EV)
+            # An explicit selection (e.g. from the output header) wins.
+            inputs = EDGE.load_run_inputs(run / "i3.in", run / "i3.conf", 1,
+                                          {"OH_LOSS": "STATE_RESOLVED"})
+            self.assertEqual([c.reaction_id for c in inputs.channels["OH"]], ["OH_O_H", "OH_ION"])
+            with self.assertRaises(ValueError):
+                EDGE.load_run_inputs(run / "i3.in", run / "i3.conf", 1, {"OH_LOSS": "NOPE"})
+
+    def test_variant_from_output_header(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="edge-variants-") as temporary:
+            header = Path(temporary) / "pic.OH.brightness.s=3.out=0.dat"
+            header.write_text(
+                'TITLE="x"\nDATASETAUXDATA Chemistry.Variant.OH_LOSS="SA1982_VH; source=command line"\n'
+                'DATASETAUXDATA Chemistry.Variant.OTHER="A; source=compiled default"\nZONE T="OH"\n',
+                encoding="utf-8")
+            self.assertEqual(EDGE.variants_from_output(header),
+                             {"OH_LOSS": "SA1982_VH", "OTHER": "A"})
+
+
 class ModelPiecesTest(unittest.TestCase):
     def test_recoil_conserves_momentum_and_energy(self) -> None:
         rng = np.random.default_rng(1)
