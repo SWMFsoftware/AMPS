@@ -2146,9 +2146,12 @@ Keys=-model-data-path=${PTDIR} -spice-path=/scratch/02452/vtenishe/SPICE/cspice 
 I3 (3I/ATLAS): regression test of the DIM1 radial comet model with brightness
 (srcHartley2, built from input/i3.conf in test mode). Cases 1 and 5 of input/i3-test.in
 (cases 1 and 5 of input/i3.in with fewer model particles), 10000 iterations each with one
-sampling window of 10000 iterations. The seven radial profiles and the H Lyman-alpha
-and OH brightness profiles of each case (output out=0) are compared with their
-references output/test_i3/<case>.<species>[.brightness]$(TESTi3-REF).ref_np<N>.gz, the
+sampling window of 10000 iterations. A third run, case1sa, is case 1 with the alternative
+OH loss selected on the command line (--chemistry-variant OH_LOSS=SA1982_VH,
+srcHartley2/CHEMISTRY_VARIANTS.md; added 2026-11-21); cases 1 and 5 use the default
+STATE_RESOLVED. The seven radial profiles and the H Lyman-alpha
+and OH brightness profiles of each run (output out=0) are compared with their
+references output/test_i3/<run>.<species>[.brightness]$(TESTi3-REF).ref_np<N>.gz, the
 unchanged AMPS output files for N MPI processes (N=4 and N=8). The references are made
 per machine and compiler: those of passion (GCC) carry the tag [5] (Ref= below), and
 untagged references serve every other machine.
@@ -2156,11 +2159,11 @@ untagged references serve every other machine.
 #>
 Name=i3
 Family=comet-dust
-Time=12
+Time=17
 
 Ref=5{gcc}@@(0+passion)
 
-Outs=case1.H case1.H2 case1.O case1.OH case1.H2O case1.CO case1.CO2 case1.H.brightness case1.OH.brightness case5.H case5.H2 case5.O case5.OH case5.H2O case5.CO case5.CO2 case5.H.brightness case5.OH.brightness
+Outs=case1.H case1.H2 case1.O case1.OH case1.H2O case1.CO case1.CO2 case1.H.brightness case1.OH.brightness case5.H case5.H2 case5.O case5.OH case5.H2O case5.CO case5.CO2 case5.H.brightness case5.OH.brightness case1sa.H case1sa.H2 case1sa.O case1sa.OH case1sa.H2O case1sa.CO case1sa.CO2 case1sa.H.brightness case1sa.OH.brightness
 
 Compile=
 >>>@echo "test_i3_compile..." > test_i3$(TESTi3-REF).diff
@@ -2176,7 +2179,7 @@ Compile=
 Rundir=
 >>>@echo "test_i3_rundir..." >> test_i3$(TESTi3-REF).diff
 >>>rm -rf   $(TESTi3DIR)
->>>mkdir -p $(TESTi3DIR)/case1 $(TESTi3DIR)/case5 $(TESTi3DIR)/res
+>>>mkdir -p $(TESTi3DIR)/case1 $(TESTi3DIR)/case5 $(TESTi3DIR)/case1sa $(TESTi3DIR)/res
 >>>mv amps  $(TESTi3DIR)
 >>>cp input/i3-test.in $(TESTi3DIR)
 >>>@echo "test_i3_rundir... done" >> test_i3$(TESTi3-REF).diff
@@ -2188,8 +2191,10 @@ Run=
 >>>@# Its log amps.log also gives the number of MPI processes to the Check rule.
 >>>cd $(TESTi3DIR)/case1 && ${MPIRUN} ../amps -i ../i3-test.in -case 1 2>&1 | tee amps.log
 >>>cd $(TESTi3DIR)/case5 && ${MPIRUN} ../amps -i ../i3-test.in -case 5 2>&1 | tee amps.log
->>>@# The results res/<case>.<species>.dat and res/<case>.<species>.brightness.dat are the unchanged output files.
->>>-@for C in 1 5; do                                                                                 \
+>>>@# case1sa: case 1 with the alternative OH loss SA1982_VH (lifetime table named in i3-test.in, path relative to it).
+>>>cd $(TESTi3DIR)/case1sa && ${MPIRUN} ../amps -i ../i3-test.in -case 1 --chemistry-variant OH_LOSS=SA1982_VH 2>&1 | tee amps.log
+>>>@# The results res/<run>.<species>.dat and res/<run>.<species>.brightness.dat are the unchanged output files.
+>>>-@for C in 1 5 1sa; do                                                                             \
 >>>for S in H.s=0 H2.s=1 O.s=2 OH.s=3 H2O.s=4 CO.s=5 CO2.s=6 H.brightness.s=0 OH.brightness.s=3; do  \
 >>>cp $(TESTi3DIR)/case$$C/PT/plots/pic.$$S.out=0.dat $(TESTi3DIR)/res/case$$C.$${S%%.s=*}.dat;       \
 >>>done; done

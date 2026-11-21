@@ -7,6 +7,9 @@
 !   ./Config.pl -application=i3 -amps-test=on && rm -rf build && make amps
 !   cd case1 && mpirun -np 4 ../amps -i ../i3-test.in -case 1
 !   cd case5 && mpirun -np 4 ../amps -i ../i3-test.in -case 5
+!   cd case1sa && mpirun -np 4 ../amps -i ../i3-test.in -case 1 --chemistry-variant OH_LOSS=SA1982_VH
+! (case1sa, added 2026-11-21: case 1 with the alternative OH loss SA1982_VH of
+! srcHartley2/CHEMISTRY_VARIANTS.md; cases 1 and 5 use the default STATE_RESOLVED.)
 !
 ! Each case runs 10000 iterations, which is one sampling window: the output out=0
 ! (seven radial profiles and the H Lyman-alpha and OH 308.5-nm brightness profiles)
@@ -41,6 +44,15 @@
   collision.minimum_sample_particles = 1.0
   chemistry.enabled = true
   chemistry.residual_sampling = systematic
+  ! OH loss (srcHartley2/CHEMISTRY_VARIANTS.md): STATE_RESOLVED uses the
+  ! per-case rates of the four OH channels; SA1982_VH computes the OH rates
+  ! from this table at the case's heliocentric radial velocity.  A relative
+  ! path is resolved against the directory of this file.
+  ! test: the run "case1sa" of the nightly test selects SA1982_VH on the command
+  ! line (--chemistry-variant OH_LOSS=SA1982_VH); the path below is valid both
+  ! from input/ and from the test's run directory run_test_i3/.
+  chemistry.variant.OH_LOSS = STATE_RESOLVED
+  chemistry.table.OH_TAU_SA1982.file = ../srcHartley2/i3/reference/oh_lifetime_sa1982.csv
   diagnostics.enabled = true
   cooling.H2O.model = GOMBOSI1986_H2O
 

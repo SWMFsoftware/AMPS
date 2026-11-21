@@ -62,6 +62,20 @@ srcHartley2/tests/run_all_stage_tests.sh        # portable regression suite (set
 ./amps --help                                    # usage, and the compiled chemistry groups and variants
 ```
 
+Nightly regression test `i3` (details: [i3/README.md](i3/README.md), "Nightly regression test"): a test-mode build,
+then three runs of `input/i3-test.in` (case 1 and case 5 with the default chemistry, and `case1sa` = case 1 with
+`--chemistry-variant OH_LOSS=SA1982_VH`), each compared with its references for the number of MPI processes:
+
+```sh
+./Config.pl -install -compiler=gfortran,gcc_mpicc   # once per checkout (writes Makefile.test from MakefileTest/Table)
+make test_i3 MPIRUN="mpirun -np 4"                 # N = 4 or 8; on Voyager inside a Slurm job
+cat test_i3.diff                                    # empty: passed ('test_i3[5].diff' on passion)
+```
+
+`make test_i3` reconfigures the tree for the test-mode build (`-amps-test=on`, kept in `.amps.conf`) and moves
+`amps` into `run_test_i3/`. Before a production run switch test mode off and repeat the clean build of section 2:
+`./Config.pl -application=i3 -amps-test=off && rm -rf -- build && make -j8 EXTRACOMPILEROPTIONS=-O3`.
+
 ## 3. Choose a case
 
 Every run needs `-i <file>` and, because `i3.in` has case blocks, an explicit `-case N`; an unknown case is fatal

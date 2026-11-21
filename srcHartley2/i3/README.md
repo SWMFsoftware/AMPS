@@ -92,11 +92,22 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   fluxes per case, see "O I 130.4-nm brightness" below) and does not contain
   them; its references therefore hold the H and OH brightness only. The O
   records are optional for the runtime parser, so the deck remains valid.
-- **Run.** Case 1 runs in `run_test_i3/case1` and case 5 in `run_test_i3/case5`.
-  Each run's log is in `amps.log` there, and the results are copied unchanged
-  to `run_test_i3/res/<case>.<species>.dat` and
-  `run_test_i3/res/<case>.<species>.brightness.dat`. That makes 18 files: the
-  seven radial profiles and the H and OH brightness profiles of each case.
+  Since 2026-11-21 it also has the two OH-loss keys of `input/i3.in`
+  (`chemistry.variant.OH_LOSS = STATE_RESOLVED` and
+  `chemistry.table.OH_TAU_SA1982.file`, see
+  [CHEMISTRY_VARIANTS.md](../CHEMISTRY_VARIANTS.md)). The table path
+  `../srcHartley2/i3/reference/oh_lifetime_sa1982.csv` is relative to the
+  directory of the deck, and is valid both in `input/` and in the copy in
+  `run_test_i3/`; the output headers record it in that relative form, so the
+  references do not depend on where the tree is checked out.
+- **Run.** Case 1 runs in `run_test_i3/case1` and case 5 in `run_test_i3/case5`,
+  both with the default OH loss `STATE_RESOLVED`. A third run, `case1sa`
+  (added 2026-11-21), is case 1 with the alternative OH loss selected on the
+  command line, `--chemistry-variant OH_LOSS=SA1982_VH`, in
+  `run_test_i3/case1sa`. Each run's log is in `amps.log` there, and the
+  results are copied unchanged to `run_test_i3/res/<run>.<species>.dat` and
+  `run_test_i3/res/<run>.<species>.brightness.dat`. That makes 27 files: the
+  seven radial profiles and the H and OH brightness profiles of each run.
 - **Check.** Each result is compared whole (`share/Scripts/DiffNum.pl`,
   default tolerances) with
   `output/test_i3/<case>.<species>[.brightness]<tag>.ref_np<N>.gz`. These
@@ -124,9 +135,18 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   the other tests on passion. Every other machine uses the untagged names, so
   the references of a second machine can be added as untagged files without
   touching those of passion. The references of passion, for N = 4 and N = 8,
-  were made on 2026-11-16. The references described here before (GCC 11.5,
-  Open MPI 4.1.7, AMD EPYC 7763) were made with the production build; they do
-  not apply to the test-mode build, and that machine needs new, untagged ones.
+  were made on 2026-11-16, for the 18 outputs of cases 1 and 5; they must be
+  regenerated for the 27 outputs of 2026-11-21 (the new run `case1sa`, and new
+  `DATASETAUXDATA Chemistry.*` lines in the brightness headers of cases 1 and 5).
+  The untagged references (Voyager: GCC 11.5.0, Open MPI 4.1.7rc1, AMD EPYC
+  7763) were remade on 2026-11-21 with the test-mode build for all 27 outputs
+  and N = 4 and 8: two runs per N gave byte-identical results, a third check
+  run per N passed `make test_i3_check`, and the radial profiles of cases 1
+  and 5 are byte-identical to those of the code before the chemistry variants
+  (the brightness files differ only in the `Chemistry.*` provenance lines).
+  The earlier untagged references, made with the production build, were moved
+  aside (not deleted). Record of that work:
+  `validation_runs/test_i3_sa1982_20261121/` (not committed).
   To regenerate the references of one machine and one N after a `make test_i3`
   run with that N (`T` is the machine's tag, `[5]` on passion, empty
   elsewhere):
@@ -143,7 +163,11 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   processes 20 to 22 min (case 1 8 min, case 5 12 to 14 min). With 8
   processes it took 19 and 30 min (case 1 6.4 and 10.3 min) at a load
   average of 40 to 50. On an AMD EPYC 7763 the production build took 3.8 +
-  6.7 min with 4 processes and 8 min in all with 8. There are about 1.9e5
+  6.7 min with 4 processes and 8 min in all with 8. On Voyager (AMD EPYC 7763,
+  2026-11-21, test-mode build, four test runs at once on one node) the
+  compilation took 1 min with 32 jobs; with 4 processes case 1, case 5 and
+  `case1sa` took 5.4, 8.6 and 4.9 min (19 min in all), with 8 processes 3.8,
+  5.0 and 3.7 min (12 min in all). There are about 1.9e5
   model particles at iteration 10000. Each MPI process uses about 1.5 GB of
   memory on passion, whatever the particle number, because `input/i3.conf`
   requests a buffer of 2e7 particles.
