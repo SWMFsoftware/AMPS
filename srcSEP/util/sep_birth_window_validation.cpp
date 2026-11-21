@@ -1,5 +1,6 @@
 #include "sep_birth_window_validation.h"
 #include "sep_birth_window.h"
+#include "amps_fixed_step.h"
 #include <cmath>
 #include <limits>
 
@@ -160,16 +161,87 @@ Result HostClockCapability() {
   checks.Require(!B::ValidateHostClockPolicy(policy).ok());
   return checks.Finish("audited PIC clock policy rejects unimplemented species synchronization and externally owned host-end assumptions before source mutation");
 }
+Result BoundExternalClock() {
+  // Independent exact-second oracle for the observed failing 20 -> 21 s
+  // interval. Binding that full interval must add support while leaving an
+  // unbound external clock, wrong departure/dt and unaudited policies rejected.
+  Checks checks;B::DriverWindow window;B::HostClockPolicy policy;
+  policy.externallyOwned=true;policy.counterAtEnd=false;
+  checks.Require(B::FreezeWindow(20.0,1.0,&window).ok());
+  checks.Require(!B::ValidateHostClockPolicy(policy).ok());
+  checks.Require(B::ValidateExternalHostWindow(policy,window,20.0,1.0).ok());
+  checks.Require(!B::ValidateExternalHostWindow(policy,window,21.0,1.0).ok());
+  checks.Require(!B::ValidateExternalHostWindow(policy,window,20.0,0.5).ok());
+  policy.counterAtEnd=true;
+  checks.Require(!B::ValidateExternalHostWindow(policy,window,20.0,1.0).ok());
+  policy.counterAtEnd=false;policy.mode=B::HostStepMode::SpeciesGlobal;
+  checks.Require(!B::ValidateExternalHostWindow(policy,window,20.0,1.0).ok());
+  return checks.Finish("external clock requires an explicit full nominal window and audited nonadvancing PIC policy");
+}
+Result CoupledWholeSteps() {
+  // Configure a separate private fixture once with a binary-exact 3/4 s dt;
+  // never modify a running AMPS timestep. The listed endpoints/counts follow
+  // directly from whole multiples of 3/4, independently of Plan's arithmetic.
+  Checks checks;AMPS::Coupling::FixedStepContract contract;
+  contract.Configure(0.75);double completed=20.0,pic=20.0,sampled=0.0;
+  const double limits[]={20.5,21.0,21.5,22.0,23.0};
+  const unsigned expected[]={0,1,1,0,2};
+  const double endpoints[]={20.0,20.75,21.5,21.5,23.0};
+  for(unsigned i=0;i<5;++i) {
+    unsigned steps=0;
+    while(contract.Plan(completed,limits[i],0.75)) {
+      checks.Require(contract.Current().startEpochS==completed&&contract.Current().durationS==0.75);
+      pic=completed;contract.EnterParticlePhase(pic,0.75);
+      // This controlled exposure counter represents one actual sampling call
+      // per completed physical step; host acknowledgements never enter it.
+      sampled+=0.75;contract.CompleteParticlePhase(pic,0.75);
+      completed=contract.Commit(pic,0.75);++steps;
+    }
+    checks.Require(steps==expected[i]&&completed==endpoints[i]&&pic==completed);
+  }
+  checks.Require(sampled==3.0&&contract.NominalDurationS()==0.75&&!contract.Active());
+  return checks.Finish("nondivisible host limits retain only complete fixed-duration steps and no exposure on skips");
+}
+Result CoupledClockRejection() {
+  // Exercise failure atomicity and phase ownership with private values only.
+  // Failed dt requests must not alter the nominal duration. The adjacent
+  // representable limit below 21 s cannot admit [20,21]; the exact limit can.
+  // Repeated entry/completion shortcuts must fail even if an endpoint matches.
+  Checks checks;AMPS::Coupling::FixedStepContract contract;contract.Configure(1.0);
+  auto rejects=[&](const std::function<void()>& operation) {
+    bool rejected=false;try{operation();}catch(const std::exception&){rejected=true;}
+    checks.Require(rejected);
+  };
+  rejects([&]{contract.Configure(0.5);});
+  rejects([&]{contract.Plan(20.0,21.0,0.5);});
+  rejects([&]{contract.Plan(20.0,std::numeric_limits<double>::quiet_NaN(),1.0);});
+  checks.Require(!contract.Plan(20.0,std::nextafter(21.0,20.0),1.0));
+  checks.Require(contract.Plan(20.0,21.0,1.0));
+  double pic=20.0;
+  rejects([&]{contract.Commit(pic,1.0);});
+  rejects([&]{contract.Plan(20.0,21.0,1.0);});
+  contract.EnterParticlePhase(pic,1.0);checks.Require(pic==21.0);
+  rejects([&]{contract.EnterParticlePhase(pic,1.0);});
+  pic=20.0;rejects([&]{contract.CompleteParticlePhase(pic,1.0);});
+  pic=21.0;contract.CompleteParticlePhase(pic,1.0);
+  checks.Require(contract.Commit(pic,1.0)==21.0&&!contract.Active());
+  rejects([&]{contract.Plan(1.0e20,1.0e20,1.0);});
+  checks.Require(contract.NominalDurationS()==1.0);
+  return checks.Finish("clock phases, representability and constant timestep reject before invalid publication");
+}
 } // namespace
 std::vector<Descriptor> BirthWindowDescriptors() {
   const char* names[]={"Explicit frozen source driver window","Late birth retains exact positive remaining duration",
       "Staged first movement consumption","Atomic birth history rejection","Birth-relative immutable snapshot interval",
       "Initial-condition and scheduled-source distinction","Prescribed terminal interval and adaptive refinement floor",
-      "Actual host clock advancement capability"};
-  const std::function<Result()> callbacks[]={DriverWindow,LateBirth,FirstMoveCommit,Rejection,SnapshotInterval,InitialHistory,TerminalInterval,HostClockCapability};
+      "Actual host clock advancement capability","Explicit external full-step binding",
+      "Coupled fixed-step scheduling and exposure","Coupled clock phase and timestep rejection"};
+  const std::function<Result()> callbacks[]={DriverWindow,LateBirth,FirstMoveCommit,Rejection,SnapshotInterval,InitialHistory,TerminalInterval,HostClockCapability,BoundExternalClock,CoupledWholeSteps,CoupledClockRejection};
   std::vector<Descriptor> result;
-  for(unsigned i=0;i<8;++i) {
-    Descriptor descriptor;descriptor.id="BIRTH0"+std::to_string(i+1);descriptor.name=names[i];
+  for(unsigned i=0;i<sizeof(callbacks)/sizeof(callbacks[0]);++i) {
+    // Preserve BIRTH01--08 identifiers and append the coupled value contracts;
+    // two-digit formatting must not rename case 10 to the unrelated BIRTH010.
+    Descriptor descriptor;descriptor.id=std::string("BIRTH")+(i<9?"0":"")+std::to_string(i+1);descriptor.name=names[i];
     descriptor.description=names[i];descriptor.group="birth-window";
     descriptor.initialization=InitializationLevel::None;descriptor.runtime=RuntimeClass::Routine;
     descriptor.supportedBuildModes="dependency-light and native registry; time lifecycle core only";

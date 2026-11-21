@@ -55,7 +55,11 @@ Transport::KeyedRandomStream Random(const Event& event, std::uint64_t macro,
 Transport::Status WriteState(FILE* file, const State& state);
 Transport::Status ReadState(FILE* file, State* state);
 
-// Native fixed-geometry application bridge (implemented in field_line.cpp).
+// Native application bridge (implemented in field_line.cpp). Fixed standalone
+// geometry uses its exact coordinate namespace; the supported SWMF origin-grid
+// producer must supply explicit global line ids and immutable grid metadata.
+// Moving vertices alone do not replace the latter's source identity. Missing
+// mappings or unsupported remaps reject before reserving a new source event.
 // All ranks must call BeginNativeEvent in the same physical dispatch, before
 // an owner-rank return. These hooks are ready for a combined field-line
 // checkpoint; registering them alone cannot save field-line particle lists.

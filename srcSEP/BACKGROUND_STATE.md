@@ -10,10 +10,17 @@ reconstruction described in earlier reports.
 
 ## Authoritative clock
 
-`PIC::SimulationTime` is the only owner of application time. srcSEP reads it
+`PIC::SimulationTime` exposes application time. srcSEP reads it
 through `SEP::Background::SimulationTimeSeconds()`, which returns seconds from
 the PIC simulation-time origin and exposes no setter or independent advance
 operation.
+
+For SWMF single-global/counter-OFF execution the coupler owns the completed
+physical-time ledger and supplies one explicit full nominal interval. SEP
+prepares/freezes at its departure; the coupler presents the declared end during
+PIC work, and commits its ledger only after successful application completion.
+The initialized timestep remains constant. A host-limit acknowledgement on a
+skipped call is not physical evolution and does not advance sampling exposure.
 
 The former standalone driver kept a global elapsed time and a second static
 SWCME launch-time counter. Those clocks were incremented in a different order
@@ -76,8 +83,19 @@ history alone supplies neither quantity without a material-coordinate,
 continuity/source and composition contract.
 
 The analytic radial and supported canonical SWCME/reduced branches have explicit
-derivative contracts. Imported SWMF lines lack a complete gradient contract and
-reject dependent transport rather than infer it. The canonical SWCME1D
+derivative contracts. The prescribed SWMF path reconstructs the full Cartesian
+tensor internally from received position/velocity samples at one epoch. It
+gathers across the original PT communicator, independently of PIC's disconnected
+communicators, and uses a distance-weighted affine fit with column-pivoted
+Householder QR. The deterministic stencil expands from 32 to at most 512 samples,
+requires four distinct producer origin-grid lines, and rejects a rank-deficient
+or ill-conditioned fit (`cond_1(R)>1e6`). Affine exactness, deficient-stencil
+rejection, and convergence on a symmetric cubic field are covered by CP03G05–07.
+Those manufactured tests do not establish accuracy for every received mesh.
+Endpoint tensors are prepared before publication and only interpolated during
+the immutable particle phase. Missing coverage rejects; no radial law, density
+history, zero transverse derivative, or pseudoinverse fills a missing dimension.
+The canonical SWCME1D
 FULL_ICME interface also lacks regional thermodynamics needed for a coherent
 native publication and is rejected before mutation.
 
@@ -204,6 +222,12 @@ is published between particle phases as a new imported, read-only field-line
 generation. The latest import remains valid until another coupling generation
 arrives. A missing, future, stale, or cross-provider state is fatal; srcSEP does
 not silently continue with unrelated arrays.
+
+The coupled clock binding does not relax these checks. In particular, a newer
+import may lie after the actual AMPS departure when coupling intervals are not
+divisible by the nominal timestep. A temporal reconstruction/retained-background
+policy must be explicitly established before qualifying that evolving case;
+neither a shortened AMPS step nor altered metadata supplies the missing state.
 
 ### Reduced shock-front ambient publication
 

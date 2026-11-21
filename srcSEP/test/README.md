@@ -1728,7 +1728,7 @@ unresolved.
 
 ### Explicit birth windows and native four-spectrum gates
 
-`make -C srcSEP test-birth-window-unit` runs BIRTH01–BIRTH07 with strict warnings,
+`bash srcSEP/test/run_birth_window_tests.sh` runs BIRTH01–BIRTH11 with strict warnings,
 ASan and UBSan; `SRCSEP_REPORT_DIR` retains its JSON/JUnit. The `birth-window`
 orchestrator step reads each stable ID, rather than counting the executable as
 one test. These are time-lifecycle value tests, with seconds as the time unit;
@@ -1744,6 +1744,35 @@ birth-time law.
 | BIRTH05 | Immutable snapshot coverage includes the complete parent window and the birth-relative movement interval. |
 | BIRTH06 | An explicit initial condition is distinct from a scheduled source birth. |
 | BIRTH07 | A prescribed positive terminal remainder is completed; an accuracy-requested subdivision below the numerical floor still rejects. |
+| BIRTH08 | An externally owned clock without an explicit window remains unsupported; standalone clock capability is unchanged. |
+| BIRTH09 | A bound external window requires the physical departure, full nominal duration, and the audited nonadvancing PIC clock policy. |
+| BIRTH10 | Complete fixed-duration steps follow nondivisible host limits without counting skipped calls as sampling exposure. |
+| BIRTH11 | Timestep mutation, premature/duplicate phase transitions, invalid limits and unrepresentable endpoints reject. |
+
+BIRTH09–11 exercise the same value/phase contract used by the SWMF wrapper;
+their private exposure counter is a scheduling oracle, not qualification of the
+native sampler. The original eight-rank coupled run and unchanged energy and
+pitch-angle comparisons remain mandatory. Its configured timestep must not be
+changed to fit coupling intervals. A skipped call contributes no physical step
+or accumulated particle sample. Real evolving nondivisible backgrounds and full
+PT restart continuation require their own explicit provider/restore contracts.
+
+`make -C srcSEP test-maxwell-juttner-volume-unit` runs MJV01–03 with strict
+warnings, ASan and UBSan. The same callbacks are linked into the native registry
+as group `maxwell-juttner-volume`. MJV01 compares cold and relativistic energy
+moments against independent quadrature and the ideal-gas pressure identity;
+MJV02 checks the boosted simulation-volume number and stress-energy measure;
+MJV03 checks invalid-input rejection without RNG/output mutation. Campaign-seed
+controls verify that stochastic callbacks actually consume their declared seed.
+These checks qualify the momentum kernel, not a complete native SWMF population.
+
+CP03G05–07, run by `bash srcSEP/test/run_background_derivative_tests.sh`, test
+the production receive-time reconstruction kernel on full Cartesian affine
+fields, coplanar negative controls and a symmetric cubic convergence sequence.
+Its condition-number gate bounds roundoff amplification, not spatial truncation
+error on arbitrary imported data. Native packet units, epoch consistency,
+initialization, transport, sampling and original reference comparisons remain
+separate integration obligations.
 
 The tiny-remainder negative control uses `nextafter(1,0)` at epoch `1e12 s`.
 It preserves the positive duration without clipping or redrawing the supplied

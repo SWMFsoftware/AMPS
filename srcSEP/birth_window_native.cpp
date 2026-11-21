@@ -6,6 +6,9 @@
 #include <exception>
 #include <set>
 #include <utility>
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "amps2swmf.h"
+#endif
 
 namespace SEP { namespace Transport { namespace PICAdapter { namespace {
 // The host freezes this immutable value before worker creation and clears it
@@ -90,6 +93,19 @@ Status NativeDriverClockCapability() {
   return Status::Error(StatusCode::UnsupportedConfiguration,
       "native source birth clock currently requires a declared global timestep");
 #endif
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // Merely compiling SWMF is not a clock capability. Accept only this step's
+  // still-planned external interval, before its mutable counter changes phase.
+  // The value-layer validator checks the audited macro policy, physical
+  // departure and full nominal duration; no scheduler endpoint is inferred.
+  if(AMPS2SWMF::CoupledStep.Configured()&&AMPS2SWMF::CoupledStep.Planned()) {
+    const auto& host=AMPS2SWMF::CoupledStep.Current();
+    Birth::DriverWindow bound;bound.schema=1;bound.startEpochS=host.startEpochS;
+    bound.durationS=host.durationS;bound.endEpochS=host.endEpochS;
+    return Birth::ValidateExternalHostWindow(policy,bound,
+        Background::SimulationTimeSeconds(),PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+  }
+#endif
   return Birth::ValidateHostClockPolicy(policy);
 }
 Status FreezeNativeDriverWindow() {
@@ -97,6 +113,15 @@ Status FreezeNativeDriverWindow() {
   std::shared_ptr<const Background::BackgroundSnapshot> candidateSnapshot;
   try {
     if(gDriverWindowActive)local=Invalid("cannot replace an active native source driver window");
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    // The generic PT particle restart does not restore this physical ledger
+    // and its matching source/background/sampling interval. Do not load it
+    // inside PIC after freezing a fresh host window under the scheduler epoch.
+    // An SC/IH restart with a newly initialized PT population is unaffected.
+    if(local.ok()&&PIC::Restart::LoadRestartSWMF)
+      local=Status::Error(StatusCode::UnsupportedConfiguration,
+          "coupled PT restart requires restored physical clock, background and sampling state before source-window freeze");
+#endif
 #if _SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_ && _SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
     if(local.ok())local=Status::Error(StatusCode::UnsupportedConfiguration,
         "native source birth clock currently requires a declared global timestep");

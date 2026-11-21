@@ -1,6 +1,9 @@
 //functions describing injection at shock
 
 #include "sep.h"
+#include "source_capabilities.h"
+#include "thermal_population.h"
+#include "util/sep_background_runtime.h"
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
 #include "amps2swmf.h" 
@@ -88,6 +91,23 @@ void SEP::ParticleSource::ShockWave::Output::PrintVariableList(FILE* fout,int Da
 }
 
 void SEP::ParticleSource::PopulateAllFieldLines() {
+  if(SEP::Background::ConfiguredProvider()==SEP::Background::Provider::Swmf) {
+    // A declared fresh SWMF volume uses the dedicated relativistic/proper-
+    // state adapter. Existing/loaded records never enter this initialization
+    // path, and retained thermal boundary/legacy helpers keep their guards.
+    const auto initialized=PopulateImportedThermalInitialCondition();
+    if(!initialized.ok())exit(__LINE__,__FILE__,initialized.message.c_str());
+    return;
+  }
+  // Coupled prepopulation is a physical thermal-volume source, not an excuse
+  // to bypass the source capability checks used by the other thermal entry
+  // points. The retained core helper samples classical lab-frame velocities
+  // without SEP birth/identity/RNG state; adding extension bytes after the
+  // fact would not establish its distribution, frame or density convention.
+  // Reject before any draw/allocation until the declared relativistic volume
+  // adapter and its explicit proper-density/temperature inputs are available.
+  const auto capability=SEP::Sources::ThermalPopulationPreflight();
+  if(!capability.ok())exit(__LINE__,__FILE__,capability.message.c_str());
   namespace FL = PIC::FieldLine;
   int iFieldLine;
 

@@ -101,8 +101,24 @@ standalone single-global builds advance the clock at start (counter OFF) or end
 (counter ON). Species-global builds currently advance it only for one compiled
 species with counter ON; equal multi-species durations alone do not implement
 core clock synchronization and are rejected. Unequal species durations and
-externally owned SWMF clocks also return `UnsupportedConfiguration` before
-source mutation; the latter need an explicit host-end contract.
+unbound externally owned clocks return `UnsupportedConfiguration`. SWMF
+single-global/counter-OFF execution instead requires the coupler's explicit
+full-step binding. Its duration must equal the initialized, unchanged global
+timestep. The application freezes at the physical departure, and the coupler
+then presents the end counter during PIC execution without another PIC clock
+increment. Source-window closure verifies that endpoint and all pending births
+before the wrapper can commit completed physical time. Skipped calls add no
+particle movement or sampling exposure; deferred time survives normal session
+transitions. Invalid background coverage still rejects rather than changing
+dt, relabelling an import or inventing temporal reconstruction.
+
+For this PT origin-grid producer, source channels carry its explicitly supplied
+global line label rather than a local array index or moving geometry hash.
+The namespace records the declared origin grid/frame. Missing or changed
+labels still reject. A declared fresh run initializes the existing scheduler
+after the first actual import and before particle prepopulation; continuation
+must restore source history instead. Source event counters, identity hashes
+and keyed random algorithms are unchanged by the adapter.
 The same snapshot must cover the complete parent interval; replacement after
 freeze or closing while particle readers/workers remain active is rejected.
 Closure also requires the PIC clock at its declared end and no pending birth.
@@ -136,7 +152,22 @@ step-start timing explicitly before reserving source counters. Two-argument
 fresh initialization is initial-condition-only and cannot run inside an active
 source window. The new overload accepts an explicit birth record and existing
 local-plasma-frame phase space; it does not infer or transform a velocity frame.
-Maxwellian beginning and optional thermal solar-wind helpers remain gated before
+The fresh coupled SWMF volume initializer is a separate path from boundary
+injection. It consumes the received proton density, temperature and bulk velocity,
+requires a single compiled H+ species, and samples a Maxwell–Jüttner **volume**
+distribution in the local plasma frame. For proper density `n0`, simulation-volume
+density is `gamma_U*n0`; the rest-momentum draw includes the Lorentz phase-measure
+factor `1+U dot v'/c^2`. Spatial weights use the existing magnetic-flux area
+`A=Phi/|B|` and the full Jacobian `n0*gamma_U*A*L`. Simpson quadrature controls
+proposal counts only; each sampled point receives its actual importance weight,
+so count rounding and the 200-macro proposal ceiling do not renormalize density.
+Purpose-keyed source streams and persisted line-event identities initialize the
+complete transport schema as an explicit initial condition. Existing records
+cannot acquire invented source/RNG history through this path. MJV01–03 verify
+the momentum kernel against independent quadrature and Lorentz moments; native
+population normalization and the full coupled regression are separate gates.
+
+Maxwellian beginning and optional thermal solar-wind boundary helpers remain gated before
 RNG/counter/allocation mutation. The user selected drifting relativistic
 Maxwell–Jüttner flux injection with verification of its Maxwellian limit.
 The separate full-particle material-plane kernel is now implemented and its
@@ -176,7 +207,7 @@ step-start birth. A pure trajectory query at departure plus a separate end-step
 geometry/energy-ledger update is required before enabling the affected path;
 no new temporal quadrature is inferred by this guard.
 
-`BIRTH01`–`BIRTH08` exercise the shared value core under ASan/UBSan, including
+`BIRTH01`–`BIRTH11` exercise the shared value core under ASan/UBSan, including
 the late-epoch counterexample and atomic rejection. The new native descriptors
 `BIRTHN01`–`BIRTHN06` compare actual Parker/Dmumu/MFP remaining-time movement
 against explicit-duration references, retain a full-host negative control, and

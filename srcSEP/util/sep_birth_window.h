@@ -60,6 +60,14 @@ struct HostClockPolicy {
 // or end(ON); species-global advances only for one species with counter ON.
 // An externally owned SWMF epoch needs a distinct explicit host-end contract.
 Status ValidateHostClockPolicy(const HostClockPolicy& policy);
+// Only the explicitly bound SWMF/single-global/counter-OFF execution path
+// supplies this contract. All epochs/durations are SI seconds. The observed
+// departure must precede the external counter's phase publication and nominal
+// duration must be the initialized, unchanged AMPS dt. This validates a value;
+// it neither advances time nor asserts actual particle completion. An external
+// clock without its scoped native host binding remains unsupported.
+Status ValidateExternalHostWindow(const HostClockPolicy& policy,
+    const DriverWindow& window,double observedDepartureS,double nominalDurationS);
 
 Status FreezeWindow(double startEpochS,double durationS,DriverWindow* output);
 Status ValidateWindow(const DriverWindow& window);

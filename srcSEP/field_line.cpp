@@ -54,12 +54,16 @@ bool sourceSchedulerReady=false;
 
 std::string FixedNativeLineLayout() {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  exit(__LINE__,__FILE__,"SWMF source identity requires an explicit stable physical line mapping; fixed native array slots cannot represent remapped lines");
-#endif
+  // PT supplies the producer's persistent origin-grid namespace explicitly.
+  // This replaces no guard with an array-slot assumption: the accessor rejects
+  // missing/count-mismatched metadata and the import boundary rejects changed
+  // grid labels. Moving vertices do not by themselves create a new source.
+  return AMPS2SWMF::FieldLineData::SourceLineNamespace(PIC::FieldLine::nFieldLine);
+#else
   // The full coordinate sequence defines this restricted fixed-line namespace.
   // Re-evaluating it detects line reordering, replacement, or motion before an
-  // event counter can be reused for a different physical source. Native SWMF
-  // remapping is deliberately unsupported until it provides stable line ids.
+  // event counter can be reused for a different physical source. Other evolving
+  // providers need an explicit line mapping instead of this fixed geometry.
   std::ostringstream layout;
   layout<<"fixed-native-lines-v1:"<<PIC::FieldLine::nFieldLine;
   layout<<std::hexfloat;
@@ -78,6 +82,7 @@ std::string FixedNativeLineLayout() {
     }
   }
   return layout.str();
+#endif
 }
 
 SEP::Transport::KeyedRandomStream SourceRandom(
@@ -190,6 +195,12 @@ SEP::SourceLifecycle::Event SEP::SourceLifecycle::BeginNativeEvent(
       SEP::Transport::PICAdapter::CampaignRandomSeed,FixedNativeLineLayout());
   if(!ready.ok())exit(__LINE__,__FILE__,ready.message.c_str());
   Channel channel;channel.kind=kind;channel.line=line;channel.species=species;
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  // The scheduler/RNG channel uses CON_bline's global origin-grid label.
+  // Local ownership and disconnected PIC communicator ranks are not physical
+  // randomness and must not alias channels on different PT processes.
+  channel.line=AMPS2SWMF::FieldLineData::SourceGlobalLineId(line,PIC::FieldLine::nFieldLine);
+#endif
   Event event;const auto status=sourceScheduler.Begin(channel,&event);
   if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
   return event;

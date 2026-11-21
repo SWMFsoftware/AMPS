@@ -18,6 +18,7 @@
 #include "util/sep_flux_tube_state_validation.h"
 #include "util/sep_polarized_wkb_validation.h"
 #include "util/sep_maxwell_juttner_flux_validation.h"
+#include "util/sep_maxwell_juttner_volume_validation.h"
 #include "util/sep_material_tube_kinematics_validation.h"
 #include "util/sep_standard_batsrus_wave_validation.h"
 #include "util/sep_population_native_validation.h"
@@ -939,6 +940,10 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
     // this kernel does not qualify its reduction to a gyrotropic SEP source.
     const auto thermal_flux_descriptors=SEP::Testing::MaxwellJuttnerFluxDescriptors();
     descriptors.insert(descriptors.end(),thermal_flux_descriptors.begin(),thermal_flux_descriptors.end());
+    // Volume initialization uses a different phase measure from boundary flux.
+    // Keep its independent thermodynamic/Jacobian gates in the native registry.
+    const auto thermal_volume_descriptors=SEP::Testing::MaxwellJuttnerVolumeDescriptors();
+    descriptors.insert(descriptors.end(),thermal_volume_descriptors.begin(),thermal_volume_descriptors.end());
     const auto material_geometry_descriptors=SEP::Testing::MaterialTubeKinematicsDescriptors();
     descriptors.insert(descriptors.end(),material_geometry_descriptors.begin(),material_geometry_descriptors.end());
     const auto batsrus_wave_descriptors=SEP::Testing::StandardBatsrusWaveDescriptors();

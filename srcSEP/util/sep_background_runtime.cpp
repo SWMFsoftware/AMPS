@@ -73,9 +73,9 @@ Provider ConfiguredProvider() {
 }
 
 double SimulationTimeSeconds() {
-  // PIC::SimulationTime is advanced by PIC::TimeStep().  This read-only adapter
-  // is the sole srcSEP clock API; it deliberately has no Set(), Advance(), or
-  // hidden static elapsed-time variable that could drift away from PIC/SWMF.
+  // PIC advances standalone time; the SWMF boundary supplies its explicitly
+  // bound fixed-step clock phase. This is the sole read-only srcSEP clock API:
+  // no Set(), Advance(), or independently accumulated elapsed-time variable.
   return PIC::SimulationTime::Get();
 }
 
@@ -119,8 +119,17 @@ std::string CurrentConfigurationFingerprint() {
     canonical<<";analytic-radial="<<AnalyticRadial::CanonicalDeclaration(
         AnalyticRadial::DeclaredNativeWind());
   }
-  if(ConfiguredProvider()==Provider::Swmf)
+  if(ConfiguredProvider()==Provider::Swmf) {
     canonical<<";imported-wave-contract="<<Waves::StandardBatsrus::ContractIdentity();
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    // Include the actual provider normalization/frame and the reconstruction
+    // law in immutable provenance. A same-wire-layout checkpoint cannot
+    // silently resume the previous unresolved-origin/density-proxy contract.
+    canonical<<";swmf-origin-grid="<<AMPS2SWMF::FieldLineData::SourceGridDeclaration()
+      <<";swmf-gradient=cartesian-inverse-distance-affine-pivoted-QR-v1"
+      <<";swmf-gradient-neighbors=32..512;swmf-gradient-min-lines=4;swmf-gradient-cond-limit=1e6";
+#endif
+  }
 
   return FingerprintConfiguration(canonical.str());
 }

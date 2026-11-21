@@ -89,6 +89,7 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-flux-tube-state-unit \
                     test-polarized-wkb-unit \
                     test-maxwell-juttner-flux-unit \
+                    test-maxwell-juttner-volume-unit \
                     test-material-tube-kinematics-unit \
                     test-standard-batsrus-wave-unit \
                     test-conservation-resampling-unit \
@@ -182,6 +183,11 @@ MAINLIBOBJ += util/sep_frozen_collision_transaction.o util/sep_frozen_collision_
 MAINLIBOBJ += util/sep_flux_tube_state.o util/sep_flux_tube_state_validation.o
 MAINLIBOBJ += util/sep_exact_nonnegative_sum.o util/sep_polarized_wkb_transport.o util/sep_polarized_wkb_validation.o
 MAINLIBOBJ += util/sep_maxwell_juttner_flux.o util/sep_maxwell_juttner_flux_validation.o
+# Volume initialization has a different phase measure from boundary flux.
+# Link the production sampler, fresh SWMF source adapter and the same registered
+# verification callbacks into both standalone and coupled application archives.
+# Omitting these objects can compile callers successfully yet fail SWMF linking.
+MAINLIBOBJ += util/sep_maxwell_juttner_volume.o util/sep_maxwell_juttner_volume_validation.o thermal_population.o
 MAINLIBOBJ += util/sep_material_tube_kinematics.o util/sep_material_tube_kinematics_validation.o
 MAINLIBOBJ += util/sep_standard_batsrus_waves.o standard_batsrus_wave_adapter.o
 MAINLIBOBJ += util/sep_standard_batsrus_wave_validation.o util/sep_standard_batsrus_wave_native_validation.o
@@ -499,6 +505,14 @@ test-maxwell-juttner-flux-unit:
 	./test/run_maxwell_juttner_flux_tests.sh
 
 test test-controlled-analytical: test-maxwell-juttner-flux-unit
+
+# A spatial-volume initial condition requires its own Lorentz measure and
+# normalization checks; boundary-flux tests cannot stand in for this gate.
+.PHONY: test-maxwell-juttner-volume-unit
+test-maxwell-juttner-volume-unit:
+	bash ./test/run_maxwell_juttner_volume_tests.sh
+
+test test-controlled-analytical: test-maxwell-juttner-volume-unit
 
 # Cauchy induction, true material mass and cap/side geometric conservation are
 # qualified here only for the explicit neutral deformation/map capabilities.

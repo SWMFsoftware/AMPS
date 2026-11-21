@@ -6,6 +6,7 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 ${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -I"$src_dir" -I"$src_dir/util" -I"$src_dir/../src/models/sep_common" \
+  -I"$src_dir/../src/general" \
   "$src_dir/../src/models/sep_common/sep_transport_common.cpp" \
   "$src_dir/../src/models/sep_common/sep_test_registry.cpp" \
   "$src_dir/util/sep_birth_window.cpp" \

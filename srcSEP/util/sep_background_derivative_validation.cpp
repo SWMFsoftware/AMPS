@@ -1,6 +1,7 @@
 #include "sep_background_derivative_validation.h"
 #include "sep_background_derivatives.h"
 #include "sep_parker_core.h"
+#include "amps_velocity_gradient.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -107,6 +108,61 @@ Result AntipolarityAdvection() {
       erroneousMagneticProjection<0;
   return Finish(pass,"antiparallel magnetic polarity preserves the exact Cartesian convection characteristic");
 }
+Result ImportedAffineGradient() {
+  // Independent manufactured Cartesian flow U=U0+M*(x-x0). Dyadic M and
+  // metre offsets make the supplied samples exact, even at a solar-scale
+  // translated origin. Off-diagonal/asymmetric entries detect tensor swaps.
+  using Kernel=AMPS::Coupling::VelocityGradient;
+  const double matrix[9]={2,3,5,7,11,13,17,19,23};
+  std::vector<Kernel::Sample> samples;
+  for(int x=-1;x<=1;x+=2)for(int y=-1;y<=1;y+=2)for(int z=-1;z<=1;z+=2) {
+    Kernel::Sample s;s.line=static_cast<std::uint64_t>((x+1)+(y+1)*2+1);
+    const double d[3]={x*1048576.0,y*1048576.0,z*1048576.0};
+    for(int i=0;i<3;++i){s.x[i]=1073741824.0+d[i];s.u[i]=131072.0;
+      for(int j=0;j<3;++j)s.u[i]+=std::ldexp(matrix[3*i+j],-20)*d[j];}
+    samples.push_back(s);
+  }
+  Kernel kernel(samples);bool pass=true;double error=0;
+  for(std::size_t i=0;i<samples.size();++i) {
+    const auto result=kernel.Evaluate(i);pass=pass&&result.valid;
+    for(int j=0;j<9;++j)error=std::max(error,std::abs(result.gradient[j]-std::ldexp(matrix[j],-20)));
+  }
+  pass=pass&&error<2e-16;
+  auto result=Finish(pass,"received three-dimensional affine velocities recover the full Cartesian tensor at translated solar-scale positions");
+  result.metrics.push_back({"maximum_affine_gradient_error",error,2e-16,"<","1/s"});return result;
+}
+Result ImportedRankRejection() {
+  // Four labelled lines on z=0 still provide no derivative normal to that
+  // plane. A minimum-norm/radial/zero replacement must never claim success.
+  using Kernel=AMPS::Coupling::VelocityGradient;std::vector<Kernel::Sample> samples;
+  for(int i=0;i<4;++i)for(int j=0;j<4;++j) {
+    Kernel::Sample s;s.line=i+1;s.x={{double(i),double(j),0.0}};s.u={{double(i),double(j),1.0}};samples.push_back(s);
+  }
+  Kernel kernel(samples);bool pass=true;
+  for(std::size_t i=0;i<samples.size();++i)pass=pass&&!kernel.Evaluate(i).valid;
+  return Finish(pass,"coplanar received velocities reject without invented transverse derivatives");
+}
+Result ImportedGradientConvergence() {
+  // At the origin grad(x^3,y^3,z^3)=0. On geometrically similar 3-D stencils,
+  // the leading affine-reconstruction error is O(h^2); halving h must reduce
+  // it by four. This independent polynomial oracle checks spatial error,
+  // separately from affine exactness and QR roundoff/conditioning controls.
+  using Kernel=AMPS::Coupling::VelocityGradient;double errors[3]={};
+  bool pass=true;
+  for(int level=0;level<3;++level) {
+    const double h=std::ldexp(1.0,-level);std::vector<Kernel::Sample> samples;
+    for(int x=-1;x<=1;++x)for(int y=-1;y<=1;++y)for(int z=-1;z<=1;++z) {
+      Kernel::Sample s;s.line=(x+1)*3+(y+1)+1;s.x={{x*h,y*h,z*h}};
+      for(int d=0;d<3;++d)s.u[d]=s.x[d]*s.x[d]*s.x[d];
+      samples.push_back(s);
+    }
+    Kernel kernel(samples);const auto result=kernel.Evaluate(13);pass=pass&&result.valid;
+    for(double value:result.gradient)errors[level]=std::max(errors[level],std::abs(value));
+  }
+  pass=pass&&errors[2]>0&&Near(errors[0]/errors[1],4.0,1e-12)&&Near(errors[1]/errors[2],4.0,1e-12);
+  auto result=Finish(pass,"internal velocity-gradient reconstruction converges quadratically for a symmetric cubic manufactured field");
+  result.metrics.push_back({"coarse_to_medium_error_ratio",errors[0]/errors[1],4.0,"observed","dimensionless"});return result;
+}
 Descriptor Make(const char* id,const char* name,TestCallback callback) {
   Descriptor descriptor;
   descriptor.id=id;descriptor.name=name;descriptor.group="background";
@@ -124,6 +180,9 @@ std::vector<Descriptor> BackgroundDerivativeDescriptors() {
   return {Make("CP03G01","Exact steady radial expansion tensor",RadialExpansion),
           Make("CP03G02","Curved-field strain contract",CurvedField),
           Make("CP03G03","Full Cartesian gradient validation",TensorValidation),
-          Make("CP03G04","Magnetic polarity independent convection",AntipolarityAdvection)};
+          Make("CP03G04","Magnetic polarity independent convection",AntipolarityAdvection),
+          Make("CP03G05","Received Cartesian affine velocity reconstruction",ImportedAffineGradient),
+          Make("CP03G06","Underdetermined imported derivative rejection",ImportedRankRejection),
+          Make("CP03G07","Received velocity gradient spatial convergence",ImportedGradientConvergence)};
 }
 } }

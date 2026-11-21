@@ -7,6 +7,16 @@ providers, SWCME, or an SWMF coupling.  The source also contains the
 self-consistent Alfvén-turbulence subsystem, including integrated and
 wave-number-resolved representations and particle-wave coupling.
 
+SWMF-coupled single-global/counter-OFF execution binds each complete particle
+step to an explicit physical source window. The initialized AMPS timestep is
+constant; host synchronization retains incomplete intervals in the coupler's
+completed-time ledger and skips calls instead of shortening a physical step.
+The same timestep continues to normalize particle samples. See
+[the interface contract](../srcInterface/README.md#coupled-sep-fixed-step-clock)
+and [birth/clock verification](test/README.md#explicit-birth-windows-and-native-four-spectrum-gates).
+Background validity checks remain mandatory; this clock interface does not
+supply a temporal reconstruction of imported SWMF states.
+
 ## Development requirements and physical clarification
 
 The maintained implementation and verification record is
@@ -1531,3 +1541,17 @@ shock law and adds no translated-source, thermal or guiding-center closure.
 See [BACKGROUND_STATE.md](BACKGROUND_STATE.md) and the ASE01–05 / isolated
 HOST01–03 protocols in [test/README.md](test/README.md) for native evidence and
 counter-policy limits; source tests alone do not qualify the full host path.
+
+The coupled `SEP--focused_transport-IH-mflampa-fl` repair uses the explicitly
+selected prescribed, read-only SWMF background and existing mean-free-path law.
+The configured AMPS timestep remains constant. Source identities come from
+producer origin-grid labels; received SI positions/velocities provide an internal
+three-dimensional gradient reconstruction. A separate fresh thermal-volume
+initializer consumes received proton thermodynamics and initializes complete
+birth/RNG state. It does not qualify the retained classical thermal boundary
+helpers or restore missing history in old particles. See
+[BACKGROUND_STATE.md](BACKGROUND_STATE.md),
+[TRANSPORT_NUMERICS.md](TRANSPORT_NUMERICS.md), and
+[../srcInterface/README.md](../srcInterface/README.md) for contracts and limits.
+Focused kernel passes are not a full regression pass: the original eight-rank
+run and unchanged energy/pitch-angle reference comparisons remain required.

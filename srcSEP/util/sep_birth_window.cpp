@@ -44,6 +44,25 @@ Status ValidateWindow(const DriverWindow& window) {
     return Invalid("source driver window is missing, incompatible, or cannot advance the authoritative numerical clock");
   return Status::Ok();
 }
+Status ValidateExternalHostWindow(const HostClockPolicy& policy,
+    const DriverWindow& window,double observedDepartureS,double nominalDurationS) {
+  // This overload proves a concrete host interval instead of weakening the
+  // unbound externallyOwned rejection above. Only single-global counter-OFF
+  // SWMF has an implemented external phase transition; other policies could
+  // double-increment or omit physical time and must remain unsupported.
+  if(!policy.externallyOwned||policy.speciesCount==0||
+     policy.mode!=HostStepMode::SingleGlobal||policy.counterAtEnd)
+    return Status::Error(StatusCode::UnsupportedConfiguration,
+        "explicit external source window requires the audited single-global SWMF clock with PIC counter advancement disabled");
+  const auto status=ValidateWindow(window);if(!status.ok())return status;
+  // Both quantities are supplied in SI seconds by the same initialized model
+  // and coupler ledger. Exact comparisons detect stale windows and attempts
+  // to substitute a shorter host remainder; accepting an epsilon here would
+  // hide a physical duration/sampling-normalization change.
+  if(window.startEpochS!=observedDepartureS||window.durationS!=nominalDurationS)
+    return Invalid("external source window disagrees with the physical departure or unchanged nominal AMPS timestep");
+  return Status::Ok();
+}
 Status FreezeWindow(double startEpochS,double durationS,DriverWindow* output) {
   if(!output)return Status::Error(StatusCode::InvalidArgument,"driver window output is required");
   DriverWindow candidate;candidate.schema=1;candidate.startEpochS=startEpochS;

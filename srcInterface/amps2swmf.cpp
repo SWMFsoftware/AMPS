@@ -29,6 +29,10 @@
 
 #include "pic.h"
 #include "amps2swmf.h"
+#include <set>
+#include <cmath>
+#include <utility>
+#include "amps_fieldline_background.h"
 #include "FluidPicInterface.h"
 
 using namespace std;
@@ -94,6 +98,7 @@ double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_;
 
 //prepopulate the field lines with particles after the first coupling 
 bool AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
+bool AMPS2SWMF::FieldLineData::ReconstructVelocityGradients=false;
 
 //import plasma DivU mode
 bool AMPS2SWMF::ImportPlasmaDivUFlag=false;
@@ -157,6 +162,68 @@ double AMPS2SWMF::Heliosphere::rMin=-1.0;
 //parameters of the current SWMF session
 int AMPS2SWMF::iSession=-1;
 double AMPS2SWMF::swmfTimeSimulation=-1.0;
+AMPS::Coupling::FixedStepContract AMPS2SWMF::CoupledStep;
+MPI_Comm AMPS2SWMF::FieldLineInputCommunicator=MPI_COMM_NULL;
+// Keep writable clock access in its external owner. SEP declares the phase
+// boundary after freezing at departure, but continues reading time exclusively
+// through its existing read-only background adapter. Units are simulation s.
+void AMPS2SWMF::EnterCoupledParticlePhase() {
+  CoupledStep.EnterParticlePhase(PIC::SimulationTime::TimeCounter,
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+}
+// This notification follows actual PIC return and successful birth-window
+// closure; it checks the counter, never advances it. The completed physical
+// ledger remains unchanged until amps_time_step() itself returns to the wrapper.
+void AMPS2SWMF::CompleteCoupledParticlePhase() {
+  CoupledStep.CompleteParticlePhase(PIC::SimulationTime::Get(),
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+}
+namespace {
+// One provider-owned origin-grid namespace per live PT population. Geometry
+// can evolve without recreating a source history; reordering/replacing these
+// explicit labels requires a separately implemented remap/continuation codec.
+std::vector<int> swmfSourceLineIds;
+std::string swmfSourceLineNamespace;
+std::string swmfCoordinateFrame;
+double swmfDensityMassUnitKg=0.0,swmfCoordinateUnitM=0.0;
+}
+double AMPS2SWMF::FieldLineData::DensityMassUnitKg() {
+  if(!(swmfDensityMassUnitKg>0.0))throw std::logic_error("SWMF density normalization is undeclared");
+  return swmfDensityMassUnitKg;
+}
+double AMPS2SWMF::FieldLineData::CoordinateUnitM() {
+  if(!(swmfCoordinateUnitM>0.0))throw std::logic_error("SWMF coordinate length unit is undeclared");
+  return swmfCoordinateUnitM;
+}
+const std::string& AMPS2SWMF::FieldLineData::CoordinateFrame() {
+  if(swmfCoordinateFrame!="HGR"&&swmfCoordinateFrame!="HGI")
+    throw std::logic_error("SWMF field-line frame is not an explicitly declared heliocentric frame");
+  return swmfCoordinateFrame;
+}
+const std::string& AMPS2SWMF::FieldLineData::SourceGridDeclaration() {
+  // Snapshot provenance is established during reception, before the native
+  // field-line array is built. A missing declaration remains an error; this
+  // early accessor does not validate or infer a physical line mapping.
+  if(swmfSourceLineNamespace.empty())
+    throw std::logic_error("SWMF source origin-grid metadata is undeclared");
+  return swmfSourceLineNamespace;
+}
+std::string AMPS2SWMF::FieldLineData::SourceLineNamespace(int importedLineCount) {
+  SourceGridDeclaration();
+  if(importedLineCount<0||
+     swmfSourceLineIds.size()!=static_cast<std::size_t>(importedLineCount))
+    throw std::logic_error("SWMF source identity requires explicit producer origin-grid ids matching the imported physical lines");
+  return swmfSourceLineNamespace;
+}
+std::uint64_t AMPS2SWMF::FieldLineData::SourceGlobalLineId(int localLine,int importedLineCount) {
+  // Revalidate ownership before selecting a source channel. The returned
+  // global grid label, unlike the local array index, survives changes in MPI
+  // decomposition between independently initialized runs of the same campaign.
+  SourceLineNamespace(importedLineCount);
+  if(localLine<0||localLine>=importedLineCount)
+    throw std::logic_error("SWMF source channel has an invalid local line index");
+  return static_cast<std::uint64_t>(swmfSourceLineIds[localLine]);
+}
 bool AMPS2SWMF::swmfTimeAccurate=true;
 
 //amps_init_flag
@@ -178,6 +245,40 @@ PIC::Debugger::cGenericTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);
 AMPS2SWMF::fUserFinalizeSimulation AMPS2SWMF::UserFinalizeSimulation=NULL;
 
 extern "C" { 
+  void amps_set_bline_source_ids_(int* count,int* ids,int* nLon,int* nLat,
+                                double* grid,char* frame) {
+    // PT forwards CON_bline's one-based global origin-grid labels. Validate
+    // the entire candidate before publication so a bad later label cannot
+    // partially replace the source namespace. No rank, time, random draw or
+    // evolving vertex coordinate enters a physical source identity.
+    const long long total=static_cast<long long>(*nLon)*static_cast<long long>(*nLat);
+    if(*nLon<=0||*nLat<=0||*count<0||total>INT_MAX)
+      exit(__LINE__,__FILE__,"invalid SWMF source origin-grid dimensions");
+    std::set<int> unique;std::vector<int> candidate;
+    for(int line=0;line<*count;++line) {
+      if(ids[line]<=0||ids[line]>total||!unique.insert(ids[line]).second)
+        exit(__LINE__,__FILE__,"SWMF source origin-grid ids must be valid and unique");
+      candidate.push_back(ids[line]);
+    }
+    std::ostringstream identity;identity<<"swmf-origin-grid-v1:"<<std::string(frame,3)
+        <<':'<<*nLon<<':'<<*nLat<<std::hexfloat;
+    for(int i=0;i<7;++i) {
+      if(!std::isfinite(grid[i]))exit(__LINE__,__FILE__,"nonfinite SWMF source origin-grid metadata");
+      identity<<':'<<grid[i];
+    }
+    if(grid[0]<=0.0||grid[5]<=0.0||grid[6]<=0.0)
+      exit(__LINE__,__FILE__,"SWMF source origin radius and declared SI normalization units must be positive");
+    if(!swmfSourceLineNamespace.empty()&&
+       (swmfSourceLineNamespace!=identity.str()||swmfSourceLineIds!=candidate))
+      exit(__LINE__,__FILE__,"SWMF physical source line mapping changed; source history cannot be reset or silently remapped");
+    swmfSourceLineNamespace=identity.str();swmfSourceLineIds=std::move(candidate);
+    // CON_bline exports rho/cProtonMass and coordinates in its UnitXBl. Use
+    // those actual producer constants rather than assuming AMPS constants are
+    // bit-identical. These scalars are immutable namespace metadata, not fitted
+    // composition or coordinate conversions inferred from numerical values.
+    swmfDensityMassUnitKg=grid[5];swmfCoordinateUnitM=grid[6];
+    swmfCoordinateFrame.assign(frame,3);
+  }
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
   void amps_dynamic_allocate_blocks();
@@ -281,6 +382,9 @@ extern "C" {
   }
 
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread) {
+    // Keep the host's PT communicator for collective receive-time preparation
+    // before the existing PIC conversion can split it into independent ranks.
+    AMPS2SWMF::FieldLineInputCommunicator=MPI_Comm_f2c(*iComm);
     #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     omp_set_num_threads(*nThread);
     #endif
@@ -290,7 +394,13 @@ extern "C" {
 
   void amps_init_session_(int* iSession,double *TimeSimulation,int* swmfTimeAccurateMode) {
     AMPS2SWMF::iSession=*iSession;
-    AMPS2SWMF::swmfTimeSimulation=*TimeSimulation;
+    // Ordinary sessions do not recreate the PT population. Preserve any
+    // deferred whole-step budget instead of adopting a scheduler acknowledgement
+    // as an executed physical endpoint. Initial setup retains the legacy seed.
+    if(!AMPS2SWMF::CoupledStep.Configured())
+      AMPS2SWMF::swmfTimeSimulation=*TimeSimulation;
+    else if(AMPS2SWMF::CoupledStep.Active())
+      exit(__LINE__,__FILE__,"cannot change SWMF session during an active AMPS physical step");
 
     AMPS2SWMF::swmfTimeAccurate=(*swmfTimeAccurateMode==1) ? true : false;
   }
@@ -471,6 +581,14 @@ extern "C" {
 
 
   void amps_impose_global_time_step_(double *Dt) {
+    // Validate before any species slot is written: rejected host requests must
+    // not leave a partially changed sampling normalization. Same-dt requests
+    // remain harmless; this guard applies only after an application opts in.
+    if(AMPS2SWMF::CoupledStep.Configured()) {
+      try {AMPS2SWMF::CoupledStep.CheckDuration(*Dt);}
+      catch(const std::exception& error){exit(__LINE__,__FILE__,error.what());}
+      return;
+    }
     for(int spec=0; spec<PIC::nTotalSpecies; spec++)
       if(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec] != *Dt){
 	if(PIC::ThisThread == 0)
@@ -507,11 +625,19 @@ extern "C" {
 
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit,int* ForceReachingSimulationTimeLimit) {
     using namespace AMPS2SWMF;
+    // Do not let a clock-contract exception escape the Fortran/C boundary.
+    // Route its detailed diagnostic through AMPS's nonzero collective fatal
+    // exit. This handler supplies no fallback dt, background or particle state.
+    try {
 
      static int ncalls=0;
 
      ncalls++;
-     PIC::SimulationTime::TimeCounter=*TimeSimulation;
+     // A host-reported limit may be ahead of physical AMPS execution after a
+     // skip. Only opted-in applications use that physical ledger here; legacy
+     // applications retain their original externally reported counter policy.
+     PIC::SimulationTime::TimeCounter=CoupledStep.Configured()
+         ? swmfTimeSimulation : *TimeSimulation;
 
      if ((PIC::SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)&&(ncalls%SamplingOutputCadence==0)) {
        PIC::SamplingMode=_SINGLE_OUTPUT_FILE_SAMPING_MODE_;
@@ -535,6 +661,20 @@ extern "C" {
           AMPS2SWMF::amps_init_flag=true;
         }
       
+        if(CoupledStep.Configured()) {
+          if(!CoupledStep.Plan(swmfTimeSimulation,*TimeSimulationLimit,
+                               PIC::ParticleWeightTimeStep::GlobalTimeStep[0])) {
+            *TimeSimulation=*TimeSimulationLimit;
+            return false;
+          }
+          // Each accepted interval, including subsequent steps in this same
+          // host call, departs from actual completed AMPS time. Its endpoint
+          // is only a candidate until the application closes its source window.
+          PIC::SimulationTime::TimeCounter=swmfTimeSimulation;
+          *TimeSimulation=swmfTimeSimulation;
+          return true;
+        }
+
         //determine whether to proceed with the current iteraction
         if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
           *TimeSimulation=*TimeSimulationLimit;
@@ -607,6 +747,16 @@ do {
 
       amps_time_step();
 
+      if(CoupledStep.Configured()) {
+        // A normal application return is necessary but not sufficient: Commit
+        // also requires the explicit particle-completion notification, unchanged
+        // dt, and the original stored endpoint. No time is credited to a failed
+        // particle, turbulence or other application phase.
+        swmfTimeSimulation=CoupledStep.Commit(PIC::SimulationTime::Get(),
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+        *TimeSimulation=swmfTimeSimulation;
+      }
+
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
 
@@ -618,7 +768,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
   if (ncalls%100==0) {
     ExecutionTimer.PrintSampledDataMPI();
   }
-
+    }catch(const std::exception& error){exit(__LINE__,__FILE__,error.what());}
   }
 
   void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {
@@ -807,6 +957,12 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     }
 
     //consider the first coupling occurs after extracting the first field line 
+    if(AMPS2SWMF::FieldLineData::ReconstructVelocityGradients) {
+      try {
+        PrepareImportedVelocityGradients(*DataInputTime,*nVertexMax,*nLine,
+            nVertex_B,*nMHData,MHData_VIB);
+      }catch(const std::exception& error){exit(__LINE__,__FILE__,error.what());}
+    }
     PIC::CPLR::SWMF::FirstCouplingOccured=true;
 
     //init the table of the shock wave localtion indexes
@@ -866,7 +1022,8 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         double x[3]={0.0,0.0,0.0};    
         int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
 
-        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset]*_RADIUS_(_SUN_);   
+        const double lengthUnit=swmfSourceLineNamespace.empty()?_RADIUS_(_SUN_):AMPS2SWMF::FieldLineData::CoordinateUnitM();
+        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset]*lengthUnit;
 
         FieldLinesAll[iImportFieldLine].Add(x);
       }
@@ -929,7 +1086,8 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
         double x[3];
 
-        for (int idim=0;idim<3;idim++) x[idim]=(MHData_VIB+x_offset)[idim]*_RADIUS_(_SUN_);
+        const double lengthUnit=swmfSourceLineNamespace.empty()?_RADIUS_(_SUN_):AMPS2SWMF::FieldLineData::CoordinateUnitM();
+        for (int idim=0;idim<3;idim++) x[idim]=(MHData_VIB+x_offset)[idim]*lengthUnit;
         Vertex->SetX(x);
        // Vertex->SetX(MHData_VIB+x_offset);
 

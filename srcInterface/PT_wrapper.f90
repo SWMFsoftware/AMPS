@@ -2,7 +2,7 @@
 !  portions used with permission
 !  For more information, see http://csem.engin.umich.edu/tools/swmf
 module PT_wrapper
-  use ModConst, ONLY: cDegToRad
+  use ModConst, ONLY: cDegToRad, cProtonMass, rSun
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC, Grid_C, &
        iCompSourceCouple, set_coord_system
   use CON_time
@@ -63,6 +63,10 @@ module PT_wrapper
   ! Dimensions of the grid formed by the line intersections with the spherical
   ! "origin" surface nLon*nLat, uniform in latitude grid:
   integer          :: nLon = 4, nLat = 4
+  ! The producer defines source channels by its origin-grid labels, not by
+  ! moving Cartesian vertices. Use the same declared frame for BL setup and
+  ! the explicit identity metadata passed to AMPS; never infer it from arrays.
+  character(len=3), parameter :: SourceOriginFrame = 'HGR'
   ! The radius of said origin surface, in UnitX as used in PT_set_param:
   real             :: ROrigin = 2.50
   ! Size of angular grid, in latitude and longitude, at origin
@@ -143,7 +147,7 @@ contains
           ! Otherwise, it should be set to some value, to be read and
           ! provided by PT/AMPS
           !
-          call BL_set_grid(TypeCoordSystem='HGR', UnitX=rSun)
+          call BL_set_grid(TypeCoordSystem=SourceOriginFrame, UnitX=rSun)
        else
           nVar = 0
           NameVar = " "
@@ -243,6 +247,8 @@ contains
   subroutine PT_run(TimeSimulation, TimeSimulationLimit)
     use CON_bline, ONLY:  nLine, NameVar_V, nMHData, UseBLine_C, BL_update_r
     use CON_bline, ONLY: save_mhd
+    use CON_coupler, ONLY: i_proc, n_proc
+    use ModUtilities, ONLY: CON_stop
     !INPUT/OUTPUT ARGUMENTS:
     real, intent(inout):: TimeSimulation   ! current time of component
 
@@ -252,6 +258,15 @@ contains
     real:: xEarth(3)
     character(len=*), parameter:: NameSub = 'PT_run'
     integer::ForceReachingSimulationTimeLimit=0 
+    ! CON_bline::BL_init partitions the fixed global origin grid by exactly
+    ! floor(rank*nLon*nLat/nProc); BL_iblock_to_lon_lat identifies global
+    ! line = local line + that offset. Forward those producer labels explicitly
+    ! before importing geometry. PIC may use disconnected communicators, whose
+    ! rank zero must never replace this PT producer ownership information.
+    integer :: iLine, iFirstGlobal, nExpectedLine
+    integer(kind=selected_int_kind(18)) :: nAllWide
+    integer, allocatable :: GlobalLineId_I(:)
+    real :: SourceGrid_R(7)
     !--------------------------------------------------------------------------
 
     ! update the location of the Earth in the coupled on the AMPS side when
@@ -265,6 +280,32 @@ contains
     ! stub  for amps_get_bline is put to the end of the file
     if (UseBLine_C(PT_)) then
        call BL_update_r
+
+       ! Check the producer's default-integer label range before forming
+       ! products. Wide intermediates also prevent rank*grid-size overflow;
+       ! narrowing is exact only after the global-grid bound has been checked.
+       nAllWide = int(nLon,kind(nAllWide))*int(nLat,kind(nAllWide))
+       if(nLon<=0.or.nLat<=0.or.nAllWide>huge(iFirstGlobal).or.n_proc(PT_)<=0) &
+            call CON_stop('PT source identity: invalid origin-grid dimensions')
+       iFirstGlobal = int((int(i_proc(PT_),kind(nAllWide))*nAllWide)/n_proc(PT_))
+       nExpectedLine = int(((int(i_proc(PT_),kind(nAllWide))+1)*nAllWide)/n_proc(PT_)) &
+            - iFirstGlobal
+       if(nExpectedLine /= nLine) call CON_stop(&
+            'PT source identity: unsupported origin-grid decomposition')
+       allocate(GlobalLineId_I(nLine))
+       do iLine=1,nLine
+          GlobalLineId_I(iLine) = iFirstGlobal+iLine
+       end do
+       ! Radius uses the same solar-radius units as BL_get_origin_points;
+       ! angular bounds are radians. These are namespace metadata, not a new
+       ! coordinate transform, field reconstruction or source normalization.
+       ! Forward the exact density divisor and coordinate unit used by the
+       ! producer. rho/cProtonMass is the exported density number; multiplying
+       ! it by this declared kg unit recovers the original mass density.
+       SourceGrid_R = [ROrigin,LonMin,LonMax,LatMin,LatMax,cProtonMass,rSun]
+       call amps_set_bline_source_ids(nLine,GlobalLineId_I,nLon,nLat,&
+            SourceGrid_R,SourceOriginFrame)
+       deallocate(GlobalLineId_I)
 
        if (DataInputTime > PTTime) then
           PTTime = DataInputTime

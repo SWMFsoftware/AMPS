@@ -8,10 +8,12 @@
 #include <iostream>
 #include <sstream>
 #include <climits>
+#include <array>
 
 using namespace std;
 
 #include "pic.h"
+#include "amps_fixed_step.h"
 
 //AMPS component code 
 #define _AMPS_SWMF_UNDEFINED_ -1
@@ -60,6 +62,19 @@ namespace AMPS2SWMF {
   extern int iSession;
   extern double swmfTimeSimulation;
   extern bool swmfTimeAccurate;
+
+  // Opted into by applications with an explicit counter-OFF physical window.
+  // swmfTimeSimulation remains the completed-time ledger [s]; this object
+  // holds only the constant dt and the current interval/execution phase.
+  extern AMPS::Coupling::FixedStepContract CoupledStep;
+  // Borrowed original PT communicator, before disconnected PIC rank splitting.
+  // Receive-time spatial reconstruction needs all producer line samples;
+  // particle work continues using its existing PIC communicator/decomposition.
+  extern MPI_Comm FieldLineInputCommunicator;
+  // Coupler-owned clock operations: the application declares phase boundaries
+  // without acquiring a writable PIC counter or another clock read interface.
+  void EnterCoupledParticlePhase();
+  void CompleteCoupledParticlePhase();
 
   //in case sampling in AMPS is disabled SamplingOutputCadence is the interval when the sampling get tempoparely enabled to output a data file 
   extern int SamplingOutputCadence; 
@@ -120,6 +135,22 @@ namespace AMPS2SWMF {
 
     //prepopulate the field lines with particles after the first coupling 
     extern bool ParticlePrepopulateFlag;
+    extern bool ReconstructVelocityGradients;
+
+    // Origin-grid identities are explicitly supplied by PT/CON_bline and are
+    // independent of moving geometry and PIC rank. Access verifies the current
+    // import count; absent or changed mappings remain fatal, never inferred.
+    // Metadata is available before PIC constructs its line array. This
+    // accessor validates the producer declaration without pretending that an
+    // unconstructed native array already has the received line count.
+    const std::string& SourceGridDeclaration();
+    std::string SourceLineNamespace(int importedLineCount);
+    std::uint64_t SourceGlobalLineId(int localLine,int importedLineCount);
+    double DensityMassUnitKg();
+    double CoordinateUnitM();
+    const std::string& CoordinateFrame();
+    bool VelocityGradientAt(int line,int vertex,double fraction,double epochS,
+                           std::array<double,9>* output,std::string* error);
   } 
 
 

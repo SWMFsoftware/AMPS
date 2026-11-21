@@ -884,6 +884,18 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
       background->heliocentricRadiusM=radiusM;background->heliocentricRadiusKnown=true;
       for(unsigned d=0;d<3;++d)background->heliocentricPositionM[d]=positionM[d];
     }
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  } else if(snapshot.provider()==Background::Provider::Swmf) {
+    // The PT producer explicitly declares HGR/HGI, whose origin is the Sun,
+    // and its actual SI coordinate unit. This is provider metadata, not an
+    // origin inferred from the numerical coordinate array or a radial wind.
+    const auto& frame=AMPS2SWMF::FieldLineData::CoordinateFrame();
+    background->radiusFrameIdentity="provider-radius-v2:SWMF-declared-heliocentric-"+frame;
+    if(std::isfinite(radiusM)&&radiusM>0.0) {
+      background->heliocentricRadiusKnown=true;background->heliocentricRadiusM=radiusM;
+      for(unsigned d=0;d<3;++d)background->heliocentricPositionM[d]=positionM[d];
+    }
+#endif
   }
   std::array<double,9> gradient;
   double providerMassDensity=0.0;
@@ -944,6 +956,19 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
           "reduced provider gradient is unavailable or differs from frozen snapshot: "+error);
     gradient=sample.velocityGradientPerS;
     providerMassDensity=current*sample.massDensityKgM3/sample.numberDensityM3;
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  } else if(snapshot.provider()==Background::Provider::Swmf) {
+    // Received three-dimensional U(x) samples, not a temporal density proxy,
+    // determine these numerical derivatives. The receive phase fits an affine
+    // Cartesian field on full-rank transverse stencils using pivoted QR and
+    // rejects underdetermined data. Interpolate only that frozen epoch here.
+    std::string error;
+    if(!AMPS2SWMF::FieldLineData::VelocityGradientAt(sampled.state.fieldLineId,
+          static_cast<int>(std::floor(sampled.state.coordinate)),fraction,
+          snapshot.epoch_seconds(),&gradient,&error))
+      return Status::Error(StatusCode::UnresolvedCoefficient,error);
+    providerMassDensity=current*AMPS2SWMF::FieldLineData::DensityMassUnitKg();
+#endif
   } else {
     // Fixed/Lagrangian vertex labels, full grad U and density source terms
     // are not specified by the legacy SWMF line import. Density history alone

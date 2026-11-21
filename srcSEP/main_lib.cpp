@@ -901,6 +901,42 @@ SEP::Background::AnalyticRadial::InitializeFixedNativeHistory() {
 
 void amps_init() {
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  if(SEP::Background::ConfiguredProvider()==SEP::Background::Provider::Swmf) {
+    // The coupled field-line application is prescribed, read-only transport
+    // (explicit user contract). Do not inherit standalone self-consistent-wave
+    // defaults: they request an unimplemented polarized particle-wave closure
+    // and would also write into externally owned SWMF wave storage. Preserve
+    // the selected mover and its mean-free-path law; only wave ownership and
+    // feedback are configured here. Imported wave values remain available.
+    auto configuration=SEP::Run::Active().get();
+    // The legacy SWMF PARAM parser has already selected the production mover;
+    // record that actual choice rather than the standalone default in the
+    // immutable run provenance. This assignment does not select a new mover.
+    configuration.mover.value=SEP::Mover::CurrentProductionMover();
+    configuration.mover.source=SEP::Run::ValueSource::InputFile;
+    configuration.turbulence.source=SEP::Turbulence::Source::SwmfReadOnly;
+    configuration.turbulence.coupling=SEP::Turbulence::CouplingPolicy::Disabled;
+    configuration.turbulence.advectionEnabled=false;
+    configuration.turbulence.reflectionEnabled=false;
+    configuration.turbulence.cascadeEnabled=false;
+    configuration.turbulence.shockInjectionEnabled=false;
+    // Freeze consistent provenance before background fingerprints are made.
+    // This is a production ownership selection, not ControlledDiagnostic: the
+    // production capability/validity/domain guards continue to execute.
+    auto status=SEP::Turbulence::SetActiveConfiguration(configuration.turbulence);
+    if(status.ok())status=SEP::Run::InstallActive(configuration);
+    if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+    SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode=false;
+    // Prepare full Cartesian gradients internally from collective receive-time
+    // spatial samples. Workers consume immutable interpolated tensors; they
+    // never infer transverse compression from one line or density history.
+    AMPS2SWMF::FieldLineData::ReconstructVelocityGradients=true;
+    if(PIC::ThisThread==0)
+      std::cout<<"AMPS: prescribed read-only SWMF transport; particle-wave feedback and local wave evolution disabled"<<std::endl;
+  }
+#endif
+
 
 
 //init the PIC solver
@@ -1093,6 +1129,14 @@ void amps_init() {
     }
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ && _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_ && _PIC_GLOBAL_TIME_COUNTER_MODE_ != _PIC_MODE_ON_
+  // Register only the audited external-clock policy after model/configuration
+  // initialization has finalized timestep storage. The value is SI seconds and
+  // is captured without changing it. Neither coupling limits, output cadence
+  // nor session transitions may replace this sampling/mover duration. Other
+  // compile-time clock policies keep their existing capability rejection.
+  AMPS2SWMF::CoupledStep.Configure(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+#endif
 //  double TimeCounter=time(NULL);
 //  int LastDataOutputFileNumber=-1;
 
@@ -1399,9 +1443,26 @@ void amps_time_step(){
 
 
     //prepopulate the magnetic filed lines with particles if needed
+    if(AMPS2SWMF::CoupledStep.Configured()&&
+       AMPS2SWMF::CoupledStep.Current().sequence==1) {
+      // The coupled mesh initializes before imported lines exist, so its
+      // fixed-line fresh-start hook cannot establish source history there.
+      // Now the actual producer-labelled lines exist, but no prepopulation or
+      // scheduled source has run. Initialize once at this declared fresh PT
+      // boundary; never infer freshness later from an empty particle count.
+      // A PT continuation must restore its history and is not recreated here.
+      if(PIC::Restart::LoadRestartSWMF||_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_!=
+          _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_OFF_)
+        exit(__LINE__,__FILE__,"coupled PT continuation must restore source and physical clock history before execution");
+      const auto sourceStatus=SEP::SourceLifecycle::InitializeNativeFresh();
+      if(!sourceStatus.ok())exit(__LINE__,__FILE__,sourceStatus.message.c_str());
+    }
     if ((AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==true)&&(AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag==true)) {
-      AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
       SEP::ParticleSource::PopulateAllFieldLines();
+      // A failed physical source preflight must not consume the one-time
+      // initialization request. Successful population alone clears this flag;
+      // no retry or rollback of partially created populations is implied.
+      AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
     }
     #endif
 
@@ -1487,6 +1548,13 @@ start:
         SEP::Background::ParticleReadPhase background_read =
             SEP::Background::SnapshotStore::Instance().BeginParticleRead(
                 SEP::Background::SimulationTimeSeconds());
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+        // Freeze at departure first, then reproduce the native counter-OFF
+        // phase: sources/movers see the end counter but use the immutable
+        // window for physical birth/departure epochs. SWMF PIC does not advance
+        // this counter itself. The completed coupler ledger is not yet changed.
+        AMPS2SWMF::EnterCoupledParticlePhase();
+#endif
         PIC::TimeStep();
       }
       // The read guard and worker/migration phases have joined before closing.
@@ -1494,6 +1562,13 @@ start:
       // unconsumed first movement is an error, never silently discarded.
       const auto completedWindow=SEP::Transport::PICAdapter::CloseNativeDriverWindow();
       if(!completedWindow.ok())throw std::runtime_error(completedWindow.message);
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+      // Closure has verified the original immutable realization, completed
+      // pending first movements and the numerical endpoint. Notify the owner
+      // without advancing any clock; post-particle application work still has
+      // to succeed before the wrapper commits completed physical time.
+      AMPS2SWMF::CompleteCoupledParticlePhase();
+#endif
       if(timedAnalyticShock) {
         // Workers/migration/read phase have joined. Commit geometry at the
         // completed physical epoch before deriving the shock wave-work interval;

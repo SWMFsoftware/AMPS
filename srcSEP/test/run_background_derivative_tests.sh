@@ -5,6 +5,7 @@ build_dir=$(mktemp -d "${TMPDIR:-/tmp}/srcsep-background-derivatives.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 "${CXX:-c++}" -std=c++11 -Wall -Wextra -Wpedantic -Werror -O1 -g \
   -I"$src_root/util" -I"$src_root/.." \
+  -I"$src_root/../src/general" \
   "$src_root/util/sep_background_derivative_validation.cpp" \
   "$src_root/util/sep_parker_core.cpp" \
   "$src_root/../src/models/sep_common/sep_transport_common.cpp" \
