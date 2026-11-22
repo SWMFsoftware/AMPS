@@ -129,8 +129,8 @@ corrected brightness = AMPS brightness(b) * C(b)
 
 The AMPS column density (the `Column Density ...` column of the AMPS
 brightness table) appears nowhere in this formula. The model's absolute
-normalization (gross Q, no surface return flux) also cancels, because it
-multiplies numerator and denominator alike.
+normalization (the input Q) also cancels, because it multiplies numerator
+and denominator alike.
 
 Worked numbers, H in case 5 of campaign 2 (`out=6`, model with 3e6 parents):
 
@@ -141,15 +141,16 @@ Worked numbers, H in case 5 of campaign 2 (`out=6`, model with 3e6 parents):
 | 1.44e9 | 5.253e15 | 3.653e15 | 1.438 | 3.081e15 | 0.843 | 0.444 | 0.639 |
 
 - **Why N_trunc stands in for AMPS.** AMPS / N_trunc is nearly constant
-  (0.843–0.857). It is the AMPS net-to-gross outflow (eta = 0.79), times the
+  (0.843–0.857). It is the fraction of Q that reached the coma in that run
+  (eta = 0.79, below 1 because of the mover defect of Section 6), times the
   collisional increase of H in AMPS (about 1.07). Because the ratio does not
   depend on b, N_trunc has the same shape as the AMPS column. That is why it
   can represent "what AMPS contains" in the denominator.
 - **Why the AMPS column is not the denominator.** N_full / N_AMPS would be
   1.21, 1.38, and 1.70 here. That would mix the edge loss with the
-  gross/net normalization (1/0.79) and would remove the AMPS collisional
-  increase. The result would effectively replace AMPS with the collisionless
-  model.
+  lost source of that pre-fix run (1/0.79) and would remove the AMPS
+  collisional increase. The result would effectively replace AMPS with the
+  collisionless model.
 - **What the correction keeps.** Inside the domain, everything stays AMPS's:
   collisions, the parent flow, per-particle g-factors. The model supplies
   only the fractional loss caused by the edge. The added brightness is
@@ -235,9 +236,10 @@ with radius:
 | case 1 | 0.768 | 0.762 | 0.763 | 0.764 | 0.765 | 0.761 | 0.765 |
 | case 5 | 0.792 | 0.790 | 0.793 | 0.795 | 0.793 | 0.791 | 0.810 |
 
-The constant is the AMPS net/gross outflow, eta (Section 6). The parent
-distribution therefore has the AMPS shape at every radius; only the gross
-normalization differs, and that cancels in C.
+The constant is the fraction of Q that reached the coma, eta. It is below 1
+in these runs because they predate the mover fix (Section 6). The parent
+distribution has the AMPS shape at every radius; only the normalization
+differs, and that cancels in C.
 
 **Step 2: start each parent at its destruction point** (lines 350–356, for
 each of N_P test parents, vectorized):
@@ -307,8 +309,8 @@ OH -> O + H and from H2 -> 2H gets its start position and velocity.
 
 | | Reference model | AMPS |
 | --- | --- | --- |
-| Parent emission | Q parents per second leave r = R_n with isotropic directions. Their subsequent radial motion is prescribed by v(r). No Knudsen layer, back-flux, or thermal spread is modelled; their net effect on the bulk flow is inside v(r) taken from AMPS. | Surface injection is a Poisson process at rate Q / W (W is the particle weight). Velocities follow a 175-K half-Maxwellian flux. Particles that return to the surface, about 19–24% of the H2O, are re-emitted thermally, so the net outflow is 0.76–0.81 Q. |
-| Daughters reaching the nucleus | They pass through it; neither absorbed nor re-emitted. | Any species reaching the inner face is re-emitted from a 175-K half-Maxwellian. |
+| Parent emission | Q parents per second leave r = R_n with isotropic directions. Their subsequent radial motion is prescribed by v(r). No Knudsen layer, back-flux, or thermal spread is modelled; their net effect on the bulk flow is inside v(r) taken from AMPS. | Surface injection is a Poisson process at rate Q / W (W is the particle weight). Velocities follow a 175-K half-Maxwellian flux. Particles that return to the surface are re-emitted thermally, so the steady net outflow is Q. Runs before the fix of 2026-11-22 deleted them instead (19–24% of the H2O source; net outflow 0.76–0.81 Q; Section 6). |
+| Daughters reaching the nucleus | They pass through it; neither absorbed nor re-emitted. | Any species reaching the inner face is re-emitted from a 175-K half-Maxwellian (deleted in runs before the fix; Section 6). |
 
 **Outer boundary.**
 
@@ -640,7 +642,7 @@ B_ref(b) = g_AMPS(b) * eta * N_ref(b) * K
   g on that ray, interpolated in log b.
 - **N_ref(b):** the reference column (full or truncated), interpolated in
   log b.
-- **eta:** the net-to-gross normalization of Section 6.
+- **eta:** the normalization of Section 6.
 - **K:** the Rayleigh conversion, B[R] = g[s^-1] N[cm^-2] / 1e6, so
   K = 1e-13 kR per (m^-2 s^-1). The scripts compute it from the AMPS table:
   - `i3c2_mc_compare.py` uses mean(kR/(N g)), which is exactly K;
@@ -693,7 +695,7 @@ Validate against AMPS OH, which is collisionless in practice: agreement to
 | Collisions | NTC, H2O/CO/CO2 cross sections, completion law for other pairs | None |
 | Photochemistry | Per-step reaction probability 1 - exp(-beta dt); channel by rate; products at the parent position with the same recoil law; systematic-residual product multiplicities; parent removed | Decay radius or age sampled exactly; channel by rate; same recoil law; one product set per test particle |
 | Particle weights | Species-local weights, adapted every 10,000 steps (split/roulette); up to 20 products per reaction | One fixed scale Q/N_P for all descendants |
-| Inner boundary | Re-emits every returning particle thermally at 175 K | None |
+| Inner boundary | Re-emits every returning particle thermally at 175 K (runs before 2026-11-22 deleted them; Section 6) | None |
 | Outer boundary | Deletes particles at r = R | None; R used only for the inside label |
 | Steady state | Time average over 10,000-step sampling windows, after convergence | Direct sampling of the stationary age integral |
 | Observable | Particle-resolved line-of-sight sampler with per-particle Doppler g and an optical-depth flag | Column density; brightness only through the AMPS g and unit constant |
@@ -802,18 +804,29 @@ temporary directory. They need neither an AMPS executable nor `validation_runs/`
 
 ## 6. Normalization: gross against net production
 
-The reference starts from the input Q. In AMPS, 19–24% of the injected water
-returns to the surface, so its net OH production is lower.
+The reference starts from the input Q. With thermal re-emission at the
+nucleus the steady net outflow of AMPS is also Q.
 
-- **Edge factor C.** The normalization cancels, so nothing is needed.
+**Runs before 2026-11-22 lost part of the source.** The DIM1 mover deleted
+the particles that returned to the surface and never called the re-emitting
+boundary function (fixed in `src/pic/pic_mover.cpp`; evidence in
+`validation_runs/inner_boundary_probe_20261121/README.md`). This removed
+19–24% of the injected water, so the net OH production of those runs is
+lower. It was a defect, not a physical return flux. All AMPS numbers in this
+document, including every eta, come from such runs and have not been
+remeasured with the fix.
+
+- **Edge factor C.** The normalization cancels, so nothing is needed. The
+  fix can still change C slightly through the parent speed profile v(r).
 - **Absolute comparisons.** `i3c2_mc_compare.py` scales the reference by
 
   ```
   eta = (AMPS OH production rate) / (reference OH births inside R * Q / N_P)
   ```
 
-  This gives 0.76–0.81 in campaign 2. With eta applied, AMPS OH agrees with
-  the reference within 2% in every case.
+  This gave 0.76–0.81 in campaign 2, which predates the fix. With eta
+  applied, AMPS OH agreed with the reference within 2% in every case. For
+  runs with the fix, compute eta again; do not reuse these values.
 
 ## 7. Interpreting AMPS against the reference
 

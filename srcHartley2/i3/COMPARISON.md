@@ -3,6 +3,7 @@ model-data differences (case 1 above all) and questions for the MAVEN/IUVS team
 ================================================================================
 
 Date: 2026-11-09
+Corrected: 2026-11-22, water production rates (Sections 2 and 5, Appendix A)
 Model: AMPS DSMC, 1D spherical comet application, I3 "campaign 2"
 Paths in Appendix B are relative to the AMPS repository root.
 
@@ -52,6 +53,11 @@ Geometry and transport:
 - Uniform surface source at 175 K.
 - Neutral-neutral collisions.
 - Outer boundary at 3e9 m (3e6 km). Particles that cross it are removed.
+- Inner boundary: meant to re-emit returning particles at 175 K. In campaign
+  2 a defect of the DIM1 mover deleted them instead (found and fixed
+  2026-11-22, src/pic/pic_mover.cpp), so only 76-80% of the injected water
+  reached the coma. The results below are from those runs and have not been
+  recomputed with the fix.
 
 Photochemistry:
 - Per-channel 1-au rates, scaled by the solar-activity index F10.7P at the
@@ -102,9 +108,16 @@ Inputs per case:
 
   - "table" is the Model_Table_6cases.pdf value.
   - "red" is the Q printed on the red model curve in the IUVS figures.
-  - "AMPS(OH)" is our OH-matched value.
+  - "AMPS(OH)" is our OH-matched value: the rate injected at the surface in
+    campaign 2. Because of the mover defect, the rates that reached the coma
+    and produced the matched OH were, for cases 1-6:
+      2.40e28, 5.18e28, 1.24e29, 3.63e29, 2.80e29, 3.19e29 s^-1.
+    With the fix, the AMPS(OH) rates must be refitted. To first order the
+    refitted values are these delivered rates.
   - CO and CO2 were scaled by the same factor as H2O, so the CO+CO2/H2O
-    column is the table ratio.
+    column is the table ratio. In the campaign-2 coma that ratio was 9-10%
+    higher, because the defect deleted a larger share of H2O than of CO and
+    CO2.
 
 g-factors at r_h (photons/s/molecule) and the 1-au solar Lyman-alpha flux used:
 
@@ -199,8 +212,9 @@ from more than 4 days earlier).
     NH3, H2CO, ...
     - This is the only candidate that adds H uniformly without changing OH,
       and it naturally follows the CO+CO2/H2O trend.
-    - Case 1 needs about 3e28 extra H atoms/s, roughly one per water
-      molecule. With about 4 H per molecule, that is about 20-25% of Q(H2O).
+    - Case 1 needs about 3e28 extra H atoms/s, roughly 1.2 per water
+      molecule that reached the coma. With about 4 H per molecule, that is
+      about 30% of that water production (2.4e28 s^-1).
     - The required fraction would fall to a few percent near perihelion,
       where water dominates.
 
@@ -223,18 +237,26 @@ from more than 4 days earlier).
     by up to 1.5x in all cases. This sets the overall level, but it cannot
     by itself make case 1 differ from case 5.
 
-Side finding about the red model curves: our OH-matched Q divided by the
-red-curve Q equals r_h^2 within +-8% in five of six cases:
+Side finding about the red model curves (corrected 2026-11-22). The ratio
+of our Q to the red-curve Q depends on which AMPS Q is used:
 
-  case        1     2     3     4     5     6
-  AMPS / red  2.95  2.88  2.31  1.90  1.41  2.03
-  r_h^2       3.06  2.76  2.37  1.85  1.85  1.88
+  case                       1     2     3     4     5     6
+  injected / red          2.95  2.88  2.31  1.90  1.41  2.03
+  reached coma / red      2.25  2.21  1.82  1.52  1.13  1.63
+  r_h^2                   3.06  2.76  2.37  1.85  1.85  1.88
+  reached coma/red/r_h^2  0.73  0.80  0.77  0.82  0.61  0.87
 
-Possible reasons: the red curves normalize fluorescence (or the rates) at
-1 au, or they define Q differently, e.g. gross against net production. In
-AMPS about 23% of the injected water returns to the surface. This factor
-cancels in H/OH, so it does not cause the deficit, but it matters whenever
-Q values are compared.
+The injected rates equal r_h^2 times the red values within +-8% in five of
+six cases, but they include water that the mover defect deleted at the
+nucleus. That water was lost numerically; it was not a physical return flux
+or a gross-against-net difference. The rates that reached the coma are
+still roughly proportional to r_h^2 in those five cases, but 13-27% lower.
+A 1-au normalization of the red curves (fluorescence or rates) is thus
+still possible, but it does not by itself explain the difference. With the
+fix, returning molecules are re-emitted and the steady net outflow of AMPS
+equals the injected Q. To first order the normalization cancels in H/OH, so
+it does not cause the deficit, but it matters whenever Q values are
+compared.
 
 
 6. BACKGROUND SUBTRACTION: WHY IT MATTERS AND WHAT WE SEE
@@ -498,7 +520,9 @@ APPENDIX A. SENSITIVITIES (CASE 1)
   1.5-2x.
 - Doubling the OH lifetime lowers the OH-matched Q factors from
   3.95, 4.81, 2.97, 1.74, 1.25, 1.53 to 3.20, 3.65, 2.08, 0.91, 0.70, 0.80
-  (cases 1-6), and lowers the model H roughly in proportion.
+  (cases 1-6), and lowers the model H roughly in proportion. Both sets of
+  factors refer to rates injected in runs with the mover defect (Section 2)
+  and need refitting.
 - The edge correction at the case-1 points is 1.014-1.094 (median 1.051).
 - Collisional H enhancement in AMPS: 1.01 in case 1 and 1.08 in case 4.
 

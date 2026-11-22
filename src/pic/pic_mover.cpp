@@ -2745,6 +2745,26 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
       if (newNode==NULL) {
         //the particle left the computational domain
+#if DIM == 1 && _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_ && \
+    _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+        // The application decides at both radial domain faces.  Its callback
+        // works in the local radial frame, where the face normal is along x,
+        // so rotate the Cartesian crossing state before calling it.
+        NormalizeSphericalParticleState(x,v);
+        const int boundaryCode=ProcessOutsideDomainParticles(ptr,x,v,
+            nface_dtMin,startNode);
+
+        if (boundaryCode==_PARTICLE_REJECTED_ON_THE_FACE_) {
+          // Finish the remaining interval in the same block, starting just
+          // inside the face so that this crossing is not detected again.
+          x[0]=(nface_dtMin==0) ? startNode->xmin[0]+PIC::Mesh::mesh->EPS :
+              startNode->xmax[0]-PIC::Mesh::mesh->EPS;
+          continue;
+        }
+        if (boundaryCode!=_PARTICLE_DELETED_ON_THE_FACE_)
+          exit(__LINE__,__FILE__,
+              "domain-boundary callback returned an unsupported status");
+#endif
         PIC::ParticleEvents::RecordDomainExit(ptr,startNode,x,v);
         PIC::ParticleBuffer::DeleteParticle(ptr);
         return _PARTICLE_LEFT_THE_DOMAIN_;

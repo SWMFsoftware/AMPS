@@ -309,9 +309,17 @@ generator multiplies all three parent rates of each case by
 (3.95, 4.81, 2.97, 1.74, 1.25, and 1.53 for cases 1--6) match the MAVEN/IUVS
 OH(0-0) profiles to the converged AMPS OH, keeping the archive CO/H2O and
 CO2/H2O ratios. The derivation is in
-`validation_runs/i3_campaign_20261108/analysis_q_scaling/README.md`. AMPS's
-net H2O outflow is 77--80% of the input rate because of return flux to the
-nucleus; compare net rates with observationally derived production rates.
+`validation_runs/i3_campaign_20261108/analysis_q_scaling/README.md`.
+
+These factors are provisional. They were fitted to runs made before the DIM1
+mover fix of 2026-11-22 (`src/pic/pic_mover.cpp`). In those runs the mover
+deleted the molecules that returned to the nucleus instead of re-emitting
+them thermally, so only 77--80% of the input H2O rate reached the coma; this
+was a defect, not a physical return flux. With the fix, every returning
+molecule is re-emitted and the steady net outflow is the input rate. The
+same factors therefore supply about 1.25--1.3 times as much H2O to the coma
+as in the fitted runs, and they must be refitted to runs with the fix. The
+evidence is in `validation_runs/inner_boundary_probe_20261121/README.md`.
 
 ### Time step
 
