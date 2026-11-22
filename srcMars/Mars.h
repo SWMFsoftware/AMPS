@@ -92,7 +92,8 @@ extern cForwardScatteringCrossSection *ForwardScatteringCrossSectionData;
  
 namespace newMars {
 inline std::string GetMGITMInputFilePath() {
-    return std::string(PIC::UserModelInputDataPath)+"/MTGCM_equinox_SL/MGITM_PERMAX2.dat";
+    // -model-data-path names the case directory itself, as in MakefileTest/Table.
+    return std::string(PIC::UserModelInputDataPath)+"/MGITM_PERMAX2.dat";
 }
 
     extern cDataSetMGITM Te,Ti,Tn,CO2,O,N2,CO,O2p,E,Un,Vn,Wn;

@@ -5248,44 +5248,26 @@ Check=
 
 /------------------------------------------------------------------------------
 #>
-Name=test/Mars-Hot-Oxygen@@(0+) 
+Name=test/Mars-Hot-Oxygen@@(0+passion)
 Family=planets
 Time=50 
 
-Ref=2{icc}@@(0+valeriy)
-Ref=1{gcc}@@(0+valeriy)
-Ref=3{gcc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades+amps-gpu+passion)
-Ref=3{gcc}@@(0+stampede+amps-gpu+passion)
-Ref=2{pgcc}@@(0+valeriy)
-
-
-Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/MARS@@(0+stampede+pleiades) 
-Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS@@(0+valeriy)
-Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS@@(0+amps-gpu+passion)
-
+Ref=3{gcc}@@(0+passion)
+ExeptionCode=SKIP{icc}
+ExeptionCode=SKIP{pgcc}
+Keys=-model-data-path=${PTDIR}/data/input/Mars/MTGCM_equinox_SL -openmp=off
 
 Compile=
 >>>@echo "test_Mars-Hot-Oxygen_compile..." > test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
+>>>gunzip -kf ${PTDIR}/data/input/Mars/MTGCM_equinox_SL/MGITM_PERMAX2.dat.gz
 >>>./Config.pl -application=test/Mars-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTMars-Hot-OxygenKEYS}
-
->>>@mkdir -p ../TempSourceDir
->>>@cd ../TempSourceDir;git clone git@github.com:SWMFsoftware/AMPS
->>>@cd ../TempSourceDir/AMPS;git checkout Mars_HotO_DRofO2p_PERMAX 
-
->>>@mv srcMars srcMars--original
->>>@mv ../TempSourceDir/AMPS/srcMars .
->>>@rm -rf ../TempSourceDir
-
->>>-@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
->>>@rm -rf srcMars
->>>@mv srcMars--original srcMars
-
+>>>rm -rf $(WSD)
+>>>@($(MAKE) -j$(TESTCOMPILEJOBS) amps)
 >>>@echo "test_Mars-Hot-Oxygen_compile... done" >> test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
 
 Check=
 >>>@echo "test_Mars-Hot-Oxygen_check..." >> test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTMars-Hot-OxygenDIR}/PT/plots/test_Mars.dat output/test_Mars-HotO/test_Mars-HotO$(TESTMars-Hot-Oxygen-REF).ref_np`ls $(TESTMars-Hot-OxygenDIR)/PT/thread* |wc -l |tr -d ' '` > test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTMars-Hot-OxygenDIR}/PT/plots/test_Mars.dat output/test_Mars-HotO/test_Mars-HotO$(TESTMars-Hot-Oxygen-REF).ref_np`ls $(TESTMars-Hot-OxygenDIR)/PT/thread* |wc -l |tr -d ' '` > test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff 2>&1
 
 >>>@ls -l test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
 >>>@echo Test test_Mars-Hot-Oxygen has finished: `date`

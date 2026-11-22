@@ -79,7 +79,13 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta);
 
   PIC::ParticleBuffer::SetV(v,BackgroundAtmosphereParticleData);
-  PIC::ParticleBuffer::SetI(BackgroundSpecieNumber,BackgroundAtmosphereParticleData);
+  // BackgroundSpecieNumber belongs to the background registry, not the
+  // tracked-particle registry accepted by SetI (e.g. CO2 is background index
+  // 1 in an oxygen-only run with nTotalSpecies=1). The collision processor
+  // carries this index separately and only reads this temporary particle's
+  // velocity. If it retains the particle, it assigns the tracked species via
+  // Background2ModelSpeciesConversionTable before calling KeepCondition.
+  // Writing the background index here would abort on the first CO2 collision.
 }
 
 double PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberDensity(int BackgroundSpecieNumber,double *x) {

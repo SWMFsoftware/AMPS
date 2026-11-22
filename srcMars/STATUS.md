@@ -1,12 +1,48 @@
 # Mars Hot-Oxygen Corona Development Status
 
-Last updated: 2026-11-03 (America/Chicago)
+Last updated: 2026-11-22 (America/Chicago)
 
 ## Objective
 
 Develop and validate the AMPS Mars hot-oxygen corona application in `srcMars/`.
-The specific physics or implementation change for the current effort has not yet
-been defined; this file is the persistent handoff and development log.
+The current work package restores the `Mars-Hot-Oxygen` nightly regression
+against the current `srcMars`, with 100 configured iterations and new GNU/Open
+MPI references on four and eight ranks. The user approved initial enablement
+on passion. This file is the persistent handoff and development log; historical
+2026-11-03 build-only statements below describe that earlier work package.
+
+## Latest Work Package: Table Convention Correction (2026-11-22)
+
+- Source baseline: `c42b555c1a42dc938311bb0175384f158dca5201` plus the
+  current working-tree changes. The user selected current `srcMars`, 100
+  nightly iterations, GNU/Open MPI and initial enablement on passion.
+- At the user's request, the test now follows its neighboring Table entries:
+  shared `DiffNum.pl` directly, the existing MPI-rank reference naming, and
+  the default run-directory/run targets. No Python helper is part of this test.
+- `Keys` names `${PTDIR}/data/input/Mars/MTGCM_equinox_SL` exactly. The reader
+  appends only `MGITM_PERMAX2.dat`; the compile rule uses `gunzip -kf` beside
+  the original gzip, retaining that archive. The previous InputData staging
+  path, custom checker/manifests and added Python helper/test files were removed.
+- The production nightly loop still reads the configured 100-step limit and
+  logs its completion; the separate completion JSON protocol was removed.
+  The background-species index repair remains necessary for oxygen-only runs.
+- The installed `[3]` four-rank and eight-rank references remain the independently
+  repeated 100-step baselines. Their initial generation evidence is preserved
+  under `test_output/srcMars/hot-oxygen-20261122T194753Z/`, including the two
+  original background-index ERROR attempts. That campaign documents the prior
+  helper-based workflow, not the current Table implementation.
+- Verification of the simplified entry completed in
+  `test_output/srcMars/hot-oxygen-table-20261122T201913Z/`: clean GNU 9.4.0 /
+  Open MPI 4.0.3 build PASS; 6 existing Table tests PASS; fresh 4- and 8-rank
+  production runs each completed 100 iterations and passed the direct
+  `DiffNum.pl` check, with empty `.diff` files and byte-identical reference
+  matches. Current checks: 8 PASS, 0 FAIL, 0 ERROR, 0 SKIPPED. No reference
+  refresh or threshold change was needed. The gzip hash remained unchanged.
+  Commands, build identity, data hashes and evidence are in that campaign's
+  `REPORT.md`; the current entry is documented in `srcMars/test/README.md`.
+- Existing negative-scale-height warnings are retained. Numerical regression
+  agreement does not establish observational validation. No lunar test IDs or
+  roadmap files were changed; the pre-existing root Makefile edit is preserved.
 
 ## Working Constraints
 

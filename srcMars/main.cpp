@@ -706,11 +706,22 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 //============================== END DEBUG ====================================
 
-  //determine the total number of the iterations to perform 
-  //in the test-mode run 100 iterations and than output the particle data statistics
-  int nIterations,nTotalIterations=100000001;
+  // Normal simulations retain their existing iteration limit. The nightly
+  // limit comes from TestRunTotalIteration in the application input, through
+  // the normal AMPS preprocessor; do not maintain a second hard-coded limit.
+  // This is a count of PIC::TimeStep calls, not a duration in physical seconds
+  // (the application uses species-local time steps).
+  int nTotalIterations=100000001;
 
-  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;  
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+    nTotalIterations=PIC::ModelTestRun::nTotalIteraction;
+    if (nTotalIterations<=0) {
+      exit(__LINE__,__FILE__,"Mars nightly test requires positive TestRunTotalIteration");
+    }
+    if (PIC::ThisThread==0) {
+      printf("AMPS: Mars nightly test: %i iterations, %i MPI processes\n",nTotalIterations,PIC::nTotalThreads);
+    }
+  }
 
   //time step
   for (long int niter=0;niter<nTotalIterations;niter++) {
@@ -734,9 +745,12 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
  
   //output the particle statistics for the nightly tests 
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
-    char fname[400];
-          sprintf(fname,"%s/test_Mars.dat",PIC::OutputDataFileDirectory);
-          PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+    const std::string fname=std::string(PIC::OutputDataFileDirectory)+"/test_Mars.dat";
+    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname.c_str());
+
+    if (PIC::ThisThread==0) {
+      printf("AMPS: Mars nightly test completed %i iterations\n",nTotalIterations);
+    }
   }
 
 

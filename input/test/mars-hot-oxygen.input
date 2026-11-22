@@ -15,7 +15,6 @@ makefile ExternalModules=models/exosphere
 
 ProjectSourceDirectory=srcMars 
 
-WorkingSourceDirectory=srcTemp   !. !srcTemp !the location of the code that will be compiled (current directory == ".")
 SourceDirectory=src
 
 TrajectoryIntersectionWithBlockFaces=on !on, off 
@@ -36,17 +35,19 @@ CouplerMode=off !!!ices !!off, ices, swmf
 
 #endmain
 
-#UserDefinitions
-  PIC=on ! on, off
-  Mesh=on ! on, off
-#endUserDefinitions
+! Supported equivalents of the obsolete #UserDefinitions block. Both modes
+! are required to compile the same Mars callbacks as the normal application.
+#Mesh
+  define _AMR__LOAD_USER_DEFINITION__MODE_ _AMR__LOAD_USER_DEFINITION__MODE__ON_
+#endMesh
 
 #General
+  define _PIC_USER_DEFINITION_MODE_ _PIC_USER_DEFINITION_MODE__ENABLED_
   ReferenceInjectionParticleNumber=200
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=10000
-  TestRunTotalIteration=50
+  TestRunTotalIteration=100
 
 ! ReferenceInjectionParticleNumber=200
 ! MaxMeshRefinmentLevel=8! 2 !4
