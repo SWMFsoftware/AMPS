@@ -52,6 +52,7 @@ def main():
             '#include "sep_corona_swcme/cross_ray_fluid.h"\n'
             '#include "sep_corona_swcme/cross_ray_contact.h"\n'
             '#include "sep_corona_swcme/material_transport.h"\n'
+            '#include "sep_corona_swcme/spherical_shock_only.h"\n'
             "int main() {\n"
             "  SEP::CoronaSwcme::AmbientPrimitive primitive;\n"
             "  SEP::CoronaSwcme::EventSupport support;\n"
@@ -64,6 +65,7 @@ def main():
             "-I" + str(ROOT / "include"),
             "-I" + str(ROOT.parent / "sep_coronal_cme" / "include"),
             "-I" + str(ROOT.parent / "sep_common"),
+            "-I" + str(ROOT.parent / "swcme"),
             "-c", str(source), "-o", str(output),
         ]
         result = subprocess.run(command, text=True, stdout=subprocess.PIPE,

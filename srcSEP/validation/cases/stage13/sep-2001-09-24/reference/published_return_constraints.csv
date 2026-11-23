@@ -1,0 +1,8 @@
+quantity,value,uncertainty_1sigma,units,source_id,source_locator,classification
+incident_electron_path_length,1.6,0.1,AU,tan2009,Figure 8 and Section 2.3.4,published-derived-onset-fit
+reflected_electron_path_length,2.7,0.3,AU,tan2009,Figure 8,published-derived-onset-fit
+incident_electron_release_time,10.52,0.04,hour_UTC_2001-09-24,tan2009,Figure 8,published-derived-onset-fit
+reflected_electron_release_time,10.52,0.07,hour_UTC_2001-09-24,tan2009,Figure 8,published-derived-onset-fit
+reflected_peak_pitch_cosine_magnitude,0.66,0.03,1,tan2009,Figure 7 and Section 2.3.5,published-PAD-derived-magnitude-not-signed-mu
+mirror_distance_over_peak_cosine,0.55,0.04,AU,tan2009,Section 2.3.5 electron/final estimate,published-derived-not-a-prescribed-boundary
+mirror_distance_over_peak_cosine_protons,0.6,0.2,AU,tan2009,Section 2.3.5 ERNE proton estimate,published-derived-not-a-prescribed-boundary

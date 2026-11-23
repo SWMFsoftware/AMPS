@@ -1,0 +1,84 @@
+{
+  "schema": "ulysses-het-pha-column-metadata-v1",
+  "source_id": "uy-pha-format",
+  "method": "Numerical/schema facts transcribed from official archive documentation; narrative text is not redistributed.",
+  "source_document_sha256": "20cc774c9b1280ee4407fdc77c9939c4dee3ffc50398a78cf73ea5a664660669",
+  "columns": [
+    {
+      "index": 1,
+      "name": "year_minus_1900",
+      "units": "fractional_year"
+    },
+    {
+      "index": 2,
+      "name": "day_of_year",
+      "units": "day_midpoint"
+    },
+    {
+      "index": 3,
+      "name": "proton_H4_flux",
+      "energy_MeV": [
+        39,
+        70
+      ]
+    },
+    {
+      "index": 4,
+      "name": "proton_H4_statistical_error"
+    },
+    {
+      "index": 5,
+      "name": "proton_H5_flux",
+      "energy_MeV": [
+        71,
+        94
+      ]
+    },
+    {
+      "index": 6,
+      "name": "proton_H5_statistical_error"
+    },
+    {
+      "index": 7,
+      "name": "helium_H4_flux",
+      "energy_MeV_per_nucleon": [
+        39,
+        71
+      ]
+    },
+    {
+      "index": 8,
+      "name": "helium_H4_statistical_error"
+    },
+    {
+      "index": 9,
+      "name": "helium_H5_flux",
+      "energy_MeV_per_nucleon": [
+        72,
+        95
+      ]
+    },
+    {
+      "index": 10,
+      "name": "helium_H5_statistical_error"
+    },
+    {
+      "index": 11,
+      "name": "coverage",
+      "units": "s"
+    }
+  ],
+  "flux_and_error_units": "(cm^2 s sr MeV/nucleon)^-1",
+  "invalid_value": -1,
+  "statistical_error": "one_sigma_Poisson",
+  "systematic_estimate_percent": [
+    10,
+    20
+  ],
+  "systematic_covariance": "not_provided",
+  "time_example": {
+    "day_of_year": 1.5,
+    "meaning": "January1 noon"
+  },
+  "coverage_maximum_documented_overlap_s": 30
+}

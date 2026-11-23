@@ -1,0 +1,93 @@
+{
+  "schema": "srcsep-stage13-inference-provenance-v1",
+  "case_id": "gle-2012-05-17",
+  "gopalswamy2013": {
+    "doi": "10.1088/2041-8205/765/2/L30",
+    "primary_pdf_url": "https://cdaw.gsfc.nasa.gov/publications/gopal/gopal2013ApJL.pdf",
+    "retrieved_pdf_sha256": "ca5f986fbf93ea191859d363c508cb453bffeaa9967c26a210f73f9472c89069",
+    "verified_sections": [
+      "2",
+      "3.1",
+      "3.2"
+    ],
+    "height_unit": "solar radius as reported, heliocentric distance from Sun center; no new meter conversion selected",
+    "metric_type_II": {
+      "reported_corrected_onset_utc": "2012-05-17T01:32:00Z",
+      "initial_reported_onset_utc": "2012-05-17T01:31:00Z",
+      "onset_correction_basis": "Direct inspection of Hiraiso, Culgoora and Learmonth dynamic spectra.",
+      "EUV_image_utc": "2012-05-17T01:30:56Z",
+      "fitted_circle_radius_rsun": 0.31,
+      "fitted_circle_reference": "height above solar surface for an initial spherical-expansion construction",
+      "local_speed_km_s": 698,
+      "local_acceleration_km_s2": 1.77,
+      "extrapolated_heliocentric_height_rsun": 1.38,
+      "shock_proxy_assumption": "Fast-event separation between flux rope/CME and shock taken small; this is a CME-height proxy for shock formation, not a resolved shock surface."
+    },
+    "particle_release": {
+      "earth_neutron_monitor_onset_interval_utc": [
+        "2012-05-17T01:38:00Z",
+        "2012-05-17T01:45:00Z"
+      ],
+      "earth_onset_median_utc": "2012-05-17T01:43:00Z",
+      "onset_method": "Various smoothing levels of pressure-corrected one-minute Oulu count rates; median onset occurs at2percent of peak enhancement.",
+      "assumed_path_length_au": 1.2,
+      "assumed_first_arriving_energy_gev_approx": 1.0,
+      "assumed_particle_speed_km_s_approx": 263000.0,
+      "scatter_free_first_arrivals": true,
+      "transit_minutes_approx": 11.4,
+      "light_travel_minutes_approx": 8.3,
+      "light_arrival_normalized_SPR_utc": "2012-05-17T01:40:00Z",
+      "normalization_note": "The quoted release time is normalized to the remote-sensing electromagnetic timing; it is not the unshifted physical solar-emission clock.",
+      "COR1_image_epoch_utc": "2012-05-17T01:40:26Z",
+      "COR1_heliocentric_height_rsun": 2.32
+    },
+    "height_uncertainty": {
+      "numeric_sigma_rsun": null,
+      "status": "NOT_PUBLISHED_AS_NUMERIC_SIGMA",
+      "policy": "Do not turn rounded reported heights or the onset interval into a Gaussian error or a fitted acceptance tolerance."
+    }
+  },
+  "rouillard2016_alternative": {
+    "doi": "10.3847/1538-4357/833/1/45",
+    "primary_pdf_url": "https://arxiv.org/pdf/1605.05208v2",
+    "verified_sections": [
+      "2",
+      "8",
+      "Appendix A"
+    ],
+    "method": "Velocity-dispersion regression of multi-species near-Earth onset time against inverse relativistic beta, with intercept as release time and slope as path length.",
+    "reported_path_length_au": 1.89,
+    "reported_path_length_uncertainty_au": 0.02,
+    "appendix_physical_release_utc": "2012-05-17T01:29:00Z",
+    "appendix_release_uncertainty_s": 60,
+    "added_light_travel_minutes": 8.41,
+    "reported_electromagnetic_timing_release_utc": "2012-05-17T01:37:20Z",
+    "reported_uncertainty_statements": [
+      {
+        "location": "Section2",
+        "value_s": 2,
+        "notation": "01:37:20 plus/minus00:00:02 UT"
+      },
+      {
+        "location": "Section8",
+        "value_s": 120,
+        "notation": "01:37:20 plus/minus00:02 UT"
+      },
+      {
+        "location": "AppendixA",
+        "value_s": 60,
+        "notation": "physical solar release01:29 plus/minus1min UT before light-travel shift"
+      }
+    ],
+    "uncertainty_status": "INCONSISTENT_REPORTED_NOTATION_REQUIRES_RECONCILIATION",
+    "use": "Separate inference alternative, never averaged with or silently substituted for the Gopalswamy time/height pair.",
+    "height_at_alternative_release_rsun": null,
+    "background_topology": "The paper links the near-Earth particle path to a pre-existing magnetic cloud; replacing it with a fixed nominal Parker path is a separate model assumption.",
+    "retrieved_pdf_sha256": "6ee04a44e21a906a785eabbbc272a21250b881dc1e29a777e48db72cd83262c1",
+    "retrieved_pdf_bytes": 4637449
+  },
+  "scoring": {
+    "status": "NOT_READY",
+    "reason": "No published numeric height covariance and no reconciled common release-time uncertainty/clock prescription; do not invent an observational tolerance or new source forcing."
+  }
+}

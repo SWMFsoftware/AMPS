@@ -452,9 +452,14 @@ Core::Result<AmbientState> AmbientModel::EvaluateWithDerivatives(
       const bool goodPlus=plus.ok()&&SameBranch(out.primitive,plus.value);
       const bool goodMinus=minus.ok()&&SameBranch(out.primitive,minus.value);
       Vec3 magneticDerivative,velocityDerivative;
+      double densityDerivative=0,pressureDerivative=0;
       if(goodPlus&&goodMinus) {
         magneticDerivative=(plus.value.magneticFieldT-minus.value.magneticFieldT)/(2*step);
         velocityDerivative=(plus.value.velocityMPerS-minus.value.velocityMPerS)/(2*step);
+        densityDerivative=(plus.value.plasma.massDensityKgM3-
+            minus.value.plasma.massDensityKgM3)/(2*step);
+        pressureDerivative=(plus.value.plasma.pressurePa-
+            minus.value.plasma.pressurePa)/(2*step);
         out.stencils[axis]=DifferenceStencil::CentralSecondOrder;
         resolved=true;
       } else for(int sign:{1,-1}) {
@@ -466,12 +471,32 @@ Core::Result<AmbientState> AmbientModel::EvaluateWithDerivatives(
             4*first.magneticFieldT-twice.value.magneticFieldT)/(2*sign*step);
         velocityDerivative=(-3*out.primitive.velocityMPerS+
             4*first.velocityMPerS-twice.value.velocityMPerS)/(2*sign*step);
+        densityDerivative=(-3*out.primitive.plasma.massDensityKgM3+
+            4*first.plasma.massDensityKgM3-twice.value.plasma.massDensityKgM3)/(2*sign*step);
+        pressureDerivative=(-3*out.primitive.plasma.pressurePa+
+            4*first.plasma.pressurePa-twice.value.plasma.pressurePa)/(2*sign*step);
         out.stencils[axis]=sign==1?DifferenceStencil::ForwardSecondOrder:
             DifferenceStencil::BackwardSecondOrder;
         resolved=true;
         break;
       }
       if(resolved) {
+        if(!std::isfinite(densityDerivative)||!std::isfinite(pressureDerivative))
+          return Return::Failure(Core::StatusCode::NumericalFailure,
+              "ambient scalar derivative is nonfinite");
+        // Populate the same Cartesian coordinate column as grad(B), grad(U).
+        // These scalar derivatives retain kg/m^4 and Pa/m independently;
+        // a divergence or inferred density-history scalar cannot replace them.
+        if(axis==0) {
+          out.gradientDensityKgM4.x=densityDerivative;
+          out.gradientPressurePaPerM.x=pressureDerivative;
+        } else if(axis==1) {
+          out.gradientDensityKgM4.y=densityDerivative;
+          out.gradientPressurePaPerM.y=pressureDerivative;
+        } else {
+          out.gradientDensityKgM4.z=densityDerivative;
+          out.gradientPressurePaPerM.z=pressureDerivative;
+        }
         const double magnetic[]={magneticDerivative.x,magneticDerivative.y,
             magneticDerivative.z};
         const double velocity[]={velocityDerivative.x,velocityDerivative.y,

@@ -1,0 +1,305 @@
+{
+  "schema": "sep-stage13-plasma-context-v1",
+  "purpose": "Same-domain observational context only; not prescribed model forcing or a full radial wind realization.",
+  "comparison_status": "NOT_RUN",
+  "datasets": [
+    {
+      "dataset": "UY_COHO1HR_MERGED_MAG_PLASMA",
+      "path": "reference/ulysses_coho1hr_2003_oct_nov.csv",
+      "metadata_path": "reference/ulysses_coho1hr_hapi_info.json",
+      "columns": [
+        "Time",
+        "heliocentricDistance",
+        "heliographicLatitude",
+        "heliographicLongitude",
+        "BR",
+        "BT",
+        "BN",
+        "ABS_B",
+        "numVectorsMagFldAvg",
+        "plasmaFlowSpeed",
+        "elevAngle",
+        "azimuthAngle",
+        "protonDensity",
+        "alphaDensity",
+        "protonTempLarge",
+        "protonTempSmall"
+      ],
+      "time_interval_utc": [
+        "2003-10-01T00:00:00Z",
+        "2003-12-01T00:00:00Z"
+      ],
+      "stop_exclusive": true,
+      "rows": 1464,
+      "cadence": "1hour"
+    },
+    {
+      "dataset": "UY_PROTON-MOMENTS_SWOOPS",
+      "path": "reference/ulysses_swoops_proton_2003_oct28_30.csv",
+      "metadata_path": "reference/ulysses_swoops_proton_hapi_info.json",
+      "columns": [
+        "Time",
+        "heliographicLatitude",
+        "heliocentricDistance",
+        "BR",
+        "BT",
+        "BN",
+        "B_MAG",
+        "V_MAG",
+        "VR",
+        "VT",
+        "VN",
+        "Tpar",
+        "Tper",
+        "dens"
+      ],
+      "time_interval_utc": [
+        "2003-10-28T00:00:00Z",
+        "2003-10-30T00:00:00Z"
+      ],
+      "stop_exclusive": true,
+      "rows": 401,
+      "cadence": "archive observation times; not resampled"
+    }
+  ],
+  "preserved_units": {
+    "B": "nT",
+    "velocity": "km/s",
+    "density": "cm^-3",
+    "temperature": "K",
+    "distance": "AU",
+    "field_and_flow_frame": "RTN; original HAPI product specifies inertial RTN for the moments",
+    "position_angles": "Original HGI/heliographic angles in degrees; no HCI conversion performed"
+  },
+  "processing": {
+    "data_changes": "None: downloaded CSV bytes and original HAPI metadata are retained.",
+    "joins_or_interpolation": false,
+    "invalid_fill": "Original HAPI fill values -1e31 / integer minimum remain invalid; no clipping or replacement.",
+    "temperature_semantics": "COHO large/small alternatives remain distinct. Separate SWOOPS Tpar/Tper are the documented proton tensor moments; no scalar/isotropic closure is imposed.",
+    "mass_loading_anchor": "No constant mass-per-magnetic-flux input derived; mapped stream identity, composition, time alignment and sector/field geometry remain necessary.",
+    "electron_thermal_state_available": false,
+    "quasi_neutral_electron_pressure_inferred": false,
+    "native_forcing_created": false
+  },
+  "remaining_required_inputs": [
+    "Same-population electron temperature and its core/halo/strahl pressure definition/quality for the selected interval.",
+    "Dated photospheric harmonic coefficients, coordinate conventions, source-surface geometry and checked magnetic mapping to this outer stream.",
+    "Reviewed stream/ICME/interactions masks and spacecraft ephemeris transforms; this interval contains multiple transients.",
+    "Thermal/heat-flux and composition/EOS uncertainties; measured proton anisotropy is not permission to impose scalar isotropy.",
+    "Independent radial link to the low corona; no different-epoch/population concatenation."
+  ],
+  "quality_audit": [
+    {
+      "dataset": "UY_COHO1HR_MERGED_MAG_PLASMA",
+      "rows": 1464,
+      "first_time": "2003-10-01T00:00:00.000Z",
+      "last_time": "2003-11-30T23:00:00.000Z",
+      "fields": {
+        "heliocentricDistance": {
+          "units": "Au",
+          "invalid_or_fill_count": 0,
+          "available_count": 1464,
+          "minimum_available": 5.18,
+          "maximum_available": 5.27
+        },
+        "heliographicLatitude": {
+          "units": "deg",
+          "invalid_or_fill_count": 0,
+          "available_count": 1464,
+          "minimum_available": 4.2,
+          "maximum_available": 7.4
+        },
+        "heliographicLongitude": {
+          "units": "deg",
+          "invalid_or_fill_count": 0,
+          "available_count": 1464,
+          "minimum_available": 79.8,
+          "maximum_available": 80.3
+        },
+        "BR": {
+          "units": "nT",
+          "invalid_or_fill_count": 1,
+          "available_count": 1463,
+          "minimum_available": -3.27,
+          "maximum_available": 2.52
+        },
+        "BT": {
+          "units": "nT",
+          "invalid_or_fill_count": 1,
+          "available_count": 1463,
+          "minimum_available": -5.6,
+          "maximum_available": 5.43
+        },
+        "BN": {
+          "units": "nT",
+          "invalid_or_fill_count": 1,
+          "available_count": 1463,
+          "minimum_available": -3.89,
+          "maximum_available": 4.74
+        },
+        "ABS_B": {
+          "units": "nT",
+          "invalid_or_fill_count": 1,
+          "available_count": 1463,
+          "minimum_available": 0.09,
+          "maximum_available": 7.46
+        },
+        "numVectorsMagFldAvg": {
+          "units": " ",
+          "invalid_or_fill_count": 1,
+          "available_count": 1463,
+          "minimum_available": 578.0,
+          "maximum_available": 3600.0
+        },
+        "plasmaFlowSpeed": {
+          "units": "km/s",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": 386.0,
+          "maximum_available": 975.3
+        },
+        "elevAngle": {
+          "units": "Deg",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": -8.1,
+          "maximum_available": 10.6
+        },
+        "azimuthAngle": {
+          "units": "Deg",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": -8.1,
+          "maximum_available": 5.0
+        },
+        "protonDensity": {
+          "units": "n/cc",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": 0.00669,
+          "maximum_available": 2.51728
+        },
+        "alphaDensity": {
+          "units": "n/cc",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": 0.00042,
+          "maximum_available": 0.40066
+        },
+        "protonTempLarge": {
+          "units": "deg k",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": 29136.0,
+          "maximum_available": 1691608.0
+        },
+        "protonTempSmall": {
+          "units": "deg k",
+          "invalid_or_fill_count": 7,
+          "available_count": 1457,
+          "minimum_available": 6412.0,
+          "maximum_available": 1308221.0
+        }
+      }
+    },
+    {
+      "dataset": "UY_PROTON-MOMENTS_SWOOPS",
+      "rows": 401,
+      "first_time": "2003-10-28T00:12:01.000Z",
+      "last_time": "2003-10-29T23:48:30.000Z",
+      "fields": {
+        "heliographicLatitude": {
+          "units": "deg",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 5.9,
+          "maximum_available": 6.0
+        },
+        "heliocentricDistance": {
+          "units": "AU",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 5.22,
+          "maximum_available": 5.22
+        },
+        "BR": {
+          "units": "nT",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": -1.4768,
+          "maximum_available": 2.1325
+        },
+        "BT": {
+          "units": "nT",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": -0.9687,
+          "maximum_available": 3.1667
+        },
+        "BN": {
+          "units": "nT",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": -2.4183,
+          "maximum_available": 3.2323
+        },
+        "B_MAG": {
+          "units": "nT",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 0.7767,
+          "maximum_available": 3.4148
+        },
+        "V_MAG": {
+          "units": "km/s",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 403.5,
+          "maximum_available": 545.1
+        },
+        "VR": {
+          "units": "km/s",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 403.1,
+          "maximum_available": 530.8
+        },
+        "VT": {
+          "units": "km/s",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": -91.6,
+          "maximum_available": 23.0
+        },
+        "VN": {
+          "units": "km/s",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": -40.1,
+          "maximum_available": 134.0
+        },
+        "Tpar": {
+          "units": "K",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 25307.0,
+          "maximum_available": 283024.0
+        },
+        "Tper": {
+          "units": "K",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 19605.0,
+          "maximum_available": 273764.0
+        },
+        "dens": {
+          "units": "1/cm^3",
+          "invalid_or_fill_count": 0,
+          "available_count": 401,
+          "minimum_available": 0.02334,
+          "maximum_available": 2.82917
+        }
+      }
+    }
+  ]
+}

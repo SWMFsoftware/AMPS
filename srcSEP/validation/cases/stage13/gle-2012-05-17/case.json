@@ -1,0 +1,186 @@
+{
+  "schema": "sep-stage13-observational-case-v1",
+  "case_id": "gle-2012-05-17",
+  "title": "2012 May 17 GLE71 and near-Earth SEP observations",
+  "physics_scope": "Near-Earth proton observations and ground-level count-rate validation; GOES summary availability does not qualify GLE spectral/angular transport.",
+  "event": {
+    "date": "2012-05-17",
+    "time_basis": "UTC",
+    "archive_event_id": "GLE71"
+  },
+  "sources": [
+    {
+      "id": "ccmc20120517",
+      "title": "CCMC SEP Model Validation Challenge: May 17, 2012",
+      "url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/20120517.php",
+      "source_type": "official-processed-observation-table",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "gle-oulu",
+      "title": "University of Oulu official GLE database",
+      "url": "https://gle.oulu.fi/",
+      "source_type": "official-neutron-monitor-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "nmdb",
+      "title": "Neutron Monitor Database NEST",
+      "url": "https://www.nmdb.eu/nest/",
+      "source_type": "official-neutron-monitor-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "pamela2012",
+      "title": "PAMELA Observation of the 2012 May 17 GLE Event",
+      "url": "https://ntrs.nasa.gov/api/citations/20180005611/downloads/20180005611.pdf",
+      "source_type": "primary-publication-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "ccmc-goes-json",
+      "title": "GOES-13 corrected integral proton event quantities, processed by operational_sep_quantities.py",
+      "url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/docs/json/GOES-13_integral.2012-05-17T000000Z.json",
+      "source_type": "official-processed-observation-product",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "gopalswamy2013",
+      "title": "The First Ground Level Enhancement Event of Solar Cycle24: Direct Observation of Shock Formation and Particle Release Heights",
+      "url": "https://cdaw.gsfc.nasa.gov/publications/gopal/gopal2013ApJL.pdf",
+      "doi": "10.1088/2041-8205/765/2/L30",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "rouillard2016",
+      "title": "Deriving the Properties of Coronal Pressure Fronts in3D: Application to the2012 May17 Ground Level Enhancement",
+      "url": "https://arxiv.org/pdf/1605.05208v2",
+      "doi": "10.3847/1538-4357/833/1/45",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "reference/ccmc_goes_event_quantities.csv",
+      "sha256": "54198c412e1125b7c579a4bbd44fd2c0d27c842f1c8674301c4aca666d533507",
+      "bytes": 657,
+      "role": "observational-event-summaries",
+      "source_id": "ccmc20120517",
+      "rows": 2,
+      "derivation": "Exact event_id=20120517 selection from the existing immutable EV01 table; table values independently rechecked at the official event page on 2026-11-23."
+    },
+    {
+      "path": "../../EV01/reference/provenance.json",
+      "sha256": "e7f761171eb908ede10affa8e7c0684cac94d34fc952fbe9bb214a9158bd8a16",
+      "bytes": 3085,
+      "role": "existing-reference-provenance",
+      "source_id": "ccmc20120517"
+    },
+    {
+      "path": "../../EV01/reference/ccmc_2021_goes_observations.csv",
+      "sha256": "f2e4bc9870269250b09a2b55bb15872f85467abe73c090488910fdde3025f583",
+      "bytes": 3876,
+      "role": "canonical-parent-reference",
+      "source_id": "ccmc20120517"
+    },
+    {
+      "path": "reference/GOES-13_integral.2012-05-17T000000Z.json",
+      "sha256": "6e6c4c6763bb74ec293593aac8f81787266adc718b946fdb95406fcf3e268e7f",
+      "bytes": 8096,
+      "role": "official-processed-observation-product",
+      "source_id": "ccmc-goes-json",
+      "download_url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/docs/json/GOES-13_integral.2012-05-17T000000Z.json",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/gopalswamy2013_low_corona_constraints.csv",
+      "sha256": "1ea33df6ed3fb7204c3587b569863fcd1aa736d52f556c9c4ae32acd3ef8ff77",
+      "bytes": 760,
+      "role": "published-inferred-low-corona-constraints",
+      "source_id": "gopalswamy2013",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/low_corona_inference_basis.json",
+      "sha256": "fc98e27aef3dbb22e79d485be9c846bac17d9a33f2ce81e604a0c0b1ed512f2e",
+      "bytes": 4485,
+      "role": "physical-inference-and-uncertainty-provenance",
+      "source_id": "gopalswamy2013",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/provenance.json",
+      "sha256": "09d29217458c0f35d8743828454ea4e7f32d12174956d93aeea06a2118a7f0a7",
+      "bytes": 2206,
+      "role": "reference-provenance",
+      "source_id": "ccmc20120517",
+      "scoring_eligible": false
+    }
+  ],
+  "required_observables": [
+    {
+      "name": "GOES-13 >10 MeV/10 pfu and >100 MeV/1 pfu event summaries",
+      "status": "AVAILABLE",
+      "artifact_paths": [
+        "reference/ccmc_goes_event_quantities.csv"
+      ]
+    },
+    {
+      "name": "GOES energy-resolved time profiles with errors/quality",
+      "status": "MISSING",
+      "artifact_paths": []
+    },
+    {
+      "name": "GLE71 station count-rate and angular response observations",
+      "status": "MISSING",
+      "artifact_paths": []
+    },
+    {
+      "name": "Gopalswamy metric-II and inferred-SPR heliocentric heights with time/assumption provenance",
+      "status": "AVAILABLE_PUBLISHED_INFERENCE_WITHOUT_HEIGHT_SIGMA",
+      "artifact_paths": [
+        "reference/gopalswamy2013_low_corona_constraints.csv",
+        "reference/low_corona_inference_basis.json"
+      ]
+    }
+  ],
+  "readiness": {
+    "observations": "PARTIAL_OFFICIAL_SUMMARIES_AND_PROCESSED_JSON",
+    "model_inputs": "MISSING",
+    "forward_operator": "MISSING",
+    "comparison": "NOT_RUN"
+  },
+  "missing_required_inputs": [
+    "GOES-13 channel time series, quality flags, correction version and response/energy definitions; two event-summary rows are not a resolved intensity profile.",
+    "Station-specific GLE71 neutron-monitor time series with pressure/efficiency corrections, pre-event background, cadence and original-file checksums.",
+    "Neutron-monitor yield functions, rigidity cutoffs and time-dependent asymptotic viewing directions required to compare modeled particle distributions with count rates.",
+    "Observed shock geometry/history and its uncertainties, background field/plasma and Earth-connected material field line, source spectrum/normalization and boundary conditions.",
+    "A reviewed event-specific forward operator, uncertainty model and unchanged scoring specification for the newly proposed GLE comparison.",
+    "Published/reviewed uncertainty prescription for the1.38/2.32Rsun constraints and reconciliation of the alternative Rouillard release-time uncertainty notation, including the physical-versus-light-arrival clock convention."
+  ],
+  "comparison": {
+    "status": "NOT_RUN",
+    "validation_claim": false,
+    "acceptance_policy": "Preserve existing registered criteria; no new numerical tolerance or fitted forcing is supplied by this metadata package."
+  },
+  "existing_case": null,
+  "frame_units": {
+    "time": "UTC ISO8601; original event-summary minute timestamps preserved",
+    "proton_flux": "pfu = protons cm^-2 s^-1 sr^-1, integral above declared MeV threshold",
+    "proton_fluence": "cm^-2, as reported by CCMC processing; no additional solid-angle conversion assumed",
+    "cme_speed": "km s^-1 as supplied; 3D velocity and plane-of-sky velocity remain distinct",
+    "neutron_monitor_counts": "Not acquired; no count-to-proton-flux conversion is assumed.",
+    "observer": "GOES-13 near Earth; exact ephemeris and detector pointing not included",
+    "low_corona_height": "Heliocentric solar radii from Sun center, preserving reported values; not height above photosphere.",
+    "inferred_release_clock": "Gopalswamy01:40 and Rouillard01:37:20 are light-arrival-normalized remote-sensing times. The physical solar emission clock must not be silently equated with them."
+  },
+  "acquisition": {
+    "method": "curl-HTTPS-small-checksum-pinned-processed-product",
+    "status": "ACQUIRED",
+    "retrieved_utc": "2026-11-23",
+    "raw_time_series_acquired": false,
+    "note": "Python urllib DNS resolution failed; curl HTTPS succeeded. The acquired JSON contains five processed integral-channel summaries and names sep_profile files; it does not embed the time series."
+  }
+}

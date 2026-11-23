@@ -1,0 +1,110 @@
+{
+  "schema": "srcsep-stage13-calibrated-exposure-metadata-v1",
+  "case_id": "eclipse-2020-12-14",
+  "source_id": "kcor-l2-175641",
+  "source_url": "https://mlso.hao.ucar.edu/hao/acos/2020/12/14/20201214_175641_kcor_l2_pb.fts.gz",
+  "listing_url": "https://mlso.hao.ucar.edu/mlso_data_get.php?date1=2020-12-14&inst=kcor&level=l2&qual=all&proc=pb",
+  "dataset_doi": "10.5065/D69G5JV8",
+  "retrieved_utc": "2026-11-23",
+  "compressed_bytes": 2560121,
+  "compressed_sha256": "066d20ed7118ab0394db9c6c2d2a7daa8cb3560b38a46e188eec458b75301e04",
+  "decompressed_bytes": 4210560,
+  "raw_binary_in_source_package": false,
+  "raw_header_artifact": "reference/20201214_175641_kcor_l2_pb.header.json",
+  "observation": {
+    "date_obs_utc": "2020-12-14T17:56:41Z",
+    "date_end_utc": "2020-12-14T17:56:56Z",
+    "time_system": "UTC",
+    "single_frame_exposure_s": 0.0025,
+    "frames_summed_per_L0_per_polarization_state": 512,
+    "product": "pB",
+    "data_type": "science",
+    "level": "L2",
+    "quality_keyword": "ok",
+    "brightness_unit": "Mean Solar Brightness, B/Bsun",
+    "wavelength_nm": 735,
+    "bandpass_fwhm_nm": 30,
+    "image_dimensions_pixels": [
+      1024,
+      1024
+    ],
+    "bitpix": -32
+  },
+  "geometry": {
+    "wcs_name": "helioprojective-cartesian",
+    "ctype": [
+      "HPLN-TAN",
+      "HPLT-TAN"
+    ],
+    "cunit": [
+      "arcsec",
+      "arcsec"
+    ],
+    "crpix_fits_one_based": [
+      512.5,
+      512.5
+    ],
+    "crval": [
+      0.0,
+      0.0
+    ],
+    "cdelt_arcsec_per_pixel": [
+      5.557,
+      5.557
+    ],
+    "pc_matrix_row_major": [
+      1.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "image_rotation_relative_to_solar_north_deg": 0.0,
+    "observer_sun_distance_m": 147246607918.4,
+    "observer_stonyhurst_longitude_deg": 0.0,
+    "observer_stonyhurst_latitude_deg": -0.901,
+    "reference_solar_radius_m": 696182000.0,
+    "apparent_solar_radius_arcsec": 974.95,
+    "carrington_rotation": 2238,
+    "carrington_longitude_deg": 147.421
+  },
+  "calibration": {
+    "date_dp_utc": "2025-09-21T22:33:19Z",
+    "dpswid": "2.2.6 [c5274b5]",
+    "software_release_date_in_header": "2025-09-19",
+    "calibration_file": "20201213_193543_kcor_cal_v23_2.2.4_2.500ms.ncdf",
+    "camera_combination": "both",
+    "sky_polarization_removal": "subtraction",
+    "sky_transmission_correction": 1.177,
+    "pipeline_header_history": [
+      "dark current and gain correction",
+      "polarization demodulation matrix",
+      "distortion correction",
+      "align cameras and rotate to solar north",
+      "combine cameras",
+      "Cartesian to tangential polarization",
+      "remove sky polarization",
+      "sky transmission correction"
+    ],
+    "version_caution": "This publicly retrieved exposure was reprocessed in2025. Do not claim byte or calibration identity with the K-Cor data used by the2023 electron-density publication."
+  },
+  "uncertainty": {
+    "fits_extensions_present": false,
+    "per_pixel_error_array": "NOT_PRESENT",
+    "calibration_covariance": "NOT_ACQUIRED",
+    "quality_keyword_scope": "Instrument pipeline quality flag only; not a proof of a quiet corona or an error estimate.",
+    "electron_density": "NOT_DERIVED"
+  },
+  "temporal_relationship": {
+    "day_listing_observations": 612,
+    "earliest_listed_start_utc": "2020-12-14T17:56:41Z",
+    "latest_listed_start_utc": "2020-12-14T21:20:29Z",
+    "simultaneous_with_eclipse": false,
+    "quiet_baseline_verified": false,
+    "note": "The first archived exposure is later than the16:08–16:22UTC eclipse views. Several CMEs occurred on this day. No quiet-baseline or component-association claim is inferred."
+  },
+  "scientific_comparison": {
+    "status": "NOT_RUN",
+    "scoring_eligible": false,
+    "reason": "Exposure metadata alone does not provide a directional density inversion, error model, selected quiet baseline or reviewed forward-observation operator."
+  }
+}

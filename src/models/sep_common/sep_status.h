@@ -20,7 +20,10 @@ enum class StatusCode {
   OutOfDomain,
   DataIntegrityFailure,
   NumericalFailure,
-  NotImplemented
+  NotImplemented,
+  // A resolved model has no admissible solution for the declared conditions.
+  // Keep this distinct from missing coverage and numerical work exhaustion.
+  NoPhysicalSolution
 };
 
 struct Status {

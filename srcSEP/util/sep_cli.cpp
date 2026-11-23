@@ -268,13 +268,16 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  " << exe << " [options]\n"
       << "\n"
       << "Runtime initialization:\n"
-      << "  -input <path>, --input <path>\n"
+      << "  -i <path>, -input <path>, --input <path>\n"
       << "                              Parse the runtime input file (generic AMPS\n"
       << "                               format, src/INPUT_FILE.md) before AMPS\n"
       << "                               initialization. If omitted, ./amps.in is\n"
       << "                               read when it exists; otherwise the legacy\n"
       << "                               hard-coded srcSEP mesh is preserved.\n"
       << "  --input=<path>              Equivalent equals-sign form.\n"
+      << "  -case <name>, --case <name> Select a named SEP validation case from the .in file.\n"
+      << "  --list-validation-cases    List named cases from an explicit .in file.\n"
+      << "  --validate-runtime-input   Check a selected validation deck without stepping AMPS.\n"
       << "  --reduced-shock-event <path> Couple the shared HCI reduced front and\n"
       << "                               ambient provider to native field-line state.\n"
       << "                               Requires --input; particles default to off.\n"
@@ -529,7 +532,7 @@ void PrintHelp(const char* program_name, std::ostream& out) {
 
 bool ParseCommandLine(int argc, char** argv, Options& options,
                       std::ostream& out, std::ostream& err) {
-
+  bool ordinaryRunOption = false;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i] ? argv[i] : "";
 
@@ -541,10 +544,9 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     std::string option_name, value_from_equals;
     SplitOption(arg, option_name, value_from_equals);
 
-    // -input is the AMPS-wide spelling of the runtime input file (generic
-    // AMPS format, src/INPUT_FILE.md); --input is the exact synonym kept for
-    // existing scripts.  Both take the path as the next argument or after '='.
-    if (option_name == "--input" || option_name == "-input") {
+    // All three spellings select the same generic AMPS input file. -i is the
+    // I3 spelling. It changes neither the deck grammar nor CLI precedence.
+    if (option_name == "--input" || option_name == "-input" || option_name == "-i") {
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
                           options.inputPath, err)) return false;
       if (options.inputPath.empty()) {
@@ -553,6 +555,21 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       }
       continue;
     }
+    if(option_name=="-case"||option_name=="--case") {
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,
+                         options.validationCase,err))return false;
+      if(options.validationCase.empty()) {
+        err<<"ERROR: a validation case name is required.\n";
+        return false;
+      }
+      continue;
+    }
+    if(arg=="--list-validation-cases"||arg=="--validate-runtime-input") {
+      if(arg=="--list-validation-cases")options.listValidationCases=true;
+      else options.validateRuntimeInput=true;
+      continue;
+    }
+    ordinaryRunOption=true;
 
     if (option_name == "--reduced-shock-event") {
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
@@ -1281,6 +1298,20 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     err << "ERROR: unknown SEP command-line option '" << arg << "'.\n"
         << "Run with -h or --help to see available options.\n";
     return false;
+  }
+
+  const bool validationDeck=options.listValidationCases||options.validateRuntimeInput||
+      !options.validationCase.empty();
+  if(validationDeck) {
+    if(options.inputPath.empty()||ordinaryRunOption||
+       (options.listValidationCases&&
+        (options.validateRuntimeInput||!options.validationCase.empty()))) {
+      err<<"ERROR: use -i FILE with --list-validation-cases or -case NAME "
+           "[--validate-runtime-input]. Other run, mover and test options "
+           "cannot override a validation case.\n";
+      return false;
+    }
+    return true;
   }
 
   const bool executionRequested = IsComponentTestExecutionRequested(options);

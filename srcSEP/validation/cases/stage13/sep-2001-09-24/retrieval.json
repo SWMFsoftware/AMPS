@@ -1,0 +1,22 @@
+{
+  "schema": "sep-observation-retrieval-v1",
+  "retrieved_utc": "2026-11-23",
+  "downloads": [
+    {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=SOHO_ERNE-HED_L2-1MIN&parameters=Time,est,PH,PHC&time.min=2001-09-24T10:00:00Z&time.max=2001-09-24T16:00:00Z&format=csv",
+      "path": "reference/erne_hed_20010924_1000_1600_hapi.csv",
+      "sha256": "e0e3a1eec49265773f637b78218c7268fc6d0a52ba179afb6f25f62d90f48398"
+    },
+    {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOHO_ERNE-HED_L2-1MIN",
+      "path": "reference/erne_hed_hapi_info.json",
+      "sha256": "c1da15bedd0f210e8ef42c416f33385da566639f6060b5bee37ffd101cd0e6f1"
+    }
+  ],
+  "transcription": {
+    "path": "reference/published_return_constraints.csv",
+    "source": "tan2009",
+    "method": "Explicit numerical labels/text; no graph pixels digitized",
+    "document_sha256": "43140e7bf68faeff69acd68b718c6cca9a281618b28d545fbe597f07b8f279ec"
+  }
+}

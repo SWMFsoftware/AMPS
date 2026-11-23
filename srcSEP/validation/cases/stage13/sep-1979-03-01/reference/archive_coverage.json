@@ -1,0 +1,25 @@
+{
+  "schema": "sep-observation-coverage-audit-v1",
+  "queries": [
+    {
+      "source_id": "v2-crs-daily",
+      "requested_start": "1979-02-28",
+      "requested_stop_exclusive": "1979-03-10",
+      "row_count": 0,
+      "available_timestamps": [],
+      "preceding_available_timestamp": "1979-02-15T00:00:00",
+      "following_available_timestamp": "1979-03-19T00:00:00",
+      "interpretation": "Archive omits unavailable intervals; omitted rows are not zero flux."
+    },
+    {
+      "source_id": "v2-crs-6hour",
+      "requested_start": "1979-02-28",
+      "requested_stop_exclusive": "1979-03-10",
+      "row_count": 0,
+      "available_timestamps": [],
+      "preceding_available_timestamp": "1979-02-15T18:00:00",
+      "following_available_timestamp": "1979-03-19T00:00:00",
+      "interpretation": "Archive omits unavailable intervals; omitted rows are not zero flux."
+    }
+  ]
+}

@@ -1,5 +1,14 @@
 # srcSEP standalone component tests
 
+## Stage 13 spherical SWCME3D
+
+`make -C srcSEP test-stage13-cases SEP_EXECUTABLE=/absolute/build/amps`
+checks the canonical spherical core, native `.in` selection, boundary values
+and observation package integrity. `make -C srcSEP test` invokes it in the
+routine sequence and executes linked adapter case `S13AD01`. The [Stage 13
+campaign guide](../validation/STAGE13_SPHERICAL_VALIDATION.md) gives the
+commands for a single observation or a full campaign.
+
 ## Stage-8 backend admission and stage-9 full application
 
 The [support matrix](../validation/STANDALONE_BACKEND_SUPPORT.md) and

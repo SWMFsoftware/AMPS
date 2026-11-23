@@ -33,6 +33,11 @@ struct Options {
   // True when inputPath came from the ./amps.in default rather than from
   // -input/--input; used only for the startup report.
   bool inputPathFromDefault = false;
+  // Named validation decks use the generic AMPS case overlay. Keeping the
+  // selector here preserves the same help/argument diagnostics as other runs.
+  std::string validationCase;
+  bool listValidationCases = false;
+  bool validateRuntimeInput = false;
   // Shared reduced-front event selected independently of the legacy particle
   // shock model.  A nonempty value means background-only operation: srcSEP
   // consumes ambient plasma/IMF and front epochs but injects no particles.

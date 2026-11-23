@@ -1,0 +1,209 @@
+{
+  "schema": "sep-stage13-observational-case-v1",
+  "case_id": "ulysses-2003-oct-nov",
+  "title": "Ulysses October\u2013November2003 outer-heliospheric COSPIN reference",
+  "physics_scope": "Outer-domain confinement, nonuniform intensities and magnetic-structure exclusion; the interval includes multiple eruptions.",
+  "event": {
+    "start_date": "2003-10-01",
+    "end_date_inclusive": "2003-11-30",
+    "time_basis": "UTC",
+    "observation_start_utc": "2003-10-01T00:00:00Z",
+    "observation_end_utc": "2003-12-01T00:00:00Z",
+    "published_observer_distance_au_approximate": 5.2,
+    "published_observer_heliographic_latitude_deg_approximate": 6
+  },
+  "sources": [
+    {
+      "id": "mckibben2005",
+      "title": "McKibben et al., COSPIN observations during October\u2013November2003",
+      "url": "https://doi.org/10.1029/2005JA011049",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23",
+      "doi": "10.1029/2005JA011049"
+    },
+    {
+      "id": "uy-pha",
+      "title": "NASA SPDF COSPIN/HET PHA daily flux archive",
+      "url": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/particle/cospin/het/het_pha_flux_h_he_1day/cospin_het_phaflux_h_he_1day_1990_20090630.asc",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-pha-format",
+      "title": "COSPIN/HET daily flux format and uncertainty documentation",
+      "url": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/particle/cospin/het/het_pha_flux_h_he_1day/cospin_het_phaflux_format.txt",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-dataset",
+      "title": "NASA public dataset metadata and mission provenance",
+      "url": "https://data.nasa.gov/dataset/ulysses-cosmic-ray-and-solar-particle-investigation-cospin-high-energy-telescope-het-proto",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-coho-context",
+      "title": "UY COHO CONTEXT",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=UY_COHO1HR_MERGED_MAG_PLASMA&parameters=Time,heliocentricDistance,heliographicLatitude,heliographicLongitude,BR,BT,BN,ABS_B,numVectorsMagFldAvg,plasmaFlowSpeed,elevAngle,azimuthAngle,protonDensity,alphaDensity,protonTempLarge,protonTempSmall&time.min=2003-10-01T00:00:00Z&time.max=2003-12-01T00:00:00Z&format=csv",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-coho-info",
+      "title": "UY COHO INFO",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_COHO1HR_MERGED_MAG_PLASMA",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-proton-context",
+      "title": "UY PROTON CONTEXT",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=UY_PROTON-MOMENTS_SWOOPS&parameters=Time,heliographicLatitude,heliocentricDistance,BR,BT,BN,B_MAG,V_MAG,VR,VT,VN,Tpar,Tper,dens&time.min=2003-10-28T00:00:00Z&time.max=2003-10-30T00:00:00Z&format=csv",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-proton-info",
+      "title": "UY PROTON INFO",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_PROTON-MOMENTS_SWOOPS",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "uy-electron-coverage",
+      "title": "NASA SPDF SWOOPS electron dataset and actual2003 file coverage",
+      "url": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/plasma/swoops_cdaweb/bae_m0/2003/",
+      "source_type": "official-archive-coverage",
+      "verified_utc": "2026-11-23"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "reference/ulysses_het_pha_2003_oct_nov.asc",
+      "sha256": "4acafef9ccf71d172b0e6e7a0236b5ea7a6a7bdc47197e475835fda8119003e4",
+      "bytes": 9046,
+      "role": "archived-PHA-flux-observations",
+      "source_id": "uy-pha",
+      "rows": 61
+    },
+    {
+      "path": "reference/archive_format.json",
+      "sha256": "833a42b3e95d3d1a7417e4075a623ae5da11be6b77a465227c6ba007128983ba",
+      "bytes": 1725,
+      "role": "official-column-facts-transcription",
+      "source_id": "uy-pha-format"
+    },
+    {
+      "path": "reference/ulysses_coho1hr_2003_oct_nov.csv",
+      "sha256": "a6135b7c4b5935aef54b988ea87c41bce9b687026e47b2992c688a0fc7f5d228",
+      "bytes": 165591,
+      "role": "observational-plasma-field-position-context",
+      "source_id": "uy-coho-context",
+      "rows": 1464
+    },
+    {
+      "path": "reference/ulysses_coho1hr_hapi_info.json",
+      "sha256": "74acd0cbf51fc2eae1865814055a38e8a2356e72b0aa9034d92d504de83a71f6",
+      "bytes": 3280,
+      "role": "official-context-parameter-metadata",
+      "source_id": "uy-coho-info"
+    },
+    {
+      "path": "reference/ulysses_swoops_proton_2003_oct28_30.csv",
+      "sha256": "a399890998c011d69f5511eb608e23438d02c3bc441d83c174a77eae8dc5be2b",
+      "bytes": 43067,
+      "role": "observational-proton-tensor-flow-context",
+      "source_id": "uy-proton-context",
+      "rows": 401
+    },
+    {
+      "path": "reference/ulysses_swoops_proton_hapi_info.json",
+      "sha256": "e512ea9a935ce1e6ae183ede2486f155dc275ec7dc16c227b8353a6149f51b4a",
+      "bytes": 1978,
+      "role": "official-context-parameter-metadata",
+      "source_id": "uy-proton-info"
+    },
+    {
+      "path": "reference/thermal_context_provenance.json",
+      "sha256": "c80a2ca286b8f8f6c0bb133d79304cd76ab214cbb18972bc62c74badd6cd62f4",
+      "bytes": 9694,
+      "role": "observational-context-processing-and-limits",
+      "source_id": "uy-coho-context"
+    },
+    {
+      "path": "reference/electron_coverage_audit.json",
+      "sha256": "549783dbd5265e36ee6da07d3f48f059c7ea6a19837c249bd4386e0fdf4d677c",
+      "bytes": 2009,
+      "role": "rejected-out-of-period-electron-availability-audit",
+      "source_id": "uy-electron-coverage"
+    }
+  ],
+  "required_observables": [
+    {
+      "name": "HET39\u201370 and71\u201394MeV proton daily PHA fluxes/errors/coverage",
+      "status": "AVAILABLE_ARCHIVE_SUBSET",
+      "artifact_paths": [
+        "reference/ulysses_het_pha_2003_oct_nov.asc"
+      ]
+    },
+    {
+      "name": "Directional/high-cadence confinement measurements",
+      "status": "MISSING",
+      "artifact_paths": []
+    },
+    {
+      "name": "Same-domain hourly plasma/field/alpha/position context",
+      "status": "AVAILABLE_ARCHIVE_SUBSET_CONTEXT_ONLY",
+      "artifact_paths": [
+        "reference/ulysses_coho1hr_2003_oct_nov.csv",
+        "reference/thermal_context_provenance.json"
+      ]
+    },
+    {
+      "name": "Proton parallel/perpendicular temperature and velocity vectors,28\u201329October",
+      "status": "AVAILABLE_ARCHIVE_SUBSET_CONTEXT_ONLY",
+      "artifact_paths": [
+        "reference/ulysses_swoops_proton_2003_oct28_30.csv"
+      ]
+    },
+    {
+      "name": "Mapped same-population electron temperature/EOS and coronal loading",
+      "status": "MISSING",
+      "artifact_paths": []
+    }
+  ],
+  "readiness": {
+    "observations": "PARTIAL_AUTHENTIC_REFERENCES_WITH_PLASMA_CONTEXT",
+    "model_inputs": "MISSING_REVIEWED_EVENT_REALIZATION",
+    "forward_operator": "NOT_QUALIFIED_FOR_THIS_CASE",
+    "comparison": "NOT_RUN"
+  },
+  "missing_required_inputs": [
+    "Higher-cadence directional/sector measurements and response needed to resolve the published flux-tube exclusion/filling signatures; daily PHA averages alone cannot score those signatures.",
+    "Reviewed cross-mission comparisons and correlated background/systematic uncertainty treatment; archive statistical errors alone exclude estimated10\u201320percent systematics.",
+    "Qualified physical transport/background to approximately5.2AU; no extrapolation of the0.30\u20131.20AU upstream profile.",
+    "Frozen count/flux/PAD comparison criteria and a production run. No HET counting rate has been relabelled as physical differential flux.",
+    "Same-population electron temperature and its core/halo/strahl pressure definition/quality for the selected interval.",
+    "Dated photospheric harmonic coefficients, coordinate conventions, source-surface geometry and checked magnetic mapping to this outer stream.",
+    "Reviewed stream/ICME/interactions masks and spacecraft ephemeris transforms; this interval contains multiple transients.",
+    "Thermal/heat-flux and composition/EOS uncertainties; measured proton anisotropy is not permission to impose scalar isotropy.",
+    "Independent radial link to the low corona; no different-epoch/population concatenation.",
+    "The queried UY_M0_BAE electron product returned only a May31 record for the October28\u201330 request; it was rejected. The actual2003 archive listing endsMay31. Obtain authentic in-period Te, not a catalog-range or nearest-record substitution."
+  ],
+  "comparison": {
+    "status": "NOT_RUN",
+    "validation_claim": false,
+    "acceptance_policy": "No fitted model output, synthetic observation, relaxed tolerance, or comparison PASS is supplied. Event-specific criteria must be frozen before a production comparison."
+  },
+  "existing_case": null,
+  "frame_units": {
+    "time": "Archive fractional year minus1900 and fractional DOY are accumulation midpoints; day1.5 meansJan1 noon",
+    "flux": "(cm^2 s sr MeV/n)^-1; protonMeV/n=MeV; conversion to SI requires explicit1e4 multiplier",
+    "channels": "H4p39\u201370MeV;H5p71\u201394MeV;He39\u201371 and72\u201395MeV/n",
+    "errors": "1sigma Poisson counting errors; systematic10\u201320percent is documented but no extra covariance/floor imposed",
+    "missing": "-1 remains invalid/unavailable, including meaningless error on zero-event flux",
+    "coverage": "Seconds of valid accumulation starting on day; may slightly exceed86400 by documented readout overlap",
+    "plasma_context": "Raw RTN fields/flow, density cm^-3, separate proton tensor/alternative temperatures K; no HCI transform, temporal join or scalar EOS inferred."
+  }
+}

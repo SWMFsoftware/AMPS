@@ -1,0 +1,3 @@
+source_id,quantity,comparison_epoch_utc,epoch_basis,image_epoch_utc,heliocentric_radius_rsun,height_reference,height_uncertainty_rsun,uncertainty_status,method
+gopalswamy2013,metric_type_II_onset_CME_shock_proxy,2012-05-17T01:32:00Z,observed radio/EUV electromagnetic timing,2012-05-17T01:30:56Z,1.38,Sun center,,NOT_PUBLISHED_AS_NUMERIC_SIGMA,EUV disturbance circle plus short kinematic extrapolation; CME height approximates shock height
+gopalswamy2013,CME_height_at_inferred_particle_release,2012-05-17T01:40:00Z,inferred SPR normalized to electromagnetic signal arrival at Earth,2012-05-17T01:40:26Z,2.32,Sun center,,NOT_PUBLISHED_AS_NUMERIC_SIGMA,Direct COR1 height associated with inferred release time; not a directly observed particle-release location

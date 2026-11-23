@@ -89,8 +89,9 @@ def _xm03_arguments(case: Dict[str, Any], input_path: Path) -> List[str]:
     The paper does not publish its evolving AWSoM magnetic field.  XM03 uses a
     Parker spiral with the paper's event-specific Earth solar-wind speed and
     all remaining choices declared in input.json.  The source-history path is
-    constrained to the case directory so an operator cannot replace the
-    Figure-12 trace with a fitted curve at run time.
+    constrained to the canonical owning case directory so an operator cannot
+    replace the Figure-12 trace with a fitted curve at run time. OV01 binds
+    the same XM03 file through its reviewed source_history_case.
     """
     physics, numerics = case["physics"], case["numerics"]
     fixed = {
@@ -108,6 +109,11 @@ def _xm03_arguments(case: Dict[str, Any], input_path: Path) -> List[str]:
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("XM03 source_history_csv must be case-relative")
     case_directory = input_path.parent.resolve()
+    source_case = physics.get("source_history_case")
+    if source_case is not None:
+        if case.get("case_id") != "OV01" or source_case != "XM03":
+            raise ValueError("only the registered OV01 continuity gate may share the XM03 source")
+        case_directory = (Path(__file__).resolve().parent / "XM03").resolve()
     source = (case_directory / relative).resolve()
     if case_directory not in source.parents or not source.is_file():
         raise ValueError(f"XM03 source history is missing or outside the case: {source}")
@@ -600,8 +606,8 @@ def _xm03_score(case: Dict[str, Any], model_rows: Sequence[Dict[str, str]],
 def _xm03_plot(case: Dict[str, Any], output: Path,
                model_rows: Sequence[Dict[str, str]],
                reference_rows: Sequence[Dict[str, str]], scale: float,
-               formats: Sequence[str]) -> List[Path]:
-    """Create one publication-quality model/observation figure per epoch.
+               formats: Sequence[str], *, case_id: str = "XM03") -> List[Path]:
+    """Plot the shared spectra with each case's established artifact layout.
 
     The scientific source and digitization provenance are intentionally kept in
     the JSON/CSV evidence bundle rather than printed into the figure.  A paper
@@ -676,73 +682,81 @@ def _xm03_plot(case: Dict[str, Any], output: Path,
         "axes.unicode_minus": False,
     }
 
+    def draw(axis, elapsed):
+        model = sorted(
+            (float(row["energy_mev"]),
+             scale * float(row["relative_differential_intensity"]))
+            for row in model_rows
+            if math.isclose(float(row["elapsed_hours"]), elapsed,
+                            rel_tol=0.0, abs_tol=1.0e-12) and
+            float(row["relative_differential_intensity"]) > 0.0)
+        if model:
+            axis.plot(
+                [item[0] for item in model],
+                [item[1] for item in model],
+                color="#202020", linewidth=2.0, solid_capstyle="round",
+                zorder=2, label="srcSEP model")
+
+        for instrument, style in observation_styles.items():
+            rows = sorted(
+                (row for row in reference_rows
+                 if math.isclose(float(row["elapsed_hours"]), elapsed,
+                                 rel_tol=0.0, abs_tol=1.0e-12) and
+                 row["instrument"] == instrument),
+                key=lambda row: float(row["effective_energy_mev"]))
+            if not rows:
+                continue
+            energy = [float(row["effective_energy_mev"]) for row in rows]
+            axis.errorbar(
+                energy,
+                [float(row["differential_intensity_pfu_per_mev"])
+                 for row in rows],
+                xerr=[[center - float(row["energy_low_mev"])
+                       for center, row in zip(energy, rows)],
+                      [float(row["energy_high_mev"]) - center
+                       for center, row in zip(energy, rows)]],
+                linestyle="none", marker=style["marker"], markersize=5.2,
+                markerfacecolor=style["color"], markeredgecolor="white",
+                markeredgewidth=0.55, color=style["color"],
+                elinewidth=1.05, capsize=2.2, capthick=1.05, zorder=3,
+                label=style["label"])
+
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        axis.set_xlim(0.07, 130.0)
+        axis.set_ylim(*y_limits)
+        axis.set_title(f"{elapsed:g} h after CME launch", pad=8.0)
+        axis.set_xlabel("Proton energy (MeV)")
+        axis.set_ylabel(
+            "Differential proton intensity "
+            "[(cm$^{2}$ s sr MeV)$^{-1}$]")
+        axis.grid(which="major", color="0.86", linewidth=0.65,
+                  linestyle="-")
+        axis.tick_params(which="both", direction="in", top=True,
+                         right=True, width=0.8)
+        axis.tick_params(which="major", length=5.0)
+        axis.tick_params(which="minor", length=2.8)
+        axis.legend(loc="best", frameon=True, framealpha=1.0,
+                    facecolor="white", edgecolor="0.35",
+                    borderpad=0.55, handlelength=2.3)
+
     paths: List[Path] = []
     with plt.rc_context(publication_style):
-        for elapsed in times:
-            figure, axis = plt.subplots(figsize=(6.5, 5.0))
-            model = sorted(
-                (float(row["energy_mev"]),
-                 scale * float(row["relative_differential_intensity"]))
-                for row in model_rows
-                if math.isclose(float(row["elapsed_hours"]), elapsed,
-                                rel_tol=0.0, abs_tol=1.0e-12) and
-                float(row["relative_differential_intensity"]) > 0.0)
-            if model:
-                axis.plot(
-                    [item[0] for item in model],
-                    [item[1] for item in model],
-                    color="#202020", linewidth=2.0, solid_capstyle="round",
-                    zorder=2, label="srcSEP model")
-
-            for instrument, style in observation_styles.items():
-                rows = sorted(
-                    (row for row in reference_rows
-                     if math.isclose(float(row["elapsed_hours"]), elapsed,
-                                     rel_tol=0.0, abs_tol=1.0e-12) and
-                     row["instrument"] == instrument),
-                    key=lambda row: float(row["effective_energy_mev"]))
-                if not rows:
-                    continue
-                energy = [float(row["effective_energy_mev"]) for row in rows]
-                axis.errorbar(
-                    energy,
-                    [float(row["differential_intensity_pfu_per_mev"])
-                     for row in rows],
-                    xerr=[[center - float(row["energy_low_mev"])
-                           for center, row in zip(energy, rows)],
-                          [float(row["energy_high_mev"]) - center
-                           for center, row in zip(energy, rows)]],
-                    linestyle="none", marker=style["marker"], markersize=5.2,
-                    markerfacecolor=style["color"], markeredgecolor="white",
-                    markeredgewidth=0.55, color=style["color"],
-                    elinewidth=1.05, capsize=2.2, capthick=1.05, zorder=3,
-                    label=style["label"])
-
-            axis.set_xscale("log")
-            axis.set_yscale("log")
-            axis.set_xlim(0.07, 130.0)
-            axis.set_ylim(*y_limits)
-            axis.set_title(f"{elapsed:g} h after CME launch", pad=8.0)
-            axis.set_xlabel("Proton energy (MeV)")
-            axis.set_ylabel(
-                "Differential proton intensity "
-                "[(cm$^{2}$ s sr MeV)$^{-1}$]")
-            axis.grid(which="major", color="0.86", linewidth=0.65,
-                      linestyle="-")
-            axis.tick_params(which="both", direction="in", top=True,
-                             right=True, width=0.8)
-            axis.tick_params(which="major", length=5.0)
-            axis.tick_params(which="minor", length=2.8)
-            axis.legend(loc="best", frameon=True, framealpha=1.0,
-                        facecolor="white", edgecolor="0.35",
-                        borderpad=0.55, handlelength=2.3)
+        # OV01 is the existing release overview. XM03 retains the independent
+        # publication panel for every snapshot. Both draw the identical data.
+        groups = [times] if case_id == "OV01" else [[elapsed] for elapsed in times]
+        for group in groups:
+            figure, axes = plt.subplots(1, len(group), squeeze=False,
+                                       figsize=(6.5 * len(group), 5.0))
+            for axis, elapsed in zip(axes[0], group):
+                draw(axis, elapsed)
             figure.tight_layout(pad=0.8)
-
-            if elapsed.is_integer():
-                time_tag = f"{int(elapsed):02d}h"
-            else:
-                time_tag = (f"{elapsed:g}".replace(".", "p") + "h")
-            stem = f"XM03_earth_observation_comparison_{time_tag}"
+            stem = f"{case_id}_earth_observation_comparison"
+            if case_id != "OV01":
+                elapsed = group[0]
+                time_tag = (f"{int(elapsed):02d}h" if elapsed.is_integer() else
+                            f"{elapsed:g}".replace(".", "p") + "h")
+                stem += f"_{time_tag}"
             paths.extend(_save_figure(
                 figure, output, stem, formats, png_dpi=png_dpi,
                 bbox_inches="tight", pad_inches=0.04))

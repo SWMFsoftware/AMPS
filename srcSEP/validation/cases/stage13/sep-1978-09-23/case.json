@@ -1,0 +1,125 @@
+{
+  "schema": "sep-stage13-observational-case-v1",
+  "case_id": "sep-1978-09-23",
+  "title": "1978 September23 Voyager outer-heliospheric reference",
+  "physics_scope": "Multi-spacecraft reservoir timing, spectra and outer-heliospheric propagation; preserve actual Voyager instrument and cadence.",
+  "event": {
+    "date": "1978-09-23",
+    "time_basis": "UTC",
+    "observation_start_utc": "1978-09-22T00:00:00Z",
+    "observation_end_utc": "1978-10-01T00:00:00Z"
+  },
+  "sources": [
+    {
+      "id": "reames2013",
+      "title": "Reames, Ng and Tylka, spatial SEP distributions",
+      "url": "https://epact2.gsfc.nasa.gov/don/12Helios.pdf",
+      "source_type": "primary-publication-author-archive",
+      "verified_utc": "2026-11-23",
+      "doi": "10.1007/s11207-012-0038-1",
+      "retrieved_document_sha256": "0df7c8ce7ea945eb81dde020f533550ac7e46c4fed3172d4afd8fe0bcae2bff2"
+    },
+    {
+      "id": "v2-crs-daily",
+      "title": "NASA Voyager2 CRS v2-crs-daily flux archive",
+      "url": "https://voyager.gsfc.nasa.gov/yearly/voyager-2/flux/P1D/1978P1Y.asc",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "v2-crs-6hour",
+      "title": "NASA Voyager2 CRS v2-crs-6hour flux archive",
+      "url": "https://voyager.gsfc.nasa.gov/yearly/voyager-2/flux/PT6H/1978P1Y.asc",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "v2-format",
+      "title": "NASA Voyager CRS units, missing values and interval format",
+      "url": "https://voyager.gsfc.nasa.gov/yearly/voyager-2/flux/P1D",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "reference/voyager2_crs_daily_event_excerpt.asc",
+      "sha256": "5fc8e81b462476a831b3b5ebe6560e3cd4eb75f8d786f1202677ee8c93c70f99",
+      "bytes": 2884,
+      "role": "archive-event-excerpt-with-original-header",
+      "source_id": "v2-crs-daily",
+      "rows": 2
+    },
+    {
+      "path": "reference/voyager2_crs_6hour_event_excerpt.asc",
+      "sha256": "1a91a35b1564ae29422b1a3f70fda17ad0e08045fd88282aa708c6615a40157e",
+      "bytes": 7084,
+      "role": "archive-event-excerpt-with-original-header",
+      "source_id": "v2-crs-6hour",
+      "rows": 8
+    },
+    {
+      "path": "reference/archive_coverage.json",
+      "sha256": "27eb15b94281490fc58eb17ed038e39d279e3c80f53bbfaea7813459a7f396bd",
+      "bytes": 1213,
+      "role": "observed-archive-coverage-audit",
+      "source_id": "v2-crs-daily"
+    },
+    {
+      "path": "reference/published_constraints.csv",
+      "sha256": "796e2e54e6b522e6f3e9f32d60470b57629fef827b6aa5ec8a36d95bed37d6fa",
+      "bytes": 619,
+      "role": "published-observational-constraints",
+      "source_id": "reames2013",
+      "rows": 5
+    }
+  ],
+  "required_observables": [
+    {
+      "name": "Published observer/reservoir constraints",
+      "status": "AVAILABLE_PUBLISHED_CONSTRAINTS",
+      "artifact_paths": [
+        "reference/published_constraints.csv"
+      ]
+    },
+    {
+      "name": "CRS event intensity series",
+      "status": "PARTIAL_GAPPED_ARCHIVE",
+      "artifact_paths": [
+        "reference/voyager2_crs_daily_event_excerpt.asc",
+        "reference/voyager2_crs_6hour_event_excerpt.asc"
+      ]
+    },
+    {
+      "name": "Calibrated publication multi-spacecraft curves",
+      "status": "MISSING",
+      "artifact_paths": []
+    }
+  ],
+  "readiness": {
+    "observations": "PARTIAL_AUTHENTIC_REFERENCES",
+    "model_inputs": "MISSING_REVIEWED_EVENT_REALIZATION",
+    "forward_operator": "NOT_QUALIFIED_FOR_THIS_CASE",
+    "comparison": "NOT_RUN"
+  },
+  "missing_required_inputs": [
+    "Usable event intensity coverage: fetched daily and6-hour archives contain 2 and8 requested-window records respectively; see explicit gaps.",
+    "Quantitative multi-spacecraft intensity arrays underlying the publication figure, with channel responses, uncertainty and intercalibration; no figure curves were digitized here.",
+    "Observer trajectories and actual magnetic/plasma histories, source/return/outer-boundary model and response forward operators.",
+    "A qualified physical background extending to the measured Voyager distance; the approved0.30\u20131.20AU upstream profile cannot be extrapolated to these observers.",
+    "Frozen reservoir/spectral/timing comparison criteria and an actual production run; available published descriptive constraints are not a numerical intensity reference."
+  ],
+  "comparison": {
+    "status": "NOT_RUN",
+    "validation_claim": false,
+    "acceptance_policy": "No fitted model output, synthetic observation, relaxed tolerance, or comparison PASS is supplied. Event-specific criteria must be frozen before a production comparison."
+  },
+  "existing_case": null,
+  "frame_units": {
+    "time": "UTC interval starts; daily/6h integration duration explicit",
+    "flux": "particles/(m^2 s sr MeV/n) as NASA archive; uncertainties paired with each channel",
+    "missing": "value0,error-1 is a missing measurement; omitted intervals remain absent",
+    "energy": "Exact instrument/year-dependent channel bounds retained in original header; not identical to paper22\u201327MeV",
+    "positions": "Published approximate heliocentric radii in AU; no synthetic trajectory"
+  }
+}

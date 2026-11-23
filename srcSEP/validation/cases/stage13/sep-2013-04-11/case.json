@@ -1,0 +1,139 @@
+{
+  "schema": "sep-stage13-observational-case-v1",
+  "case_id": "sep-2013-04-11",
+  "title": "2013 April 11 near-Earth OV01 continuity case",
+  "physics_scope": "Preserve and delegate the existing OV01 observational release gate and its original criteria; no new spherical or nonspherical transport qualification follows from this alias.",
+  "event": {
+    "date": "2013-04-11",
+    "time_basis": "UTC",
+    "source_history_time_origin_utc": "2013-04-11T06:00:00Z",
+    "observation_elapsed_hours_origin_utc": "2013-04-11T07:24:00Z",
+    "scored_spectra_elapsed_hours": [
+      4.0,
+      12.0,
+      36.0
+    ]
+  },
+  "sources": [
+    {
+      "id": "liu2025",
+      "title": "Physics-based Simulation of the 2013 April 11 Solar Energetic Particle Event",
+      "url": "https://doi.org/10.3847/1538-4357/adc4e3",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23",
+      "doi": "10.3847/1538-4357/adc4e3",
+      "arxiv": "2412.07581v2"
+    },
+    {
+      "id": "caltech-liu2025",
+      "title": "Published article and CC BY4.0 metadata",
+      "url": "https://authors.library.caltech.edu/records/qwsnd-jmx38",
+      "source_type": "primary-publication-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "ccmc20130411",
+      "title": "CCMC SEP Model Validation Challenge: April 11, 2013",
+      "url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/20130411.php",
+      "source_type": "official-processed-observation-table",
+      "verified_utc": "2026-11-23"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "../../OV01/input.json",
+      "sha256": "8c0048344cc95c4e7f4d3ebbbb5e8445285f6fc7f6e1dcff6c8ec16a94e949c8",
+      "bytes": 2142,
+      "role": "existing-reviewed-case-input",
+      "source_id": "liu2025"
+    },
+    {
+      "path": "../../OV01/publication_input.json",
+      "sha256": "4d0eb5f7c5d1c86a044c21ee1c23c442c1f525962054a9f6d0acc65a265c8f2c",
+      "bytes": 1029,
+      "role": "existing-publication-input",
+      "source_id": "liu2025"
+    },
+    {
+      "path": "../../XM03/reference/liu_figure12_earth_observations.csv",
+      "sha256": "4f8d9acb37458a3b68b1bf3388039eba82d985ac31f9e2d8c46ed8083b913de6",
+      "bytes": 5132,
+      "role": "observations",
+      "source_id": "liu2025",
+      "rows": 80
+    },
+    {
+      "path": "../../XM03/reference/provenance.json",
+      "sha256": "7b1a60204995234cd95544bbd2e9f90f96ca737f45861cf1469f2eb3fb248708",
+      "bytes": 2635,
+      "role": "existing-reference-provenance",
+      "source_id": "liu2025"
+    },
+    {
+      "path": "../../XM03/input/earth_shock_thermal_source.csv",
+      "sha256": "43b45b45f1a520a96354c8e39918f35b544496a35812c63a46dd0cb13901066d",
+      "bytes": 2463,
+      "role": "existing-source-proxy-not-observation",
+      "source_id": "liu2025",
+      "rows": 97
+    },
+    {
+      "path": "../../XM03/publication_input.json",
+      "sha256": "f29030587b705b915a4771eace217e70579fd16fa2fcc8038028c29b2cc852fe",
+      "bytes": 6239,
+      "role": "existing-source-contract",
+      "source_id": "liu2025"
+    }
+  ],
+  "required_observables": [
+    {
+      "name": "Existing 80 Figure12(a-c) near-Earth spectral points",
+      "status": "AVAILABLE_REVIEWED_DIGITIZATION",
+      "artifact_paths": [
+        "../../XM03/reference/liu_figure12_earth_observations.csv"
+      ]
+    },
+    {
+      "name": "Raw response-calibrated spectra and full uncertainty/processing arrays",
+      "status": "MISSING",
+      "artifact_paths": []
+    },
+    {
+      "name": "Independent measured shock/field-line history",
+      "status": "MISSING",
+      "artifact_paths": []
+    }
+  ],
+  "readiness": {
+    "observations": "AVAILABLE_REVIEWED_PUBLICATION_DIGITIZATION",
+    "model_inputs": "PARTIAL_EXISTING_OV01",
+    "forward_operator": "EXISTING_OV01_WITH_DOCUMENTED_LIMITS",
+    "comparison": "NOT_RUN"
+  },
+  "missing_required_inputs": [
+    "time-dependent Earth-connected AWSoM field line",
+    "three-dimensional shock geometry and source area",
+    "complete SWMF/SOFIE restart and run deck",
+    "Exact background-subtracted instrument arrays and response/uncertainty products underlying the existing publication digitization.",
+    "A separately reviewed nonspherical moving-background/shock realization for any new Stage13 geometry validation; OV01 continuity alone does not qualify it."
+  ],
+  "comparison": {
+    "status": "NOT_RUN",
+    "validation_claim": false,
+    "acceptance_policy": "Preserve existing registered criteria; no new numerical tolerance or fitted forcing is supplied by this metadata package."
+  },
+  "existing_case": "OV01",
+  "frame_units": {
+    "observer": "Near Earth: ACE/EPAM, GOES-13/EPEAD and SOHO/ERNE",
+    "energy": "MeV with actual lower/upper channel bounds in canonical CSV",
+    "differential_intensity": "pfu MeV^-1 = (cm^2 s sr MeV)^-1",
+    "observation_time": "Hours after07:24UTC CME launch; retain distinct06:00UTC source-history origin",
+    "source_proxy": "Published Earth-connected shock thermal energy density; a forcing proxy, never an independent observation"
+  },
+  "continuity": {
+    "runner_case": "OV01",
+    "normalization": "Existing one global log-least-squares amplitude across all times/energies/instruments; no new fitting rule introduced.",
+    "criteria_source": "../../OV01/input.json#/acceptance",
+    "shared_reference_policy": "Use canonical files by relative path; do not duplicate, regenerate or replace them in the Stage13 package."
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "schema": "sep-stage13-observational-case-v1",
+  "case_id": "eclipse-2020-12-14",
+  "title": "2020 December 14 eclipse and K-Cor low-corona observations",
+  "physics_scope": "Low-corona projected morphology, front motion, pB and derived electron-density comparison; separate observing sites, components and later K-Cor coverage.",
+  "event": {
+    "date": "2020-12-14",
+    "time_basis": "UTC",
+    "observation_day_start_utc": "2020-12-14T00:00:00Z",
+    "observation_day_end_utc": "2020-12-15T00:00:00Z"
+  },
+  "sources": [
+    {
+      "id": "boe2021",
+      "title": "The Double-Bubble CME of the 2020 December 14 Total Solar Eclipse",
+      "url": "https://arxiv.org/html/2106.04027v1",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23",
+      "doi": "10.3847/2041-8213/ac05ca",
+      "arxiv": "2106.04027v1"
+    },
+    {
+      "id": "hao20201214",
+      "title": "MLSO: Total solar eclipse day CMEs",
+      "url": "https://www2.hao.ucar.edu/mlso/event-gallery/2020-12-14-total-solar-eclipse-day-cmes",
+      "source_type": "instrument-team-event-page",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "edwards2023",
+      "title": "Derived Electron Densities from Linear Polarization Observations of the Visible-Light Corona During the 14 December 2020 Total Solar Eclipse",
+      "url": "https://link.springer.com/article/10.1007/s11207-023-02231-5",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23",
+      "doi": "10.1007/s11207-023-02231-5"
+    },
+    {
+      "id": "abramson2021",
+      "title": "Serendipitous observation of a coronal mass ejection during the total solar eclipse of 14 December 2020",
+      "url": "https://www.papersinphysics.org/papersinphysics/article/view/718",
+      "source_type": "primary-publication",
+      "verified_utc": "2026-11-23",
+      "doi": "10.4279/pip.130004"
+    },
+    {
+      "id": "mlso-archive",
+      "title": "MLSO K-Cor date-specific data selector",
+      "url": "https://mlso.hao.ucar.edu/mlso_data_summary.php?date=2020-12-14&inst=kcor",
+      "source_type": "official-instrument-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "kcor-radial-pb",
+      "title": "2020-12-14 K-Cor azimuthally averaged pB versus heliocentric radius",
+      "url": "https://mlso.hao.ucar.edu/hao/acos/engineering/2020/12/14/20201214.kcor.radial.intensity.txt",
+      "source_type": "official-processed-observation-product",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "kcor-radial-description",
+      "title": "MLSO description of azimuthally averaged coronal polarization brightness versus height",
+      "url": "https://mlso.hao.ucar.edu/files/web_page_pB_radial_plot_info.pdf",
+      "source_type": "official-product-documentation",
+      "verified_utc": "2026-11-23",
+      "retrieved_document_sha256": "4266c57cbb0c3913261de73cfdecf463c893268c845d89e3902a20b1276655c8"
+    },
+    {
+      "id": "mlso-data-citation",
+      "title": "MLSO data-use acknowledgements: K-Cor dataset DOI10.5065/D69G5JV8",
+      "url": "https://www2.hao.ucar.edu/mlso/data-use-acknowledgements",
+      "source_type": "official-data-citation-policy",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "ucar-data-terms",
+      "title": "UCAR data repository terms of use",
+      "url": "https://www.ucar.edu/terms-of-use/data",
+      "source_type": "official-data-terms",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "kcor-l2-175641",
+      "title": "MLSO K-Cor calibrated L2 pB exposure17:56:41–17:56:56UTC on2020-12-14, reprocessed2025",
+      "url": "https://mlso.hao.ucar.edu/hao/acos/2020/12/14/20201214_175641_kcor_l2_pb.fts.gz",
+      "source_type": "official-calibrated-observation-product-metadata",
+      "verified_utc": "2026-11-23",
+      "doi": "10.5065/D69G5JV8"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "reference/observing_windows.csv",
+      "sha256": "93f0702d75ab79b593a188640bd7bf045ffb2f0bdbaec41e83ae46359499d42c",
+      "bytes": 596,
+      "role": "observing-metadata",
+      "source_ids": [
+        "boe2021",
+        "hao20201214"
+      ],
+      "scoring_eligible": false,
+      "source_id": "boe2021"
+    },
+    {
+      "path": "reference/reported_pos_speed_ranges.csv",
+      "sha256": "c714627bfba42dbd739bef7dd780b33db3a86615c7e6e75a7e7bb229b12aca09",
+      "bytes": 419,
+      "role": "approximate-published-metadata",
+      "source_id": "boe2021",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/20201214.kcor.radial.intensity.txt",
+      "sha256": "516b6d505bbb60bf0f5e9590f2a8389137754b6c881e6783d7f89dd5b6e3e7ee",
+      "bytes": 2192,
+      "role": "official-azimuthal-mean-pB-profile",
+      "source_id": "kcor-radial-pb",
+      "download_url": "https://mlso.hao.ucar.edu/hao/acos/engineering/2020/12/14/20201214.kcor.radial.intensity.txt",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/provenance.json",
+      "sha256": "7993e571357a542cef93805151e15993a22296308f4b33cd1b4da78b59b7c477",
+      "bytes": 3242,
+      "role": "reference-provenance",
+      "source_id": "edwards2023",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/electron_density_metadata.json",
+      "sha256": "6c0b4bdbef98f459bdf50ae4a1139ea8c13501dee18bf5eec262de8d5c558d8e",
+      "bytes": 2180,
+      "role": "electron-density-inversion-metadata",
+      "source_id": "edwards2023",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/kcor_level2_exposure.json",
+      "sha256": "d0b852784a120417e6798e80aefd7ff24155490ca49275da6dc4d53344722967",
+      "bytes": 3901,
+      "role": "calibrated-exposure-metadata",
+      "source_id": "kcor-l2-175641",
+      "scoring_eligible": false
+    },
+    {
+      "path": "reference/20201214_175641_kcor_l2_pb.header.json",
+      "sha256": "b6d327dbb7ae3fa403ee752770e65519d0d3622ab7579f3613b6c6f41e2d5339",
+      "bytes": 14348,
+      "role": "original-calibrated-exposure-FITS-header",
+      "source_id": "kcor-l2-175641",
+      "scoring_eligible": false
+    }
+  ],
+  "required_observables": [
+    {
+      "name": "Reported observing windows and approximate projected speed ranges",
+      "status": "AVAILABLE_METADATA_ONLY",
+      "artifact_paths": [
+        "reference/observing_windows.csv",
+        "reference/reported_pos_speed_ranges.csv"
+      ]
+    },
+    {
+      "name": "Official daily azimuthal-mean pB radial scan, 53 samples with angular standard deviation",
+      "status": "AVAILABLE_WITH_LIMITED_METADATA",
+      "artifact_paths": [
+        "reference/20201214.kcor.radial.intensity.txt"
+      ]
+    },
+    {
+      "name": "Calibrated K-Cor/eclipse pB and electron-density arrays with uncertainties",
+      "status": "MISSING",
+      "artifact_paths": []
+    },
+    {
+      "name": "Measured front points and component associations with uncertainties",
+      "status": "MISSING",
+      "artifact_paths": []
+    },
+    {
+      "name": "Published directional electron-density inversion metadata and data availability",
+      "status": "METADATA_AVAILABLE_NUMERIC_ARRAY_MISSING",
+      "artifact_paths": [
+        "reference/electron_density_metadata.json"
+      ]
+    },
+    {
+      "name": "Actual calibrated L2 exposure UTC, brightness/polarization, geometry and processing provenance",
+      "status": "AVAILABLE_METADATA_RAW_BINARY_EXTERNAL",
+      "artifact_paths": [
+        "reference/kcor_level2_exposure.json",
+        "reference/20201214_175641_kcor_l2_pb.header.json"
+      ]
+    }
+  ],
+  "readiness": {
+    "observations": "PARTIAL_OFFICIAL_PB_AND_VERIFIED_CALIBRATED_EXPOSURE_METADATA",
+    "model_inputs": "MISSING",
+    "forward_operator": "MISSING",
+    "comparison": "NOT_RUN"
+  },
+  "missing_required_inputs": [
+    "A reviewed exposure/region/baseline selection and the calibrated local images, masks and error products needed for the actual comparison. The verified17:56:41UTC L2 exposure is later than eclipse totality, is reprocessed in2025 and has no error extension; it is not a verified quiet or simultaneous reference.",
+    "Eclipse images or derived pB/electron-density tables with observation location, exact timing, image registration, radiometric calibration, sky/background treatment, line-of-sight inversion assumptions and uncertainty/covariance.",
+    "Feature-by-feature measured front positions and uncertainty regions, including an explicit association between the eclipse double-bubble components and the later K-Cor CMEs.",
+    "Event-specific magnetogram/PFSS configuration and Sun-observer geometry plus a reviewed projection/Thomson-scattering forward operator.",
+    "A shock-versus-material-front identification and geometry model capable of representing the observed components; plane-of-sky speed ranges alone do not establish a 3D shock or spherical closure.",
+    "Reviewed observational scoring metrics and uncertainty acceptance; no numerical tolerance is inferred from approximate published ranges."
+  ],
+  "comparison": {
+    "status": "NOT_RUN",
+    "validation_claim": false,
+    "acceptance_policy": "Preserve existing registered criteria; no new numerical tolerance or fitted forcing is supplied by this metadata package."
+  },
+  "existing_case": null,
+  "frame_units": {
+    "time": "UTC; minute-level caption times are not exact exposure times",
+    "position": "Plane of sky from each declared observing site; no HCI Cartesian reconstruction is supplied",
+    "speed": "km s^-1 plane-of-sky approximate ranges; no deprojection applied",
+    "brightness": "Daily 360-degree azimuthal-mean pB in B/Bsun; second column is angular standard deviation, not measurement-error sigma.",
+    "density": "Electron density requires its actual published inversion and uncertainty; no density values fabricated"
+  },
+  "acquisition": {
+    "method": "curl-HTTPS-small-checksum-pinned-processed-product",
+    "status": "ACQUIRED_PARTIAL",
+    "retrieved_utc": "2026-11-23",
+    "official_radial_pb_rows": 53,
+    "full_fits_acquired": false,
+    "note": "The official date selector and linked numerical engineering table are reachable using curl. The table gives pB and azimuthal standard deviation in B/Bsun at radii1.07–2.11Rsun, without an exposure timestamp in the file. Full calibrated images and derived electron-density arrays are not acquired.",
+    "calibrated_single_exposure_metadata": "VERIFIED; compressed raw binary kept outside source package"
+  }
+}

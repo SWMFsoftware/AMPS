@@ -881,6 +881,15 @@ PARK01 | parker | duplicate
             for forbidden in ("liu", "doi", "figure 12", "reference:", "source"):
                 self.assertNotIn(forbidden, visible_text)
 
+        with mock.patch.object(runner, "_save_figure", side_effect=capture) as save:
+            outputs = runner._xm03_plot(case, Path("unused"), model, reference,
+                                        1.0, ("png", "eps"), case_id="OV01")
+        self.assertEqual([path.name for path in outputs], [
+            "OV01_earth_observation_comparison.png",
+            "OV01_earth_observation_comparison.eps",
+        ])
+        self.assertEqual(len(save.call_args.args[0].axes), 3)
+
     def test_xm03_uses_one_global_amplitude_for_all_observations(self):
         """Prevent accidental per-time or per-instrument normalization.
 
@@ -942,6 +951,18 @@ PARK01 | parker | duplicate
         self.assertEqual(
             xm03_arguments[xm03_arguments.index("--duration-s") + 1],
             "158400.0")
+
+    def test_ov01_alias_uses_the_canonical_xm03_source(self):
+        runner = _load_cross_model_runner()
+        cases = ROOT / "validation" / "cases"
+        ov01_path = cases / "OV01" / "input.json"
+        case = json.loads(ov01_path.read_text(encoding="utf-8"))
+        args = runner._xm03_arguments(case, ov01_path)
+        self.assertEqual(Path(args[args.index("--source-history-csv") + 1]),
+                         cases / "XM03" / "input" / "earth_shock_thermal_source.csv")
+        case["physics"]["source_history_case"] = "OV01"
+        with self.assertRaisesRegex(ValueError, "registered OV01"):
+            runner._xm03_arguments(case, ov01_path)
 
     def test_existing_report_produces_png_eps_and_manifests(self):
         with tempfile.TemporaryDirectory(prefix="srcsep-python-runner-") as tmp:

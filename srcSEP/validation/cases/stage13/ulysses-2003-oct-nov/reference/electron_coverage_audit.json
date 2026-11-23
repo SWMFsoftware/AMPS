@@ -1,0 +1,30 @@
+{
+  "schema": "sep-stage13-electron-coverage-audit-v1",
+  "comparison_status": "NOT_RUN",
+  "dataset": "UY_M0_BAE",
+  "requested_start_utc": "2003-10-28T00:00:00Z",
+  "requested_stop_exclusive_utc": "2003-10-30T00:00:00Z",
+  "query_url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=UY_M0_BAE&parameters=Time,Density,Temperature&time.min=2003-10-28T00:00:00Z&time.max=2003-10-30T00:00:00Z&format=csv",
+  "received_row_count": 1,
+  "received_timestamp": "2003-05-31T23:43:22.000Z",
+  "received_body_sha256": "8cb1d9f6b711f3645cabed25a2dd0d115ddcc301e36a85591f2bc4b590560fd0",
+  "decision": "REJECTED_OUTSIDE_REQUESTED_INTERVAL; no electron observation added.",
+  "catalog_interval_claim": [
+    "1990-11-18T00:55:16Z",
+    "2004-12-31T00:00:00Z"
+  ],
+  "catalog_claim_is_not_event_coverage": true,
+  "direct_archive_directory": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/plasma/swoops_cdaweb/bae_m0/2003/",
+  "direct_archive_listing_sha256": "8989236d9e39fc724735ec79e001134a574380775c9fe73058de13a549da9f03",
+  "latest_listed_2003_file": "uy_m0_bae_20030531_v02.cdf",
+  "october_2003_files_found": 0,
+  "guide_url": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/plasma/swoops/electron/swoops_electron_users_guide_update_20030213.txt",
+  "guide_sha256": "fe5f9d33714f5e4d869f9c4ff9a8d8541f4655c534c3f5f53f3c03bcb1adad8c",
+  "guide_processing_facts": [
+    "The total/core/halo products are scalar electron temperatures from corrected distributions.",
+    "Core density uses interpolated ion charge density minus halo density; it is not independent quasi-neutrality evidence.",
+    "Spacecraft-potential/photoelectron corrections and some scattered-light interpolation are part of archive processing.",
+    "Core timestamp centers a2-minute spectrum; appropriate halo time is approximately30seconds later."
+  ],
+  "remaining_evidence": "An authentic in-period electron distribution/moment product with processing and uncertainty provenance, or explicit missing thermal input; no May-to-October interpolation."
+}

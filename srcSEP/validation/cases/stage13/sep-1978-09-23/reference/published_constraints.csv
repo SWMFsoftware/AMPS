@@ -1,0 +1,6 @@
+quantity,observer,value,units,source_id,source_locator,classification
+heliocentric_distance,Voyager1,4.2,AU,reames2013,Section 2.4; Figure 7,published-observer-position
+heliocentric_distance,Voyager2,3.9,AU,reames2013,Section 2.4; Figure 7,published-observer-position
+heliocentric_distance,Helios1,0.76,AU,reames2013,Section 2.4; Figure 7,published-observer-position
+heliocentric_distance,Helios2,0.74,AU,reames2013,Section 2.4; Figure 7,published-observer-position
+reservoir_approach_by,Voyager1-and-2,1978-09-28,UTC_date,reames2013,"Section2.4,22–27MeV protons",published-qualitative-timing-not-a-flux-sample

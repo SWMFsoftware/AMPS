@@ -5,7 +5,7 @@ CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -Wpedantic -Werror
 # ../../general/input supplies the header-only generic AMPS runtime-input
 # reader (amps_input.h; grammar in src/INPUT_FILE.md).  It has no PIC, MPI or
 # application dependency, so the dependency-light layering is preserved.
-CPPFLAGS := -Iinclude -Ishock_front -I../sep_coronal_cme/include \
+CPPFLAGS := -Iinclude -Ishock_front -I../swcme -I../sep_coronal_cme/include \
 	-I../sep_coronal_cme/src -I../sep_common -I../../general/input
 BUILD := build
 SOURCES := $(wildcard src/*.cpp)
@@ -178,7 +178,7 @@ test: $(BUILD)/test_bg3d1 $(BUILD)/test_bg3d2 $(BUILD)/test_bg3d3 \
 		$(BUILD)/test_spherical_sector $(BUILD)/test_cross_ray_mesh \
 		$(BUILD)/test_cross_ray_ct $(BUILD)/test_cross_ray_reconstruction \
 		$(BUILD)/test_cross_ray_fluid $(BUILD)/test_cross_ray_contact \
-		$(BUILD)/test_material_transport check-architecture
+		$(BUILD)/test_material_transport $(BUILD)/test_spherical_shock_only check-architecture
 	$(BUILD)/test_bg3d1
 	$(BUILD)/test_bg3d2
 	$(BUILD)/test_bg3d3
@@ -202,8 +202,21 @@ test: $(BUILD)/test_bg3d1 $(BUILD)/test_bg3d2 $(BUILD)/test_bg3d3 \
 	$(BUILD)/test_cross_ray_fluid
 	$(BUILD)/test_cross_ray_contact
 	$(BUILD)/test_material_transport
+	$(BUILD)/test_spherical_shock_only --all
 
 clean:
 	rm -rf $(BUILD)
 
 -include $(OBJECTS:.o=.d)
+
+# Stage13's explicit spherical SHOCK_ONLY ambient/material candidate. This
+# standalone core gate does not link PIC/MPI or admit a native particle model.
+$(BUILD)/test_spherical_shock_only: test/test_spherical_shock_only.cpp \
+        test/spherical_shock_only_fixture.h test/spherical_limit_reference.h \
+        $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+.PHONY: test-spherical-shock-only
+test-spherical-shock-only: $(BUILD)/test_spherical_shock_only
+	$(BUILD)/test_spherical_shock_only --all

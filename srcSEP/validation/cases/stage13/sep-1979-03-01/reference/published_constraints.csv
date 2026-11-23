@@ -1,0 +1,6 @@
+quantity,observer,value,units,source_id,source_locator,classification
+heliocentric_distance,Voyager2,4.76,AU,reames2013,Section 2.5; Figure 8,published-observer-position
+heliocentric_distance,Helios1,0.95,AU,reames2013,Section 2.5; Figure 8,published-observer-position
+heliocentric_distance,Helios2,0.93,AU,reames2013,Section 2.5; Figure 8,published-observer-position
+reservoir_formation,Helios1-Helios2-IMP8,1979-03-03,UTC_date,reames2013,"Section2.5,approximately20MeV protons",published-qualitative-timing-not-a-flux-sample
+lower_energy_reservoir_formation,Helios1-Helios2-IMP8,1979-03-04T12:00:00Z,approximate_UTC,reames2013,"Section2.5,6–11MeV protons",published-qualitative-timing-not-a-flux-sample

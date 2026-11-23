@@ -58,6 +58,10 @@
 #include <random>
 #include <unistd.h>
 
+namespace SEP::Testing {
+Result VerifySphericalMaterialAdapter();
+}
+
 namespace {
 
 SEP::Testing::CampaignOptions campaignOptions;
@@ -974,6 +978,11 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
         SEP::Testing::BackgroundDerivativeDescriptors();
     descriptors.insert(descriptors.end(), derivative_descriptors.begin(),
                        derivative_descriptors.end());
+    descriptors.push_back(MakeDescriptor("S13AD01", "Spherical SWCME3D material adapter",
+        "background", "Verify a detached spherical core interval through the linked SEP adapter.",
+        SEP::Testing::InitializationLevel::None, SEP::Testing::RuntimeClass::Routine,
+        "deterministic manufactured open field", "immutable stack-scoped core event",
+        SEP::Testing::VerifySphericalMaterialAdapter));
     const auto analytic_native_descriptors=SEP::Testing::AnalyticRadialNativeDescriptors();
     descriptors.insert(descriptors.end(),analytic_native_descriptors.begin(),analytic_native_descriptors.end());
     const auto analytic_radial_descriptors=SEP::Testing::AnalyticRadialDescriptors();

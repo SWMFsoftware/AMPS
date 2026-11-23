@@ -14,6 +14,179 @@ the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
 
+## Stage 13 spherical `SHOCK_ONLY`, 2026-11-23
+
+The approved physical heliocentric particle domain is 1.05 solar radii to
+5 AU. The first profile uses open PFSS tubes and the accelerating isothermal
+Parker candidate. A physical 5 AU escape surface, provider guard coverage and
+an 8 AU Ulysses comparison control are distinct. The approved AMPS global
+step and sampling schedule remain fixed. For interplanetary scattering the
+approved validation uses prescribed proton coefficients tied to evidence,
+followed by a same-source larger-domain sensitivity check. The source keeps
+net upstream escape and first return deletion.
+
+Implemented the canonical Sun-centred sphere and open-field core, the
+velocity/magnetic derivatives and scalar gradient diagnostics, the HCI
+trajectory and variational map, and matched-epoch field-line intersections
+and local shock queries. The controlled linked adapter exposes the candidate via
+detached profile `swcme3d-sphere-pfss-parker-kinematic-v1`. The independent
+manufactured nonradial PFSS tube needs a field-aligned sustaining acceleration
+of about -27.97 m/s² in the signed field direction. The candidate therefore
+still needs a reviewed coronal momentum/heat closure before live native
+geometry, source, boundaries, scattering, and restart can be qualified.
+
+All seven cases are selected from `input/sep_stage13.in` with `-i FILE -case
+NAME` on the shared build configured by `input/sep_stage13.conf`. The cases
+include checksummed K-Cor, GOES, ERNE and Ulysses observations or spacecraft
+coverage and published constraints. The historical Voyager flux products have
+missing event coverage. Each case records its missing observation, forcing and
+response prerequisites. `sep-2013-04-11` delegates the existing OV01
+comparison. OV01 now resolves the existing shared source under XM03 and
+renders its expected three-epoch figure. The linked calculation completed
+and produced byte-identical model CSVs in two builds. The original scoring
+gate failed three criteria. Coverage was 0.816901 (required 0.9), RMSE
+0.789031 dex (maximum 0.5) and median error 0.635989 dex (maximum 0.5).
+The correlation of 0.691275 met its 0.45 minimum. Ten of the missing 13
+scored points occur at 36 hours in channels between 17.89 and 89.44 MeV.
+Case inputs, normalization and acceptance rules are preserved.
+
+The clean Stage 13 build linked after correcting the linked bridge test's
+canonical include paths. The ten strict spherical cases and the same ten
+with ASan/UBSan passed. Leak detection was unavailable under ptrace. The
+linked `S13AD01` passed at one and two MPI ranks. All twelve `PCLI01`–`PCLI12`
+checks, seven `.in`/reference integrity checks and 28 Python runner tests
+passed. The SWCME relocation gate passed with its original source ownership
+checks. The full observational command returned exit 1 with one continuity
+FAIL and six SKIP. The broader `make -C srcSEP test` returned exit 2 at CV01
+because the environment denied MPI singleton network startup. A single MPI
+allocation completed CV01's first native job and reference calculation. The
+second fresh-process launch stopped at `MPI_Init_thread` with OPAL
+`Unreachable`. The approved Python launcher completed all six native and
+reference pairs before its interpreter reported missing Matplotlib. The
+system Python scored those same CSVs and generated the plots using the
+original CV01 functions. All ten CV01 criteria passed in `cv01-rescore`.
+The supplementary composite core run finished with `make` exit 2. The
+architecture check, `CMBGU01`–`CMBGU05` and `CSWC0620`–`CSWC0627` passed.
+`CSWC0628` finished its 40-, 80- and 160-cell piston calculations and failed
+the original common-shock-branch gate. The isolated comparison below
+reproduces that failure in the pre-Stage-13 checkout. The original broader
+run evidence is in `corona-regression.log`.
+
+### Approved wind closure and parallel verification
+
+The proposed first physics case uses the documented `tube-isopoly` branch on
+an independently identified slow-to-intermediate open stream. Solve the
+steady momentum equation on the traced tube using its magnetic cross section,
+separate electron and proton temperature laws, explicitly declared
+composition, and one density or mass-loading anchor. For the initial thermal
+trial set extra parallel acceleration to zero and check the implied species
+energy budgets. The current sampled critical-candidate routine marks the
+outermost positive candidate as admissible. A production solve needs a regular
+sonic crossing and a branch that connects the coronal and heliospheric
+endpoints. This proposal still needs an event-specific thermal and mass-loading
+asset with stated uncertainty. The prescribed low-corona and outer-wind
+support also need qualification before native source admission.
+
+Compare against coronal spectroscopy, white-light density and Doppler-dimming
+outflow, then in-situ velocity, density, species temperature and magnetic field
+for the supported stream population. Use independent observations for
+qualification and propagate their uncertainty into shock formation and source
+eligibility. The [composite wind specification](../src/models/sep_corona_swcme/model.md#60-ambient-authority-and-coupled-wind-thermodynamics)
+describes the closure and [Dakeyo et al.](https://arxiv.org/abs/2207.03898)
+provides the radial observational control. The published pressure-only fit
+covers selected populations and requires separate low-corona and beyond-1-AU
+checks.
+
+An independent one-dimensional pure-dipole polar PFSS oracle now checks the
+three-dimensional spherical candidate using the same isothermal wind law.
+All ten strict core checks passed with the new oracle. `S13SC02`, `S13SC03`
+and `S13SC06` cover primitives and gradients, material motion and deformation,
+and the parallel shock jump.
+The original `CSWC0628` case ran in isolated builds of the Stage 13 tree and
+pre-Stage-13 commit `b9d3566`. The input hashes and complete output match
+byte-for-byte, including all three level fingerprints, both mass diagnostics,
+and the common-shock-branch failure. Both executables returned 1. This
+reproduces the inherited failure with the original gate and leaves the
+regional piston gate open. Evidence and process receipts are under
+`/data/vtenishe/TEST/stage13-matched-limit-cswc0628-20261123`.
+
+The [campaign guide](validation/STAGE13_SPHERICAL_VALIDATION.md) documents
+execution and per-case limitations. Native build, campaign and regression
+evidence is in `/data/vtenishe/TEST/sep-stage13-validation-20261123`.
+The core evidence is in `/data/vtenishe/TEST/stage13-spherical-core-20261123`.
+
+### Implemented thermal open-tube solve
+
+The approved thermal-only branch is implemented for monotone open tubes in
+an axisymmetric PFSS sector. It traces the meridional field, solves for the
+regular transonic speed with separate species temperatures, reports the
+implied heat rates, and joins to the radial momentum equation with the
+rotating Parker field. `SurfaceOnTube` feeds the resolved HCI upstream state
+at the exact front radius and epoch into the existing oblique fast-shock
+and RH solver. It verifies immutable ambient ownership. Numerical mesh and
+shooting steps are internal to the wind solve and have no role in the fixed
+AMPS physical timestep.
+
+`S13SC04` retains the kinematic sustaining-force check and now verifies the
+resolved flow against the independent dipole flux function and a differenced
+momentum equation. The maximum normalized force residual over the checked
+coronal, transonic and interplanetary samples was `2.604e-7`. The new checks
+cover both polarities, the source-surface flux handoff, and the solved-wind
+fast/sub-fast shock classification. The heat check independently
+differences species pressure and density using the radial material speed.
+It fails when the field-aligned speed multiplies derivatives taken in the
+radial coordinate and passes with the correct projection. The independent
+`IPW01`–`IPW07` cases
+cover radial limits, species heat budgets, multiple candidates including
+equal minima, and invalid or missing input. The original coronal registry
+ran 229 PASS, zero FAIL and three explicitly unqualified evidence SKIPs.
+All seven wind checks and all ten spherical core checks also passed with
+ASan/UBSan. The regenerated `sep_stage13` executable ran the expanded
+35-assertion `S13AD01` at one and two MPI ranks and passed `PCLI01`–`12`.
+`make -C srcSEP test-stage13-cases` passed the wind and spherical checks
+and all seven case definitions under the rebuilt selector.
+The broader `make -C srcSEP -j1 test` stopped at CV01's second native launch.
+A direct `/usr/bin/python3` invocation reached `MPI_Init_thread` and failed
+to start the singleton MPI daemon. The successful CV01 replay used six
+separate `mpirun -np 1` launches with the same inputs, and `/usr/bin/python3`
+for all six independent references, the original scorer and both figures.
+All ten CV01 criteria passed. The replay receipt is
+`/data/vtenishe/TEST/stage13-isopoly-20261123/cv01-system-fresh-mpi/result.json`.
+
+The extended Ulysses case includes 1,464 hourly plasma/field records and
+401 proton moment records. Its electron-temperature archive ends before
+the October comparison interval. The documented Metis–PSP wind connection
+covers only part of the coronal and inner-heliospheric acceleration region,
+and the coronal inversion uses PSP inputs. The current assets do not supply
+one observationally supported composition, thermal law, and mass-flux
+anchor through both particle boundaries. The
+[thermodynamic assessment](validation/cases/stage13/ulysses-2003-oct-nov/THERMODYNAMIC_QUALIFICATION.md)
+records the coverage checks and a specific public follow-up data route.
+The archive search also identified the 1997 and 1998 SOHO–Ulysses quadratures
+near 5.1 and 5.2 AU. Actual Ulysses electron, proton, magnetic-field and
+composition records were retrieved in their separate arrival intervals. The
+coronal measurements are substantially above the required inner thermal
+support, and the 1998 published proton outflow inference shares the outer
+mass-flux data. The [data-source README](validation/cases/stage13/README.md)
+records all seven maintained cases and the new candidate datasets, coverage,
+roles and exact archive audit path.
+The observational replay with the regenerated executable returned one FAIL
+and six SKIPs. The original OV01 continuity comparison retained coverage
+`0.816901408`, log-intensity RMSE `0.789030561` dex and median absolute
+error `0.635988938` dex. Those outputs and the model CSV hash match the
+retained executable's replay exactly. The remaining six cases still lack
+the required spherical operators and reviewed event settings.
+
+Stage 13 remains open. Its next implementation gate is an immutable spatial
+wind realization with a continuous tube family, transverse derivatives and a
+validated longitude map if the input is nonaxisymmetric. The
+[native lifecycle audit](validation/STAGE13_NATIVE_LIFECYCLE_AUDIT.md) details
+the following zero-particle, source, physical escape and restart tests. The
+expanded linked adapter case verifies the detached bridge and fail-closed
+admission, including the exact species and primitive translations. Frozen
+observational gates and the Stage 12 wind are preserved. Current evidence is
+in `/data/vtenishe/TEST/stage13-isopoly-20261123`.
+
 ## Stage 12 upstream physics decision, 2026-11-23
 
 The user approved the prescribed outer-wind candidate for the new SWCME1D

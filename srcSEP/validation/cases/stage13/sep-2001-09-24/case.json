@@ -1,0 +1,116 @@
+{
+  "schema": "sep-stage13-observational-case-v1",
+  "case_id": "sep-2001-09-24",
+  "title": "2001 September 24 ERNE returning-particle reference",
+  "physics_scope": "Counterstreaming/PAD timing and outer-reflection discrimination; a one-field-line test must account for actual sensor acceptance.",
+  "event": {
+    "date": "2001-09-24",
+    "time_basis": "UTC",
+    "observation_start_utc": "2001-09-24T10:00:00Z",
+    "observation_end_utc": "2001-09-24T16:00:00Z"
+  },
+  "sources": [
+    {
+      "id": "tan2009",
+      "title": "Tan et al. (2009), outer reflecting boundary evidence",
+      "url": "https://epact2.gsfc.nasa.gov/don/09TanApJ.pdf",
+      "source_type": "primary-publication-author-archive",
+      "verified_utc": "2026-11-23",
+      "doi": "10.1088/0004-637X/701/2/1753",
+      "retrieved_document_sha256": "43140e7bf68faeff69acd68b718c6cca9a281618b28d545fbe597f07b8f279ec"
+    },
+    {
+      "id": "erne-hapi",
+      "title": "NASA CDAWeb SOHO ERNE-HED L2 1-minute intensity/count subset",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=SOHO_ERNE-HED_L2-1MIN&parameters=Time,est,PH,PHC&time.min=2001-09-24T10:00:00Z&time.max=2001-09-24T16:00:00Z&format=csv",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "erne-info",
+      "title": "HAPI parameter/energy/status metadata",
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOHO_ERNE-HED_L2-1MIN",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    },
+    {
+      "id": "soho-event",
+      "title": "SOHO mission event report",
+      "url": "https://soho.nascom.nasa.gov/hotshots/2001_09_24/",
+      "source_type": "official-archive",
+      "verified_utc": "2026-11-23"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "reference/erne_hed_20010924_1000_1600_hapi.csv",
+      "sha256": "e0e3a1eec49265773f637b78218c7268fc6d0a52ba179afb6f25f62d90f48398",
+      "bytes": 53072,
+      "role": "archived-observations",
+      "source_id": "erne-hapi",
+      "rows": 360
+    },
+    {
+      "path": "reference/erne_hed_hapi_info.json",
+      "sha256": "c1da15bedd0f210e8ef42c416f33385da566639f6060b5bee37ffd101cd0e6f1",
+      "bytes": 1557,
+      "role": "archive-parameter-metadata",
+      "source_id": "erne-info"
+    },
+    {
+      "path": "reference/published_return_constraints.csv",
+      "sha256": "e09ae0893fc41acfe7aa836dee2772f14be714d3422309a49f79f5784c8a9449",
+      "bytes": 900,
+      "role": "published-derived-observational-constraints",
+      "source_id": "tan2009",
+      "rows": 7
+    }
+  ],
+  "required_observables": [
+    {
+      "name": "One-minute HED intensity/count context",
+      "status": "AVAILABLE_ARCHIVE_SUBSET",
+      "artifact_paths": [
+        "reference/erne_hed_20010924_1000_1600_hapi.csv"
+      ]
+    },
+    {
+      "name": "Published onset/path/PAD constraints",
+      "status": "AVAILABLE_PUBLISHED_DERIVED",
+      "artifact_paths": [
+        "reference/published_return_constraints.csv"
+      ]
+    },
+    {
+      "name": "Calibrated directional/PAD time series",
+      "status": "MISSING",
+      "artifact_paths": []
+    }
+  ],
+  "readiness": {
+    "observations": "PARTIAL_AUTHENTIC_REFERENCES",
+    "model_inputs": "MISSING_REVIEWED_EVENT_REALIZATION",
+    "forward_operator": "NOT_QUALIFIED_FOR_THIS_CASE",
+    "comparison": "NOT_RUN"
+  },
+  "missing_required_inputs": [
+    "Response-calibrated ERNE pitch-angle distributions and uncertainties for the published 17\u201322 and 28\u201354 MeV bands; the archived PH/PHC arrays are not pitch-angle distributions.",
+    "Time-dependent magnetic direction and frame/acceptance transform used to reconstruct ERNE pitch angles; SOHO has no onboard magnetic-field measurement for this reconstruction.",
+    "Independent event shock/field-line/source history and a qualified return/outer-domain physical realization; do not impose the published fitted mirror estimate as both forcing and validation.",
+    "Instrument status-word interpretation, energy-response bounds and error/quality treatment for the fetched L2 interval; blank status cells remain archive fill.",
+    "Frozen timing/PAD/shape acceptance criteria and actual production comparison, with no amplitude or boundary fitting introduced by this package."
+  ],
+  "comparison": {
+    "status": "NOT_RUN",
+    "validation_claim": false,
+    "acceptance_policy": "No fitted model output, synthetic observation, relaxed tolerance, or comparison PASS is supplied. Event-specific criteria must be frozen before a production comparison."
+  },
+  "existing_case": null,
+  "frame_units": {
+    "time": "UTC, unchanged HAPI timestamps",
+    "flux": "(cm^2 s sr MeV)^-1 as archived; multiply by1e4 only when explicitly converting to SI",
+    "counts": "counts/min",
+    "energy": "HAPI nominal channel centers in MeV, not substitutes for response boundaries",
+    "pitch_angle": "Published mu_m table records magnitude only; signed model convention not inferred"
+  }
+}

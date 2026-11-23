@@ -801,6 +801,9 @@ Transport::Status WalkBlocks(const AMPS::Input::Block& parent,
 static Transport::Status ParseDocument(const AMPS::Input::Document& document,
                                        Configuration* result) {
   if (result == NULL) return Error("configuration output is null");
+  if (document.root.FindBlock("application", "sep-validation") != nullptr)
+    return Error("a SEP validation deck requires an explicit -case NAME; "
+                 "use --list-validation-cases to see the available names");
   Configuration candidate;
   WalkState walk;
   walk.configuration = &candidate;

@@ -1,0 +1,45 @@
+! Compile once: ./Config.pl -application=sep_stage13
+! Select a single observation with ./amps -i input/sep_stage13.in -case NAME.
+! Radii below are physical heliocentric boundaries. A model event supplies
+! its own ambient guard coverage for vertex motion and derivative stencils.
+#begin application: sep-validation
+  schema = 1
+  profile = swcme3d-sphere-shock-only
+  domain.inner_radius_solar = 1.05
+  domain.outer_radius_au = 5
+  boundary.outer = escape-no-incoming-sep
+  shock.return = delete
+
+  #begin case: eclipse-2020-12-14
+    case.role = coronal-density
+    case.manifest = ../srcSEP/validation/cases/stage13/eclipse-2020-12-14/case.json
+  #end case
+  #begin case: gle-2012-05-17
+    case.role = early-shock-formation
+    case.manifest = ../srcSEP/validation/cases/stage13/gle-2012-05-17/case.json
+  #end case
+  #begin case: sep-2013-04-11
+    case.role = near-earth-spectra
+    case.manifest = ../srcSEP/validation/cases/stage13/sep-2013-04-11/case.json
+    case.continuity_reference = OV01
+  #end case
+  #begin case: sep-2001-09-24
+    case.role = sunward-return
+    case.manifest = ../srcSEP/validation/cases/stage13/sep-2001-09-24/case.json
+  #end case
+  #begin case: sep-1978-09-23
+    case.role = outer-transport
+    case.manifest = ../srcSEP/validation/cases/stage13/sep-1978-09-23/case.json
+  #end case
+  #begin case: sep-1979-03-01
+    case.role = outer-transport
+    case.manifest = ../srcSEP/validation/cases/stage13/sep-1979-03-01/case.json
+  #end case
+  #begin case: ulysses-2003-oct-nov
+    case.role = larger-domain-control
+    case.manifest = ../srcSEP/validation/cases/stage13/ulysses-2003-oct-nov/case.json
+    ! The observing spacecraft was outside 5 AU. Keep this separately labelled
+    ! control radius out of all 5 AU comparisons and the common physical deck.
+    case.control_outer_radius_au = 8
+  #end case
+#end application

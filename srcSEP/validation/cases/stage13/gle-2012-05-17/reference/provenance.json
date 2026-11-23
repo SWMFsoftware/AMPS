@@ -1,0 +1,50 @@
+{
+  "schema": "srcsep-stage13-reference-provenance-v1",
+  "case_id": "gle-2012-05-17",
+  "source_url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/20120517.php",
+  "verified_utc": "2026-11-23",
+  "parent_csv": "../../EV01/reference/ccmc_2021_goes_observations.csv",
+  "parent_csv_sha256": "f2e4bc9870269250b09a2b55bb15872f85467abe73c090488910fdde3025f583",
+  "selection": {
+    "column": "event_id",
+    "equals": "20120517"
+  },
+  "output_csv": "ccmc_goes_event_quantities.csv",
+  "output_sha256": "54198c412e1125b7c579a4bbd44fd2c0d27c842f1c8674301c4aca666d533507",
+  "method": "Deterministic row selection, preserving all original field strings. No interpolation, normalization, background subtraction or synthetic point was introduced.",
+  "independent_primary_page_checks": [
+    {
+      "threshold_mev": 10,
+      "threshold_pfu": 10,
+      "crossing_utc": "2012-05-17T02:10:00Z",
+      "peak_utc": "2012-05-17T04:30:00Z",
+      "peak_flux_pfu": 255.44,
+      "end_utc": "2012-05-18T17:45:00Z",
+      "duration_hours": 39.58,
+      "fluence_cm2": 96100000.0
+    },
+    {
+      "threshold_mev": 100,
+      "threshold_pfu": 1,
+      "crossing_utc": "2012-05-17T02:00:00Z",
+      "peak_utc": "2012-05-17T02:30:00Z",
+      "peak_flux_pfu": 20.445,
+      "end_utc": "2012-05-17T16:30:00Z",
+      "duration_hours": 14.5,
+      "fluence_cm2": 3800000.0
+    }
+  ],
+  "limitations": [
+    "Processed event summaries do not contain the GOES time series, per-sample uncertainty or instrument response.",
+    "A GLE count-rate observation is not interchangeable with an integral proton flux."
+  ],
+  "path_basis": "case-directory",
+  "official_processed_json": {
+    "path": "reference/GOES-13_integral.2012-05-17T000000Z.json",
+    "url": "https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/docs/json/GOES-13_integral.2012-05-17T000000Z.json",
+    "sha256": "6e6c4c6763bb74ec293593aac8f81787266adc718b946fdb95406fcf3e268e7f",
+    "bytes": 8096,
+    "issue_time_utc": "2021-08-19T12:36:27Z",
+    "note": "Full official JSON is preserved byte-for-byte. Existing CSV fluences are deliberately rounded website table values, not replacements for the higher precision JSON values."
+  }
+}

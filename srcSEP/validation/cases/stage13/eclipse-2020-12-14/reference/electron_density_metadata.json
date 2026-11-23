@@ -1,0 +1,57 @@
+{
+  "schema": "srcsep-stage13-density-reference-metadata-v1",
+  "case_id": "eclipse-2020-12-14",
+  "primary_doi": "10.1007/s11207-023-02231-5",
+  "primary_url": "https://link.springer.com/article/10.1007/s11207-023-02231-5",
+  "authors": "Edwards et al.",
+  "verified_utc": "2026-11-23",
+  "instrument": "Aberystwyth Coronal Imaging Polarizer (CIP)",
+  "observation_site_reported": {
+    "latitude_dms": "39deg42min40.4secS",
+    "longitude_dms": "70deg23min57.6secW",
+    "altitude_m_approx": 1082,
+    "maximum_eclipse_utc": "2020-12-14T16:07:58Z"
+  },
+  "polarizer_angles_deg": [
+    0,
+    30,
+    60,
+    90,
+    120,
+    150
+  ],
+  "reference_regions": [
+    {
+      "name": "north polar coronal hole",
+      "position_angle_deg_counterclockwise_from_solar_north": 12
+    },
+    {
+      "name": "west equatorial streamer",
+      "position_angle_deg_counterclockwise_from_solar_north": 245
+    }
+  ],
+  "published_analysis_range_heliocentric_rsun": [
+    1.1,
+    1.5
+  ],
+  "cross_calibration": {
+    "instrument": "MLSO K-Cor",
+    "ten_minute_average_first_observation_utc": "2020-12-14T17:56:41Z",
+    "last_observation_utc": "2020-12-14T18:10:20Z",
+    "note": "Published relative calibration uses this later window; it is not simultaneous eclipse imaging."
+  },
+  "inversion": "Published pB line-of-sight Thomson-scattering density inversion with stated spherical-symmetry assumption; do not reinterpret the measured pB as point electron density.",
+  "density_samples": {
+    "status": "NOT_ACQUIRED",
+    "numeric_data": null,
+    "provenance": "Data Availability section directs requests to corresponding author; no machine-readable density array/covariance has been obtained."
+  },
+  "uncertainty_status": "Full sample covariance and calibration uncertainty not acquired; published polarizer-angle sensitivity is not adopted as an observational tolerance.",
+  "source_locations": [
+    "Sections1.1,2.2.6,2.2.7,3,4.1,4.2",
+    "Figures16–21",
+    "Data Availability"
+  ],
+  "actual_KCor_daily_radial_scan": "reference/20201214.kcor.radial.intensity.txt contains azimuthal-mean brightness, not either directional density curve.",
+  "comparison_status": "NOT_RUN"
+}

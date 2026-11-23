@@ -11,6 +11,8 @@
 
 namespace SEP { namespace CoronaSwcme {
 
+class OpenTubeIsoPolyWind;
+
 enum class AmbientRegion { PfssOpen, PfssClosed, ParkerExterior };
 enum class DifferenceStencil { CentralSecondOrder, ForwardSecondOrder,
                                BackwardSecondOrder };
@@ -36,6 +38,10 @@ struct AmbientState {
   // differences fail instead of smoothing a physical discontinuity.
   std::array<double,9> gradientB{};
   std::array<double,9> gradientU{};
+  // Scalar derivatives share EXACTLY the same one-sided physical branch and
+  // stencil as the vector tensors. They permit explicit continuity, momentum
+  // and isothermal heat diagnostics without inventing a density-history law.
+  CoronalCME::Vec3 gradientDensityKgM4,gradientPressurePaPerM;
   std::array<DifferenceStencil,3> stencils{};
   CoronalCME::Vec3 gradientLogBPerM;
   double epochS = 0.0;
@@ -80,6 +86,7 @@ class AmbientModel final {
   double MassFluxPerSteradianKgPerS() const { return massFluxPerSr_; }
 
  private:
+  friend class OpenTubeIsoPolyWind;
   static Core::Result<std::shared_ptr<const AmbientModel>> CreateResolved(
       const AmbientDefinition& definition,
       std::shared_ptr<const EventConfiguration> event);

@@ -1,0 +1,5 @@
+source_id,instrument_or_site,start_utc,end_utc,time_description
+boe2021,Neuquen eclipse composite,2020-12-14T16:09:00Z,,Figure 1 caption reports the composite time to a minute; not an exact exposure start
+boe2021,Rio Negro eclipse composite,2020-12-14T16:22:00Z,,Figure 1 caption reports the composite time to a minute; not an exact exposure start
+boe2021,Neuquen eclipse animation,2020-12-14T16:08:37Z,2020-12-14T16:09:58Z,Figure 1 caption interval
+hao20201214,MLSO K-Cor,2020-12-14T17:56:00Z,2020-12-14T21:20:00Z,Official event-gallery window with weather-related gaps; not continuous coverage

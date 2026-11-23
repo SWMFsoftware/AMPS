@@ -1,0 +1,38 @@
+{
+  "schema": "sep-observation-retrieval-v1",
+  "retrieved_utc": "2026-11-23",
+  "downloads": [
+    {
+      "url": "https://voyager.gsfc.nasa.gov/yearly/voyager-2/flux/P1D/1978P1Y.asc",
+      "source_sha256": "91931bc4e7e64c4d6c1f19032f27a20a9e7a657057756232b102a375e1af2b97",
+      "source_bytes": 157584,
+      "source_id": "v2-crs-daily",
+      "extract": {
+        "kind": "voyager-ascii-event-window",
+        "path": "voyager2_crs_daily_event_excerpt.asc",
+        "date_start_inclusive": "1978-09-22",
+        "date_stop_exclusive": "1978-10-01"
+      },
+      "output_sha256": "5fc8e81b462476a831b3b5ebe6560e3cd4eb75f8d786f1202677ee8c93c70f99"
+    },
+    {
+      "url": "https://voyager.gsfc.nasa.gov/yearly/voyager-2/flux/PT6H/1978P1Y.asc",
+      "source_sha256": "bd0553d98936efe75d11111b162f4cd734d4f68f60344b7e014ebd037fd8d0bd",
+      "source_bytes": 564284,
+      "source_id": "v2-crs-6hour",
+      "extract": {
+        "kind": "voyager-ascii-event-window",
+        "path": "voyager2_crs_6hour_event_excerpt.asc",
+        "date_start_inclusive": "1978-09-22",
+        "date_stop_exclusive": "1978-10-01"
+      },
+      "output_sha256": "1a91a35b1564ae29422b1a3f70fda17ad0e08045fd88282aa708c6615a40157e"
+    }
+  ],
+  "transcription": {
+    "path": "reference/published_constraints.csv",
+    "source": "reames2013",
+    "method": "Numerical observer distances and stated reservoir dates; no intensity pixels digitized",
+    "document_sha256": "0df7c8ce7ea945eb81dde020f533550ac7e46c4fed3172d4afd8fe0bcae2bff2"
+  }
+}

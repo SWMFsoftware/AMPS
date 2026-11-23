@@ -1,0 +1,55 @@
+{
+  "schema": "sep-observation-retrieval-v1",
+  "retrieved_utc": "2026-11-23",
+  "downloads": [
+    {
+      "url": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/particle/cospin/het/het_pha_flux_h_he_1day/cospin_het_phaflux_h_he_1day_1990_20090630.asc",
+      "source_sha256": "e511e9de306cbb912564c3d815aeb7ce3112a0ef327571308b37f1305fb7c822",
+      "source_bytes": 762138,
+      "source_id": "uy-pha",
+      "extract": {
+        "kind": "ulysses-pha-year-doy",
+        "path": "ulysses_het_pha_2003_oct_nov.asc",
+        "fractional_year_after1900": 103,
+        "doy_min_inclusive": 274,
+        "doy_max_exclusive": 335
+      },
+      "output_sha256": "4acafef9ccf71d172b0e6e7a0236b5ea7a6a7bdc47197e475835fda8119003e4"
+    },
+    {
+      "url": "https://spdf.gsfc.nasa.gov/pub/data/ulysses/particle/cospin/het/het_pha_flux_h_he_1day/cospin_het_phaflux_format.txt",
+      "path": "unvendored-original-format.txt",
+      "sha256": "20cc774c9b1280ee4407fdc77c9939c4dee3ffc50398a78cf73ea5a664660669"
+    },
+    {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=UY_COHO1HR_MERGED_MAG_PLASMA&parameters=Time,heliocentricDistance,heliographicLatitude,heliographicLongitude,BR,BT,BN,ABS_B,numVectorsMagFldAvg,plasmaFlowSpeed,elevAngle,azimuthAngle,protonDensity,alphaDensity,protonTempLarge,protonTempSmall&time.min=2003-10-01T00:00:00Z&time.max=2003-12-01T00:00:00Z&format=csv",
+      "path": "reference/ulysses_coho1hr_2003_oct_nov.csv",
+      "sha256": "a6135b7c4b5935aef54b988ea87c41bce9b687026e47b2992c688a0fc7f5d228",
+      "source_id": "uy-coho-context"
+    },
+    {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_COHO1HR_MERGED_MAG_PLASMA",
+      "path": "reference/ulysses_coho1hr_hapi_info.json",
+      "sha256": "74acd0cbf51fc2eae1865814055a38e8a2356e72b0aa9034d92d504de83a71f6",
+      "source_id": "uy-coho-info"
+    },
+    {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=UY_PROTON-MOMENTS_SWOOPS&parameters=Time,heliographicLatitude,heliocentricDistance,BR,BT,BN,B_MAG,V_MAG,VR,VT,VN,Tpar,Tper,dens&time.min=2003-10-28T00:00:00Z&time.max=2003-10-30T00:00:00Z&format=csv",
+      "path": "reference/ulysses_swoops_proton_2003_oct28_30.csv",
+      "sha256": "a399890998c011d69f5511eb608e23438d02c3bc441d83c174a77eae8dc5be2b",
+      "source_id": "uy-proton-context"
+    },
+    {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_PROTON-MOMENTS_SWOOPS",
+      "path": "reference/ulysses_swoops_proton_hapi_info.json",
+      "sha256": "e512ea9a935ce1e6ae183ede2486f155dc275ec7dc16c227b8353a6149f51b4a",
+      "source_id": "uy-proton-info"
+    }
+  ],
+  "transcription": {
+    "path": "reference/archive_format.json",
+    "source_id": "uy-pha-format",
+    "source_document_sha256": "20cc774c9b1280ee4407fdc77c9939c4dee3ffc50398a78cf73ea5a664660669",
+    "method": "Schema, channel, fill, time and uncertainty facts; narrative document is unvendored."
+  }
+}

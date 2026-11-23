@@ -39,6 +39,7 @@
 #include "transport_common.h"
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
+#include "util/sep_stage13_validation.h"
 #include "util/sep_background_runtime.h"
 #include "util/sep_backend_admission.h"
 #include "util/sep_initialization.h"
@@ -142,6 +143,13 @@ int main(int argc,char **argv) {
     return 0;
   }
 
+  if (cli_options.listValidationCases || cli_options.validateRuntimeInput ||
+      !cli_options.validationCase.empty()) {
+    return SEP::Stage13::RunValidationDeck(cli_options.inputPath,
+        cli_options.validationCase, cli_options.listValidationCases,
+        cli_options.validateRuntimeInput, std::cout, std::cerr);
+  }
+
   // Mover discovery is a dependency-free pre-initialization action, parallel
   // to --list-tests.  The listing comes from the same immutable registry used
   // by parsing and runtime dispatch, so it cannot advertise stale movers.
@@ -162,6 +170,13 @@ int main(int argc,char **argv) {
 
   const bool componentTestMode =
       SEP::Util::CLI::IsComponentTestExecutionRequested(cli_options);
+#if defined(_SEP_STAGE13_REQUIRE_NAMED_CASE_)
+  if (!componentTestMode) {
+    std::cerr << "ERROR: the SEP Stage 13 executable requires an explicit -case NAME "
+                 "with -i FILE; use --list-validation-cases to see the configured cases.\n";
+    return 1;
+  }
+#endif
   SEP::Transport::PICAdapter::SetStandaloneRunPurpose(componentTestMode?
       SEP::Transport::PICAdapter::RunPurpose::ControlledDiagnostic:
       SEP::Transport::PICAdapter::RunPurpose::Production);

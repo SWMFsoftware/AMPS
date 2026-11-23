@@ -837,6 +837,24 @@ background contract passes.
 
 ### Stage 13 — Complete SWCME3D geometry and conservative material state
 
+**Approved first profile.** Use the Sun-centred spherical `SHOCK_ONLY` front
+with the coronal open-tube PFSS/accelerating Parker provider. The physical
+particle band is 1.05 (R_\odot) to 5 AU in HCI. The model declares separate
+numerical guard coverage. Test the contribution from beyond 5 AU against a
+larger domain with common source support and exactly the same AMPS timestep.
+Near-coronal momentum balance and observational input readiness are checked
+before live transport admission. See the [Stage 13 validation campaign](validation/STAGE13_SPHERICAL_VALIDATION.md)
+for the build once and case-selection contract, the prescribed-scattering
+qualification plan, and the observation package status.
+
+The shared core now resolves the thermal-only transonic solution on a
+monotone axisymmetric open PFSS tube and evaluates the spherical upstream
+shock state on it. The remaining spherical-profile gates require a qualified
+event wind with full spatial derivatives and the native lifecycle. A
+nonaxisymmetric input additionally needs a conservative longitude mapping
+that accounts for the tube-dependent wind speed. See the
+[native lifecycle audit](validation/STAGE13_NATIVE_LIFECYCLE_AUDIT.md).
+
 **Dependencies:** stages 10–11 and stage 12's shared laws wherever reused;
 the 3-D case retains its own independent qualification.
 

@@ -1,5 +1,18 @@
 # srcSEP field-line solar energetic particle transport
 
+## Spherical SWCME3D Stage 13 cases
+
+Build the shared proton field-line executable with `./Config.pl
+-application=sep_stage13` and select a runtime case with `./amps -i
+input/sep_stage13.in -case NAME`. The physical particle domain is 1.05 solar
+radii to 5 AU. The [Stage 13 campaign guide](validation/STAGE13_SPHERICAL_VALIDATION.md)
+documents the core model, the detached adapter and the observational checks.
+The [Stage 13 data-source README](validation/cases/stage13/README.md) records
+each archive, product, time window, provenance manifest and coverage limit.
+The resolved thermal open-tube wind can feed the local spherical shock
+evaluator. The named cases still require a qualified spatial wind realization
+and the moving-line geometry, source and restart lifecycle for live transport.
+
 ## Existing backend admission and complete application validation
 
 The [standalone support matrix](validation/STANDALONE_BACKEND_SUPPORT.md)

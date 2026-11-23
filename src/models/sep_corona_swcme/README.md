@@ -6,6 +6,25 @@ shared code has no AMPS, PIC, MPI, source, or particle type.  `model.md` is the
 physics/design authority, `BG3D0_CONTRACT.md` freezes the selected G1 profile,
 and this file documents the implemented surface of the current stage.
 
+## Spherical SHOCK_ONLY candidate (2026-11-23)
+
+The standalone Stage 13 core candidate reuses the maintained open PFSS/Parker
+ambient and canonical SWCME sphere without changing the legacy profiles or
+Stage 12 baseline. Its immutable state, three-component material map,
+all-root line connections, explicit force/heat diagnostics and limitations are
+in [the Stage 13 guide](docs/STAGE13_SPHERICAL_SHOCK_ONLY.md). The prescribed
+isothermal candidate remains distinct from a force-balanced or observed wind;
+no downstream-volume or native SEP qualification is inferred. The ten focused
+core records run through `make test-spherical-shock-only` and local `make test`.
+
+The thermal-only open-tube solver traces a supported axisymmetric PFSS tube,
+solves coupled speed and species pressures through the sonic point, and
+exports a same-epoch spherical shock query using the existing RH solver.
+The Stage 13 guide documents its mass and thermal anchors, source-surface
+matching, supported geometry, and the remaining native and observational
+qualification. `S13SC04` checks the force balance, signed fluxes, and local
+shock classification on the manufactured dipole.
+
 ## Current cross-ray work (2026-11-10)
 
 The resumed G1 work retains the 3-D ambient and develops conservative

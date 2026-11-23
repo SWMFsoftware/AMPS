@@ -1,0 +1,72 @@
+{
+  "schema": "srcsep-stage13-reference-provenance-v1",
+  "case_id": "eclipse-2020-12-14",
+  "verified_utc": "2026-11-23",
+  "method": "Manual transcription of explicitly reported times and approximate speed bounds; original primary URLs and section/caption labels retained. Not a digitized position/time series or an instrument reduction.",
+  "sources": [
+    {
+      "source_id": "boe2021",
+      "url": "https://arxiv.org/html/2106.04027v1",
+      "locations": [
+        "Figure 1 caption",
+        "Section II",
+        "Section III.1"
+      ]
+    },
+    {
+      "source_id": "hao20201214",
+      "url": "https://www2.hao.ucar.edu/mlso/event-gallery/2020-12-14-total-solar-eclipse-day-cmes",
+      "locations": [
+        "Event description"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "reference/observing_windows.csv",
+      "sha256": "93f0702d75ab79b593a188640bd7bf045ffb2f0bdbaec41e83ae46359499d42c",
+      "bytes": 596,
+      "role": "observing-metadata"
+    },
+    {
+      "path": "reference/reported_pos_speed_ranges.csv",
+      "sha256": "c714627bfba42dbd739bef7dd780b33db3a86615c7e6e75a7e7bb229b12aca09",
+      "bytes": 419,
+      "role": "approximate-published-metadata"
+    }
+  ],
+  "cautions": [
+    "Neuquen and Rio Negro composites are approximately 13 minutes apart. K-Cor starts later at17:56UTC; no same-epoch cross-calibration is assumed.",
+    "HAO reports four CMEs during its observing period. Association of those structures with the earlier eclipse components is unresolved.",
+    "Published POS ranges are approximate bounds, not individual samples with statistical errors; they are ineligible for quantitative scoring.",
+    "No artificial shock coordinates, density values, 3D velocity, uncertainty or acceptance tolerance was created."
+  ],
+  "path_basis": "case-directory",
+  "official_radial_pb": {
+    "path": "reference/20201214.kcor.radial.intensity.txt",
+    "source_url": "https://mlso.hao.ucar.edu/hao/acos/engineering/2020/12/14/20201214.kcor.radial.intensity.txt",
+    "sha256": "516b6d505bbb60bf0f5e9590f2a8389137754b6c881e6783d7f89dd5b6e3e7ee",
+    "bytes": 2192,
+    "columns": [
+      "mean_pB_B_over_Bsun",
+      "azimuthal_standard_deviation_B_over_Bsun",
+      "heliocentric_radius_Rsun"
+    ],
+    "rows": 53,
+    "radius_min_Rsun": 1.07,
+    "radius_max_Rsun": 2.11,
+    "exposure_epoch_utc": null,
+    "inversion_to_density": "NOT_PERFORMED",
+    "uncertainty": "The published standard deviation describes variation around the solar azimuth. It is not a measurement-error covariance or standard error; no error bar is invented.",
+    "description_url": "https://mlso.hao.ucar.edu/files/web_page_pB_radial_plot_info.pdf"
+  },
+  "data_citation": {
+    "instrument": "COSMO K-Cor",
+    "doi": "10.5065/D69G5JV8",
+    "provider": "Mauna Loa Solar Observatory, High Altitude Observatory, NSF NCAR",
+    "citation_policy_url": "https://www2.hao.ucar.edu/mlso/data-use-acknowledgements",
+    "data_terms_url": "https://www.ucar.edu/terms-of-use/data",
+    "license": "CC-BY-4.0 under the stated UCAR data-repository terms unless otherwise specified",
+    "changes": "Original numerical pB table retained byte-for-byte; separate metadata tables manually transcribe reported facts."
+  }
+}

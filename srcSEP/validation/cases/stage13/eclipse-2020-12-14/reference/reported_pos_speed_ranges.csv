@@ -1,0 +1,5 @@
+source_id,section,feature,speed_low_km_s,speed_high_km_s,approximate,geometry,use
+boe2021,II,main CME fronts,300,350,true,plane-of-sky,qualitative-metadata-only
+boe2021,II,CME core,200,200,true,plane-of-sky,qualitative-metadata-only
+boe2021,III.1,fast streamer component late evolution,450,500,true,plane-of-sky,qualitative-metadata-only
+boe2021,III.1,CME core LASCO,150,200,true,plane-of-sky,qualitative-metadata-only

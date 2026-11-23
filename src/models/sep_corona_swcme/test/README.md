@@ -217,3 +217,33 @@ validity, typed failure and retained evidence. Add new cases to the generated
 catalog through registration and run `python3 src/test/generate_test_catalog.py`.
 The work is incomplete until catalog/traceability checks pass. No test gate,
 reference fixture or selected physical problem may be weakened to obtain PASS.
+
+## Standalone Stage 13 spherical candidate
+
+`make -C src/models/sep_corona_swcme -j8 test-spherical-shock-only` builds and
+executes the ten `S13SC01`--`S13SC10` core records. The executable accepts
+`--test ID`, `--all` and `--list`; this model's `make test` includes it without
+removing the existing owners. The shared manufactured fixture is
+`spherical_shock_only_fixture.h`, and
+[the implementation guide](../docs/STAGE13_SPHERICAL_SHOCK_ONLY.md) states the
+physical/numerical contract and the unclosed field-aligned momentum limit.
+These software checks do not substitute for native SEP, data-qualified wind,
+source/scattering calibration or downstream-volume tests.
+
+The matched 1-D/3-D assertions within S13SC02/03/06 use the independent
+`spherical_limit_reference.h`, with the same declared isothermal background
+and signed dipole/flux-tube laws. They cover both polarities/hemispheres,
+full tensors and material F/J, source-surface crossing and the applicable
+parallel MHD shock limit. They do not compare unlike Stage 12 adiabatic and
+Stage 13 isothermal profiles, or qualify an unresolved wind/heating closure.
+
+`S13SC04` also uses the resolved thermal-only wind on a nonradial traced
+dipole. It checks an independent dipole flux function, both field polarities,
+the independently differenced momentum equation, normal mass and magnetic
+flux, and tangential electric field across the source surface. It evaluates
+both sub-fast and fast spherical fronts using the solved wind. The earlier
+kinematic force assertion remains in the same test. The species heat check
+uses finite differences of pressure and density and the physical radial
+material velocity. The independent radial,
+thermal and sonic-branch cases run through `make -C
+src/models/sep_coronal_cme test-tube-isopoly`.

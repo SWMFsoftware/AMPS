@@ -39,7 +39,7 @@ enum class Profile : std::uint32_t {
   Swcme3dSphereFullIcmeDiagnosticV1, Swcme3dEllipsoidFullIcmeDiagnosticV1,
   Swcme3dSseFullIcmeDiagnosticV1, CoronalBundleSnapshotV1,
   CoronalEllipsoidLivePlannedV1, FullCoronaCrossRayPlannedV1,
-  Swcme1dAdiabaticOuterWindV1
+  Swcme1dAdiabaticOuterWindV1, Swcme3dSpherePfssParkerKinematicV1
 };
 enum class Use { SnapshotExchange, MaterialTransport, PhysicalDownstream };
 enum class Region { Unspecified, ParkerExterior, CoronalOpen, CoronalClosed,
@@ -88,7 +88,10 @@ inline Core::Result<ProfileInfo> Lookup(Profile profile) {
     // and restart identity. Core material trajectories do not supply those.
     {Profile::Swcme1dAdiabaticOuterWindV1,"swcme1d-adiabatic-outer-wind-v1",
         MaterialRequirements|Bit(Capability::ShockSurface),false,
-        "SWCME1D outer-wind native material transport requires a qualified geometry, source and restart lifecycle"}
+        "SWCME1D outer-wind native material transport requires a qualified geometry, source and restart lifecycle"},
+    {Profile::Swcme3dSpherePfssParkerKinematicV1,"swcme3d-sphere-pfss-parker-kinematic-v1",
+        MaterialRequirements|Bit(Capability::ShockSurface),false,
+        "SWCME3D spherical PFSS-Parker transport requires qualified coronal momentum balance, native geometry, source, escape and restart"}
   };
   for(const auto& item:profiles)if(item.profile==profile)
     return Core::Result<ProfileInfo>::Success(item);

@@ -262,6 +262,7 @@
 // ----------------------------------------------------------------------------
 
 #include "swcme3d.hpp"
+#include "swcme_spherical_geometry.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -760,8 +761,15 @@ bool Model::shape_radius_normal_after_validation(
 
   switch(P_.shape){
     case ShockShape::Sphere:{
-      Rdir_m=S.r_sh_m;
-      n_hat[0]=u[0]; n_hat[1]=u[1]; n_hat[2]=u[2];
+      // Delegate the exact existing sphere formula to the neutral geometry
+      // kernel also used by the typed PFSS/Parker SHOCK_ONLY event. Its actual
+      // ambient is independent of the legacy model's Leblanc normalization.
+      swcme::geometry::SphereSurface sphere;
+      swcme::throw_if_error(swcme::geometry::spherical_surface(S.r_sh_m,
+          {{u[0],u[1],u[2]}},S.V_sh_ms,sphere));
+      Rdir_m=sphere.radius_m;
+      n_hat[0]=sphere.outward_normal[0];n_hat[1]=sphere.outward_normal[1];
+      n_hat[2]=sphere.outward_normal[2];
       return true;
     }
 

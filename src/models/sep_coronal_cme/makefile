@@ -137,3 +137,16 @@ $(BUILD)/background_event_ambient_tests: test/integration/background_event_ambie
 	$(CXX) $(CPPFLAGS) -I../sep_corona_swcme/include $(CXXFLAGS) $< \
 		../sep_corona_swcme/build/libsep_corona_swcme.a \
 		$(BUILD)/libsep_coronal_cme.a -o $@
+
+# Independent numerical gate for the new variable-thermodynamic tube solver.
+# It is outside the 232-case legacy registry and runs as a mandatory local
+# aggregate prerequisite without relabeling any original test owner or ID.
+$(BUILD)/tube_isopoly_wind_tests: test/integration/tube_isopoly_wind.cpp \
+        $(BUILD)/libsep_coronal_cme.a
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_coronal_cme.a -o $@
+
+.PHONY: test-tube-isopoly
+test-tube-isopoly: $(BUILD)/tube_isopoly_wind_tests
+	$(BUILD)/tube_isopoly_wind_tests --all
+
+test: test-tube-isopoly
