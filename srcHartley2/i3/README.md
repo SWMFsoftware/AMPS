@@ -81,7 +81,9 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   block-crossing check of the radial mover (`src/pic/pic_mover.cpp`) compared
   the Cartesian x coordinate, not the radius, with the radial block limits.
 - **Input.** `input/i3-test.in` holds cases 1 and 5 of `input/i3.in`
-  unchanged. Only three run controls of the common block differ:
+  unchanged; the reduced nightly entry selects case 1 in two OH-loss variants.
+  Case 5 remains available in the deck for explicit runs. Only three run
+  controls of the common block differ:
   `simulation.reference_injection_particles = 8` (59) and
   `simulation.max_iterations = 10000` (150000), with
   `simulation.sampling_length = 10000` as before. Each case thus runs one
@@ -100,13 +102,12 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   directory of the deck, and is valid both in `input/` and in the copy in
   `run_test_i3/`; the output headers record it in that relative form, so the
   references do not depend on where the tree is checked out.
-- **Run.** Case 1 runs in `run_test_i3/case1` and case 5 in `run_test_i3/case5`,
-  both with the default OH loss `STATE_RESOLVED`. A third run, `case1sa`
-  (added 2026-11-21), is case 1 with the alternative OH loss selected on the
+- **Run.** The two runs both select case 1. `run_test_i3/case1` uses the
+  default OH loss `STATE_RESOLVED`; `case1sa` uses the alternative selected on the
   command line, `--chemistry-variant OH_LOSS=SA1982_VH`, in
   `run_test_i3/case1sa`. Each run's log is in `amps.log` there, and the
   results are copied unchanged to `run_test_i3/res/<run>.<species>.dat` and
-  `run_test_i3/res/<run>.<species>.brightness.dat`. That makes 27 files: the
+  `run_test_i3/res/<run>.<species>.brightness.dat`. That makes 18 files: the
   seven radial profiles and the H and OH brightness profiles of each run.
 - **Check.** Each result is compared whole (`share/Scripts/DiffNum.pl`,
   default tolerances) with
@@ -114,6 +115,10 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   references live in SWMF_data under `PT/AMPS/data/output/test_i3`. They are
   the unchanged output files, and N is the number of MPI processes in the
   case's `amps.log`.
+  - References stay compressed in SWMF_data. The check uses `gunzip -c` to
+    write each unpacked copy to `run_test_i3/res/<output>.ref`, preserving
+    the original `.gz` file. A missing or corrupt gzip reference is recorded
+    in the corresponding `.diff`; corrupt data are not passed to `DiffNum.pl`.
   - No column is removed. In test mode every column is reproducible: two
     runs per N gave identical files (for N = 4 with two builds), including
     column 3, `Temp_ID` (the allocation counter of the mesh nodes), and
@@ -134,10 +139,20 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   the block's `Ref=5{gcc}@@(0+passion)` sets `$(TESTi3-REF)=[5]` there, as for
   the other tests on passion. Every other machine uses the untagged names, so
   the references of a second machine can be added as untagged files without
-  touching those of passion. The references of passion, for N = 4 and N = 8,
-  were made on 2026-11-16, for the 18 outputs of cases 1 and 5; they must be
-  regenerated for the 27 outputs of 2026-11-21 (the new run `case1sa`, and new
-  `DATASETAUXDATA Chemistry.*` lines in the brightness headers of cases 1 and 5).
+  touching those of passion. The passion references were regenerated on
+  2026-11-22 from `b4980503e35c498d42a689188e0f6fc2e4913d94`, including
+  the DIM1 domain-boundary callback fix `848e9c5`, for all 27 outputs and
+  N = 4 and 8 (54 gzip files: 36 replacements and 18 new `case1sa` files).
+  A clean test-mode build and the unchanged `input/i3-test.in` were used.
+  Independent fresh repeats on both layouts reproduced all files byte for
+  byte and passed the standard `make test_i3_check` comparisons, including
+  every column and all brightness chemistry-provenance headers. No rates,
+  seeds, sampling controls or comparison tolerances were changed. Previous
+  references, inputs, executable identity and logs are retained under
+  `test_output/srcHartley2/test_i3_references_20261123T004840Z/`.
+  The reduced nightly suite uses only `case1` and `case1sa`, so it requires
+  18 of those files per layout (36 for N = 4 and 8 together). Case5 references
+  from the full generation remain archived and are not selected by the test.
   The untagged references (Voyager: GCC 11.5.0, Open MPI 4.1.7rc1, AMD EPYC
   7763) were remade on 2026-11-21 with the test-mode build for all 27 outputs
   and N = 4 and 8: two runs per N gave byte-identical results, a third check
@@ -147,6 +162,9 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   The earlier untagged references, made with the production build, were moved
   aside (not deleted). Record of that work:
   `validation_runs/test_i3_sa1982_20261121/` (not committed).
+  That untagged generation predates `848e9c5`; it needs its own regeneration
+  on the corresponding machine/compiler. The 2026-11-22 passion results do
+  not replace or qualify untagged references.
   To regenerate the references of one machine and one N after a `make test_i3`
   run with that N (`T` is the machine's tag, `[5]` on passion, empty
   elsewhere):
@@ -158,7 +176,9 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   done
   ```
 
-- **Cost.** On passion (Intel i9-10980XE, 18 cores, shared with other jobs;
+- **Historical timing measurements.** These include older case5 workloads;
+  the current Table runs only case1 and case1sa. On passion (Intel i9-10980XE,
+  18 cores, shared with other jobs;
   2026-11-16) the compilation takes 1.6 min, and the run with 4 MPI
   processes 20 to 22 min (case 1 8 min, case 5 12 to 14 min). With 8
   processes it took 19 and 30 min (case 1 6.4 and 10.3 min) at a load

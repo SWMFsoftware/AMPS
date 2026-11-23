@@ -63,14 +63,24 @@ srcHartley2/tests/run_all_stage_tests.sh        # portable regression suite (set
 ```
 
 Nightly regression test `i3` (details: [i3/README.md](i3/README.md), "Nightly regression test"): a test-mode build,
-then three runs of `input/i3-test.in` (case 1 and case 5 with the default chemistry, and `case1sa` = case 1 with
-`--chemistry-variant OH_LOSS=SA1982_VH`), each compared with its references for the number of MPI processes:
+then two runs of case 1 from `input/i3-test.in`: `case1` with the default `STATE_RESOLVED` OH loss,
+and `case1sa` with `--chemistry-variant OH_LOSS=SA1982_VH`. Each is compared with its references
+for the number of MPI processes (18 outputs per layout):
 
 ```sh
 ./Config.pl -install -compiler=gfortran,gcc_mpicc   # once per checkout (writes Makefile.test from MakefileTest/Table)
 make test_i3 MPIRUN="mpirun -np 4"                 # N = 4 or 8; on Voyager inside a Slurm job
 cat test_i3.diff                                    # empty: passed ('test_i3[5].diff' on passion)
 ```
+
+The passion/GNU `[5]` reference set was regenerated on 2026-11-22 from
+`b4980503e35c498d42a689188e0f6fc2e4913d94`, including the DIM1 boundary callback fix.
+It contains all 27 outputs for both four and eight MPI ranks, including `case1sa`.
+Independent repeats reproduced all 54 files byte for byte and passed the normal
+Table `DiffNum.pl` checks. Runtime inputs and comparison tolerances were unchanged.
+The nightly entry now selects only `case1` and `case1sa`: 18 files per MPI layout,
+or 36 references for four and eight ranks together. The case5 files from that
+generation remain archived and are not selected by the reduced test.
 
 `make test_i3` reconfigures the tree for the test-mode build (`-amps-test=on`, kept in `.amps.conf`) and moves
 `amps` into `run_test_i3/`. Before a production run switch test mode off and repeat the clean build of section 2:

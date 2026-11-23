@@ -1,5 +1,78 @@
 # Generic comet / Hartley 2 status
 
+## Nightly I3 compressed-reference preservation (2026-11-22)
+
+Regenerated the 36 selected `case1`/`case1sa` references for four and eight
+ranks with `gzip -n -9 -c` from the qualified native outputs. All were
+byte-identical to the gzip files already installed in
+`SWMF_data/PT/AMPS/data/output/test_i3/` (4213379 bytes total); no replacement
+of an identical installed file was needed.
+
+Table keeps using `gunzip -c` to unpack each reference into the run's
+`res/<output>.ref` and now reports a decompression failure before invoking
+the normal `DiffNum.pl` comparison. Refreshed generated `Makefile.test`.
+All 36 comparisons passed using the qualified independent-repeat outputs;
+all 36 installed gzip hashes were unchanged afterward. Isolated missing
+and truncated-gzip checks both produced the expected nonempty difference.
+The six existing Table tests and nightly configuration check passed.
+No new simulation, physics change or helper script was required. Evidence:
+`test_output/srcHartley2/test_i3_gzip_20261123T025124Z/`.
+
+## Nightly I3 reduced to case1 OH-loss variants (2026-11-22)
+
+At the user's request, `MakefileTest/Table` now runs only `case1`
+(`STATE_RESOLVED`) and `case1sa` (`OH_LOSS=SA1982_VH`), both selecting input
+case 1. Case5 was removed from `Outs`, run-directory creation, MPI launches
+and the result-copy loop. The normal shared `DiffNum.pl` comparison and its
+tolerances are unchanged. There are now 18 comparisons per MPI layout and
+36 required `[5]` gzip references for four and eight ranks together.
+
+Measured compressed sizes: four ranks, 2125377 bytes (2.03 MiB); eight
+ranks, 2088002 bytes (1.99 MiB); total 4213379 bytes (4.02 MiB). Their
+combined uncompressed payload is 25882525 bytes (24.68 MiB). These sizes
+cover only the two selected runs. Existing case5 results/references from
+the full generation below are retained but are not selected by the test.
+
+Regenerated the make targets with the existing table parser and refreshed
+the root `Makefile.test`. Verified that rundir creates only the selected
+case directories and that the run recipe launches exactly two MPI commands.
+The reduced standard checker passed all 18 selected files at each of four
+and eight ranks using the already qualified independent-repeat outputs
+(36 PASS, 0 FAIL/ERROR/SKIPPED; empty differences). Six existing Table tests
+and the nightly configuration check also passed. No new simulation, build,
+physics/input edit, reference edit or helper script was needed.
+Evidence and exact sizes are retained under
+`test_output/srcHartley2/test_i3_two_cases_20261123T021246Z/`.
+
+## Passion I3 nightly references regenerated (2026-11-22)
+
+Regenerated the GNU 9.4.0 / Open MPI 4.0.3 `[5]` references of `test_i3`
+from source `b4980503e35c498d42a689188e0f6fc2e4913d94`, including the
+DIM1 domain-boundary callback fix `848e9c5`. One clean test-mode executable
+served four fresh workflows: candidate and independent repeat for each of
+four and eight MPI ranks. All twelve case runs (case1, case5, case1sa per
+workflow) completed their declared 10000 iterations. Each layout's 27 native
+outputs matched its repeat byte for byte; the existing Table `DiffNum.pl`
+checks passed all 54 comparisons with empty component/aggregate differences.
+Counts: 54 PASS, 0 FAIL, 0 ERROR, 0 SKIPPED for the declared comparisons.
+
+The package contains 54 gzip files for
+`SWMF_data/PT/AMPS/data/output/test_i3/`: 36 replacements and 18 new
+`case1sa` references. Compression uses the documented `gzip -n -9 -c`
+recipe, with no header/column filtering or normalization. No production
+code, input, source rate, seed, test definition or acceptance tolerance was
+changed. Only existing operator/reference documentation was updated in AMPS.
+Untagged references belong to another machine/compiler and were not changed.
+
+Evidence is retained under
+`test_output/srcHartley2/test_i3_references_20261123T004840Z/`: frozen input
+hashes/configuration, executable/source identities, all per-case `amps.log`
+files, previous references, staged gzip files and SHA256SUMS, and the normal
+Table check results. The one-window test ends at its hard iteration limit;
+it is numerical regression evidence, not convergence or observational
+validation. GCC's DIM1 array-loop warnings remain recorded in the build log;
+no compiler warning was hidden by changing flags or source.
+
 ## Mars2 documentation refresh (2026-11-10)
 
 Imported the new `COLLISIONLESS_REFERENCE.md` and `i3/COMPARISON.md` from
