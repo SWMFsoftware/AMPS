@@ -1,6 +1,8 @@
 
 
 #include <stdio.h>
+#include "reduced_shock_geometry.h"
+#include "reduced_shock_particles.h"
 #include <stdlib.h>
 #include <vector>
 #include <string>
@@ -131,6 +133,14 @@ std::string InitializationDataPath(const std::string& base, int species,
 // metres and must not know whether the radius came from the analytic shock or
 // from the prepared SWCME provider.
 double CurrentShockRadiusM() {
+  if(SEP::ReducedShock::Enabled()) {
+    const double epoch=SEP::Background::SimulationTimeSeconds();
+    const auto view=SEP::ReducedShock::CapturePhysicalStep(epoch,epoch,SEP::ReducedShock::EventIdentity());
+    if(!view.ok())exit(__LINE__,__FILE__,view.status.message.c_str());
+    const auto sphere=view.value.SphereAt(epoch);
+    if(!sphere.ok())exit(__LINE__,__FILE__,sphere.status.message.c_str());
+    return PIC::FieldLine::Geometry::Norm(sphere.value.centerM)+sphere.value.radiusM;
+  }
   switch (SEP::ShockModelType) {
     case SEP::cShockModelType::Analytic1D:
       return SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
@@ -287,13 +297,16 @@ void amps_init_mesh() {
 
   SEP::Init();
 
-  // The reduced provider is being coupled as a background-only authority.
-  // Leaving the historical callback installed would create ordinary baseline
-  // SEP particles even though the event fingerprint says particle_mode is
-  // disabled.  This conditional changes no legacy path: the exact historical
-  // injection function remains installed whenever no reduced event is active.
+  // PIC::TimeStep samples the DEPARTURE population before it invokes this
+  // injection callback. Scheduled births must enter here, rather than before
+  // PIC::TimeStep: otherwise a particle born later in the window would already
+  // contribute to the departure sample. The frozen host window was captured
+  // outside PIC and remains available even if PIC has advanced its counter.
+  // The core event itself supplies ambient/front functions only. Its separate
+  // particle consumer owns this callback; zero-particle mode retains NULL.
   PIC::BC::UserDefinedParticleInjectionFunction=SEP::ReducedShock::Enabled()
-      ? NULL : SEP::FieldLine::InjectParticles;
+      ? (SEP::ReducedParticles::Native::Enabled()?SEP::ReducedParticles::Native::InjectForNativeDriver:NULL)
+      : SEP::FieldLine::InjectParticles;
 
   // Every srcSEP build uses field lines, so reserve the complete current and
   // previous vertex state without retaining a dead Cartesian-mode branch.
@@ -480,7 +493,13 @@ void amps_init_mesh() {
         const double initial[3] = {initialization.parkerInitialPointM.x,
                                    initialization.parkerInitialPointM.y,
                                    initialization.parkerInitialPointM.z};
-        SEP::ParkerSpiral::CreateFileLine(
+        if(SEP::ReducedShock::Enabled()) {
+          // The selected core owns both B and U. Trace its actual field here;
+          // painting that B later onto an unrelated Parker curve is not a
+          // material field line and cannot be repaired by particle advection.
+          const auto built=SEP::ReducedShock::Native::BuildInitialLine(&field_line);
+          if(!built.ok())exit(__LINE__,__FILE__,built.message.c_str());
+        } else SEP::ParkerSpiral::CreateFileLine(
             &field_line, origin, initial, initialization.parkerLengthM,
             initialization.parkerPointCount,
             initialization.solarWindSpeedMPerS,
@@ -590,6 +609,11 @@ void amps_init_mesh() {
     exit(__LINE__,__FILE__,"Error: the domain type is not recognized");
   }
 
+
+  if(SEP::ReducedShock::Enabled()) {
+    const auto registered=SEP::ReducedShock::Native::RegisterLines(SEP::Background::SimulationTimeSeconds());
+    if(!registered.ok())exit(__LINE__,__FILE__,registered.message.c_str());
+  }
 
   //init domain decomposition of the field lines
   PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(0.005);
@@ -933,7 +957,8 @@ void amps_init() {
     // never infer transverse compression from one line or density history.
     AMPS2SWMF::FieldLineData::ReconstructVelocityGradients=true;
     if(PIC::ThisThread==0)
-      std::cout<<"AMPS: prescribed read-only SWMF transport; particle-wave feedback and local wave evolution disabled"<<std::endl;
+      std::cout<<"AMPS: prescribed read-only SWMF transport; particle-wave feedback and local wave evolution disabled; particle-coordinate-frame="
+          <<AMPS::FieldLine::CoordinateFrameName(SEP::Background::ParticleCoordinateFrame())<<std::endl;
   }
 #endif
 
@@ -1267,155 +1292,11 @@ void install_swcme_background_on_field_lines(double epochS,double validUntilS,
 }
 
 void install_reduced_background_on_field_lines(double epochS) {
-  if(!SEP::ReducedShock::Enabled())return;
-  std::string error;
-  if(!SEP::ReducedShock::Prepare(epochS,&error))
-    exit(__LINE__,__FILE__,error.c_str());
-
-  const SEP::ReducedShock::EpochMetadata& metadata=
-      SEP::ReducedShock::Metadata();
-  const std::shared_ptr<const SEP::Background::BackgroundSnapshot> current=
-      SEP::Background::SnapshotStore::Instance().Current();
-  if(current&&current->provider()==SEP::Background::Provider::ReducedShock&&
-      current->epoch_seconds()==metadata.epochS&&
-      current->field_line_generation()==metadata.generation)return;
-
-  struct PendingVertex {
-    PIC::FieldLine::cFieldLineVertex* vertex;
-    SEP::ReducedShock::AmbientSample sample;
-  };
-  std::vector<PendingVertex> pending;
-  for(int line=0;line<PIC::FieldLine::nFieldLine;++line) {
-    PIC::FieldLine::cFieldLine& fieldLine=PIC::FieldLine::FieldLinesAll[line];
-    const int vertexCount=fieldLine.GetTotalSegmentNumber()+1;
-    for(int index=0;index<vertexCount;++index) {
-      PIC::FieldLine::cFieldLineVertex* vertex=fieldLine.GetVertex(index);
-      if(vertex==NULL)exit(__LINE__,__FILE__,
-          "reduced background encountered a missing field-line vertex");
-      const double* x=vertex->GetX();
-      PendingVertex staged;
-      staged.vertex=vertex;
-      if(!SEP::ReducedShock::EvaluateAmbient({{x[0],x[1],x[2]}},
-          &staged.sample,&error))exit(__LINE__,__FILE__,error.c_str());
-      pending.push_back(staged);
-    }
-  }
-  if(pending.empty())exit(__LINE__,__FILE__,
-      "reduced background found no native field-line vertices");
-
-  // Publication is forbidden while a mover read phase is active.  Check that
-  // contract before replacing native arrays, then preserve the outgoing state
-  // in AMPS' previous-epoch datums.  At generation one the new realization is
-  // copied to both slots: there is no physical epoch before event start from
-  // which a derivative could legitimately be inferred.
-  SEP::Background::SnapshotStore::Instance().AssertProviderMayWrite(
-      SEP::Background::Provider::ReducedShock);
-  const bool firstGeneration=!current;
-  for(PendingVertex& item:pending) {
-    PIC::FieldLine::cFieldLineVertex* vertex=item.vertex;
-    double oldB[3],oldU[3],oldN=0.0,oldT=0.0,oldP=0.0;
-    vertex->GetMagneticField(oldB);
-    vertex->GetPlasmaVelocity(oldU);
-    vertex->GetPlasmaDensity(oldN);
-    vertex->GetPlasmaTemperature(oldT);
-    vertex->GetPlasmaPressure(oldP);
-    double newB[3]={item.sample.magneticFieldT[0],
-                    item.sample.magneticFieldT[1],
-                    item.sample.magneticFieldT[2]};
-    double newU[3]={item.sample.velocityMPerS[0],
-                    item.sample.velocityMPerS[1],
-                    item.sample.velocityMPerS[2]};
-    const double* previousB=firstGeneration?newB:oldB;
-    const double* previousU=firstGeneration?newU:oldU;
-    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
-        DatumAtVertexMagneticField,const_cast<double*>(previousB));
-    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
-        DatumAtVertexPlasmaVelocity,const_cast<double*>(previousU));
-    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
-        DatumAtVertexPlasmaDensity,
-        firstGeneration?item.sample.numberDensityM3:oldN);
-    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
-        DatumAtVertexPlasmaTemperature,
-        firstGeneration?item.sample.protonTemperatureK:oldT);
-    vertex->SetDatum(PIC::FieldLine::DatumAtVertexPrevious::
-        DatumAtVertexPlasmaPressure,
-        firstGeneration?item.sample.pressurePa:oldP);
-    vertex->SetMagneticField(newB);
-    vertex->SetPlasmaVelocity(newU);
-    vertex->SetPlasmaDensity(item.sample.numberDensityM3);
-    vertex->SetPlasmaTemperature(item.sample.protonTemperatureK);
-    vertex->SetPlasmaPressure(item.sample.pressurePa);
-
-    // Read the application-owned storage back through the same accessors used
-    // by movers.  Comparing only the provider's staging buffer would prove MPI
-    // determinism but not the coupling itself: an incorrect datum offset or a
-    // setter wired to legacy storage could still go unnoticed.  Setters and
-    // getters operate on the same double-valued native record, so this is an
-    // exact representation check rather than a floating-point approximation.
-    double installedB[3],installedU[3];
-    double installedN=0.0,installedT=0.0,installedP=0.0;
-    vertex->GetMagneticField(installedB);
-    vertex->GetPlasmaVelocity(installedU);
-    vertex->GetPlasmaDensity(installedN);
-    vertex->GetPlasmaTemperature(installedT);
-    vertex->GetPlasmaPressure(installedP);
-    bool matches=installedN==item.sample.numberDensityM3&&
-        installedT==item.sample.protonTemperatureK&&
-        installedP==item.sample.pressurePa;
-    for(int component=0;component<3;++component)
-      matches=matches&&
-          installedB[component]==item.sample.magneticFieldT[component]&&
-          installedU[component]==item.sample.velocityMPerS[component];
-    if(!matches)exit(__LINE__,__FILE__,
-        "reduced background native field-line readback differs from provider");
-  }
-
-  SEP::Background::PublishModelOwnedSnapshot(
-      SEP::Background::Provider::ReducedShock,metadata.epochS,
-      metadata.validUntilS,
-      "shared corona/SWCME reduced front and ambient on native srcSEP vertices",
-      metadata.generation);
-
-  // Every rank holds the line geometry and provider inputs.  Reread the native
-  // endpoint (not the staging object) and require the complete installed state
-  // to agree before a mover may consume it.  Min/max checks are stronger than
-  // comparing rank-zero log text and catch a non-deterministic asset,
-  // coordinate interpretation, or rank-specific storage failure.
-  const PendingVertex& endpoint=pending.back();
-  double endpointB[3],endpointU[3];
-  double endpointN=0.0,endpointT=0.0,endpointP=0.0;
-  endpoint.vertex->GetMagneticField(endpointB);
-  endpoint.vertex->GetPlasmaVelocity(endpointU);
-  endpoint.vertex->GetPlasmaDensity(endpointN);
-  endpoint.vertex->GetPlasmaTemperature(endpointT);
-  endpoint.vertex->GetPlasmaPressure(endpointP);
-  const double localCheck[9]={endpointB[0],endpointB[1],endpointB[2],
-      endpointU[0],endpointU[1],endpointU[2],endpointN,endpointT,endpointP};
-  double minima[9],maxima[9];
-  MPI_Allreduce(localCheck,minima,9,MPI_DOUBLE,MPI_MIN,
-                MPI_GLOBAL_COMMUNICATOR);
-  MPI_Allreduce(localCheck,maxima,9,MPI_DOUBLE,MPI_MAX,
-                MPI_GLOBAL_COMMUNICATOR);
-  for(int i=0;i<9;++i)if(minima[i]!=maxima[i])exit(__LINE__,__FILE__,
-      "reduced native field-line state differs between MPI ranks");
-  if(PIC::ThisThread==0) {
-    const SEP::ReducedShock::FrontSummary front=
-        SEP::ReducedShock::CurrentFrontSummary();
-    std::cout<<"REDUCED_BACKGROUND epoch_s="<<metadata.epochS
-             <<" generation="<<metadata.generation
-             <<" vertices="<<pending.size()
-             <<" apex_radius_m="<<front.apexRadiusM
-             <<" accepted_area_m2="<<front.acceptedShockAreaM2
-             <<" apex_shock_accepted="<<(front.apexShockAccepted?1:0)
-             <<" endpoint_b_t="<<endpointB[0]<<','<<endpointB[1]<<','
-             <<endpointB[2]
-             <<" endpoint_u_m_s="<<endpointU[0]<<','<<endpointU[1]<<','
-             <<endpointU[2]
-             <<" endpoint_n_m3="<<endpointN
-             <<" endpoint_t_k="<<endpointT
-             <<" endpoint_p_pa="<<endpointP
-             <<" event="<<metadata.eventIdentity<<std::endl;
-  }
+  // The provider-specific native owner stages physical data, immutable interval
+  // connectivity and metadata together. MPI readiness precedes publication;
+  // this bridge does not alter the driver clock, timestep or sampling cadence.
+  const auto status=SEP::ReducedShock::Native::InstallBackground(epochS);
+  if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
 }
 
 
@@ -1502,7 +1383,7 @@ start:
     // was off until the first output and up to an output interval stale after
     // it.  A shock radius that is not yet defined (SWCME before its shock
     // forms) leaves them as they are.
-    if (timedAnalyticShock||SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+    if (SEP::ReducedShock::Enabled()||timedAnalyticShock||SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
       const double shockRadiusM=CurrentShockRadiusM();
       if(std::isfinite(shockRadiusM)&&shockRadiusM>0.0)
         SEP::FieldLine::UpdateVertexShockDistances(false);
@@ -1555,6 +1436,10 @@ start:
         // this counter itself. The completed coupler ledger is not yet changed.
         AMPS2SWMF::EnterCoupledParticlePhase();
 #endif
+        // Source evaluation occurs in PIC's injection phase AFTER departure
+        // sampling. Its immutable parent window was frozen above, so neither
+        // the source nor the mover infers physical time from PIC's mutable
+        // counter. The callback is the sole reduced source dispatch per step.
         PIC::TimeStep();
       }
       // The read guard and worker/migration phases have joined before closing.
@@ -1562,6 +1447,17 @@ start:
       // unconsumed first movement is an error, never silently discarded.
       const auto completedWindow=SEP::Transport::PICAdapter::CloseNativeDriverWindow();
       if(!completedWindow.ok())throw std::runtime_error(completedWindow.message);
+      if(SEP::ReducedShock::Enabled()) {
+        // Particle workers, migration and the immutable read guard have
+        // finished. This is the one material advance for the complete frozen
+        // physical interval; the legacy PIC updater skips registered lines.
+        const auto inventoryReady=SEP::ReducedParticles::Native::BeforeGeometry();
+        if(!inventoryReady.ok())throw std::runtime_error(inventoryReady.message);
+        const auto moved=SEP::ReducedShock::Native::Advance(physicalWindow.startEpochS,physicalWindow.endEpochS);
+        if(!moved.ok())throw std::runtime_error(moved.message);
+        const auto audited=SEP::ReducedParticles::Native::AfterGeometry(physicalWindow.endEpochS);
+        if(!audited.ok())throw std::runtime_error(audited.message);
+      }
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
       // Closure has verified the original immutable realization, completed
       // pending first movements and the numerical endpoint. Notify the owner
@@ -1607,7 +1503,7 @@ start:
     // Zero particles is a physical mode invariant, not merely an input label.
     // Check the actual allocated AMPS population after every native step and
     // reduce it across ranks so an injection on a non-root owner cannot hide.
-    if(SEP::ReducedShock::Enabled()) {
+    if(SEP::ReducedShock::Enabled()&&!SEP::ReducedParticles::Native::Enabled()) {
       const long int localParticles=PIC::ParticleBuffer::GetAllPartNum();
       long int globalParticles=0;
       MPI_Allreduce(&localParticles,&globalParticles,1,MPI_LONG,MPI_SUM,

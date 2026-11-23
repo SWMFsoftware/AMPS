@@ -8,6 +8,7 @@
 #include "sep_production_mover.h"
 #include "sep_sampling_products.h"
 #include "sep_turbulence_core.h"
+#include "sep_reduced_particle_options.h"
 
 #include <cstdint>
 #include <string>
@@ -55,6 +56,7 @@ struct Configuration {
   Transport::NumericalTolerances numericalTolerances;
   Turbulence::Configuration turbulence;
   Injection::Configuration injection;
+  ReducedParticles::Configuration reducedParticles;
 };
 
 Configuration Defaults();

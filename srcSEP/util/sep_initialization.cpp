@@ -849,6 +849,9 @@ static Transport::Status ParseDocument(const AMPS::Input::Document& document,
     }
 
   // ---- Decision D4: synthesize the SWCME source from source: shock --------
+  candidate.sourceMinimumEnergyJ=walk.apply.spectrum.minimumEnergyJ;
+  candidate.sourceMaximumEnergyJ=walk.apply.spectrum.maximumEnergyJ;
+  candidate.sourceNetFraction=walk.apply.spectrum.injectionEfficiency;
   //
   // The SWCME source.* assignments are generated from the SI source: shock
   // values and carry the line of the key that supplies each of them, so the

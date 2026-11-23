@@ -185,11 +185,18 @@ namespace {
 std::vector<int> swmfSourceLineIds;
 std::string swmfSourceLineNamespace;
 std::string swmfCoordinateFrame;
+AMPS::FieldLine::CoordinateFrame swmfParticleCoordinateFrame=AMPS::FieldLine::CoordinateFrame::Unknown;
 double swmfDensityMassUnitKg=0.0,swmfCoordinateUnitM=0.0;
 }
 double AMPS2SWMF::FieldLineData::DensityMassUnitKg() {
   if(!(swmfDensityMassUnitKg>0.0))throw std::logic_error("SWMF density normalization is undeclared");
   return swmfDensityMassUnitKg;
+}
+AMPS::FieldLine::CoordinateFrame AMPS2SWMF::FieldLineData::ParticleCoordinateFrame() {
+  // Reject absent metadata before transport. Never infer material motion from
+  // a nonzero velocity, provider name, line curvature or local MPI rank.
+  AMPS::FieldLine::CoordinateFrameName(swmfParticleCoordinateFrame);
+  return swmfParticleCoordinateFrame;
 }
 double AMPS2SWMF::FieldLineData::CoordinateUnitM() {
   if(!(swmfCoordinateUnitM>0.0))throw std::logic_error("SWMF coordinate length unit is undeclared");
@@ -246,7 +253,7 @@ AMPS2SWMF::fUserFinalizeSimulation AMPS2SWMF::UserFinalizeSimulation=NULL;
 
 extern "C" { 
   void amps_set_bline_source_ids_(int* count,int* ids,int* nLon,int* nLat,
-                                double* grid,char* frame) {
+                                double* grid,char* frame,int* particleFrame) {
     // PT forwards CON_bline's one-based global origin-grid labels. Validate
     // the entire candidate before publication so a bad later label cannot
     // partially replace the source namespace. No rank, time, random draw or
@@ -260,7 +267,15 @@ extern "C" {
         exit(__LINE__,__FILE__,"SWMF source origin-grid ids must be valid and unique");
       candidate.push_back(ids[line]);
     }
+    // CON_bline's material-label contract is supplied by the wrapper. Include
+    // it in the immutable namespace so a live population cannot silently
+    // switch between fixed and comoving coordinates, including on continuation.
+    const auto motion=static_cast<AMPS::FieldLine::CoordinateFrame>(*particleFrame);
+    const char* motionName=nullptr;
+    try{motionName=AMPS::FieldLine::CoordinateFrameName(motion);}
+    catch(const std::exception& error){exit(__LINE__,__FILE__,error.what());}
     std::ostringstream identity;identity<<"swmf-origin-grid-v1:"<<std::string(frame,3)
+        <<':'<<motionName
         <<':'<<*nLon<<':'<<*nLat<<std::hexfloat;
     for(int i=0;i<7;++i) {
       if(!std::isfinite(grid[i]))exit(__LINE__,__FILE__,"nonfinite SWMF source origin-grid metadata");
@@ -278,6 +293,7 @@ extern "C" {
     // composition or coordinate conversions inferred from numerical values.
     swmfDensityMassUnitKg=grid[5];swmfCoordinateUnitM=grid[6];
     swmfCoordinateFrame.assign(frame,3);
+    swmfParticleCoordinateFrame=motion;
   }
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
@@ -1029,6 +1045,15 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
       }
 
        nFieldLine++;
+      if(swmfParticleCoordinateFrame==AMPS::FieldLine::CoordinateFrame::PlasmaComoving) {
+        // SWMF alone supplies these positions; local generic advection must
+        // never advance them a second time. Register before the first sample
+        // so newly imported segments carry their own actual exposure history.
+        const auto registered=FieldLinesAll[iImportFieldLine].RegisterGeometryOwner(
+            swmfSourceLineNamespace+":line="+std::to_string(swmfSourceLineIds.at(iImportFieldLine)),
+            *DataInputTime,FirstVertexLagrIndex[iImportFieldLine]);
+        if(!registered.ok())exit(__LINE__,__FILE__,registered.message.c_str());
+      }
     };
 
     //update a single field line
@@ -1045,6 +1070,43 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         if (MinLagrIndex>(int)round(MHData_VIB[offset])) MinLagrIndex=(int)round(MHData_VIB[offset]);
       }
 
+      // Preserve material attachment before changing the native segment table.
+      // CON_bline inserts contiguous labels at the front; S is an array index
+      // plus fraction, not a producer label. Preflight the full surviving
+      // population before any mutation. Fresh/legacy extension bytes are not
+      // initialized here: identity, momentum, weights and RNG remain untouched.
+      std::vector<std::pair<long int,double> > materialParticles;
+      const bool material=swmfParticleCoordinateFrame==AMPS::FieldLine::CoordinateFrame::PlasmaComoving;
+      std::uint64_t removedParticles=0;double removedPhysicalWeight=0.0;
+      if(material) {
+        if(nVertex_B[iImportFieldLine]<2)exit(__LINE__,__FILE__,"material line import has no surviving segment");
+        for(int vertex=0;vertex<nVertex_B[iImportFieldLine];++vertex) {
+          const int at=(vertex+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+          if(MHData_VIB[at]!=static_cast<double>(MinLagrIndex)+vertex)
+            exit(__LINE__,__FILE__,"material node labels are noncontiguous; an explicit remesh map is required");
+        }
+        auto& line=FieldLinesAll[iImportFieldLine];
+        for(int segment=0;segment<line.GetTotalSegmentNumber();++segment)
+          for(long int p=line.GetSegment(segment)->FirstParticleIndex;p!=-1;p=PIC::ParticleBuffer::GetNext(p)) {
+            const double oldS=PIC::ParticleBuffer::GetFieldLineCoord(p);
+            if(!std::isfinite(oldS)||static_cast<int>(std::floor(oldS))!=segment)
+              exit(__LINE__,__FILE__,"particle coordinate disagrees with its material segment owner before import");
+            const double nextS=AMPS::FieldLine::RemapCoordinate(oldS,PreviousMinLagrIndex,MinLagrIndex);
+            if(nextS>=0&&nextS<nVertex_B[iImportFieldLine]-1)materialParticles.push_back({p,nextS});
+            else {
+              // CutFront/CutBack apply the retained absorbing endpoint policy.
+              // Record represented loss separately from any coordinate update;
+              // truncation must not masquerade as conservative renormalization.
+              const int species=PIC::ParticleBuffer::GetI(p);
+              if(species<0||species>=PIC::nTotalSpecies)exit(__LINE__,__FILE__,"material boundary loss has invalid species");
+              const double weight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[species]*
+                  PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+              if(!std::isfinite(weight)||weight<=0)exit(__LINE__,__FILE__,"material boundary loss has invalid statistical weight");
+              ++removedParticles;removedPhysicalWeight+=weight;
+              if(!std::isfinite(removedPhysicalWeight))exit(__LINE__,__FILE__,"material boundary loss weight overflow");
+            }
+          }
+      }
 
       //update the number of point in the field line
      if (FirstVertexLagrIndex[iImportFieldLine]!=MinLagrIndex) {
@@ -1055,6 +1117,16 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
           double x[3]={0.0,0.0,0.0};
 
           FieldLinesAll[iImportFieldLine].AddFront(x);
+        }
+
+        // A disappearing prefix is an absorbing boundary change, not a
+        // negative insertion count. Surviving coordinates were mapped above;
+        // the core deletes records attached to removed segments exactly once.
+        if(nNewPoints<0) {
+          if(!material)exit(__LINE__,__FILE__,"fixed imported geometry needs an explicit prefix-removal map");
+          if(-static_cast<long long>(nNewPoints)>=FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber())
+            exit(__LINE__,__FILE__,"material line replacement has no overlapping segment");
+          FieldLinesAll[iImportFieldLine].CutFront(-nNewPoints);
         }
 
         FirstVertexLagrIndex[iImportFieldLine]=MinLagrIndex;
@@ -1107,6 +1179,32 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
       //update the length of the field line
       FieldLinesAll[iImportFieldLine].UpdateLength();
+      if(material) {
+        auto& line=FieldLinesAll[iImportFieldLine];
+        if(line.GeometryGeneration==std::numeric_limits<std::uint64_t>::max())
+          exit(__LINE__,__FILE__,"SWMF material geometry generation overflow");
+        ++line.GeometryGeneration;line.GeometryEpochS=*DataInputTime;line.FirstMaterialLabel=MinLagrIndex;
+      }
+
+      // Publish S and its derived Cartesian view together after the complete
+      // geometry has been updated. This includes stationary relative particles:
+      // their X changes with the material grid even when their S does not.
+      // Existing segment lists still own the same surviving material pairs.
+      if(material) {
+        std::vector<std::array<double,3> > positions;positions.reserve(materialParticles.size());
+        for(const auto& particle:materialParticles) {
+          std::array<double,3> position;
+          FieldLinesAll[iImportFieldLine].GetCartesian(position.data(),particle.second);
+          for(double x:position)if(!std::isfinite(x))exit(__LINE__,__FILE__,"material import produced nonfinite particle position");
+          positions.push_back(position);
+        }
+        for(std::size_t i=0;i<materialParticles.size();++i) {
+          PIC::ParticleBuffer::SetFieldLineCoord(materialParticles[i].second,materialParticles[i].first);
+          PIC::ParticleBuffer::SetX(positions[i].data(),materialParticles[i].first);
+        }
+        if(removedParticles)std::cout<<"AMPS_MATERIAL_BOUNDARY_LOSS line="<<iImportFieldLine
+            <<" count="<<removedParticles<<" represented_particles="<<removedPhysicalWeight<<std::endl;
+      }
 
       //determine the location of the shock wave
       //criterion: change of the plasma density with time
@@ -1414,6 +1512,11 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
       CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaPressure,DatumAtVertexPlasmaPressure,DatumAtVertexPrevious::DatumAtVertexPlasmaPressure);
       CopyCurrentToPrevious(VertexAllocationManager.PreviousVertexData.PlasmaWaves,DatumAtVertexPlasmaWaves,DatumAtVertexPrevious::DatumAtVertexPlasmaWaves);
     }
+
+    // Imports can insert or remove material edges after the initial AMPS
+    // decomposition. Rebuild the ownership lookup from the actual live lists;
+    // no exchange table may keep pointers to a retired/recycled segment.
+    PIC::ParallelFieldLines::GenerateThreadSegmentTable();
 
     // PIC::ThisThread and cnt are both int.  The former implementation passed
     // ThisThread to a %ld conversion, which is undefined for a variadic call,

@@ -221,7 +221,8 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
     double massKg, double speedOfLightMPerS, double dtS,
     double maximumDeterministicIntervalS,
     const MeanFreePathProvider& provider, RandomStream& random,
-    ThreadLocalWaveAccumulator* waveAccumulator) {
+    ThreadLocalWaveAccumulator* waveAccumulator,
+    const MfpIntervalBoundary& boundary) {
   FocusedTransportMfpIncrement result;
   result.state = initial;
   if (!std::isfinite(initial.arcLengthM) ||
@@ -362,6 +363,19 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
                             &result.diagnostics.opticalDepthRootIterations)
         : trialIntervalS;
 
+    // Preserve the caller's exact closed endpoint when this deterministic
+    // interval consumes the remainder. Reconstructing it as elapsed+(dt-
+    // elapsed) may exceed dt by one ULP after a scatter. That is observable by
+    // a strict moving-boundary consumer even though intervalS itself is the
+    // correct remainder. Carry the endpoint explicitly; do not clamp a query,
+    // discard residual hazard, shorten AMPS dt or relax the boundary guard.
+    const double intervalEndS=intervalS==remainingS?dtS:elapsedS+intervalS;
+    if(!(intervalEndS>elapsedS)||intervalEndS>dtS) {
+      result.status=Status::Error(StatusCode::StepUnderflow,
+          "MFP event interval cannot represent progress within its closed endpoint");
+      return result;
+    }
+
     const double muFinal = AdvanceMuMidpoint(
         muInitial, speed.value, background, intervalS);
     const double midpointMu = 0.5 * (muInitial + muFinal);
@@ -380,6 +394,45 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
       result.status = Status::Error(StatusCode::InvalidParticleState,
                                     "event interval displacement is invalid");
       return result;
+    }
+    if(boundary) {
+      auto finish=result.state;finish.arcLengthM+=displacement;
+      finish.momentumKgMPerS=finalMomentum;finish.mu=muFinal;
+      const auto hit=boundary(result.state,finish,elapsedS,intervalEndS);
+      if(!hit.status.ok()){result.status=hit.status;return result;}
+      if(!std::isfinite(hit.fraction)||hit.fraction<0||hit.fraction>1) {
+        result.status=Status::Error(StatusCode::InvalidParticleState,"MFP boundary returned an invalid interval fraction");return result;
+      }
+      if(hit.absorb) {
+        const double fraction=hit.fraction;
+        result.state.arcLengthM+=fraction*displacement;
+        result.state.momentumKgMPerS*=std::exp(fraction*std::log(finalMomentum/result.state.momentumKgMPerS));
+        result.state.mu=muInitial+fraction*(muFinal-muInitial);
+        result.displacementM+=fraction*displacement;
+        // Interpolate from the nearer explicit endpoint. This convex clock
+        // map preserves fractions 0/1 exactly and cannot reconstruct an ULP
+        // outside the closed interval near either end. The accepted physical
+        // trajectory/hazard still use their original intervalS and fraction;
+        // this is representable endpoint arithmetic, not time clipping.
+        const double clockSpanS=intervalEndS-elapsedS;
+        result.elapsedS=fraction<=0.5?elapsedS+fraction*clockSpanS:
+            intervalEndS-(1-fraction)*clockSpanS;
+        result.absorbed=true;
+        result.state.remainingOpticalDepth=eventOccurs&&fraction==1?0:
+            result.state.remainingOpticalDepth-IntegratedLinearHazard(
+                rates0.totalPerS,rates1.totalPerS,trialIntervalS,fraction*intervalS);
+        if(!std::isfinite(result.state.remainingOpticalDepth)||result.state.remainingOpticalDepth<0) {
+          result.status=Status::Error(StatusCode::InvalidParticleState,"absorbed MFP interval consumed an invalid optical depth");return result;
+        }
+        result.diagnostics.deterministicIntervals++;
+        if(waveAccumulator) {
+          WaveContribution clipped;clipped.turbulenceStateIdentity=sample0.turbulenceStateIdentity;
+          clipped.intervalS=fraction*intervalS;clipped.displacementM=fraction*displacement;
+          clipped.signedStreaming=(muInitial+0.5*fraction*(muFinal-muInitial))*clipped.displacementM;
+          clipped.eventIndex=result.state.nextEventIndex;waveAccumulator->Deposit(clipped);
+        }
+        result.status=Status::Ok();return result;
+      }
     }
     result.state.arcLengthM += displacement;
     result.state.momentumKgMPerS = finalMomentum;
@@ -401,7 +454,8 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
     contribution.eventIndex = result.state.nextEventIndex;
     contribution.scatteringEventAtEnd = eventOccurs;
 
-    elapsedS += intervalS;
+    elapsedS=intervalEndS;
+    result.elapsedS=elapsedS;
     if (eventOccurs) {
       const double fraction = intervalS / trialIntervalS;
       const double plusAtEvent = rates0.plusPerS +

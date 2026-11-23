@@ -17,14 +17,21 @@ struct ParkerState {
 
 struct ParkerBackground {
   ParkerBackground() {}
-  ParkerBackground(double advection, double divergence)
+  ParkerBackground(double advection, double divergence,double logAreaGradient=0)
       : plasmaAdvectionMPerS(advection),
-        velocityDivergencePerS(divergence) {}
+        velocityDivergencePerS(divergence),logAreaGradientPerM(logAreaGradient) {}
 
-  // U_parallel is convection of the field-line plasma in the chosen positive-s
-  // direction.  divU is evaluated from the same immutable background epoch.
+  // The adapter supplies convection relative to its declared geometry. divU
+  // remains the physical divergence from the same immutable background epoch.
+  // Compatibility field name: advection relative to the declared geometry
+  // [m/s], supplied by the adapter. Zero on plasma-comoving material lines;
+  // U dot tangent on fixed geometry. Physical grad(U) is supplied separately.
   double plasmaAdvectionMPerS = 0.0;
   double velocityDivergencePerS = 0.0;
+  // d ln(A)/ds [1/m] of the same tube whose physical number is sampled. For
+  // A|B|=Phi this equals -d ln|B|/ds. It is a spatial diffusion metric, not
+  // solar-wind convection and not part of the physical kappa derivative.
+  double logAreaGradientPerM = 0.0;
 };
 
 struct ParkerIncrement {
@@ -37,10 +44,12 @@ struct ParkerIncrement {
 };
 
 // One Ito step of the field-aligned Parker pseudo-particle equation:
-//   ds=(U_parallel+d(kappa)/ds)dt+sqrt(2 kappa dt)dW,
+//   ds=(a_coordinate+d(kappa)/ds+kappa*dln(A)/ds)dt+sqrt(2 kappa dt)dW,
 //   dp=-(p/3) div(U) dt.
-// Physical arc length is used here; the PIC adapter applies the flux-tube metric
-// exactly once when translating displacement to its non-metric line coordinate.
+// These are forward physical-number particles: N=4*pi*p^2*A*f per ds dp.
+// The A term follows by rewriting (1/A) d_s(A*kappa*d_s f) as a forward
+// conservative number equation. Conversion from arc length to segment S is a
+// different coordinate operation and cannot supply this missing drift.
 ParkerIncrement AdvanceParker(const ParkerState& initial,
                               const ParkerBackground& background,
                               double speedMPerS,

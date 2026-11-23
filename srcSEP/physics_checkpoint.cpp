@@ -5,6 +5,8 @@
 #include "turbulence_production_adapter.h"
 #include "polarized_wave_native_adapter.h"
 #include "flux_tube_checkpoint_state.h"
+#include "reduced_shock_geometry.h"
+#include "reduced_shock_particles.h"
 #include "util/sep_background_runtime.h"
 #include "util/sep_initialization.h"
 #include "util/sep_run_configuration.h"
@@ -27,14 +29,14 @@
 #include <vector>
 
 // Application-owned corrected physics checkpoint, not an AMR mesh dump. The
-// first supported realization is fixed open analytic field lines on identical
-// CPU-MPI rank ownership, with explicitly typed coefficients/global numerics.
+// retained realization is fixed open analytic field lines on identical CPU-MPI
+// ownership; schema five adds the prescribed reduced material owner below.
 // SI physical buffers and complete stochastic/source histories are encoded;
 // native objects, pointers, atomics and allocation/list handles are not.
 // Decode/layout/physics/global-identity checks and replacement allocation all
 // precede the collective commit barrier. The old population remains live until
-// every rank can commit through safe PIC allocation/link APIs. Output/sample
-// continuation is explicitly excluded. Active births and live four-spectrum
+// every rank can commit through safe PIC allocation/link APIs. Material sample
+// continuation is explicit; fixed sample continuation is excluded. Active births and live four-spectrum
 // authority are rejected rather than approximated by this retained codec.
 namespace SEP { namespace PhysicsCheckpoint { namespace {
 namespace T=Transport;
@@ -45,7 +47,7 @@ namespace W=SEP::AlfvenTurbulence_Kolmogorov;
 namespace ShockOwner=SEP::ParticleSource::ShockWave::Tenishev2005;
 namespace TurbOwner=SEP::Turbulence::PICAdapter;
 namespace FluxOwner=SEP::FieldLine::FluxTubeGeometry;
-const std::uint64_t kSchema=4;
+const std::uint64_t kSchema=5;
 const std::uint64_t kMagic=UINT64_C(0x5345505048595331);
 
 T::Status Error(const std::string& message) {
@@ -160,6 +162,8 @@ struct SegmentImage {
   std::string data;
   std::vector<double> weights;
   std::vector<std::string> particles;
+  FL::Geometry::Exposure exposure;
+  std::vector<double> collecting,completed;
   long int stagedHead=-1; // private allocation list; never encoded
 };
 struct LineImage {
@@ -170,6 +174,10 @@ struct LineImage {
   std::vector<std::array<double,3>> positions;
   std::vector<std::string> vertices;
   std::vector<SegmentImage> segments;
+  std::string owner;
+  std::int64_t firstLabel=0;
+  double epoch=0;
+  std::uint64_t generation=0;
 };
 struct Image {
   std::uint64_t completed=0,rank=0,ranks=0,mover=0,purpose=0;
@@ -190,6 +198,17 @@ struct Image {
   TurbOwner::CheckpointCache turbulence;
   FieldLine::FluxTubeState::State flux;
   std::vector<LineImage> lines;
+  // Material geometry has its own versioned continuation boundary. Physical
+  // clocks/labels and completed denominators are replicated; collecting
+  // numerators and the source ledger are additive over the MPI owners.
+  bool material=false,vertexPhase=false,segmentPhase=false;
+  std::array<long int,7> output{};
+  ReducedParticles::Native::LedgerState sourceLedger{};
+  ReducedShock::EpochMetadata coreCache;
+  std::shared_ptr<FL::cFieldLine> stagedLine;
+  std::function<void()> publishTable;
+  ReducedShock::CadencePublication stagedCadence;
+  std::shared_ptr<const ReducedShock::Native::MaterialView> stagedView;
   SourceLifecycle::Scheduler stagedSource; // allocated before physical commit
   FluxOwner::CheckpointRestorePlan stagedFlux;
 };
@@ -223,6 +242,7 @@ std::uint64_t Layout() {
   layout.U(SEP::Offset::OperatorRandomStates);layout.U(SEP::Offset::MfpOpticalDepth);
   layout.U(SEP::Offset::MfpEventIndex);layout.U(SEP::Offset::SplitEventCounter);
   layout.U(SEP::Offset::BirthRecord);layout.U(sizeof(T::Birth::Record));
+  layout.U(SEP::Offset::ReducedSourceRecord);layout.U(sizeof(ReducedParticles::Native::SourceRecord));
   layout.U(PB::_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_);
   layout.U(PB::_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_);
   layout.U(PIC::nTotalSpecies);
@@ -252,8 +272,11 @@ std::uint64_t Layout() {
     }
   };
   datums(FL::DataStoredAtVertex);datums(FL::cFieldLineSegment::DataStoredAtSegment);
+  layout.U(FL::nFieldLine);
   for(int l=0;l<FL::nFieldLine;++l) {
-    auto& line=FL::FieldLinesAll[l];layout.U(line.GetTotalSegmentNumber());
+    auto& line=FL::FieldLinesAll[l];
+    // A layout signature describes the codec, not the mutable topology. The
+    // vertex/segment count is persisted and validated in the payload below.
     layout.U(line.GetFirstVertex()->AssociatedDataLength());
     layout.U(line.GetFirstSegment()->AssociatedDataLength());
   }
@@ -295,10 +318,6 @@ T::Status Capability() {
   return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
       "physics checkpoint currently supports CPU MPI-only execution");
 #endif
-#if _PIC_FL_MOVER_MULTITHREAD_ == _PIC_MODE_ON_
-  return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
-      "physics checkpoint first boundary excludes native std::thread field-line workers");
-#endif
 #if (_SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_ && _SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) || _SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
   return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
       "physics checkpoint requires a declared global timestep mode and species-global particle weight");
@@ -307,8 +326,13 @@ T::Status Capability() {
   return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
       "physics checkpoint does not yet serialize external particle trajectory buffers");
 #endif
-  if(Background::ConfiguredProvider()!=Background::Provider::Analytic||
-      SEP::ShockModelType!=SEP::cShockModelType::Analytic1D)
+  const bool material=ReducedShock::Enabled();
+#if _PIC_FL_MOVER_MULTITHREAD_ == _PIC_MODE_ON_
+  if(!material)return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
+      "retained fixed-geometry checkpoint boundary excludes native std::thread workers");
+#endif
+  if(!material&&(Background::ConfiguredProvider()!=Background::Provider::Analytic||
+      SEP::ShockModelType!=SEP::cShockModelType::Analytic1D))
     return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
         "physics checkpoint first boundary supports the standalone analytic provider only");
   const auto& coefficient=T::Coefficient::ActiveConfiguration();
@@ -318,21 +342,30 @@ T::Status Capability() {
         "physics checkpoint needs typed coefficient models; opaque legacy callbacks/library state are not captured");
   if(!FL::FieldLinesAll||FL::nFieldLine<=0)
     return Error("physics checkpoint requires initialized fixed native field lines");
+  if(material&&(FL::nFieldLine!=1||Run::Active().get().turbulence.source!=Turbulence::Source::Prescribed))
+    return Error("material checkpoint supports one reduced-core line with prescribed read-only turbulence only");
+  if(material&&PIC::SamplingMode!=_RESTART_SAMPLING_MODE_)
+    return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
+        "material checkpoint output continuation is qualified for restart-sampling windows only");
+  for(int line=0;line<FL::nFieldLine;++line)
+    if(FL::FieldLinesAll[line].ExternallyManagedGeometry!=material)
+      return T::Status::Error(T::StatusCode::UnsupportedConfiguration,
+          "fixed-geometry checkpoint schema does not encode material topology, owner identity and segment exposure; refusing incomplete continuation");
   for(int line=0;line<FL::nFieldLine;++line)
     if(!FL::FieldLinesAll[line].IsInitialized()||FL::FieldLinesAll[line].is_loop())
       return Error("physics checkpoint first boundary requires initialized open fixed field lines");
   if(!A::PendingWaveContributionsEmpty())return Error("checkpoint requires an empty joined particle-wave queue");
   const auto snapshot=Background::SnapshotStore::Instance().Current();
-  if(!snapshot||snapshot->provider()!=Background::Provider::Analytic||
+  if(!snapshot||snapshot->provider()!=(material?Background::Provider::ReducedShock:Background::Provider::Analytic)||
       snapshot->ownership()!=Background::Ownership::ModelOwned)
     return Error("physics checkpoint requires the frozen analytic background realization");
-  try {Background::SnapshotStore::Instance().AssertProviderMayWrite(Background::Provider::Analytic);}
+  try {Background::SnapshotStore::Instance().AssertProviderMayWrite(snapshot->provider());}
   catch(const std::exception& e){return Error(e.what());}
   return ValidateLiveLists();
 }
 
 std::string Encode(const Image& image,bool commonOnly=false) {
-  Writer out;out.U(kMagic);out.U(kSchema);out.U(0); // output_continuation=false
+  Writer out;out.U(kMagic);out.U(kSchema);out.U(image.material?1:0);
   out.U(image.purpose); // run_purpose: Production=0, ControlledDiagnostic=1
   out.U(image.completed);out.U(image.ranks);out.U(image.mover);out.D(image.clock);
   out.S(image.runConfiguration);out.S(image.activeConfiguration);out.S(image.initialization);out.S(image.coefficientFingerprint);
@@ -346,7 +379,51 @@ std::string Encode(const Image& image,bool commonOnly=false) {
   std::string flux;const auto fluxStatus=FieldLine::FluxTubeState::Serialize(image.flux,&flux);
   if(!fluxStatus.ok())throw std::runtime_error(fluxStatus.message);
   out.S(flux);
-  if(commonOnly)return out.bytes;
+  if(image.material) {
+    // Physical particle/geometry time and the last committed front-cache
+    // cadence are separate clocks. Persist the actual cache, not a newly
+    // inferred cadence at image.clock; reconstruction must reproduce identity
+    // even when the host has intentionally not refreshed that cache yet.
+    out.D(image.coreCache.epochS);out.D(image.coreCache.validUntilS);
+    out.U(image.coreCache.generation);out.S(image.coreCache.eventIdentity);
+    // The phase determines which half of each native byte buffer is the
+    // collecting window. Preserve it alongside counters; swapping bytes while
+    // silently resetting this phase would resume the wrong output interval.
+    out.U(image.vertexPhase);out.U(image.segmentPhase);
+    for(long int counter:image.output)out.U(static_cast<std::uint64_t>(counter));
+    out.U(image.lines.size());
+    for(const auto& line:image.lines) {
+      out.S(line.owner);out.U(static_cast<std::uint64_t>(line.firstLabel));
+      out.D(line.epoch);out.U(line.generation);out.U(line.positions.size());
+      for(const auto& point:line.positions)for(double x:point)out.D(x);
+      out.U(line.segments.size());
+      for(const auto& segment:line.segments) {
+        out.U(segment.owner);out.U(segment.exposure.collecting);out.U(segment.exposure.completed);
+        out.D(segment.exposure.collectingSeconds);out.D(segment.exposure.completedSeconds);
+        out.D(segment.exposure.fixedStepSeconds);out.Doubles(segment.completed);
+      }
+    }
+  }
+  if(commonOnly) {
+    if(image.material)for(const auto& line:image.lines) {
+      // Primitive backing state and inactive segment payloads must agree on
+      // all replicas. Fluence is a rank-local cumulative measure, unlike B,
+      // U, density and temperature; exclude only that explicitly typed datum.
+      for(const auto& vertex:line.vertices) {
+        auto physical=vertex.substr(0,FL::cFieldLineVertex::StoredDataBytes());
+        const auto& fluence=FL::DatumAtVertexFluence;
+        if(fluence.offset>=0) {
+          const auto begin=static_cast<std::size_t>(fluence.offset);
+          if(begin+sizeof(double)>physical.size())throw std::runtime_error("invalid native fluence layout");
+          std::fill(physical.begin()+begin,physical.begin()+begin+sizeof(double),0);
+        }
+        out.S(physical);
+      }
+      for(const auto& segment:line.segments){out.S(segment.data);out.Doubles(segment.weights);}
+    }
+    return out.bytes;
+  }
+  if(image.material)for(double value:image.sourceLedger)out.D(value);
   out.U(image.rank);out.U(image.seed);
   std::ostringstream random;
   random<<std::setprecision(std::numeric_limits<double>::max_digits10)
@@ -369,6 +446,7 @@ std::string Encode(const Image& image,bool commonOnly=false) {
     }
     out.U(line.segments.size());for(const auto& segment:line.segments) {
       out.U(segment.owner);out.S(segment.data);out.Doubles(segment.weights);
+      if(image.material)out.Doubles(segment.collecting);
       out.U(segment.particles.size());for(const auto& particle:segment.particles)out.S(particle);
     }
   }
@@ -376,7 +454,9 @@ std::string Encode(const Image& image,bool commonOnly=false) {
 }
 Image Decode(const std::string& text) {
   Reader in(text);Image image;
-  if(in.U()!=kMagic||in.U()!=kSchema||in.U()!=0)throw std::runtime_error("incompatible corrected physics checkpoint schema");
+  if(in.U()!=kMagic||in.U()!=kSchema)throw std::runtime_error("incompatible corrected physics checkpoint schema");
+  const auto material=in.U();if(material>1)throw std::runtime_error("invalid material checkpoint capability");
+  image.material=material;
   image.purpose=in.U();
   image.completed=in.U();image.ranks=in.U();image.mover=in.U();image.clock=in.D();
   image.runConfiguration=in.S();image.activeConfiguration=in.S();image.initialization=in.S();image.coefficientFingerprint=in.S();
@@ -393,6 +473,32 @@ Image Decode(const std::string& text) {
   image.stepsInitialized=initialized;
   const auto fluxStatus=FieldLine::FluxTubeState::Deserialize(in.S(),&image.flux);
   if(!fluxStatus.ok())throw std::runtime_error(fluxStatus.message);
+  if(image.material) {
+    image.coreCache.epochS=in.D();image.coreCache.validUntilS=in.D();
+    image.coreCache.generation=in.U();image.coreCache.eventIdentity=in.S();
+    const auto vertex=in.U(),segment=in.U();
+    if(vertex>1||segment>1)throw std::runtime_error("invalid checkpoint sampling buffer phase");
+    image.vertexPhase=vertex;image.segmentPhase=segment;
+    for(auto& counter:image.output) {
+      const auto bits=in.U();std::int64_t value;std::memcpy(&value,&bits,8);
+      if(value<std::numeric_limits<long int>::min()||value>std::numeric_limits<long int>::max())
+        throw std::runtime_error("checkpoint sample counter exceeds native range");
+      counter=static_cast<long int>(value);
+    }
+    image.lines.resize(in.Count(48));
+    for(auto& line:image.lines) {
+      line.owner=in.S();const auto bits=in.U();std::memcpy(&line.firstLabel,&bits,8);
+      line.epoch=in.D();line.generation=in.U();line.positions.resize(in.Count(24));
+      for(auto& point:line.positions)for(double& x:point)x=in.D();
+      line.segments.resize(in.Count(56));
+      for(auto& segment:line.segments) {
+        segment.owner=in.U();segment.exposure.collecting=in.U();segment.exposure.completed=in.U();
+        segment.exposure.collectingSeconds=in.D();segment.exposure.completedSeconds=in.D();
+        segment.exposure.fixedStepSeconds=in.D();segment.completed=in.Doubles();
+      }
+    }
+    for(double& value:image.sourceLedger)value=in.D();
+  }
   image.rank=in.U();const auto seed=in.U();
   if(seed>std::numeric_limits<unsigned long>::max())throw std::runtime_error("checkpoint RNG seed exceeds native width");
   image.seed=seed;std::istringstream random(in.S());random>>image.generator>>image.distribution;
@@ -411,16 +517,26 @@ Image Decode(const std::string& text) {
   if(adiabatic>1||history>1)throw std::runtime_error("invalid host-step checkpoint flag");
   image.host.adiabaticInitialized=adiabatic;image.host.shockHistoryInitialized=history;image.host.previousShockRadiusM=in.D();
   image.turbulence=GetTurbulence(in);
-  const auto lines=in.Count(16);image.lines.resize(lines);
+  const auto lines=in.Count(16);
+  if(image.material&&lines!=image.lines.size())throw std::runtime_error("inconsistent material line tables");
+  image.lines.resize(lines);
   for(auto& line:image.lines) {
-    const auto vertices=in.Count(32);line.vertices.resize(vertices);line.positions.resize(vertices);
+    const auto vertices=in.Count(32);line.vertices.resize(vertices);
+    if(image.material&&vertices!=line.positions.size())throw std::runtime_error("inconsistent material vertex tables");
+    auto declaredPositions=line.positions;line.positions.resize(vertices);
     for(std::size_t vertex=0;vertex<vertices;++vertex) {
       for(auto& component:line.positions[vertex])component=in.D();
       line.vertices[vertex]=in.S();
     }
-    const auto segments=in.Count(32);line.segments.resize(segments);
+    if(image.material&&declaredPositions!=line.positions)throw std::runtime_error("inconsistent material physical positions");
+    const auto segments=in.Count(32);
+    if(image.material&&segments!=line.segments.size())throw std::runtime_error("inconsistent material segment tables");
+    line.segments.resize(segments);
     for(auto& segment:line.segments) {
-      segment.owner=in.U();segment.data=in.S();segment.weights=in.Doubles();
+      const auto owner=in.U();
+      if(image.material&&owner!=segment.owner)throw std::runtime_error("inconsistent material ownership tables");
+      segment.owner=owner;segment.data=in.S();segment.weights=in.Doubles();
+      if(image.material)segment.collecting=in.Doubles();
       const auto particles=in.Count(8);segment.particles.resize(particles);
       for(auto& particle:segment.particles)particle=in.S();
     }
@@ -443,7 +559,7 @@ T::Status ReadVertexPrimitive(const std::string& buffer,
   std::memcpy(output,buffer.data()+datum.offset,components*sizeof(double));
   return T::Status::Ok();
 }
-T::Status ValidateCurrentVertexPrimitives(const std::string& buffer) {
+T::Status ValidateCurrentVertexPrimitives(const std::string& buffer,const double* coreMassDensity=nullptr) {
   double magneticT[3],velocityMPerS[3],numberDensityPerM3=0.0;
   auto status=ReadVertexPrimitive(buffer,FL::DatumAtVertexMagneticField,3,magneticT);
   if(!status.ok())return status;
@@ -461,11 +577,13 @@ T::Status ValidateCurrentVertexPrimitives(const std::string& buffer) {
   if(!std::isfinite(velocityMPerS[0])||!std::isfinite(velocityMPerS[1])||!std::isfinite(velocityMPerS[2])||
       !std::isfinite(plasmaSpeedMPerS)||plasmaSpeedMPerS>=SpeedOfLight)
     return Error("checkpoint current native vertex plasma velocity must be finite and subluminal [m/s]");
-  // This codec is restricted to the analytic authority. Its frozen mean
-  // plasma atomic mass is part of ActualConfiguration(), so use the same
-  // declared conversion and Alfven domain as the native background adapter.
-  // A positive byte value whose mass density underflows is not usable state.
-  const double massDensityKgM3=numberDensityPerM3*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+  // The legacy analytic codec retains its frozen mean-mass conversion. The
+  // reduced material codec instead supplies the core's actual composition-
+  // resolved mass density: stored n_p cannot be multiplied by a guessed proton
+  // mass when alpha particles are present. Invalid supplied density rejects;
+  // it never falls back to the legacy conversion or an Alfven-speed floor.
+  const double massDensityKgM3=coreMassDensity?*coreMassDensity:
+      numberDensityPerM3*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
   const double magneticDenominator=VacuumPermeability*massDensityKgM3;
   if(!std::isfinite(massDensityKgM3)||massDensityKgM3<=0.0||
       !std::isfinite(magneticDenominator)||magneticDenominator<=0.0)
@@ -499,7 +617,7 @@ T::Status ValidateLineFluxGeometry(const Image& image,int lineIndex) {
     // is observational: no missing record is materialized while preflighting.
     const double volume=FieldLine::FluxTubeGeometryCore::IntegrateSimpsonArea(
         Units::AreaM2(a),Units::AreaM2(b),Units::AreaM2(c),
-        Units::LengthM(FL::FieldLinesAll[lineIndex].GetSegment(static_cast<int>(s))->GetLength())).Value();
+        Units::LengthM(FL::Geometry::Norm(FL::Geometry::Difference(saved.positions[s+1],saved.positions[s])))).Value();
     if(!std::isfinite(volume)||volume<=0.0)return Error("checkpoint tube volume is not finite and positive [m^3]");
   }
   return T::Status::Ok();
@@ -513,13 +631,17 @@ T::Status ValidateRecord(const std::string& record,int line,int segment,
   const double parallel=PB::GetVParallel(data),normal=PB::GetVNormal(data);
   if(!PB::IsParticleAllocated(data)||species<0||species>=PIC::nTotalSpecies||
       PB::GetFieldLineId(data)!=line||!std::isfinite(coordinate)||coordinate<0.0||
-      coordinate>=FL::FieldLinesAll[line].GetTotalSegmentNumber()||
-      FL::FieldLinesAll[line].GetSegment(coordinate)!=FL::FieldLinesAll[line].GetSegment(segment)||
+      coordinate<segment||coordinate>=static_cast<double>(segment)+1||
       !std::isfinite(parallel)||!std::isfinite(normal)||normal<0.0||
       !(std::hypot(parallel,normal)<SpeedOfLight)||
       !(PB::GetIndividualStatWeightCorrection(data)>0.0)||
       !std::isfinite(PB::GetIndividualStatWeightCorrection(data)))
     return Error("checkpoint particle violates native field-line phase-space contract");
+  if(ReducedParticles::Native::Enabled()) {
+    const auto source=Word<ReducedParticles::Native::SourceRecord>(record,SEP::Offset::ReducedSourceRecord);
+    if(source.schema!=1||!std::isfinite(source.birthKineticEnergyJ)||source.birthKineticEnergyJ<=0)
+      return Error("material checkpoint particle lacks immutable source birth-energy history");
+  }
   double position[3];PB::GetX(position,data);
   const double fraction=coordinate-static_cast<int>(coordinate);
   for(unsigned component=0;component<3;++component) {
@@ -527,8 +649,12 @@ T::Status ValidateRecord(const std::string& record,int line,int segment,
     // on DECODED endpoints. A finite but stale X is as invalid as NaN: generic
     // PIC consumers may read it before the first post-restart mover call.
     const double expected=(1.0-fraction)*begin[component]+fraction*end[component];
-    if(!std::isfinite(expected)||!std::isfinite(position[component])||position[component]!=expected)
-      return Error("checkpoint particle Cartesian view is nonfinite or inconsistent with decoded field-line geometry");
+    if(!std::isfinite(expected)||!std::isfinite(position[component])||position[component]!=expected) {
+      std::ostringstream detail;
+      detail<<std::setprecision(17)<<"checkpoint particle Cartesian view is nonfinite or inconsistent with decoded field-line geometry"
+          <<"; coordinate="<<coordinate<<" component="<<component<<" stored_m="<<position[component]<<" expected_m="<<expected;
+      return Error(detail.str());
+    }
   }
   const auto id=Word<std::uint64_t>(record,SEP::Offset::StableParticleId);
   if(Word<std::uint64_t>(record,SEP::Offset::TransportSchema)!=A::ParticleTransportSchema||
@@ -555,6 +681,15 @@ T::Status Capture(std::uint64_t completed,Image* image) {
   image->purpose=static_cast<std::uint64_t>(A::CurrentRunPurpose());
   image->mover=static_cast<std::uint64_t>(SEP::Mover::CurrentProductionMover());
   image->clock=Background::SimulationTimeSeconds();
+  image->material=ReducedShock::Enabled();
+  if(image->material) {
+    image->coreCache=ReducedShock::Metadata();
+    image->vertexPhase=FL::cFieldLineVertex::SamplingBuffersSwapped();
+    image->segmentPhase=FL::cFieldLineSegment::SamplingBuffersSwapped();
+    image->output={{PIC::LastSampleLength,PIC::CollectingSampleCounter,PIC::RequiredSampleLength,
+        PIC::DataOutputFileNumber,PIC::SamplingMode,FL::SampleCycleCounter,FL::LastDataOutputFileNumber}};
+    const auto ledger=ReducedParticles::Native::CaptureLedger(&image->sourceLedger);if(!ledger.ok())return ledger;
+  }
   auto status=Run::Serialize(Run::Active(),&image->runConfiguration);if(!status.ok())return status;
   image->activeConfiguration=ActualConfiguration();
   image->initialization=Initialization::HasActive()?Initialization::Fingerprint(Initialization::Active()):"legacy-fixed-native-initialization";
@@ -577,6 +712,10 @@ T::Status Capture(std::uint64_t completed,Image* image) {
   std::set<long int> pointers;std::set<std::uint64_t> ids;
   for(int l=0;l<FL::nFieldLine;++l) {
     auto& line=FL::FieldLinesAll[l];auto& saved=image->lines[l];const int count=line.GetTotalSegmentNumber();
+    if(image->material) {
+      saved.owner=line.GetGeometryOwnerIdentity();saved.firstLabel=line.FirstMaterialLabel;
+      saved.epoch=line.GeometryEpochS;saved.generation=line.GeometryGeneration;
+    }
     saved.vertices.resize(count+1);saved.positions.resize(count+1);saved.segments.resize(count);
     for(int v=0;v<=count;++v) {
       auto* vertex=line.GetVertex(v);const int bytes=vertex->AssociatedDataLength();
@@ -588,6 +727,10 @@ T::Status Capture(std::uint64_t completed,Image* image) {
     }
     for(int s=0;s<count;++s) {
       auto* segment=line.GetSegment(s);auto& row=saved.segments[s];row.owner=segment->Thread;
+      if(image->material) {
+        row.exposure=segment->SamplingExposure;
+        row.collecting=segment->MaterialCollecting;row.completed=segment->MaterialCompleted;
+      }
       const int bytes=segment->AssociatedDataLength();
       if(bytes<0||(bytes&&!segment->GetAssociatedDataBufferPointer()))return Error("checkpoint segment associated state is absent");
       row.data.assign(segment->GetAssociatedDataBufferPointer(),bytes);
@@ -597,10 +740,27 @@ T::Status Capture(std::uint64_t completed,Image* image) {
         if(segment->Thread!=PIC::ThisThread||!pointers.insert(p).second)return Error("checkpoint encountered non-owner or cyclic native particle list");
         std::string record(reinterpret_cast<const char*>(PB::GetParticleDataPointer(p)),PB::ParticleDataLength);
         status=ValidateRecord(record,l,s,saved.positions[s],saved.positions[s+1],A::CampaignRandomSeed,&ids);if(!status.ok())return status;
-        // Links are allocation bookkeeping. Preserve semantic list order and
-        // rebuild both directions through GetNewParticle/CloneParticle on read.
+        // Links are allocation bookkeeping, never physical particle state.
+        // Fixed-line legacy operators retain their semantic traversal order;
+        // material records are canonicalized by immutable identity below.
         auto* raw=reinterpret_cast<PB::byte*>(&record[0]);PB::SetNext(-1,raw);PB::SetPrev(-1,raw);
         row.particles.push_back(std::move(record));
+      }
+      if(image->material) {
+        // Parallel destination-list insertion is scheduling-dependent. Two
+        // identical keyed material populations can therefore have opposite
+        // native list orders after a fresh restart. Persist every COMPLETE
+        // normalized record, in immutable-ID order, so the checkpoint does
+        // not encode worker arrival or pool allocation as physical history.
+        // IDs were validated unique above. Material sampling has its own
+        // canonical physical-input index; inventories and population control
+        // also use immutable-ID order. No trajectory, draw, weight, sample or
+        // ledger is changed here. Legacy fixed-line shared-stream operators
+        // deliberately keep their old list ordering and codec assertions.
+        std::sort(row.particles.begin(),row.particles.end(),[](const std::string& a,const std::string& b) {
+          return Word<std::uint64_t>(a,SEP::Offset::StableParticleId)<
+                 Word<std::uint64_t>(b,SEP::Offset::StableParticleId);
+        });
       }
     }
   }
@@ -622,7 +782,8 @@ T::Status Validate(const Image& image,bool replacing=false) {
     return Error("physics checkpoint frozen configuration differs from requested run");
   status=SourceLifecycle::ValidateNativeState(image.source);if(!status.ok())return status;
   if(!std::isfinite(image.clock)||!image.snapshot||!image.snapshot->Covers(image.clock)||
-      image.snapshot->provider()!=Background::Provider::Analytic||image.snapshot->ownership()!=Background::Ownership::ModelOwned||
+      image.material!=ReducedShock::Enabled()||
+      image.snapshot->provider()!=(image.material?Background::Provider::ReducedShock:Background::Provider::Analytic)||image.snapshot->ownership()!=Background::Ownership::ModelOwned||
       image.snapshot->configuration_fingerprint()!=image.backgroundFingerprint||!std::isfinite(image.normal))
     return Error("physics checkpoint clock/background/RNG history is invalid");
   try {Background::SnapshotStore::Instance().ValidateCheckpointRestore(*image.snapshot);}
@@ -644,32 +805,108 @@ T::Status Validate(const Image& image,bool replacing=false) {
   status=ValidateHostStepCache(image.host);if(!status.ok())return status;
   status=TurbOwner::ValidateCheckpointCache(image.turbulence);if(!status.ok())return status;
   status=FluxOwner::ValidateCheckpointState(image.flux);if(!status.ok())return status;
+  if(image.material) {
+    status=ReducedParticles::Native::ValidateLedger(image.sourceLedger);if(!status.ok())return status;
+    if(image.coreCache.eventIdentity!=ReducedShock::EventIdentity()||
+        !std::isfinite(image.coreCache.epochS)||image.coreCache.epochS>image.clock||
+        !std::isfinite(image.coreCache.validUntilS)||image.coreCache.validUntilS!=
+            std::min(ReducedShock::EventEndS(),image.coreCache.epochS+ReducedShock::BackgroundCadenceS())||
+        image.coreCache.generation==0)
+      return Error("material checkpoint has incompatible core event/cadence identity");
+    if(image.output[0]<0||image.output[1]<0||image.output[2]<=0||image.output[3]<0||
+        image.output[4]<0||image.output[4]>4||image.output[5]<0||image.output[5]>INT_MAX||image.output[6]<-1)
+      return Error("material checkpoint has invalid sampling/output counters");
+    // Configuration equality is insufficient if a host edits the live dt
+    // after startup. Resuming a partial window must retain precisely its dt.
+    for(std::size_t i=0;i<image.steps.size();++i)
+      if(image.steps[i]!=PIC::ParticleWeightTimeStep::GlobalTimeStep[i])
+        return Error("material checkpoint cannot change the configured physical timestep");
+  }
   if(image.lines.size()!=static_cast<std::size_t>(FL::nFieldLine))return Error("checkpoint line topology differs from native geometry");
   std::size_t particles=0;std::set<std::uint64_t> ids;
   for(int l=0;l<FL::nFieldLine;++l) {
-    auto& line=FL::FieldLinesAll[l];const auto& saved=image.lines[l];const int count=line.GetTotalSegmentNumber();
+    auto& line=FL::FieldLinesAll[l];const auto& saved=image.lines[l];
+    if(saved.segments.empty()||saved.segments.size()>static_cast<std::size_t>(INT_MAX))return Error("checkpoint has invalid open-line topology");
+    const int count=image.material?static_cast<int>(saved.segments.size()):line.GetTotalSegmentNumber();
+    if(image.material&&(saved.owner!=line.GetGeometryOwnerIdentity()||saved.epoch!=image.clock||
+        saved.generation==std::numeric_limits<std::uint64_t>::max()||
+        saved.firstLabel>std::numeric_limits<std::int64_t>::max()-count))
+      return Error("material checkpoint geometry owner, epoch or label range is incompatible");
     if(saved.vertices.size()!=static_cast<std::size_t>(count+1)||saved.positions.size()!=saved.vertices.size()||saved.segments.size()!=static_cast<std::size_t>(count))
       return Error("checkpoint vertex/segment topology differs from native geometry");
+    if(image.material&&(image.snapshot->epoch_seconds()!=image.clock||
+        image.snapshot->valid_from_seconds()!=image.clock||
+        image.snapshot->valid_until_seconds()!=std::min(ReducedShock::EventEndS(),image.clock+image.steps[0])||
+        image.snapshot->current_physical_epoch_seconds()!=image.clock||
+        image.snapshot->field_line_generation()!=std::max(image.coreCache.generation,saved.generation+1)||
+        (image.completed!=0&&image.snapshot->previous_physical_epoch_seconds()+image.steps[0]!=image.clock)))
+      return Error("material checkpoint snapshot does not describe its full physical step, core cache and geometry generation");
     for(int v=0;v<=count;++v) {
-      const double* current=line.GetVertex(v)->GetX();
+      const double* current=(image.material?line.GetFirstVertex():line.GetVertex(v))->GetX();
       for(unsigned component=0;component<3;++component)
-        if(!std::isfinite(saved.positions[v][component])||saved.positions[v][component]!=current[component])
+        if(!std::isfinite(saved.positions[v][component])||(!image.material&&saved.positions[v][component]!=current[component]))
           return Error("checkpoint decoded vertex position differs from the supported fixed physical geometry");
-      if(saved.vertices[v].size()!=static_cast<std::size_t>(line.GetVertex(v)->AssociatedDataLength()))return Error("checkpoint vertex data layout differs");
+      if(saved.vertices[v].size()!=static_cast<std::size_t>(line.GetFirstVertex()->AssociatedDataLength()))return Error("checkpoint vertex data layout differs");
       // Preflight decoded primitives before PrepareReplacement allocates any
       // PIC record and before Commit can overwrite native vertex storage.
       // Thermal/previous-epoch slots are preserved; this first analytic codec
       // does not invent a missing thermal closure or use old density as div U.
-      status=ValidateCurrentVertexPrimitives(saved.vertices[v]);if(!status.ok())return status;
+      double massDensity=0;
+      if(image.material) {
+        const auto interval=ReducedShock::CapturePhysicalStep(image.clock,image.clock,ReducedShock::EventIdentity());
+        if(!interval.ok())return Error(interval.status.message);
+        const auto ambient=interval.value.PrimitiveAt(saved.positions[v],image.clock);
+        if(!ambient.ok())return Error(ambient.status.message);
+        massDensity=ambient.value.massDensityKgM3;
+        // Check intrinsic SI domains first, using the actual composition-
+        // resolved rho. NaN/negative n, zero B and superluminal U must reach
+        // their precise physical diagnostic even when they would also fail
+        // the stronger provider-equivalence check below. Both gates remain
+        // mandatory; positive but wrong n_p still rejects at core equivalence.
+        status=ValidateCurrentVertexPrimitives(saved.vertices[v],&massDensity);
+        if(!status.ok())return status;
+        // Check the decoded primitive against its configured authority, not
+        // merely for positivity. In particular n_e in an n_p slot and stale
+        // thermal/B/U epochs can all look finite while changing the physics.
+        const auto& expected=ambient.value;
+        for(const auto& datum:{std::make_pair(&FL::DatumAtVertexMagneticField,expected.magneticFieldT.data()),
+            std::make_pair(&FL::DatumAtVertexPlasmaVelocity,expected.velocityMPerS.data()),
+            std::make_pair(&FL::DatumAtVertexPlasmaDensity,&expected.protonNumberDensityM3),
+            std::make_pair(&FL::DatumAtVertexPlasmaPressure,&expected.pressurePa),
+            std::make_pair(&FL::DatumAtVertexPlasmaTemperature,&expected.protonTemperatureK)}) {
+          double value[3]={};status=ReadVertexPrimitive(saved.vertices[v],*datum.first,datum.first->length,value);
+          if(!status.ok())return status;
+          for(int component=0;component<datum.first->length;++component)
+            if(value[component]!=datum.second[component])return Error("decoded material primitive differs from the core composition/position/epoch authority");
+        }
+      }
+      if(!image.material) {
+        status=ValidateCurrentVertexPrimitives(saved.vertices[v]);if(!status.ok())return status;
+      }
     }
     status=ValidateLineFluxGeometry(image,l);if(!status.ok())return status;
     for(int s=0;s<count;++s) {
-      const auto& row=saved.segments[s];auto* segment=line.GetSegment(s);
-      if(row.owner!=static_cast<std::uint64_t>(segment->Thread)||row.data.size()!=static_cast<std::size_t>(segment->AssociatedDataLength())||
+      const auto& row=saved.segments[s];auto* segment=line.GetFirstSegment();
+      if(row.owner>=image.ranks||(!image.material&&row.owner!=static_cast<std::uint64_t>(line.GetSegment(s)->Thread))||row.data.size()!=static_cast<std::size_t>(segment->AssociatedDataLength())||
           row.weights.size()!=static_cast<std::size_t>(PIC::nTotalSpecies)||
-          (!row.particles.empty()&&segment->Thread!=PIC::ThisThread))
+          (!row.particles.empty()&&row.owner!=static_cast<std::uint64_t>(PIC::ThisThread)))
         return Error("checkpoint segment ownership or native data layout differs");
       for(double weight:row.weights)if(!std::isfinite(weight)||weight<0.0)return Error("invalid checkpoint segment source weight");
+      if(image.material) {
+        const auto& e=row.exposure;
+        const auto width=2*static_cast<std::size_t>(FL::cFieldLineVertex::SampleDataBytes()/sizeof(double));
+        if((!row.collecting.empty()&&row.collecting.size()!=width)||(!row.completed.empty()&&row.completed.size()!=width)||
+            (!row.collecting.empty()&&e.collecting==0&&std::any_of(row.collecting.begin(),row.collecting.end(),[](double x){return x!=0;}))||
+            !std::isfinite(e.collectingSeconds)||!std::isfinite(e.completedSeconds)||
+            (e.fixedStepSeconds!=0&&e.fixedStepSeconds!=image.steps[0])||
+            (e.collecting==0&&e.collectingSeconds!=0)||(e.completed==0&&e.completedSeconds!=0)||
+            ((e.collecting||e.completed)&&e.fixedStepSeconds!=image.steps[0]))
+          return Error("material checkpoint has inconsistent segment sampling exposure or layout");
+        for(const auto* values:{&row.collecting,&row.completed})for(double value:*values)
+          if(!std::isfinite(value))return Error("material checkpoint contains nonfinite sampling numerators");
+        const auto length=FL::Geometry::Norm(FL::Geometry::Difference(saved.positions[s+1],saved.positions[s]));
+        if(!std::isfinite(length)||length<=0)return Error("material checkpoint has degenerate physical segments");
+      }
       for(const auto& record:row.particles) {
         status=ValidateRecord(record,l,s,saved.positions[s],saved.positions[s+1],A::CampaignRandomSeed,&ids);if(!status.ok())return status;++particles;
       }
@@ -705,7 +942,11 @@ T::Status AgreeText(const std::string& local,const char* failure) {
   catch(const std::exception& e){allocated=Error(e.what());}
   status=Agreed(allocated);if(!status.ok())return status;
   MPI_Bcast(size?&expected[0]:nullptr,size,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
-  return Agreed(local==expected?T::Status::Ok():Error(failure));
+  if(local==expected)return Agreed(T::Status::Ok());
+  std::size_t first=0;
+  while(first<std::min(local.size(),expected.size())&&local[first]==expected[first])++first;
+  return Agreed(Error(std::string(failure)+"; first differing byte="+std::to_string(first)+
+      ", local/reference lengths="+std::to_string(local.size())+"/"+std::to_string(expected.size())));
 }
 T::Status AgreeLayout() {
   std::uint64_t local=0;T::Status valid;
@@ -747,6 +988,40 @@ T::Status PrepareReplacement(Image* image) {
   auto status=SourceLifecycle::PrepareNativeRestore(image->source,&image->stagedSource);
   if(!status.ok())return status;
   status=FluxOwner::StageCheckpointRestore(image->flux,&image->stagedFlux);if(!status.ok())return status;
+  if(image->material) {
+    // Pool objects are allocated off-line; their pointers never enter the
+    // live geometry/table until all ranks have validated the whole restore.
+    // The custom owner retires either a failed candidate or the old committed
+    // line, including attached particles, without leaking pool allocations.
+    image->stagedLine=std::shared_ptr<FL::cFieldLine>(new FL::cFieldLine,[](FL::cFieldLine* line){line->Delete();delete line;});
+    const auto& saved=image->lines.at(0);auto& line=*image->stagedLine;
+    for(std::size_t v=0;v<saved.positions.size();++v) {
+      auto point=saved.positions[v];auto* vertex=line.Add(point.data());
+      std::memcpy(vertex->GetAssociatedDataBufferPointer(),saved.vertices[v].data(),saved.vertices[v].size());
+    }
+    const auto registered=FL::FieldLinesAll[0].PrepareCheckpointIdentity(line,saved.epoch,saved.generation,saved.firstLabel);
+    if(!registered.ok())return Error(registered.message);
+    for(std::size_t s=0;s<saved.segments.size();++s) {
+      const auto& row=saved.segments[s];auto* edge=line.GetSegment(static_cast<int>(s));
+      edge->Thread=static_cast<int>(row.owner);edge->FirstParticleIndex=-1;edge->tempFirstParticleIndex=-1;
+      std::memcpy(edge->GetAssociatedDataBufferPointer(),row.data.data(),row.data.size());
+      for(int species=0;species<PIC::nTotalSpecies;++species)edge->SetWeight(row.weights[species],species);
+      edge->SamplingExposure=row.exposure;edge->MaterialCollecting=row.collecting;edge->MaterialCompleted=row.completed;
+    }
+    const auto table=PIC::ParallelFieldLines::PrepareThreadSegmentTableReplacement(
+        &FL::FieldLinesAll[0],line.SegmentPointerTable,&image->publishTable);
+    if(!table.ok())return Error(table.message);
+    const auto cadence=ReducedShock::PrepareCadencePublication(image->coreCache.epochS,true);
+    if(!cadence.ok())return Error(cadence.status.message);
+    if(cadence.value.Generation()!=image->coreCache.generation)return Error("saved core cache generation differs from its event cadence");
+    image->stagedCadence=cadence.value;
+    const auto interval=cadence.value.PhysicalInterval(image->clock,
+        std::min(ReducedShock::EventEndS(),image->clock+image->steps[0]));
+    if(!interval.ok())return Error(interval.status.message);
+    const auto view=ReducedShock::Native::PrepareCheckpointView(interval.value,saved.generation,saved.positions);
+    if(!view.ok())return Error(view.status.message);
+    image->stagedView=view.value;
+  }
   for(auto& line:image->lines)for(auto& segment:line.segments)
     for(auto record=segment.particles.rbegin();record!=segment.particles.rend();++record) {
       const auto particle=PB::GetNewParticle(segment.stagedHead);
@@ -768,6 +1043,25 @@ void Commit(Image* image) {
   // safe PIC APIs; raw pointer/atomic/list-head objects are never deserialized.
   if(!FluxOwner::CommitCheckpointRestore(&image->stagedFlux))
     throw std::runtime_error("flux owner became stale after the collective checkpoint barrier");
+  if(image->material) {
+    for(std::size_t s=0;s<image->lines[0].segments.size();++s) {
+      auto& row=image->lines[0].segments[s];
+      image->stagedLine->GetSegment(static_cast<int>(s))->FirstParticleIndex=row.stagedHead;row.stagedHead=-1;
+    }
+    FL::FieldLinesAll[0].SwapCheckpointOwner(*image->stagedLine);
+    image->publishTable();
+    const auto cadence=ReducedShock::CommitCadencePublication(&image->stagedCadence);
+    if(!cadence.ok())throw std::runtime_error(cadence.message);
+    ReducedShock::Native::CommitCheckpointView(&image->stagedView);
+    ReducedParticles::Native::RestoreLedger(image->sourceLedger);
+    FL::cFieldLineVertex::RestoreSamplingBufferPhase(image->vertexPhase);
+    FL::cFieldLineSegment::RestoreSamplingBufferPhase(image->segmentPhase);
+    PIC::LastSampleLength=image->output[0];PIC::CollectingSampleCounter=image->output[1];
+    PIC::RequiredSampleLength=image->output[2];PIC::DataOutputFileNumber=image->output[3];
+    PIC::SamplingMode=static_cast<int>(image->output[4]);FL::SampleCycleCounter=static_cast<int>(image->output[5]);
+    FL::LastDataOutputFileNumber=image->output[6];
+  }
+  else {
   for(int l=0;l<FL::nFieldLine;++l)for(auto* segment=FL::FieldLinesAll[l].GetFirstSegment();segment;segment=segment->GetNext()) {
     long int particle=segment->FirstParticleIndex;
     while(particle!=-1){const auto next=PB::GetNext(particle);PB::DeleteParticle(particle);particle=next;}
@@ -784,6 +1078,7 @@ void Commit(Image* image) {
       segment->FirstParticleIndex=row.stagedHead;row.stagedHead=-1;
     }
   }
+  }
   std::copy(image->steps.begin(),image->steps.end(),PIC::ParticleWeightTimeStep::GlobalTimeStep);
   std::copy(image->weights.begin(),image->weights.end(),PIC::ParticleWeightTimeStep::GlobalParticleWeight);
   PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized=image->stepsInitialized;
@@ -796,12 +1091,103 @@ void Commit(Image* image) {
   Background::SnapshotStore::Instance().RestoreCheckpoint(image->snapshot);
 }
 
+Image RepartitionMaterial(std::vector<Image>* images) {
+  auto& ranks=*images;auto& base=ranks.at(0);
+  if(!base.material||!ReducedParticles::Native::Enabled())
+    throw std::runtime_error("MPI repartition is qualified only for the keyed reduced-source material consumer");
+  // Restarts may change computational owners, not the represented material or
+  // source event catalog. Read every original section and check replicated
+  // state before combining additive measures. Completed material numerators
+  // already contain an MPI sum and MUST NOT be summed a second time.
+  const auto common=Encode(base,true);
+  for(std::size_t rank=0;rank<ranks.size();++rank) {
+    if(ranks[rank].rank!=rank||ranks[rank].ranks!=ranks.size()||Encode(ranks[rank],true)!=common)
+      throw std::runtime_error("material restart replicas disagree on topology, background, source, exposure or completed output");
+  }
+  for(std::size_t column=0;column<base.sourceLedger.size();++column) {
+    long double sum=0;for(const auto& rank:ranks)sum+=rank.sourceLedger[column];
+    base.sourceLedger[column]=PIC::ThisThread==0?static_cast<double>(sum):0;
+  }
+  const std::size_t prefix=FL::cFieldLineVertex::StoredDataBytes();
+  const std::size_t width=FL::cFieldLineVertex::SampleDataBytes();
+  const std::size_t collectingOffset=prefix+(base.vertexPhase?width:0);
+  const std::size_t completedOffset=prefix+(base.vertexPhase?0:width);
+  std::vector<bool> additive((prefix+2*width)/sizeof(double),false);
+  for(std::size_t byte=0;byte<width;byte+=sizeof(double)) {
+    additive.at((collectingOffset+byte)/sizeof(double))=true;
+    additive.at((completedOffset+byte)/sizeof(double))=true;
+  }
+  // Native output globally reduces the printed completed datums and weight.
+  // Nonprinted completed diagnostic slots retain their local ownership. This
+  // explicit descriptor mask avoids both multiplying a reduced buffer by the
+  // old rank count and discarding an unprinted rank-local continuation field.
+  for(const auto* datum:FL::DataSampledAtVertex)
+    if(datum->offset>=0&&(datum->doPrint||datum==&FL::DatumAtVertexParticleWeight))
+      for(std::size_t byte=0;byte<datum->length*PIC::nTotalSpecies*sizeof(double);byte+=sizeof(double))
+        additive.at((completedOffset+datum->offset+byte)/sizeof(double))=false;
+  if(FL::DatumAtVertexFluence.is_active())additive.at(FL::DatumAtVertexFluence.offset/sizeof(double))=true;
+  for(std::size_t l=0;l<base.lines.size();++l) {
+    auto& line=base.lines[l];
+    for(std::size_t v=0;v<line.vertices.size();++v) {
+      auto& target=line.vertices[v];
+      if(target.size()!=prefix+2*width)throw std::runtime_error("invalid repartitioned vertex layout");
+      for(std::size_t word=0;word<additive.size();++word) {
+        const auto offset=word*sizeof(double);double first;std::memcpy(&first,target.data()+offset,sizeof(double));
+        long double sum=0;
+        for(const auto& rank:ranks) {
+          const auto& bytes=rank.lines[l].vertices[v];
+          if(bytes.size()!=target.size())throw std::runtime_error("inconsistent repartitioned vertex buffers");
+          double value;std::memcpy(&value,bytes.data()+offset,sizeof(double));
+          if(!std::isfinite(value)||(!additive[word]&&value!=first))
+            throw std::runtime_error("nonfinite or inconsistent replicated vertex continuation datum");
+          sum+=value;
+        }
+        if(additive[word]) {
+          const double value=PIC::ThisThread==0?static_cast<double>(sum):0;
+          std::memcpy(&target[offset],&value,sizeof(double));
+        }
+      }
+    }
+    for(std::size_t s=0;s<line.segments.size();++s) {
+      auto& target=line.segments[s];std::vector<std::string> particles;
+      for(const auto& rank:ranks) {
+        const auto& row=rank.lines[l].segments[s];
+        if(!row.particles.empty()&&row.owner!=rank.rank)
+          throw std::runtime_error("material checkpoint contains particles on a non-owner rank");
+        particles.insert(particles.end(),row.particles.begin(),row.particles.end());
+      }
+      // Modulo of the complete signed label is defined on its uint64 image.
+      // This explicitly declared decomposition affects no physical RNG key.
+      const auto label=line.firstLabel+static_cast<std::int64_t>(s);
+      target.owner=static_cast<std::uint64_t>(label)%static_cast<std::uint64_t>(PIC::nTotalThreads);
+      target.particles=target.owner==static_cast<std::uint64_t>(PIC::ThisThread)?std::move(particles):std::vector<std::string>();
+      for(std::size_t i=0;i<target.collecting.size();++i) {
+        long double sum=0;
+        for(const auto& rank:ranks) {
+          const auto& values=rank.lines[l].segments[s].collecting;
+          if(values.size()!=target.collecting.size())throw std::runtime_error("inconsistent material collecting layout");
+          sum+=values[i];
+        }
+        target.collecting[i]=PIC::ThisThread==0?static_cast<double>(sum):0;
+      }
+    }
+  }
+  base.rank=PIC::ThisThread;base.ranks=PIC::nTotalThreads;
+  return std::move(base);
+}
+
 }  // namespace
 
 T::Status LocalPhysicsImage(std::uint64_t completed,std::string* text) {
   if(!text)return Error("null physics image destination");
   try {Image image;auto status=Capture(completed,&image);if(!status.ok())return status;
     status=Validate(image);if(!status.ok())return status;*text=Encode(image);return T::Status::Ok();}
+  catch(const std::exception& e){return Error(e.what());}
+}
+T::Status LocalReplicatedPhysicsImage(std::uint64_t completed,std::string* text) {
+  if(!text)return Error("null replicated physics-image destination");
+  try {Image image;auto status=Capture(completed,&image);if(!status.ok())return status;
+    status=Validate(image);if(!status.ok())return status;*text=Encode(image,true);return T::Status::Ok();}
   catch(const std::exception& e){return Error(e.what());}
 }
 
@@ -848,9 +1234,14 @@ T::Status SaveCollective(const std::string& path,std::uint64_t completed) {
   return Agreed(local);
 }
 
-T::Status LoadCollective(const std::string& path,std::uint64_t* completed) {
+static T::Status LoadCollectiveImpl(const std::string& path,std::uint64_t* completed,
+    const Diagnostics::PreparationProbe& probe) {
   T::Status local;
-  try {local=completed?Capability():Error("null restored step destination");}
+  // A diagnostic can force rejection, never success. Reject a hook at the
+  // production boundary even before reading its path or preparing a candidate.
+  try {local=probe&&A::CurrentRunPurpose()!=A::RunPurpose::ControlledDiagnostic?
+      Error("checkpoint preparation probes require ControlledDiagnostic purpose"):
+      completed?Capability():Error("null restored step destination");}
   catch(const std::exception& e){local=Error(e.what());}
   auto status=Agreed(local);if(!status.ok())return status;
   status=AgreeText(path,"ranks disagree on checkpoint source");if(!status.ok())return status;
@@ -879,13 +1270,21 @@ T::Status LoadCollective(const std::string& path,std::uint64_t* completed) {
   MPI_Bcast(size?&loadedBytes[0]:nullptr,size,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
   try {
     Reader input(loadedBytes);
-    if(input.U()!=kMagic||input.U()!=kSchema||input.U()!=static_cast<std::uint64_t>(PIC::nTotalThreads))
-      throw std::runtime_error("incompatible corrected physics schema or MPI rank count");
-    std::string selected;
-    for(int rank=0;rank<PIC::nTotalThreads;++rank) {
-      auto section=input.S();if(rank==PIC::ThisThread)selected=std::move(section);
+    if(input.U()!=kMagic||input.U()!=kSchema)throw std::runtime_error("incompatible corrected physics schema");
+    const auto writers=input.Count(8);
+    if(writers==0||writers>static_cast<std::uint64_t>(INT_MAX))throw std::runtime_error("invalid checkpoint writer count");
+    std::vector<Image> images;images.reserve(writers);
+    for(std::size_t rank=0;rank<writers;++rank)images.push_back(Decode(input.S()));
+    input.End();
+    if(writers!=static_cast<std::size_t>(PIC::nTotalThreads))staged=RepartitionMaterial(&images);
+    else {
+      const auto common=Encode(images[0],true);
+      for(std::size_t rank=0;rank<writers;++rank)
+        if(images[rank].rank!=rank||images[rank].ranks!=writers||Encode(images[rank],true)!=common)
+          throw std::runtime_error("checkpoint sections disagree on replicated state or writer identity");
+      staged=std::move(images[PIC::ThisThread]);
     }
-    input.End();staged=Decode(selected);local=Validate(staged,true);
+    local=Validate(staged,true);
   }catch(const std::exception& e){local=Error(e.what());}
   status=Agreed(local);if(!status.ok())return status;
   std::string common;
@@ -895,6 +1294,16 @@ T::Status LoadCollective(const std::string& path,std::uint64_t* completed) {
   status=UniqueIdentities(staged);if(!status.ok())return status;
   try {local=PrepareReplacement(&staged);
     if(local.ok())local=FluxOwner::ValidateCheckpointReady(staged.stagedFlux);
+    if(local.ok()&&probe) {
+      Diagnostics::PreparedReplacement prepared;
+      prepared.material=staged.material;prepared.lines=staged.lines.size();
+      for(const auto& line:staged.lines)for(const auto& segment:line.segments)
+        prepared.particles+=segment.particles.size();
+      // The probe is rank-local: it must not contain collectives. Another
+      // rank can have failed preparation and therefore never reach it.
+      // Agreed below propagates a single failure to every owner before Commit.
+      local=probe(prepared);
+    }
   }catch(const std::exception& e){local=Error(e.what());}
   status=Agreed(local);
   if(!status.ok()){DiscardReplacement(&staged);return status;}
@@ -906,6 +1315,15 @@ T::Status LoadCollective(const std::string& path,std::uint64_t* completed) {
   }
   *completed=staged.completed;MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   return T::Status::Ok();
+}
+
+T::Status LoadCollective(const std::string& path,std::uint64_t* completed) {
+  return LoadCollectiveImpl(path,completed,Diagnostics::PreparationProbe());
+}
+T::Status Diagnostics::LoadWithPreparationProbe(const std::string& path,
+    std::uint64_t* completed,const PreparationProbe& probe) {
+  if(!probe)return Error("diagnostic checkpoint preparation probe is empty");
+  return LoadCollectiveImpl(path,completed,probe);
 }
 
 } }  // namespace SEP::PhysicsCheckpoint

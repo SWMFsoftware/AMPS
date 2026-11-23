@@ -32,6 +32,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "physics_checkpoint.h"
 #include "adapters/swcme1d_adapter.h"
 #include "adapters/reduced_shock_background_adapter.h"
 #include "adapters/parallel_diffusion_adapter.h"
@@ -41,6 +42,7 @@
 #include "util/sep_background_runtime.h"
 #include "util/sep_initialization.h"
 #include "util/sep_native_startup_input.h"
+#include "util/sep_checkpoint_native_validation.h"
 #include "util/sep_run_configuration.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
@@ -231,8 +233,38 @@ int main(int argc,char **argv) {
                 selectedComponentTests.front()->tags.end(),
                 SEP::Testing::NativeStartupInput::DescriptorTag()) !=
           selectedComponentTests.front()->tags.end();
-  const std::string effectiveInitializationPath = nativeStartupInput
-      ? cli_options.testInputPath : cli_options.inputPath;
+  SEP::Testing::MaterialCheckpointRequest materialCheckpointRequest;
+  try {
+    if(componentTestMode&&selectedComponentTests.size()==1)
+      materialCheckpointRequest=SEP::Testing::ReadMaterialCheckpointRequest(
+          selectedComponentTests.front()->id,cli_options.testInputPath);
+  }catch(const std::exception& error) {
+    if(PIC::ThisThread==0)std::cerr<<"ERROR: material checkpoint startup: "<<error.what()<<'\n';
+    return 2;
+  }
+  if(componentTestMode&&selectedComponentTests.size()==1&&!materialCheckpointRequest.selected&&
+      std::find(selectedComponentTests.front()->tags.begin(),selectedComponentTests.front()->tags.end(),
+          "material-checkpoint-startup-v2")!=selectedComponentTests.front()->tags.end()) {
+    // A missing reviewed fixture is an explicit infrastructure ERROR before
+    // allocating any mesh. Keep the same case/report ID, but execute only the
+    // error callback; it needs no native state and cannot trace a particle.
+    auto unavailable=*selectedComponentTests.front();
+    unavailable.initialization=SEP::Testing::InitializationLevel::None;
+    unavailable.callback=[](){SEP::Testing::Result result;result.status=SEP::Testing::Status::Error;
+      result.message="material checkpoint case requires --test-input protocol2 with explicit startup_input and event";return result;};
+    return RunSelectedComponentTests({&unavailable},std::cout,cli_options.testJsonPath,cli_options.testJunitPath);
+  }
+  const std::string effectiveInitializationPath = materialCheckpointRequest.selected?
+      materialCheckpointRequest.inputPath:nativeStartupInput?cli_options.testInputPath:cli_options.inputPath;
+
+  // Unsupported return/normalization choices must take the AMPS host trap at
+  // startup, even if the first physical shock encounter would occur much
+  // later. Pure parsers retain the user's choice; they never substitute a
+  // different boundary. Fill required physical source inputs only after the
+  // explicit runtime deck has been read below.
+  auto policyOnly=cli_options.reducedParticles;policyOnly.enabled=false;
+  const auto sourcePolicy=SEP::ReducedParticles::Validate(policyOnly);
+  if(!sourcePolicy.ok())exit(__LINE__,__FILE__,sourcePolicy.message.c_str());
 
   // Parse and freeze the optional mesh/field-line initialization contract
   // before the historical post-compile parser, SWCME setup, MPI, or AMPS mesh
@@ -386,6 +418,30 @@ int main(int argc,char **argv) {
     }
   }
 
+
+  if(materialCheckpointRequest.selected) {
+    // Explicit verification fixture, read through --test-input rather than a
+    // second production CLI. These are the already qualified material/source
+    // values: SI release distance 1e9 m, 16 computational proposals, prescribed
+    // scattering, and an epoch at which this event actually intersects the
+    // line. No physical dt is set here; the reviewed startup deck owns it.
+    PIC::SimulationTime::SetInitialValue(12000.0);
+    cli_options.reducedShockEventPath=materialCheckpointRequest.eventPath;
+    cli_options.reducedParticles.enabled=true;
+    cli_options.reducedParticles.releaseDistanceM=1e9;
+    cli_options.injectionParticlesPerIteration=16;
+    cli_options.turbulence.source=SEP::Turbulence::Source::Prescribed;
+    cli_options.turbulence.coupling=SEP::Turbulence::CouplingPolicy::Disabled;
+    cli_options.turbulence.advectionEnabled=cli_options.turbulence.reflectionEnabled=
+        cli_options.turbulence.cascadeEnabled=cli_options.turbulence.shockInjectionEnabled=false;
+    cli_options.particleCouplingMode=cli_options.cascadeActive=cli_options.reflectionActive=false;
+    cli_options.coefficients.source=SEP::Transport::Coefficient::SourceMode::Prescribed;
+    cli_options.coefficients.pitchAngle=SEP::Transport::Coefficient::PitchAngleKind::Constant;
+    cli_options.coefficients.constantDmumuPerS=0.001;
+    cli_options.constantDmumuPerS=0.001;cli_options.constantDmumuProvided=true;
+    cli_options.coefficients.spatial=SEP::Transport::Coefficient::SpatialKind::FromPitchAngle;
+    cli_options.coefficients.meanFreePath=SEP::Transport::Coefficient::MeanFreePathKind::FromSpatial;
+  }
 
   // Resolve the reduced event before any run fingerprint or native allocation.
   // The adapter reads repository-local assets and delegates schema, checksum,
@@ -634,6 +690,22 @@ int main(int argc,char **argv) {
       static_cast<std::uint64_t>(cli_options.injectionParticlesPerIteration);
   runConfiguration.injection.injectionEfficiency=
       swcmeSummary.source_injection_efficiency;
+  runConfiguration.reducedParticles=cli_options.reducedParticles;
+  if(runConfiguration.reducedParticles.enabled) {
+    if(!SEP::Initialization::HasActive())exit(__LINE__,__FILE__,
+        "reduced particle transport requires an explicit initialization deck");
+    const auto& input=SEP::Initialization::Active();
+    auto& source=runConfiguration.reducedParticles;
+    source.minimumEnergyJ=input.sourceMinimumEnergyJ;
+    source.maximumEnergyJ=input.sourceMaximumEnergyJ;
+    source.releaseFraction=input.sourceNetFraction;
+    // Preserve the maintained defaults < input < CLI precedence for the
+    // computational proposal count. Physical rate remains independent of N.
+    source.samplesPerStep=runConfiguration.injection.macroparticlesPerEvent;
+    source.campaignSeed=SEP::Transport::PICAdapter::CampaignRandomSeed;
+    const auto ready=SEP::ReducedParticles::Validate(source);
+    if(!ready.ok())exit(__LINE__,__FILE__,ready.message.c_str());
+  }
   const SEP::Transport::Status runStatus=
       SEP::Run::InstallActive(runConfiguration);
   if (!runStatus.ok()) {
@@ -720,8 +792,13 @@ int main(int argc,char **argv) {
   // would create an unrequested shared artifact.  Field-line tests still receive
   // the configured SWCME model, but only a production run writes this file.
   if (!componentTestMode && !cli_options.initializationOnly) {
+    // SWCME is still configured for compatibility, but its curve is not the
+    // active reduced SSE/Parker shock. Label this comparison artifact by its
+    // actual authority; native field-line metadata describes the selected
+    // reduced front. The legacy filename remains for actual SWCME runs.
     SEP::SW1DAdapter::WriteShockVsTime(
-        2.0*24.0*3600, 200, "shock_vs_time.dat");
+        2.0*24.0*3600, 200, SEP::ReducedShock::Enabled()?
+            "swcme-comparison-shock-vs-time.dat":"shock_vs_time.dat");
   }
 
   // --------------------------------------------------------------------------
@@ -835,6 +912,7 @@ int main(int argc,char **argv) {
   // boundary: neither the compatibility TestManager path nor the production
   // timestep loop can execute after a --test/--test-group/--all-tests request.
   if (componentTestMode) {
+    std::string prerequisiteError;
     if (RequiredInitializationLevel(selectedComponentTests) ==
         SEP::Testing::InitializationLevel::FieldLineModel) {
       // Native mover fixtures call the same production coefficient adapters as
@@ -842,6 +920,7 @@ int main(int argc,char **argv) {
       // registry starts, but do not enter its read phase here: each fixture must
       // first install and later restore its temporary vertex values.  The
       // fixture itself opens ParticleReadPhase only around actual mover calls.
+      try {
       const double epochS = SEP::Background::SimulationTimeSeconds();
       if (SEP::Background::ConfiguredProvider() ==
           SEP::Background::Provider::Swcme) {
@@ -849,8 +928,34 @@ int main(int argc,char **argv) {
             epochS, PIC::ParticleWeightTimeStep::GlobalTimeStep[0], 0);
       }
       else {
+        if(materialCheckpointRequest.selected)
+          install_reduced_background_on_field_lines(epochS);
         SEP::Background::PrepareSnapshotForParticleStep();
       }
+      }catch(const std::exception& error) {prerequisiteError=error.what();}
+    }
+    // A failed prerequisite is an ERROR for every selected case, not an
+    // uncaught exception/SIGABRT without JSON. Agree before dispatch because
+    // a single rank may fail preparation while peers succeeded. The material
+    // guard remains intact: no physics callback is entered on this path.
+    int candidate=prerequisiteError.empty()?std::numeric_limits<int>::max():PIC::ThisThread;
+    int failedRank=0;MPI_Allreduce(&candidate,&failedRank,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+    std::vector<SEP::Testing::Descriptor> prerequisiteFailures;
+    if(failedRank!=std::numeric_limits<int>::max()) {
+      int length=PIC::ThisThread==failedRank?static_cast<int>(prerequisiteError.size()):0;
+      MPI_Bcast(&length,1,MPI_INT,failedRank,MPI_GLOBAL_COMMUNICATOR);
+      prerequisiteError.resize(length);
+      MPI_Bcast(length?&prerequisiteError[0]:nullptr,length,MPI_CHAR,failedRank,MPI_GLOBAL_COMMUNICATOR);
+      prerequisiteFailures.reserve(selectedComponentTests.size());
+      for(const auto* descriptor:selectedComponentTests) {
+        prerequisiteFailures.push_back(*descriptor);
+        prerequisiteFailures.back().callback=[prerequisiteError]() {
+          SEP::Testing::Result result;result.status=SEP::Testing::Status::Error;
+          result.message="native test prerequisite failed: "+prerequisiteError;return result;
+        };
+      }
+      selectedComponentTests.clear();
+      for(const auto& descriptor:prerequisiteFailures)selectedComponentTests.push_back(&descriptor);
     }
     const int testExitCode=RunSelectedComponentTests(selectedComponentTests, std::cout,
         cli_options.testJsonPath, cli_options.testJunitPath);
@@ -1093,8 +1198,23 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
   };
 
 
+  // Restore only after startup has installed the SAME typed model, source
+  // namespace and layout, but before opening a sampling or particle window.
+  // Restoring arrays alone is insufficient: the collective codec also restores
+  // material ownership, complete stochastic histories and output phase. These
+  // operational flags never shorten dt or modify the intended physical run.
+  std::uint64_t firstIteration=0;
+  if(!cli_options.checkpointResumePath.empty()) {
+    const auto restored=SEP::PhysicsCheckpoint::LoadCollective(cli_options.checkpointResumePath,&firstIteration);
+    if(!restored.ok())exit(__LINE__,__FILE__,restored.message.c_str());
+  }
+  if(firstIteration>static_cast<std::uint64_t>(TotalIterations)||
+      (cli_options.checkpointAtStep!=0&&
+       (static_cast<std::uint64_t>(cli_options.checkpointAtStep)<=firstIteration||cli_options.checkpointAtStep>TotalIterations)))
+    exit(__LINE__,__FILE__,"checkpoint step must be after the restored step and within the unchanged intended run");
+
   //time step
-  for (long int niter=0;niter<TotalIterations;niter++) {
+  for (long int niter=static_cast<long int>(firstIteration);niter<TotalIterations;niter++) {
     // Freeze the complete background identity for the upcoming particle step.
     // SWCME state, snapshot epoch, validity interval, and the PIC clock are
     // published together.  All later turbulence/shock updates occur after the
@@ -1570,6 +1690,16 @@ PIC::FieldLine::SegmentVolume=SEP::FieldLine::FluxTubeGeometry::SegmentVolumeM3;
     }
 
 
+    if(!cli_options.checkpointSavePath.empty()&&niter+1==cli_options.checkpointAtStep) {
+      // All movers, migration, geometry and signed source accounting have
+      // joined here. The persistence envelope writes/flushes/checksums a
+      // temporary file before atomic publication. Failed writes remain errors.
+      const auto saved=SEP::PhysicsCheckpoint::SaveCollective(cli_options.checkpointSavePath,niter+1);
+      if(!saved.ok())exit(__LINE__,__FILE__,saved.message.c_str());
+      if(PIC::ThisThread==0)std::cout<<"MATERIAL_CHECKPOINT_SAVED completed_steps="<<niter+1
+          <<" epoch_s="<<SEP::Background::SimulationTimeSeconds()<<std::endl;
+      break;
+    }
     //PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);
     //
     //PIC::ParticleSplitting::FledLine::WeightedParticleMerging(20,20,20,500,800);

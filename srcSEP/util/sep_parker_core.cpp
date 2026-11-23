@@ -18,6 +18,7 @@ ParkerIncrement AdvanceParker(const ParkerState& initial,
       initial.momentumKgMPerS < 0.0 || !std::isfinite(speedMPerS) ||
       speedMPerS < 0.0 || !std::isfinite(dtS) || dtS < 0.0 ||
       !std::isfinite(background.plasmaAdvectionMPerS) ||
+      !std::isfinite(background.logAreaGradientPerM) ||
       !std::isfinite(background.velocityDivergencePerS)) {
     result.status = Status::Error(StatusCode::InvalidArgument,
                                   "invalid Parker state, background, or timestep");
@@ -41,11 +42,18 @@ ParkerIncrement AdvanceParker(const ParkerState& initial,
   result.coefficientProvenance = coefficient.provenance;
   result.deterministicDisplacementM =
       (background.plasmaAdvectionMPerS +
-       coefficient.dKappaParallelDsMPerS) * dtS;
+       coefficient.dKappaParallelDsMPerS+
+       coefficient.kappaParallelM2PerS*background.logAreaGradientPerM) * dtS;
+  const double variance=2.0*coefficient.kappaParallelM2PerS*dtS;
+  if(!std::isfinite(result.deterministicDisplacementM)||!std::isfinite(variance)) {
+    result.status=Status::Error(StatusCode::InvalidCoefficient,
+        "Parker metric drift or diffusion variance is not representable");
+    return result; // No random draw belongs to a rejected coefficient realization.
+  }
   result.stochasticDisplacementM =
       coefficient.kappaParallelM2PerS == 0.0
           ? 0.0
-          : std::sqrt(2.0 * coefficient.kappaParallelM2PerS * dtS) *
+          : std::sqrt(variance) *
                 random.Normal01();
   result.displacementM = result.deterministicDisplacementM +
                          result.stochasticDisplacementM;

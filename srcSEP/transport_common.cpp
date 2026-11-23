@@ -8,6 +8,7 @@
 #include "util/sep_turbulence_core.h"
 #include "adapters/swcme1d_adapter.h"
 #include "adapters/reduced_shock_background_adapter.h"
+#include "reduced_shock_geometry.h"
 
 #include "amps2swmf.h"
 
@@ -25,6 +26,16 @@
 namespace SEP {
 namespace Transport {
 namespace PICAdapter {
+
+Status QueryShockCrossingTime(const ParticleContext& context,double speed,double* time,bool* supplied) {
+  if(!time||!supplied)return Status::Error(StatusCode::InvalidArgument,"null shock proximity output");
+  *supplied=false;
+  if(Background::SnapshotStore::Instance().AcquireForMover().provider()!=Background::Provider::ReducedShock)
+    return Status::Ok();
+  const auto estimate=ReducedShock::Native::CrossingTimeEstimate(context.state.coordinate,speed);
+  if(!estimate.ok())return Status::Error(StatusCode::UnresolvedCoefficient,estimate.status.message);
+  *time=estimate.value;*supplied=true;return Status::Ok();
+}
 
 std::uint64_t CampaignRandomSeed = 0;
 
@@ -221,6 +232,10 @@ Status InitializeParticleTransportStateWithIdentity(long int pointer,
   std::memcpy(data + SEP::Offset::OperatorRandomStates,
               randomStates, sizeof(randomStates));
   std::memcpy(data + SEP::Offset::BirthRecord,&birth,sizeof(birth));
+  // Every fresh non-reduced birth is explicitly marked as such. Only the
+  // reduced source transaction replaces these slots with validated history.
+  const std::uint64_t noReducedSource[2]={0,0};
+  std::memcpy(data+SEP::Offset::ReducedSourceRecord,noReducedSource,sizeof(noReducedSource));
   return Status::Ok();
 }
 
@@ -800,7 +815,14 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
   double u1[3] = {0.0, 0.0, 0.0};
   begin->GetPlasmaVelocity(u0);
   end->GetPlasmaVelocity(u1);
+  // Project endpoint velocities only after establishing the segment tangent.
+  // A default-constructed LocalBackgroundView has a zero tangent; projecting
+  // first would silently erase the longitudinal gradient diagnostic.
   sampled.segment->GetDir(background->tangent);
+  const double projectionNorm=Vector3D::Length(background->tangent);
+  if(!std::isfinite(projectionNorm)||projectionNorm<=0)
+    return Status::Error(StatusCode::InvalidParticleState,"endpoint velocity projection needs a finite segment tangent");
+  for(int d=0;d<3;++d)background->tangent[d]/=projectionNorm;
   const auto advection0=FieldLineAdvectionMPerS(u0,background->tangent);
   const auto advection1=FieldLineAdvectionMPerS(u1,background->tangent);
   if(!advection0.status.ok())return advection0.status;
@@ -835,6 +857,14 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
   background->magneticPolarityAlongLine=polarity.value>0?1:-1;
   background->plasmaAdvectionMPerS =
       (1.0 - fraction) * uParallel0 + fraction * uParallel1;
+  // Geometry-relative advection is distinct from physical plasma flow. The
+  // snapshot fingerprint binds this immutable provider declaration. Preserve
+  // U and its physical gradients for strain/cooling and wave-frame physics.
+  background->particleCoordinateFrame=Background::ParticleCoordinateFrame();
+  try {
+    background->coordinateAdvectionMPerS=AMPS::FieldLine::CoordinateAdvection(
+        background->particleCoordinateFrame,background->plasmaAdvectionMPerS);
+  }catch(const std::exception& error){return Status::Error(StatusCode::UnsupportedConfiguration,error.what());}
   background->parallelVelocityGradientPerS =
       (uParallel1 - uParallel0) / lengthM;
 
@@ -946,16 +976,21 @@ Status EvaluateLocalBackgroundAt(const ParticleContext& context,
       return Status::Error(StatusCode::InvalidParticleState,
           "SWCME query lacks canonical composition mass density");
   } else if(snapshot.provider()==Background::Provider::ReducedShock) {
-    ReducedShock::AmbientSample sample;
-    std::string error;
-    if(ReducedShock::Metadata().epochS!=snapshot.epoch_seconds()||
-        ReducedShock::Metadata().generation!=snapshot.field_line_generation()||
-        !ReducedShock::EvaluateAmbient({{positionM[0],positionM[1],positionM[2]}},
-            &sample,&error)||!sample.derivativesValid)
+    // Provider cadence generation and material geometry generation are
+    // different identities. Bind the real snapshot epoch to its immutable
+    // core validity interval rather than requiring those counters to coincide.
+    const auto interval=ReducedShock::CapturePhysicalStep(snapshot.epoch_seconds(),
+        snapshot.valid_until_seconds(),ReducedShock::EventIdentity());
+    if(!interval.ok())return Status::Error(StatusCode::UnresolvedCoefficient,interval.status.message);
+    const auto evaluated=interval.value.AmbientAt({{positionM[0],positionM[1],positionM[2]}},snapshot.epoch_seconds());
+    if(!evaluated.ok()||!evaluated.value.derivativesValid)
       return Status::Error(StatusCode::UnresolvedCoefficient,
-          "reduced provider gradient is unavailable or differs from frozen snapshot: "+error);
+          "reduced provider gradient is unavailable for its frozen snapshot: "+evaluated.status.message);
+    const auto& sample=evaluated.value;
     gradient=sample.velocityGradientPerS;
-    providerMassDensity=current*sample.massDensityKgM3/sample.numberDensityM3;
+    // Native reduced vertex density is proton density. The composition mass
+    // conversion must use that same basis, including explicit alpha abundance.
+    providerMassDensity=current*sample.massDensityKgM3/sample.protonNumberDensityM3;
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   } else if(snapshot.provider()==Background::Provider::Swmf) {
     // Received three-dimensional U(x) samples, not a temporal density proxy,

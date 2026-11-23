@@ -194,6 +194,15 @@ struct SseKinematicState {
   double halfWidthRad = 0.0;
   double halfWidthRateRadPerS = 0.0;
 };
+// Exact generating sphere of the maintained finite-SSE profile. This is a
+// geometry query only: its rear surface is NOT a shock and callers must still
+// validate leading/support membership through EvaluateRay/EvaluateFrontPoint.
+struct GeneratingSphere {
+  CoronalCME::Vec3 centerM;
+  double radiusM=0;
+  CoronalCME::Vec3 direction;
+  double minimumRayCosine=0;
+};
 Core::Result<GeometrySample> EvaluateSseRay(
     const SseKinematicState& state,CoronalCME::Vec3 rayDirection,
     std::uint64_t stableId=0);
@@ -286,6 +295,7 @@ class Provider final {
       std::shared_ptr<const Configuration> configuration);
 
   Core::Result<TrajectoryState> Trajectory(double epochS) const;
+  Core::Result<GeneratingSphere> Sphere(double epochS) const;
   Core::Result<double> HandoffTimeS() const;
   Core::Result<HandoffReceipt> Handoff() const;
   Core::Result<double> EndpointTimeS() const;

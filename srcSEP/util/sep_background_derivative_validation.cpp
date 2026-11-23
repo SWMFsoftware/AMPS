@@ -2,6 +2,10 @@
 #include "sep_background_derivatives.h"
 #include "sep_parker_core.h"
 #include "amps_velocity_gradient.h"
+#include "amps_fieldline_frame.h"
+#include "sep_focused_transport_core.h"
+#include "sep_focused_transport_mfp_core.h"
+#include "sep_background_runtime.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -163,6 +167,90 @@ Result ImportedGradientConvergence() {
   auto result=Finish(pass,"internal velocity-gradient reconstruction converges quadratically for a symmetric cubic manufactured field");
   result.metrics.push_back({"coarse_to_medium_error_ratio",errors[0]/errors[1],4.0,"observed","dimensionless"});return result;
 }
+// These coefficients explicitly disable scattering. Analytic characteristics,
+// not a second implementation of the mover, supply the expected positions.
+struct NoPitch : Transport::PitchAngleDiffusionProvider {
+  Transport::PitchAngleDiffusionSample Evaluate(double,double,double) const override {
+    Transport::PitchAngleDiffusionSample s;s.status=Transport::Status::Ok();
+    s.provenance="frame-test:no-scattering";s.turbulenceStateIdentity="frame-test";return s;
+  }
+};
+struct NoEvents : Transport::MeanFreePathProvider {
+  Transport::MeanFreePathSample Evaluate(double,double,double) const override {
+    Transport::MeanFreePathSample s;s.status=Transport::Status::Ok();
+    s.lambdaParallelM=std::numeric_limits<double>::infinity();
+    s.provenance="frame-test:ballistic";s.turbulenceStateIdentity="frame-test";return s;
+  }
+};
+Result CoordinateFrames() {
+  using namespace Transport;using namespace AMPS::FieldLine;
+  const double u[3]={400000,20000,0},t[3]={1,0,0};
+  const double mass=1.67262192369e-27,c=299792458.0,v=2e6,mu=0.25,dt=1;
+  const auto momentum=MomentumFromSpeed(v,mass,c);bool pass=momentum.status.ok();
+  NoPitch pitch;NoEvents events;NoDiffusion diffusion;
+  // Exercise the actual provider-to-coordinate contract, rather than assume
+  // that model-generated geometry is Eulerian. Each data authority must give
+  // the identical plasma-frame characteristic. The generic fixed-grid helper
+  // is checked separately below; it is not a srcSEP provider selection.
+  for(auto provider:{Background::Provider::Analytic,Background::Provider::Swcme,
+      Background::Provider::ReducedShock,Background::Provider::Swmf,
+      Background::Provider::LocalEvolution}) {
+    const auto frame=Background::DeclaredParticleCoordinateFrame(provider);
+    pass=pass&&frame==CoordinateFrame::PlasmaComoving;
+    const double adv=CoordinateAdvection(frame,FieldLineAdvectionMPerS(u,t).value);
+    const double expected=v*mu;
+    KeyedRandomStream random(1,2,3,4);
+    auto a=AdvanceFocusedTransportDmumu(FocusedTransportState(0,momentum.value,mu),
+        FocusedTransportBackground(0,adv,0,0),mass,c,dt,pitch,random,nullptr);
+    auto b=AdvanceFocusedTransportMfp(FocusedTransportMfpState(0,momentum.value,mu),
+        FocusedTransportMfpBackground(0,adv,0,0,0),mass,c,dt,dt,events,random,nullptr);
+    auto p=AdvanceParker(ParkerState(0,momentum.value),ParkerBackground(adv,0),v,dt,diffusion,random);
+    pass=pass&&a.status.ok()&&b.status.ok()&&p.status.ok()&&Near(a.displacementM,expected,2e-14)&&
+        Near(b.displacementM,expected,2e-14)&&Near(p.displacementM,0);
+  }
+  pass=pass&&CoordinateAdvection(CoordinateFrame::Fixed,400000)==400000;
+  try{Background::DeclaredParticleCoordinateFrame(static_cast<Background::Provider>(-1));pass=false;}
+  catch(const std::exception&){}
+  // A plasma-rest particle retains its material coordinate. Translating the
+  // endpoints by U*dt then moves Cartesian X by exactly U*dt, never 2*U*dt.
+  const double adv=CoordinateAdvection(CoordinateFrame::PlasmaComoving,400000);
+  KeyedRandomStream random(4,3,2,1);
+  const auto stationary=AdvanceFocusedTransportMfp(FocusedTransportMfpState(0,0,0),
+      FocusedTransportMfpBackground(0,adv,0,0,0),mass,c,dt,dt,events,random,nullptr);
+  pass=pass&&stationary.status.ok()&&stationary.displacementM==0;
+  return Finish(pass,"all srcSEP data providers use plasma-comoving characteristics in both focused movers and Parker; generic Eulerian control retains U");
+}
+Result MaterialLabels() {
+  using namespace AMPS::FieldLine;
+  // Integer node insertion changes the index, not the material fraction.
+  // Stretching/translating endpoints changes X without changing that fraction.
+  const double s=RemapCoordinate(3.25,10,8),fraction=s-std::floor(s);
+  const double x=100+fraction*8;
+  bool pass=s==5.25&&RemapCoordinate(s,8,10)==3.25&&x==102;
+  try{RemapCoordinate(std::numeric_limits<double>::quiet_NaN(),10,8);pass=false;}catch(const std::exception&){}
+  try{CoordinateAdvection(CoordinateFrame::Unknown,3);pass=false;}catch(const std::exception&){}
+  return Finish(pass,"material-label remap preserves fractions under prefix changes and rejects unknown frames/nonfinite coordinates");
+}
+Result ComovingCompression() {
+  using namespace Transport;using namespace AMPS::FieldLine;
+  // Homogeneous isotropic expansion has div U=3a and strain=a. Removing
+  // coordinate advection must retain p(t)=p0*exp(-a*t) in all three movers.
+  const double a=0.01,dt=1,mass=1.67262192369e-27,c=299792458.0,p0=1e-20;
+  const std::array<double,9> g{{a,0,0,0,a,0,0,0,a}};const double bdir[3]={1,0,0};
+  VelocityDerivatives d;bool pass=ContractVelocityGradient(g,bdir,&d).ok();
+  const double adv=CoordinateAdvection(CoordinateFrame::PlasmaComoving,400000);
+  FocusedTransportBackground bg(0,adv,0,d.divergencePerS);bg.fieldAlignedStrainPerS=d.fieldAlignedStrainPerS;bg.equationMode=FocusedEquationMode::FullGyrotropic;
+  FocusedTransportMfpBackground mb(0,adv,0,d.divergencePerS,0);mb.fieldAlignedStrainPerS=d.fieldAlignedStrainPerS;mb.equationMode=FocusedEquationMode::FullGyrotropic;
+  KeyedRandomStream random(1,2,3,4);NoPitch pitch;NoEvents events;NoDiffusion diffusion;
+  auto f=AdvanceFocusedTransportDmumu(FocusedTransportState(0,p0,0.25),bg,mass,c,dt,pitch,random,nullptr);
+  auto m=AdvanceFocusedTransportMfp(FocusedTransportMfpState(0,p0,0.25),mb,mass,c,dt,dt,events,random,nullptr);
+  auto p=AdvanceParker(ParkerState(0,p0),ParkerBackground(adv,d.divergencePerS),1,dt,diffusion,random);
+  const double expected=p0*std::exp(-a*dt);
+  pass=pass&&f.status.ok()&&m.status.ok()&&p.status.ok()&&
+      std::abs(f.state.momentumKgMPerS/expected-1)<1e-13&&
+      std::abs(m.state.momentumKgMPerS/expected-1)<1e-13&&std::abs(p.state.momentumKgMPerS/expected-1)<1e-13;
+  return Finish(pass,"comoving coordinate correction retains independent physical compression and strain in all movers");
+}
 Descriptor Make(const char* id,const char* name,TestCallback callback) {
   Descriptor descriptor;
   descriptor.id=id;descriptor.name=name;descriptor.group="background";
@@ -183,6 +271,9 @@ std::vector<Descriptor> BackgroundDerivativeDescriptors() {
           Make("CP03G04","Magnetic polarity independent convection",AntipolarityAdvection),
           Make("CP03G05","Received Cartesian affine velocity reconstruction",ImportedAffineGradient),
           Make("CP03G06","Underdetermined imported derivative rejection",ImportedRankRejection),
-          Make("CP03G07","Received velocity gradient spatial convergence",ImportedGradientConvergence)};
+          Make("CP03G07","Received velocity gradient spatial convergence",ImportedGradientConvergence),
+          Make("CP03G08","Fixed and comoving transport characteristics",CoordinateFrames),
+          Make("CP03G09","Material label and geometry invariants",MaterialLabels),
+          Make("CP03G10","Comoving transport retains compression",ComovingCompression)};
 }
 } }

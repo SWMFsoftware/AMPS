@@ -1,0 +1,19 @@
+! Reuse the maintained native field-line compile configuration.
+! Read its complete species catalog first: shared inactive model objects still
+! require the catalog's negative species macros. A second species block then
+! replaces only the one modeled proton's mass/charge table entries. No global
+! species file or other application's species definition is modified.
+#include input/test/sep_parker_spiral__field_line-fte.input
+
+#General
+  ! amps_init() registers SEP::Mover::DispatchProductionMover through the
+  ! maintained PIC callback API. The inherited historical FTE deck also
+  ! defines a macro naming ::SEP::ParticleMover, which generic pic_mover.cpp
+  ! cannot declare without importing an application header. Select the same
+  ! callback interface as the maintained production field-line profile so a
+  ! clean build and an incremental build execute the identical three-mover
+  ! dispatch. This changes no timestep, particle weight or source parameter.
+  define _PIC_PARTICLE_MOVER_LEGACY_SETTINGS_ _PIC_MODE_OFF_
+#endGeneral
+
+#include input/test/sep_reduced_front_protons.input

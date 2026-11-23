@@ -422,3 +422,16 @@ driver/standoff, GSD and nonlinear-formation extensions RSH33--RSH35 remain
 unimplemented.  Passing the reduced suite never qualifies the preserved,
 deferred BG3D-4 full-volume model.  Exact hashes, failed attempts, suite SKIPs
 and evidence paths are maintained in `CODEX_REDUCED_SHOCK_PLAN.md`.
+
+
+## Read-only generating geometry for field-line consumers
+
+`Provider::Sphere(epoch)` exposes the existing finite-SSE generating centre,
+radius, unit direction and minimum supported ray cosine in HCI/SI. It calls
+the maintained trajectory and does not prepare or publish an epoch. A sphere
+root is only a candidate: consumers must use `EvaluateRay` to select the
+leading supported surface and `EvaluateFrontPoint` for classification/normal/
+speed/RH data. Rear-sphere roots never acquire physical shock support through
+this API. This is an integration interface to the existing model, not a new
+shock equation or downstream volume capability. The srcSEP SINT10–13 and
+SINT13N gates exercise its finite support, tangency and material-time mapping.

@@ -68,6 +68,7 @@ if (distancePtr != nullptr) {
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include "reduced_shock_geometry.h"
 
 
 namespace SEP {
@@ -79,6 +80,11 @@ namespace FieldLine {
 // the fte-mfp substeps at the shock) and by the field-line output (CalculateVertexShockDistances, which also prints
 // the summary); both use the committed shock location of the step.
 void UpdateVertexShockDistances(bool report) {
+    if(SEP::ReducedShock::Enabled()) {
+        const auto status=SEP::ReducedShock::Native::UpdateShockDistances(report);
+        if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+        return;
+    }
     if (PIC::FieldLine::DatumAtVertexShockLocationDistance.is_active()==false) return;
     
     // Statistics counters

@@ -75,6 +75,10 @@ SEP_CORONA_SWCME_OBJECTS := $(patsubst \
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
 STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
+                    test-standalone-integration-native \
+                    test-material-checkpoint-native test-material-checkpoint-unit \
+                    test-stage7-checkpoint-native test-stage7-checkpoint-unit \
+                    test-standalone-integration-application \
                     test-rng-lifecycle-unit \
                     test-background-derivatives-unit \
                     test-analytic-radial-background-unit \
@@ -116,6 +120,7 @@ STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
                     test-swcme-fail-closed-unit \
                     test-swcme-configuration-unit \
                     test-reduced-shock-background-unit \
+                    test-standalone-integration-unit \
                     test-d03-native-integration \
                     test-d03-runner-unit \
                     test-stage1-stage2-contracts \
@@ -169,6 +174,9 @@ MAINLIBOBJ += util/sep_rng_validation.o
 MAINLIBOBJ += util/sep_background_derivative_validation.o
 MAINLIBOBJ += util/sep_analytic_radial_native_validation.o
 MAINLIBOBJ += util/sep_analytic_radial_background.o util/sep_analytic_radial_validation.o
+MAINLIBOBJ += reduced_shock_geometry.o util/sep_reduced_geometry.o
+MAINLIBOBJ += reduced_shock_particles.o util/sep_reduced_source.o util/sep_absorbing_bridge.o
+MAINLIBOBJ += reduced_shock_boundary.o
 MAINLIBOBJ += util/sep_host_step_native_validation.o
 MAINLIBOBJ += util/sep_analytic_shock_epoch.o util/sep_analytic_shock_epoch_validation.o
 MAINLIBOBJ += util/sep_coefficient_radius_native_validation.o
@@ -209,6 +217,12 @@ MAINLIBOBJ += validation/cases/cross_model_validation_models.o
 # call it, and the SWMF-coupled build (PT/AMPS) links mainlib.a without main.o.
 MAINLIBOBJ += util/sep_cli.o
 
+# Define executable objects BEFORE the immediate dependency-list expansion.
+# Otherwise := sees an empty MAINOBJ, omits main/debug .d files, and a changed
+# PIC ABI or worker-count header can leave old template instantiations in
+# main.a even though every library/mover object has rebuilt successfully.
+MAINOBJ = main.o debug/sep_debug_fieldline_datum.o
+
 # Bootstrap dependency files once for objects left by an older configured tree.
 # This preserves generated configuration while preventing stale header consumers
 # from surviving the first build after dependency tracking is introduced.
@@ -220,7 +234,6 @@ $(filter-out $(SEP_DEPENDENCY_OBJECTS),$(SEP_APP_OBJECTS)): sep-header-dependenc
 
 # sep_cli.o (srcSEP/util, command-line parsing apart from the physics driver) is in mainlib.a: library objects
 # use it (see MAINLIBOBJ above), and main.a, linked first, takes it from there.
-MAINOBJ = main.o debug/sep_debug_fieldline_datum.o
 
 lib: $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE) \
      $(SEP_CORONAL_CME_ARCHIVE) $(SEP_CORONA_SWCME_ARCHIVE) $(MAINLIBOBJ)
@@ -286,6 +299,14 @@ adapters/%.o: adapters/%.cpp
 # copied AMPS/build/main tree because SWCME_DIR is AMPS-root-relative.
 util/sep_swcme_validation.o: util/sep_swcme_validation.cpp
 	$(CXX) $(SWCME_CONSUMER_CXXFLAGS) -c -o $@ $<
+
+# This native consumer needs both PIC/MPI and the installed coronal source
+# headers. Preserve the configured native compiler/FLAGCC contract (including
+# its MPI definitions and application language mode), adding only model header
+# paths missing from the generic suffix rule. The dependency-light physics
+# kernels have their separate strict ISO/Werror verification build.
+reduced_shock_particles.o: reduced_shock_particles.cpp
+	$(COMPILE.mpicxx) $(FLAGCC) $(MODEL_INCLUDE_FLAGS) $< -o $@
 
 # As in srcSEP3D, a production verification must enter the enclosing AMPS
 # build. Compiling AMPS-dependent sources directly in srcSEP would omit the
@@ -375,6 +396,10 @@ test-swcme-configuration-unit:
 
 test-reduced-shock-background-unit:
 	./test/run_reduced_shock_background_tests.sh
+
+.PHONY: test-standalone-integration-unit
+test-standalone-integration-unit:
+	python3 test/run_standalone_integration_tests.py
 
 # D03PRE first compiles and executes the exact extended descriptor registered
 # in the linked application. The Python gate then owns external build/run
@@ -791,3 +816,50 @@ print-layout-paths:
 	@echo "SEP_COMMON_DIR=$(SEP_COMMON_DIR)"
 	@echo "SWCME_DIR=$(SWCME_DIR)"
 	@echo "MODEL_INCLUDE_FLAGS=$(MODEL_INCLUDE_FLAGS)"
+
+# Real native qualification requires an explicitly matching configured archive.
+# The existing Python source-suite interface propagates every child ERROR/FAIL;
+# it never substitutes a serial dependency implementation for actual MPI.
+.PHONY: test-standalone-integration-native
+test-standalone-integration-native:
+	python3 test/run_native_standalone_integration.py
+
+# Moving restart is a real-MPI gate, separate from source-only codec controls.
+# Preparing the same fixture records the complete PIC dependency closure; it
+# does not execute or certify transport. The second command executes all paired
+# roles (including 1<->8 repartition) and propagates missing/failed jobs. Never
+# substitute the serial MPI dependency adapter when this native gate is chosen.
+MATERIAL_CHECKPOINT_OUTPUT ?= $(abspath test_output/material-checkpoint)
+NATIVE_BUILD_ROOT ?= $(if $(AMPS_FIELD_LINE_NATIVE_BUILD),$(AMPS_FIELD_LINE_NATIVE_BUILD),$(AMPS_ROOT))
+.PHONY: test-material-checkpoint-native test-material-checkpoint-unit
+test-material-checkpoint-native:
+	python3 test/run_native_standalone_integration.py --build-root "$(NATIVE_BUILD_ROOT)" --output-dir "$(MATERIAL_CHECKPOINT_OUTPUT)/native" --ranks 1 2 4 8 --prepare-only
+	python3 test/run_material_checkpoint_tests.py --native-prepared "$(MATERIAL_CHECKPOINT_OUTPUT)/native/prepared.json" --output "$(MATERIAL_CHECKPOINT_OUTPUT)/campaign"
+
+test-material-checkpoint-unit:
+	PYTHONDONTWRITEBYTECODE=1 python3 test/test_material_checkpoint_runner.py
+	PYTHONDONTWRITEBYTECODE=1 python3 test/test_native_dependency_closure.py
+
+# The combined gate requires separately configured, dependency-audited worker
+# builds. Explicit paths prevent silently running a single-thread executable
+# while claiming two-/four-thread restart coverage. All outputs must be fresh.
+STAGE7_CHECKPOINT_OUTPUT ?= $(if $(SRCSEP_REPORT_DIR),$(abspath $(SRCSEP_REPORT_DIR))/stage7-native,$(abspath test_output/stage7-native))
+.PHONY: test-stage7-checkpoint-native test-stage7-checkpoint-unit
+test-stage7-checkpoint-native:
+	python3 test/run_stage7_checkpoint_tests.py --build-root "$(NATIVE_BUILD_ROOT)" --output "$(STAGE7_CHECKPOINT_OUTPUT)"
+
+test-stage7-checkpoint-unit:
+	PYTHONDONTWRITEBYTECODE=1 python3 test/test_stage7_checkpoint_runner.py
+
+# These bounded core/adapter cases are routine code-validation prerequisites.
+# Native MPI qualification remains an explicit configured-build step above.
+test test-controlled-analytical: test-standalone-integration-unit test-material-checkpoint-unit test-stage7-checkpoint-unit
+
+# Audit completed real-MPI application receipts and a complete physical output
+# window. Explicit evidence is required: missing/crashed/partial campaigns are
+# errors, never a reason to substitute the shorter native/component fixtures.
+.PHONY: test-standalone-integration-application
+test-standalone-integration-application:
+	@test -n "$(EVIDENCE_DIR)" || { echo "Set EVIDENCE_DIR to the completed stage-6 application campaign"; exit 1; }
+	python3 test/verify_standalone_application.py --campaign-dir "$(EVIDENCE_DIR)"
+	python3 test/test_standalone_application_verifier.py --campaign-dir "$(EVIDENCE_DIR)"

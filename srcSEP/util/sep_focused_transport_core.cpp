@@ -8,11 +8,6 @@ namespace SEP {
 namespace Transport {
 namespace {
 
-double DeterministicMuRate(double mu, double speedMPerS,
-                           const FocusedTransportBackground& background) {
-  return FocusedPitchDriftPerS(mu, speedMPerS, background);
-}
-
 ScalarResult ApplyFocusedMomentum(double momentumKgMPerS, double mu,
                                   const FocusedTransportBackground& background,
                                   double dtS) {
@@ -34,17 +29,29 @@ ScalarResult ApplyFocusedMomentum(double momentumKgMPerS, double mu,
   return result;
 }
 
-double AdvanceDeterministicMu(double mu, double speedMPerS,
-                              const FocusedTransportBackground& background,
-                              double intervalS) {
-  // Explicit midpoint is second order for a frozen background snapshot.  It is
-  // used for each half of the symmetric split so focusing does not collapse to
-  // two first-order half-Euler updates when D_mumu is zero.
-  const double first = DeterministicMuRate(mu, speedMPerS, background);
-  const double midpoint = ReflectPitchAngle(mu + 0.5 * intervalS * first, NULL);
-  return ReflectPitchAngle(
-      mu + intervalS * DeterministicMuRate(midpoint, speedMPerS, background),
-      NULL);
+Status AdvanceDeterministicHalf(double momentum,double mu,
+    const FocusedTransportBackground& background,double mass,double c,
+    double duration,double* finalMomentum,double* finalMu) {
+  // Evolve the COUPLED (log p,mu) characteristic by explicit midpoint.
+  // Holding endpoint speed while changing p is only first order: magnetic
+  // focusing depends on v(p), and compression depends on mu. A quarter-state
+  // predicts both rates at the midpoint of this deterministic half-operator.
+  // Exponential momentum preserves p>=0 without a nonphysical momentum floor;
+  // the existing mirror map supplies the declared bounded pitch treatment.
+  const auto speed=SpeedFromMomentum(momentum,mass,c);if(!speed.status.ok())return speed.status;
+  const double midpointMu=ReflectPitchAngle(mu+0.5*duration*
+      FocusedPitchDriftPerS(mu,speed.value,background),NULL);
+  const auto midpointMomentum=ApplyFocusedMomentum(momentum,mu,background,0.5*duration);
+  if(!midpointMomentum.status.ok())return midpointMomentum.status;
+  const auto midpointSpeed=SpeedFromMomentum(midpointMomentum.value,mass,c);
+  if(!midpointSpeed.status.ok())return midpointSpeed.status;
+  const auto accepted=ApplyFocusedMomentum(momentum,midpointMu,background,duration);
+  if(!accepted.status.ok())return accepted.status;
+  const double acceptedMu=ReflectPitchAngle(mu+duration*
+      FocusedPitchDriftPerS(midpointMu,midpointSpeed.value,background),NULL);
+  if(!std::isfinite(acceptedMu))return Status::Error(StatusCode::InvalidParticleState,
+      "coupled focused midpoint pitch update is not finite");
+  *finalMomentum=accepted.value;*finalMu=acceptedMu;return Status::Ok();
 }
 
 }  // namespace
@@ -181,27 +188,23 @@ FocusedTransportIncrement AdvanceFocusedTransportDmumu(
     return result;
   }
 
-  // First half of the deterministic operator.
-  double muHalf = AdvanceDeterministicMu(
-      initial.mu, initialSpeed.value, background, 0.5 * dtS);
+  // The deterministic half steps share one coupled characteristic. No
+  // background publication, RNG draw or AMPS physical-clock change occurs.
+  double muHalf=initial.mu,halfMomentumValue=initial.momentumKgMPerS;
+  const auto firstHalf=AdvanceDeterministicHalf(initial.momentumKgMPerS,initial.mu,
+      background,massKg,speedOfLightMPerS,0.5*dtS,&halfMomentumValue,&muHalf);
+  if(!firstHalf.ok()){result.status=firstHalf;return result;}
+  const auto halfSpeed=SpeedFromMomentum(halfMomentumValue,massKg,speedOfLightMPerS);
+  if(!halfSpeed.status.ok()){result.status=halfSpeed.status;return result;}
   unsigned reflectionCount = 0;
-  muHalf = ReflectPitchAngle(muHalf, &reflectionCount);
-  result.pitchAngleReflections += reflectionCount;
-
-  const ScalarResult halfMomentum = ApplyFocusedMomentum(
-      initial.momentumKgMPerS, initial.mu, background, 0.5 * dtS);
-  if (!halfMomentum.status.ok()) {
-    result.status = halfMomentum.status;
-    return result;
-  }
 
   // Coefficients are sampled at a predicted physical midpoint, not at a
   // hard-coded adapter coordinate.  This is second-order accurate for smooth
   // profiles and ensures crossing a segment changes the sampled turbulence.
   const double predictedMidpointM = initial.arcLengthM + 0.5 * dtS *
-      (background.plasmaAdvectionMPerS + initialSpeed.value * muHalf);
+      (background.plasmaAdvectionMPerS + halfSpeed.value * muHalf);
   const PitchAngleDiffusionSample coefficient = provider.Evaluate(
-      predictedMidpointM, halfMomentum.value, muHalf);
+      predictedMidpointM, halfMomentumValue, muHalf);
   if (!coefficient.status.ok() || !std::isfinite(coefficient.dMuMuPerS) ||
       !std::isfinite(coefficient.dDmuMuDmuPerS) ||
       coefficient.dMuMuPerS < 0.0 || coefficient.provenance.empty() ||
@@ -239,29 +242,22 @@ FocusedTransportIncrement AdvanceFocusedTransportDmumu(
   muKicked = ReflectPitchAngle(muKicked, &reflectionCount);
   result.pitchAngleReflections += reflectionCount;
 
-  const ScalarResult finalMomentum = ApplyFocusedMomentum(
-      halfMomentum.value, muKicked, background, 0.5 * dtS);
-  if (!finalMomentum.status.ok()) {
-    result.status = finalMomentum.status;
-    return result;
-  }
-  const ScalarResult finalSpeed = SpeedFromMomentum(
-      finalMomentum.value, massKg, speedOfLightMPerS);
-  if (!finalSpeed.status.ok()) {
-    result.status = finalSpeed.status;
-    return result;
-  }
-
-  double muFinal = AdvanceDeterministicMu(
-      muKicked, finalSpeed.value, background, 0.5 * dtS);
-  muFinal = ReflectPitchAngle(muFinal, &reflectionCount);
-  result.pitchAngleReflections += reflectionCount;
+  double finalMomentumValue=halfMomentumValue,muFinal=muKicked;
+  const auto secondHalf=AdvanceDeterministicHalf(halfMomentumValue,muKicked,
+      background,massKg,speedOfLightMPerS,0.5*dtS,&finalMomentumValue,&muFinal);
+  if(!secondHalf.ok()){result.status=secondHalf;return result;}
+  const ScalarResult finalSpeed=SpeedFromMomentum(finalMomentumValue,massKg,speedOfLightMPerS);
+  if(!finalSpeed.status.ok()){result.status=finalSpeed.status;return result;}
 
   const double midpointMu = 0.5 * (initial.mu + muFinal);
-  result.displacementM =
-      (background.plasmaAdvectionMPerS + finalSpeed.value * midpointMu) * dtS;
+  // Trapezoidal parallel velocity is time centred in BOTH momentum/speed
+  // and pitch. Using finalSpeed for the entire interval biased displacement
+  // by O(dt^2) during cooling, even in a zero-scattering native test. This
+  // correction refines the numerical operator, not the physical timestep.
+  result.displacementM=(background.plasmaAdvectionMPerS+
+      0.5*(initialSpeed.value*initial.mu+finalSpeed.value*muFinal))*dtS;
   result.state.arcLengthM += result.displacementM;
-  result.state.momentumKgMPerS = finalMomentum.value;
+  result.state.momentumKgMPerS = finalMomentumValue;
   result.state.mu = muFinal;
   if (!std::isfinite(result.state.arcLengthM) ||
       !std::isfinite(result.state.mu)) {

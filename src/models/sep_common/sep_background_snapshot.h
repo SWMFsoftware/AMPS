@@ -137,6 +137,17 @@ class SnapshotStore {
 
   void Publish(const BackgroundSnapshot& snapshot);
 
+  // Allocate/validate metadata BEFORE a native geometry transaction reaches
+  // collective readiness. Commit then publishes only a prepared pointer. The
+  // token binds the exact outgoing store realization and is single-use; an
+  // intervening writer/read phase rejects before publication.
+  class Publication {
+    friend class SnapshotStore;
+    std::shared_ptr<const BackgroundSnapshot> expected_,candidate_;
+  };
+  Publication PreparePublication(const BackgroundSnapshot& snapshot) const;
+  void CommitPublication(Publication* publication);
+
   // A provider change is never accepted by Publish().  The separate handoff
   // operation makes the transfer auditable and verifies the expected previous
   // provider.  In particular, SWMF -> LocalEvolution requires HandoffCopy.
@@ -179,6 +190,8 @@ class SnapshotStore {
 
   void PublishLocked(const BackgroundSnapshot& snapshot, bool handoff,
                      Provider expected_previous_provider);
+  void ValidatePublicationLocked(const BackgroundSnapshot& snapshot,bool handoff,
+                                Provider expected_previous_provider) const;
   void EndParticleRead();
 
   mutable std::mutex mutex_;

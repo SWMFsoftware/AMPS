@@ -216,9 +216,9 @@ void SnapshotStore::AssertProviderMayWrite(Provider provider) const {
   }
 }
 
-void SnapshotStore::PublishLocked(
+void SnapshotStore::ValidatePublicationLocked(
     const BackgroundSnapshot& snapshot, bool handoff,
-    Provider expected_previous_provider) {
+    Provider expected_previous_provider) const {
   if (active_read_phases_.load(std::memory_order_acquire) != 0) {
     throw std::logic_error(
         "cannot publish background state during an active particle read phase");
@@ -284,7 +284,25 @@ void SnapshotStore::PublishLocked(
     throw std::logic_error("cannot hand off before an initial publication");
   }
 
-  current_ = std::make_shared<const BackgroundSnapshot>(snapshot);
+}
+
+void SnapshotStore::PublishLocked(const BackgroundSnapshot& snapshot,bool handoff,
+    Provider expected_previous_provider) {
+  ValidatePublicationLocked(snapshot,handoff,expected_previous_provider);
+  current_=std::make_shared<const BackgroundSnapshot>(snapshot);
+}
+SnapshotStore::Publication SnapshotStore::PreparePublication(const BackgroundSnapshot& snapshot) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  ValidatePublicationLocked(snapshot,false,snapshot.provider());
+  Publication token;token.expected_=current_;
+  token.candidate_=std::make_shared<const BackgroundSnapshot>(snapshot);return token;
+}
+void SnapshotStore::CommitPublication(Publication* token) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if(!token||!token->candidate_||token->expected_!=current_||
+      active_read_phases_.load(std::memory_order_acquire)!=0)
+    throw std::logic_error("prepared background publication is stale, consumed or overlaps particle reads");
+  current_.swap(token->candidate_);token->candidate_.reset();token->expected_.reset();
 }
 
 ParticleReadPhase SnapshotStore::BeginParticleRead(

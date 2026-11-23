@@ -12,6 +12,15 @@ struct Particle {
   int species=-1;
   double weight=0.0,localFraction=0.0,parallelMPerS=0.0,normalMPerS=0.0;
   double massKg=0.0,chargeC=0.0;
+  // A reduced shock source retains its per-proton kinetic energy at birth
+  // [J] even after cooling/heating changes the current momentum. Weight-only
+  // resampling must preserve the represented birth-energy measure as well
+  // as current energy; otherwise deleting computational representatives would
+  // appear as an unrecorded physical source/loss in the return ledger. All
+  // candidates must either carry this history or explicitly lack it. Zero is
+  // not a substitute for missing source history in an accelerated population.
+  bool hasBirthEnergy=false;
+  double birthKineticEnergyJ=0.0;
 };
 struct UnpreservedMoments {
   double parallelCurrentCMPerS=0.0;
@@ -33,6 +42,7 @@ UnpreservedMoments EvaluateUnpreserved(const std::vector<Particle>& particles,
 // Same species/charge/mass in one segment; retain all phase points/identities.
 // Exact declared rows: number, relativistic kinetic energy [J], parallel
 // momentum [kg m/s], mu, mu^2, local segment fraction. Charge follows number.
+// Reduced-source populations additionally conserve birth kinetic energy [J].
 // Current and stress moments are diagnostics, not secretly conserved by mu^2.
 Endpoints Prepare(const std::vector<Particle>& particles,double tolerance,
                   double speedOfLightMPerS=299792458.0);

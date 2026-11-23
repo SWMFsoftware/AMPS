@@ -267,6 +267,10 @@ contains
     integer(kind=selected_int_kind(18)) :: nAllWide
     integer, allocatable :: GlobalLineId_I(:)
     real :: SourceGrid_R(7)
+    ! CON_bline carries BATSRUS plasma-advected node labels. Particles use
+    ! coordinates relative to those labels; U must not be added again to their
+    ! relative displacement. This wire value is PlasmaComoving in C++.
+    integer, parameter :: ParticleCoordinateFrame=2
     !--------------------------------------------------------------------------
 
     ! update the location of the Earth in the coupled on the AMPS side when
@@ -304,7 +308,7 @@ contains
        ! it by this declared kg unit recovers the original mass density.
        SourceGrid_R = [ROrigin,LonMin,LonMax,LatMin,LatMax,cProtonMass,rSun]
        call amps_set_bline_source_ids(nLine,GlobalLineId_I,nLon,nLat,&
-            SourceGrid_R,SourceOriginFrame)
+            SourceGrid_R,SourceOriginFrame,ParticleCoordinateFrame)
        deallocate(GlobalLineId_I)
 
        if (DataInputTime > PTTime) then

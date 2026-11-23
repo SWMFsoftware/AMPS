@@ -125,6 +125,17 @@ typed failure. No Parker field, minimum density, or minimum magnetic magnitude
 is substituted. The selected ambient is prescribed and isothermal: it is not a
 global MHD solution or an observationally calibrated solar-wind forecast.
 
+Exact axial source-point PFSS queries are memoized in the immutable ambient
+object. The cache retains both hemispheres and all four signed-zero (x,y)
+limits because the existing Cartesian pole evaluator uses `atan2`. It reuses
+only an exactly equal source point. Five neighbouring representable source
+radii each have their own canonical result; an unmatched foot takes the
+ordinary query path. Canonical failures remain failures,
+and all radial magnetic-null, composition, finite-state and coverage checks
+still run. This is neither an axisymmetric approximation nor a field floor.
+The standalone integration case SINT31 compares nonaxisymmetric harmonics
+against uncached canonical PFSS, including signed-zero and null controls.
+
 ### BG3D-3 surfaces and local shocks
 
 `surface_shock.h` and `surface_shock.cpp` bind the same immutable event and

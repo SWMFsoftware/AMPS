@@ -1,5 +1,6 @@
 #include "coefficient_providers.h"
 #include "transport_common.h"
+#include "reduced_shock_boundary.h"
 
 #include "util/sep_focused_transport_mfp_core.h"
 
@@ -25,6 +26,11 @@ double ShockCrossingTimeS(
     const SEP::Transport::PICAdapter::ParticleContext& context,
     double signedStreamingSpeedMPerS) {
   namespace FL = PIC::FieldLine;
+  double providerTime=0;bool supplied=false;
+  const auto providerStatus=SEP::Transport::PICAdapter::QueryShockCrossingTime(
+      context,signedStreamingSpeedMPerS,&providerTime,&supplied);
+  if(!providerStatus.ok())AbortMfpStatus(providerStatus);
+  if(supplied)return providerTime;
   if (!FL::DatumAtVertexShockLocationDistance.is_active() ||
       signedStreamingSpeedMPerS == 0.0) {
     return std::numeric_limits<double>::infinity();
@@ -92,6 +98,10 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
   ScalarResult momentum = MomentumFromSpeed(
       speed, context.state.massKg, SpeedOfLight);
   if (!momentum.status.ok()) AbortMfpStatus(momentum.status);
+  bool initialReturn=false;
+  status=ReducedParticles::Native::AbsorbInitialReturn(context,momentum.value,&initialReturn);
+  if(!status.ok())AbortMfpStatus(status);
+  if(initialReturn)return _PARTICLE_LEFT_THE_DOMAIN_;
   double mu = speed > 0.0 ? context.state.vParallelMPerS / speed : 0.0;
   mu = std::max(-1.0, std::min(1.0, mu));
 
@@ -100,6 +110,11 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
   std::uint64_t shellIndex = 0;
   double residualOpticalDepth = context.mfpOpticalDepth;
   StepDiagnostics stepDiagnostics;
+  // This local numerical hint avoids repeating rejected coarse front checks.
+  // It survives internal event intervals only; all new intervals are graded
+  // before event/noise draws, and complete PIC dt and persistent RNG history
+  // retain their original ownership and meaning.
+  BoundaryIntervalControl boundaryControl;
   // Carry the actual consumed stream across outer calls as well as deterministic
   // shells. Residual optical depth alone cannot restore event branch/pitch draws.
   KeyedRandomStream eventRandom(PICAdapter::CampaignRandomSeed,
@@ -121,8 +136,11 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
 
     const double remainingS = dtTotal - elapsedS;
     const double segmentLengthM = context.segment->GetLength();
+    // Geometry limits and both core predictor/corrector paths use velocity
+    // relative to the line. Physical U/grad(U) remain available separately;
+    // material coordinates contribute zero bulk displacement, not zero plasma.
     const double signedStreamingSpeed =
-        local.plasmaAdvectionMPerS + speed * mu;
+        local.coordinateAdvectionMPerS + speed * mu;
     std::vector<StepLimit> limits;
     if (signedStreamingSpeed != 0.0) {
       limits.push_back(StepLimit(
@@ -167,7 +185,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     // particle approach the shock without ever crossing it (its displacement
     // is below the resolution of the field-line coordinate).  Such a particle
     // is on the shock: the crossing is not resolved further.
-    if (std::isfinite(shockCrossingS) && shockCrossingS > 0.0 &&
+    if (!ReducedParticles::Native::Enabled()&&std::isfinite(shockCrossingS) && shockCrossingS > 0.0 &&
         tolerances.shockFraction * shockCrossingS >= tolerances.minimumStepS)
       limits.push_back(StepLimit(
           "fte-mfp-shock", tolerances.shockFraction * shockCrossingS));
@@ -175,6 +193,21 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     const ScalarResult selected = PICAdapter::SelectParticleSubstep(
         context, elapsedS, limits, tolerances.minimumStepS, &stepDiagnostics);
     if (!selected.status.ok()) AbortMfpStatus(selected.status);
+    double intervalS=selected.value;
+    ReducedParticles::Native::BoundaryInterval boundary;
+    status=ReducedParticles::Native::PrepareBoundary(context,elapsedS,&intervalS,&boundary,&boundaryControl);
+    if(!status.ok())AbortMfpStatus(status);
+    MfpIntervalBoundary firstPassage;
+    if(boundary.active)firstPassage=[&](const FocusedTransportMfpState& begin,
+        const FocusedTransportMfpState& end,double elapsedBegin,double elapsedEnd) {
+      // The core supplies both closed endpoints. Adding its rounded duration
+      // back to the beginning can overshoot this prepared interval by an ULP
+      // after a scatter; use the authoritative end without a timestamp clamp.
+      const auto hit=ReducedParticles::Native::CheckBoundary(boundary,
+          begin.arcLengthM,end.arcLengthM,elapsedBegin,elapsedEnd,0,eventRandom);
+      MfpBoundaryDecision decision;decision.status=hit.status;
+      decision.absorb=hit.hit;decision.fraction=hit.fraction;return decision;
+    };
 
     const double startCoordinate = context.state.coordinate;
     const double preMomentum = momentum.value;
@@ -185,7 +218,7 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     coreState.remainingOpticalDepth = residualOpticalDepth;
     coreState.nextEventIndex = eventIndex;
     FocusedTransportMfpBackground focusedBackground(
-        local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
+        local.dLnAbsBdsPerM, local.coordinateAdvectionMPerS,
         local.parallelVelocityGradientPerS,
         SEP::AccountAdiabaticCoolingFlag
             ? local.velocityDivergencePerS : 0.0,
@@ -198,11 +231,26 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     const FocusedTransportMfpIncrement increment =
         AdvanceFocusedTransportMfp(
             coreState, focusedBackground,
-            context.state.massKg, SpeedOfLight, selected.value,
-            selected.value, provider, eventRandom,
-            SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
-                ? &identityAccumulator : NULL);
+            context.state.massKg, SpeedOfLight, intervalS,
+            intervalS, provider, eventRandom,
+            (SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode||ReducedParticles::Native::Enabled())
+                ? &identityAccumulator : NULL,firstPassage);
     if (!increment.status.ok()) AbortMfpStatus(increment.status);
+    // Prescribed Alfven scatterers can exchange energy with particles even
+    // when wave feedback is off. Keep that external work separate from the
+    // deterministic flow/strain work; neither is an injected source energy.
+    double waveWorkJ=0;
+    const auto kinetic=[&](double p) {
+      const double pc=p*SpeedOfLight,rest=context.state.massKg*SpeedOfLight*SpeedOfLight;
+      return pc*(pc/(std::hypot(pc,rest)+rest));
+    };
+    for(const auto& event:identityAccumulator.Contributions())if(event.scatteringEventAtEnd)
+      waveWorkJ+=kinetic(event.postWaveMomentumKgMPerS)-kinetic(event.preWaveMomentumKgMPerS);
+    ReducedParticles::Native::TransportWork(context,preMomentum,increment.state.momentumKgMPerS,waveWorkJ);
+    if(increment.absorbed) {
+      ReducedParticles::Native::RecordTerminal(context,ReducedParticles::Native::Terminal::ShockReturn,increment.state.momentumKgMPerS);
+      PIC::ParticleBuffer::DeleteParticle(ptr);return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
     const std::uint64_t intervals = static_cast<std::uint64_t>(
         increment.diagnostics.deterministicIntervals);
     if (intervals > std::numeric_limits<std::uint64_t>::max() - shellIndex)
@@ -298,12 +346,13 @@ int SEP::ParticleMover_FocusedTransport_EventDriven(
     }
 
     if (status.code == StatusCode::OutOfDomain) {
+      ReducedParticles::Native::RecordTerminal(context,ReducedParticles::Native::Terminal::DomainExit,momentum.value);
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
     if (!status.ok()) AbortMfpStatus(status);
 
-    elapsedS += selected.value;
+    elapsedS += intervalS;
     eventIndex = increment.state.nextEventIndex;
     shellIndex = nextShellIndex;
   }

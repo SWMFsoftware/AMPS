@@ -85,6 +85,14 @@ SOURCE_SUITES: Dict[str, str] = {
     # performs the enclosing configured build and consumes only real
     # serial/MPI/restart evidence described by a site campaign manifest.
     "d03-native-integration": "test-d03-native-integration",
+    "standalone-integration": "test-standalone-integration-unit",
+    "standalone-integration-native": "test-standalone-integration-native",
+    "stage7-checkpoint-native": "test-stage7-checkpoint-native",
+    # The old native group combined moving particles with a frozen nonzero-U
+    # line. Preserve an obvious suite entry, but let the maintained campaign
+    # supply each explicit material fixture and keep wave/codec operators in
+    # their separate executable. Bare native requests still require inputs.
+    "physics-checkpoint-native": "test-stage7-checkpoint-native",
     "cli": "test-cli-unit",
     "state": "test-state-unit",
     "geometry-source": "test-geometry-source-unit",
@@ -1284,6 +1292,14 @@ def _run_source_suites(args: argparse.Namespace, output_dir: Path,
     # Focused C++ runners copy their already-validated JSON/JUnit products only
     # when this variable is set. Normal Make invocations remain artifact-free.
     environment["SRCSEP_REPORT_DIR"] = str(report_dir)
+    # The standalone native suite uses the same explicit configured AMPS tree
+    # selected by --amps-source. Honour a site-provided override; do not choose
+    # or reconfigure another checkout implicitly.
+    environment.setdefault("AMPS_FIELD_LINE_NATIVE_BUILD", str(
+        # Library callers of this helper predate the enclosing-build option;
+        # use the same source-root default as the public parser and D03 below.
+        # An explicit site override still wins, and no build is reconfigured.
+        Path(getattr(args, "amps_source", ROOT.parent)).expanduser().resolve()))
     # D03 needs paths and release policy that are not meaningful to ordinary
     # dependency-light targets. Passing them as environment keeps Make's public
     # target stable and records the exact outer runner command in its manifest.

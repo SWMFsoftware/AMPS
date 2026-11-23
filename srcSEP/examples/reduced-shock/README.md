@@ -1,282 +1,223 @@
-# Reduced shock-front ambient coupling in `srcSEP`
+# Reduced SSE front and Parker material line in `srcSEP`
 
-This example couples the shared
-`src/models/sep_corona_swcme/shock_front` provider to native `srcSEP`
-field-line storage. It is a background-only case: the provider supplies a
-time-dependent prescribed front plus undisturbed ambient plasma and IMF, and
-`srcSEP` installs that ambient on every native field-line vertex. All particle
-injection callbacks are disabled and the application verifies the actual
-global AMPS particle count after every step.
+This example uses the existing core provider in
+`src/models/sep_corona_swcme/shock_front`. All plasma, field, trajectory and
+local shock-jump equations remain there. Stages 0–4 integrate its state,
+material geometry, finite-front connectivity and the three existing transport
+solvers. Stages 5–6 add a separate upstream particle consumer; their executed
+qualification gates are recorded in the stage status document. The reduced
+provider still has no downstream transport volume.
 
-The case is synthetic and physically plausible, not an observational event
-validation. It qualifies this selected reduced profile and its application
-boundary; it does **not** qualify BG3D-4, a sheath/ejecta volume, particle
-acceleration, or SEP transport.
+## Inputs and physical authority
 
-## Files and identity
-
-- `field_line.in` is the complete `srcSEP` input in the shared SEP content
-  schema 6 (`application: sep`, `schema_version = 6`), written in the
-  generic AMPS runtime input format (`#begin`/`#end` blocks, `!` comments;
-  see `../../../src/INPUT_FILE.md`, section 5). The line follows
-  the +Z HCI direction from 20 solar radii to 1 AU with 513 vertices.
-- `positive_1au.event` is the strict reduced-provider event: a generic-format
-  file containing one `#begin physics: shock_front` ... `#end physics` block
-  whose keys are those of the shared reduced shock-front library. Unknown,
-  duplicate, missing, non-SI, or unsupported values fail before AMPS mesh
-  allocation.
-- `assets/synthetic_dipole.harmonics.csv` is the checksummed real-orthonormal
-  PFSS asset. Its byte checksum and every resolved physical parameter enter
-  the event fingerprint.
-
-The currently resolved event identity is
+`field_line.in` is schema 6. Its configured physical timestep stays **300 s**;
+its initial 513 points span the maintained +Z line from 20 solar radii to 1 AU.
+`positive_1au.event` resolves the HCI/SI core profile and its checksummed
+`assets/synthetic_dipole.harmonics.csv`. Keep the event and relative assets
+together. The physical event identity remains
 `0c3e100d11b4c1c47d46a2ba8c5063966528c4cc59575fbd14936ad8cf08fe1b`.
-Do not copy the event without its relative `assets/` directory.
 
-## Physics and conventions
+The native line is traced through the core B rather than given a separate
+application Parker equation. Existing vertices follow the actual core U,
+including radial variation and azimuthal motion. Core density conserves
+`rho U_r r^2`; its pressure and electron/proton/alpha populations use the
+resolved composition and thermal definitions. Native particle density is
+explicitly **proton number density**, not electron density. No assumption of
+`ne=np` is made for a helium-bearing event.
 
-All dimensional values are SI. Coordinates and vectors use the heliocentric
-inertial (HCI) Cartesian basis, the Sun is at the origin, and outward radial
-and shock-normal speeds are positive away from the Sun. The example axis is
-`q=(0,0,1)`.
+The existing finite SSE front has axis `(0,0,1)` and half width pi/4. With
+apex radius Ra, its generating sphere has centre `c=Ra/(1+sin(lambda))` along
+the axis and radius `a=c sin(lambda)`. The core supplies normal speed
+`Vn=Va (axis dot n+sin(lambda))/(1+sin(lambda))`. A generating-sphere rear root
+is not a shock. The consumer validates the leading/support branch and obtains
+all local Mach, compression and jump states through the core evaluator.
 
-The ambient authority is the maintained PFSS/Parker composite. Inside the
-source surface it evaluates the checksummed potential field and the declared
-coronal plasma branch. Outside it, the same magnetic flux is continued into a
-retarded rotating Parker IMF. The selected open-wind density conserves radial
-mass flux,
+The existing analytical history starts at 8.04e8 m and 100 km/s, follows a
+1800-s C2 quintic speed ramp to 1400 km/s, then matches the configured outer
+drag history at 20 solar radii. This integration does not alter that history.
+Immediate upstream/downstream RH limits remain front data; no sheath, ejecta,
+wake, shocked-material history or downstream volume is supplied.
 
-```text
-rho(r) U_r(r) r^2 = constant,
+## Time, geometry and sampling
+
+One AMPS step advances the physical clock once by 300 s. The core's separate
+prepared-front cache cadence is 600 s. Immutable explicit-time queries consume
+the actual full physical interval, including a cadence crossing. They do not
+round the particle clock, shorten a step or add a second clock increment.
+Old documentation describing two clock increments per iteration is superseded.
+
+After particle reads join, the native owner prepares every moved vertex,
+its core state, target connectivity and publication metadata. A new vertex's
+previous state is evaluated on the inverse material flow, not copied from a
+neighbour. Core-cache candidates and metadata are preallocated before MPI
+readiness; failures do not publish a partial native state. Replicated physical
+states must agree exactly across ranks before commit.
+
+Every endpoint moves. Inner extension follows B by a full first-segment arc
+increment and repeats until the minimum radius is covered. Tracing along -U
+would generally leave a Parker magnetic field line. Inserted segments start
+empty with zero sampling exposure. An entirely exterior tail chord is removed
+with its particles; represented losses and retired local sampling history are
+recorded. Per-segment exposure preserves the unchanged global output schedule
+without treating a new segment as if it existed for the whole sample window.
+
+## Build and bounded run
+
+Use an isolated configured CPU field-line checkout; preserve any active build.
+The tested configuration is:
+
+```sh
+./Config.pl -spice-path=nospice -spice-kernels=nospice \
+  -application=test/sep_parker_spiral__field_line-fte
+make -j4 share_lib
+make -j4 amps
 ```
 
-and the pressure is computed from the declared electron/proton temperatures
-and composition. The native line begins at 20 solar radii, so all of its
-vertices sample the outer Parker branch; the front itself starts in the low
-corona and is still evolved there by the shared provider.
+The retained input contains a self-consistent turbulence selection. That
+unfinished polarized-production closure is still rejected. Stages 0–4 use
+explicit **prescribed**, read-only turbulence/background and disable local
+wave evolution/feedback. From the configured checkout, with a fresh working
+and output directory, run:
 
-The prescribed finite-SSE front has fixed direction and half width
-`lambda=pi/4`. For apex radius `Ra`, its generating sphere has
-
-```text
-c = Ra/(1+sin(lambda)),   a = c sin(lambda),
-Vn = Va (d.n + sin(lambda))/(1+sin(lambda)).
+```sh
+mpiexec -n 4 /path/to/configured/amps \
+  --input /path/to/AMPS/srcSEP/examples/reduced-shock/field_line.in \
+  --reduced-shock-event /path/to/AMPS/srcSEP/examples/reduced-shock/positive_1au.event \
+  --total-iterations 4 --no-test-manager \
+  --turbulence-source prescribed --turbulence-coupling-policy disabled \
+  --coupling off --cascade off --reflection off \
+  --turbulence-advection off --shock-injection off
 ```
 
-The apex starts at `8.04e8 m` with speed `100 km/s`. During the first 1800 s,
-its speed follows the C2 quintic ramp
+Expected geometry epochs are 300, 600, 900 and 1200 s; `REDUCED_PARTICLES`
+must report the actual allocated global population as zero at each endpoint.
+`REDUCED_GEOMETRY` reports insertion/removal and material generation. Retired
+sampling archives are per rank: exposure is elapsed sampling opportunity,
+not a quantity to add across replicated geometry ranks.
 
-```text
-Va(t) = V0 + (V1-V0) [10 s^3 - 15 s^4 + 6 s^5],  s=t/1800 s,
+A 1-AU background campaign would now need 416 complete 300-s steps to reach
+124800 s; the prescribed apex reaches 1 AU at 124200 s. Historical 208-step
+receipts used the old clock behavior and are not qualification of this moving
+owner. The stage-0–4 qualification is bounded; it does not claim a new complete
+1-AU, coupling, restart or observational campaign.
+
+## Validation commands and scope
+
+```sh
+make -C srcSEP test-reduced-shock-background-unit
+make -C srcSEP test-standalone-integration-unit
+python3 srcSEP/test/run_standalone_integration_tests.py \
+  --sanitizers --output-dir /tmp/sep-integration-FRESH
+python3 srcSEP/test/run_native_standalone_integration.py \
+  --build-root /path/to/matching/configured/AMPS \
+  --output-dir /tmp/sep-native-FRESH --ranks 1 4
 ```
 
-to `V1=1400 km/s`; the analytically integrated radius is used rather than a
-time-step integral. The front then coasts to the handoff at exactly 20 solar
-radii. The outer phase is matched in apex radius and speed and follows
+The native fixture links the ordinary configured AMPS archive and uses actual
+MPI, PIC particles, field-line pools, sampling and collective readiness. Its
+explicit manufactured initial particles test transport and loss accounting;
+they do not select a production injection law. Pure tests additionally grade
+composition, ideal induction/continuity, curved-line refinement, finite-front
+root support, tube-area drift and common diffusion limits against independent
+references. See [the stage report](../../validation/STANDALONE_INTEGRATION_STATUS.md)
+and [test contract](../../validation/STANDALONE_INTEGRATION_TEST_CONTRACT.md).
 
-```text
-dV/dt = -Gamma (V-w)|V-w|,
-V = w + (Vh-w)/(1+Gamma |Vh-w| (t-th)),
-R = Rh + w dt + sign(Vh-w) log(1+Gamma |Vh-w| dt)/Gamma,
-```
+## Remaining limits
 
-with `w=400 km/s` and `Gamma=5.037350032041981e-12 1/m`. The handoff is C1;
-acceleration need not be continuous. At each surface face the shared provider
-independently evaluates fast-mode admission and the conservative ideal-MHD
-Rankine--Hugoniot jump. Those immediate one-sided states remain surface data;
-this adapter never extends them through a downstream volume.
+The default reduced mode retains the zero-particle invariant. The core event's
+`particle_mode=disabled` means the core does not run particles; an explicitly
+enabled application-owned consumer has its own fingerprinted contract.
+Downstream continuation, PFSS material evolution, moving wave remap,
+nonzero feedback, moving-topology checkpoint/restart and other core backends
+are not admitted by these tests. Existing SWCME schema fields remain required
+input compatibility; `--reduced-shock-event` selects the actual core authority.
+No reference solution or physical gate is regenerated to accommodate results.
 
-## Native storage, epochs, and failure semantics
+## Explicit upstream particle consumer
 
-At each 600-s background epoch the adapter first prepares the complete shared
-front transactionally, then evaluates all 513 native field-line vertices into
-a staging array. Native arrays are changed only after every query succeeds.
-The outgoing magnetic field, velocity, number density, proton temperature and
-total thermal pressure are copied into AMPS' previous-epoch datums before the
-new realization is installed. Generation one copies the new state into both
-slots because no earlier physical event epoch exists.
+Compile the source-enabled example with the application-specific proton
+profile. The legacy `H_PLUS` species catalog uses 1 amu, which is not the
+proton mass. This wrapper first retains that catalog's inactive-species macros
+and then overrides only the modeled species table with the physical proton
+mass. It does not change the shared species catalog or other applications.
 
-An immutable `reduced-shock`, model-owned snapshot binds the event identity,
-epoch, validity interval and generation to those arrays. Publication is
-forbidden during a mover read phase. Off-cadence, reversed, out-of-support, or
-failed provider candidates leave the last committed provider metadata and
-native arrays unchanged.
-
-The maintained standalone build advances the authoritative application clock
-through two AMPS update hooks per outer driver iteration. Therefore this deck
-uses `run.time_step_s=300` so each outer iteration advances exactly one
-600-s provider cadence. This is verified by contiguous generation logs; it is
-not hidden by rounding an off-cadence request.
-
-Every MPI rank owns the replicated field-line representation and evaluates
-the same provider input. Before publication, an `MPI_Allreduce` requires exact
-min/max agreement for the endpoint magnetic field, flow, density and pressure.
-This is replicated field-line evidence, not an AMR owner/received-ghost claim.
-After every native step a separate reduction requires the actual allocated
-particle population to be zero on all ranks.
-
-## Required native build
-
-Run these commands from the AMPS root. The process listing must show that no
-build or test is using `build` before removal.
-
-```bash
-cd /home/vtenishe/Mars2/AMPS
-pwd
-ps -C make -C gmake -C g++ -C gcc -C cc1plus -C mpiexec -C mpirun -C amps \
-  -o pid=,ppid=,stat=,etime=,args=
-rm -rf -- build
-./Config.pl -application=test/sep_parker_spiral__field_line
+```sh
+./Config.pl -spice-path=nospice -spice-kernels=nospice \
+  -application=test/sep_reduced_front__field_line
+make -j16 share_lib
 make -j16 amps
 ```
 
-The removal target is only `/home/vtenishe/Mars2/AMPS/build`. Do not remove
-source, model build directories, site configuration, installed libraries, or
-either Mars checkout.
+Add the following options to the prescribed, read-only command above:
 
-## Run commands
-
-`-input FILE` and `--input FILE` are exact synonyms.
-
-Initialization-only check:
-
-```bash
-mpiexec -n 1 ./amps \
-  -input srcSEP/examples/reduced-shock/field_line.in \
-  --reduced-shock-event srcSEP/examples/reduced-shock/positive_1au.event \
-  --initialization-only \
-  --initialization-output-dir test_output/srcsep-reduced/init-rank1
+```sh
+--reduced-shock-particles on --shock-release-distance-m 1e8 \
+--shock-return-policy delete --shock-source-normalization net-upstream-escape \
+--total-iterations 48
 ```
 
-Two-epoch native smoke test:
+Here **1e8 m is an explicitly manufactured verification distance**, not a
+calibrated production default. The profile's 300-s physical timestep and
+400-step output sampling window remain unchanged. Forty-eight steps exercise
+the beginning of the connected source; a complete sampling-output window
+requires its original 400 physical steps. Holding L_ref fixed during numerical
+refinement is mandatory. Record lambda/L_ref and inflow/particle-speed scales
+when judging the physical applicability of a Parker diffusion approximation;
+numerical transport tests do not establish that approximation for every input.
 
-```bash
-mpiexec -n 4 ./amps \
-  -input srcSEP/examples/reduced-shock/field_line.in \
-  --reduced-shock-event srcSEP/examples/reduced-shock/positive_1au.event \
-  --total-iterations 2 \
-  --coupling off --cascade off --reflection off --shock-injection off
-```
+The `source: shock` energy bounds are total proton kinetic energies in joules.
+For this consumer `injection_efficiency` prescribes the net first-passage
+number fraction eta, while `samples_per_step` sets stratified temporal proposal
+count N. The core local compression gives q=3r/(r-1), and the reused source law
+samples **dN/dp proportional to p^(2-q)**. No SWCME ambient density, compression,
+or total-front area is borrowed through its compatibility source helper.
+Other required SWCME schema fields remain compatibility inputs; the reduced
+core and compiled proton species are the physical authorities in this mode.
 
-Full low-corona-to-1-AU background campaign:
+For conserved tube flux Phi, the connected shock patch is Phi/|B dot n|.
+The prescribed net number rate is eta*n_p*(V_n-U_1 dot n)*Phi/|B dot n|.
+It is a rate for this tube in physical protons per second. Source energy is
+the explicitly injected already accelerated population; the application does
+not resolve accelerator backreaction or create an energetically modified RH
+jump. The transport ledger treats that source kinetic energy as an external
+input, separately from later deterministic and wave-frame work.
 
-```bash
-mpiexec -n 4 ./amps \
-  -input srcSEP/examples/reduced-shock/field_line.in \
-  --reduced-shock-event srcSEP/examples/reduced-shock/positive_1au.event \
-  --total-iterations 208 \
-  --coupling off --cascade off --reflection off --shock-injection off
-```
+Birth j uses an independent keyed open uniform in its temporal stratum and
+weight R(t_j)*dt/N. Actual-epoch source geometry intersects the same moving
+line with the upstream positive normal-distance offset. Focused pitch angles
+sample positive normal flux from an upstream-plasma-frame isotropic parent;
+shock-frame isotropy is not substituted. Parker integrates that angular
+source, with an isotropic diagnostic projection. Configured `1e8` remains a
+normal distance, not an along-line displacement or a grid-dependent epsilon.
 
-Iteration 207 publishes time `124200 s`, generation 208, where the prescribed
-apex is at 1 AU and the shared provider reports an accepted apex shock. The
-last step advances the application clock to `124800 s`; that later time is not
-the observer-arrival claim.
+Sub-fast or disconnected proposals create no particles. No-focused-escape
+exclusions are recorded separately, without redistributing their weights.
+Returning particles are absorbed at the first resolved encounter and retain
+distinct birth and event-energy accounting. `pass` and `gross-emission` are
+recognized but terminate with explicit unsupported messages. No missing
+downstream or gross-to-net escape prescription is invented.
 
-Expected provenance lines include:
+`REDUCED_SOURCE` records candidate, excluded and committed release measures.
+`REDUCED_SOURCE_LEDGER` records retained, returned, domain-exited and retired
+particles, their birth/event energies, signed work and conservation residuals.
+Retained birth energy is printed separately from current kinetic energy so an
+external checker can audit both balances without assuming that cooling or
+prescribed scattering conserves particle kinetic energy by itself.
+PIC samples the departure population before its source callback, so future
+births cannot enter an earlier sample. This ordering uses the frozen birth
+window; no physical clock or sampling denominator is adjusted to fit it.
 
-```text
-REDUCED_BACKGROUND epoch_s=1.020000e+04 generation=18 ...
-REDUCED_BACKGROUND epoch_s=1.242000e+05 generation=208 apex_radius_m=1.495979e+11 ... apex_shock_accepted=1 ...
-REDUCED_PARTICLES count=0 epoch_s=1.248000e+05
-```
+The active solution is exported in `amps.FieldLines.out=*.dat`, its material
+`.sampling` sidecar and the reduced source/energy ledgers. The separately named
+`swcme-comparison-shock-vs-time.dat` is the compatibility SWCME curve, rather
+than the selected reduced front. `background.fl=*.dat` tabulates the explicitly
+named alternative mean-free-path formulas for comparison; those formulas do
+not silently replace the configured production coefficient provider.
 
-## Focused tests
-
-The dependency-light adapter test exercises the production adapter and shared
-archives without claiming native AMPS storage:
-
-```bash
-make -C srcSEP test-reduced-shock-background-unit
-```
-
-It checks strict event/asset resolution, identity, epoch/generation validity,
-a finite physical ambient sample, rejection and rollback of an off-cadence
-candidate, and outward advancement at the next epoch. Parser selection is
-also covered by:
-
-```bash
-srcSEP/test/run_step1_tests.sh
-```
-
-The native commands above are required in addition to these portable tests.
-
-## Implemented versus validated
-
-| Capability | Implementation | Current evidence |
-|---|---|---|
-| Shared event/asset resolution and ambient queries | Implemented in the thin production adapter; physical equations remain in `src/models` | RSHSEP01--10: 10 PASS, 0 FAIL, 0 SKIP, 0 ERROR |
-| Native current/previous field-line plasma and IMF | Implemented for all vertices with transactional staging and exact mover-facing readback | Final 1-/4-rank 1-AU logs below; all 208 generations pass readback |
-| Coherent epochs and MPI state | Explicit 600-s provider generations and complete endpoint min/max reduction | One-/four-rank reduced traces are byte-identical, SHA-256 `0a7b52be95e25c1ea7cdafe2b6c55e9e7c64f18fb297fc40712fc4e2c7ca3166` |
-| Zero particles | All native injection callbacks are conditionally disabled only in reduced mode; actual buffer count is reduced after every step | 208/208 checks pass at one rank and 208/208 at four ranks |
-| Low-coronal launch, handoff, and 1-AU trajectory | Implemented by the shared provider; `srcSEP` consumes its epoch and ambient | 10,200-s handoff and 124,200-s accepted 1-AU apex appear in both native logs |
-| Native `srcSEP` checkpoint/resume | Not implemented or validated in this extension | Unqualified; the shared or `srcSEP3D` restart evidence is not substituted |
-| Sheath/ejecta volume and particles | Intentionally not implemented by the reduced profile | Deferred; BG3D-4 remains unqualified |
-
-Final native evidence is retained at:
-
-```text
-test_output/srcsep-reduced/one-au-rank1-readback/mpi/1/rank.0/stdout
-test_output/srcsep-reduced/one-au-rank4-readback/mpi/1/rank.0/stdout
-test_output/srcsep-reduced/one-au-rank4-readback/mpi/1/rank.{0,1,2,3}/stderr
-```
-
-All four final stderr files are empty. At 1 AU the actual native endpoint
-readback is `B=(0,0,1.257375e-9) T`, `U=(0,0,6.012234e5) m/s`,
-`n_e=7e6 m^-3`, `T_p=1.4e6 K`, and `p=2.706072e-10 Pa`.
-
-These native logs were produced with the earlier (schema-3) spelling of
-`field_line.in`. The schema-6 conversion changes key names and layout only
-(values are unchanged; the file-derived Parker wind now comes from
-`ambient.wind_speed`, which equals the former explicit value), but the
-native one-/four-rank re-run with the converted deck is pending and the
-evidence above is not yet re-established for it.
-
-## Inputs and changes
-
-- Change trajectory, front geometry, ambient normalization, numerical surface
-  resolution, endpoint, or magnetic asset in `positive_1au.event`. Update the
-  asset SHA-256 when its bytes change. Every such change creates a new event
-  identity and needs fresh shared-provider qualification.
-- Change line/domain/mesh resolution, observers or output names in
-  `field_line.in`. Keep the line inside event radial coverage and keep the
-  application epoch increment equal to the event's `run.background_dt_s`
-  (qualified name `physics.shock_front.run.background_dt_s`).
-- The `physics: swcme` block (with `physics.background.provider = swcme` and
-  `physics.shock.authority = swcme`) is retained because schema 6 requires it
-  in an srcSEP file and its resolved `ambient.wind_speed` sets the baseline
-  Parker winding of the mesh and line. `--reduced-shock-event` is the
-  documented command-line override of that provider/authority: it is then
-  not the selected vertex background authority and it does not supply a
-  downstream CME volume.
-- `source.shock.samples_per_step` remains positive because that is the
-  unchanged baseline schema contract (and `source.shock.enabled` must be
-  `true` in srcSEP). Reduced mode disables the callbacks before native
-  stepping and checks the real population; changing this input does not enable
-  particles in this example.
-
-## Outputs and limitations
-
-Initialization-only mode writes the three configured Tecplot products under
-the requested output directory. The field-line product is geometry, and the
-AMPS data product is the maintained Cartesian mesh output. Runtime coupling
-evidence is emitted as the `REDUCED_BACKGROUND` and `REDUCED_PARTICLES` lines;
-this change does not introduce a new field-line plasma serializer.
-
-Known limitations are deliberate:
-
-- the volume background is undisturbed ambient everywhere; there is no sheath,
-  ejecta, wake, contact, draping, or shocked-material memory;
-- immediate downstream values and Mach/compression diagnostics exist only on
-  the shared front epoch and are not copied into `srcSEP` vertices;
-- the front is prescribed rather than dynamically driven by the plasma;
-- the synthetic dipole and isothermal ambient are controlled references, not
-  a forecast or observation-derived reconstruction;
-- the field line starts at 20 solar radii, so `srcSEP` does not spatially
-  sample the provider's low-coronal segment even though the same event evolves
-  continuously from its low-coronal launch;
-- particle source, mover, scattering, wave growth and feedback paths remain
-  baseline code and are intentionally inactive in reduced mode;
-- native checkpoint/resume of this new `srcSEP` provider has not yet been
-  qualified. Shared-provider serialization or the qualified `srcSEP3D`
-  restart cannot substitute for an actual `srcSEP` restart test.
+The first consumer supports one transverse leading barrier. Tangency,
+simultaneous multiple absorbing fronts, occupied connectivity/criticality
+changes and activation of a merger without the birth-energy invariant are
+explicit unsupported cases. They are not silently passed through. Stage 7
+retains distributed migration, cohort-preserving resampling and moving restart
+qualification. Use `--reduced-source-verification-energy-j` only for an
+explicitly labelled manufactured monoenergetic test; zero selects core DSA.

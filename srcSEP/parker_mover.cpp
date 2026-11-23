@@ -2,6 +2,7 @@
 #include "coefficient_providers.h"
 
 #include "util/sep_parker_core.h"
+#include "reduced_shock_boundary.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,6 +39,10 @@ int SEP::ParticleMover_Parker(
   ScalarResult momentum = MomentumFromSpeed(
       initialSpeed, context.state.massKg, SpeedOfLight);
   if (!momentum.status.ok()) AbortMoverStatus(momentum.status);
+  bool initialReturn=false;
+  status=ReducedParticles::Native::AbsorbInitialReturn(context,momentum.value,&initialReturn);
+  if(!status.ok())AbortMoverStatus(status);
+  if(initialReturn)return _PARTICLE_LEFT_THE_DOMAIN_;
 
   double elapsedS = 0.0;
   double currentSpeed = initialSpeed;
@@ -48,6 +53,10 @@ int SEP::ParticleMover_Parker(
       context, PICAdapter::StochasticOperator::Parker, &random, &eventIndex);
   if (!status.ok()) AbortMoverStatus(status);
   StepDiagnostics stepDiagnostics;
+  // Per-particle predictable numerical hint, reset at each complete mover
+  // call. It neither changes PIC dt nor stores a field/RNG/checkpoint state;
+  // every accepted boundary interval still passes the original geometry gate.
+  BoundaryIntervalControl boundaryControl;
 
   while (elapsedS < dtTotal) {
     if (eventIndex == std::numeric_limits<std::uint64_t>::max())
@@ -65,8 +74,11 @@ int SEP::ParticleMover_Parker(
 
     const double segmentLengthM = context.segment->GetLength();
     std::vector<StepLimit> limits;
+    // Only bulk coordinate advection vanishes on a material grid. The Ito
+    // diffusion drift is a different physical operator and remains present.
     const double deterministicSpeed = std::fabs(
-        local.plasmaAdvectionMPerS + coefficient.dKappaParallelDsMPerS);
+        local.coordinateAdvectionMPerS + coefficient.dKappaParallelDsMPerS-
+        coefficient.kappaParallelM2PerS*local.dLnAbsBdsPerM);
     if (deterministicSpeed > 0.0) {
       limits.push_back(StepLimit(
           "parker-drift", tolerances.geometryFraction * segmentLengthM /
@@ -91,6 +103,10 @@ int SEP::ParticleMover_Parker(
     const ScalarResult selected = PICAdapter::SelectParticleSubstep(
         context, elapsedS, limits, tolerances.minimumStepS, &stepDiagnostics);
     if (!selected.status.ok()) AbortMoverStatus(selected.status);
+    double intervalS=selected.value;
+    ReducedParticles::Native::BoundaryInterval boundary;
+    status=ReducedParticles::Native::PrepareBoundary(context,elapsedS,&intervalS,&boundary,&boundaryControl);
+    if(!status.ok())AbortMoverStatus(status);
 
     // One resumed stream spans every shell and outer call for this particle.
     // Its complete state is staged only after the successful mover call; a
@@ -103,16 +119,30 @@ int SEP::ParticleMover_Parker(
     const double startCoordinate = context.state.coordinate;
     const ParkerIncrement increment = AdvanceParker(
         ParkerState(0.0, momentum.value),
-        ParkerBackground(local.plasmaAdvectionMPerS,
+        ParkerBackground(local.coordinateAdvectionMPerS,
                          SEP::AccountAdiabaticCoolingFlag
-                             ? local.velocityDivergencePerS : 0.0),
-        currentSpeed, selected.value, provider, random);
+                             ? local.velocityDivergencePerS : 0.0,
+                         -local.dLnAbsBdsPerM),
+        currentSpeed, intervalS, provider, random);
     if (!increment.status.ok()) AbortMoverStatus(increment.status);
     RecordAcceptedStep(&stepDiagnostics);
+    // Keep the sampled endpoint and ask its conditional Brownian bridge about
+    // first passage. A positive endpoint cannot certify survival: the path may
+    // already have hit the moving shock and returned upstream in this interval.
+    const auto hit=ReducedParticles::Native::CheckBoundary(boundary,0,
+        increment.displacementM,0,intervalS,coefficient.kappaParallelM2PerS*intervalS,random);
+    if(!hit.status.ok())AbortMoverStatus(hit.status);
+    if(hit.hit) {
+      const double terminalP=preMomentum*std::exp(hit.fraction*std::log(increment.state.momentumKgMPerS/preMomentum));
+      ReducedParticles::Native::TransportWork(context,preMomentum,terminalP);
+      ReducedParticles::Native::RecordTerminal(context,ReducedParticles::Native::Terminal::ShockReturn,terminalP);
+      PIC::ParticleBuffer::DeleteParticle(ptr);return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+    ReducedParticles::Native::TransportWork(context,preMomentum,increment.state.momentumKgMPerS);
 
     status = PICAdapter::AdvanceAlongFieldLine(
         &context, increment.displacementM);
-    elapsedS += selected.value;
+    elapsedS += intervalS;
     eventIndex++;
     momentum.value = increment.state.momentumKgMPerS;
 
@@ -132,7 +162,7 @@ int SEP::ParticleMover_Parker(
       record.snapshotGeneration = context.snapshotGeneration;
       record.eventIndex = eventIndex;
       record.intervalIndex = eventIndex;
-      record.dtS = selected.value;
+      record.dtS = intervalS;
       record.preMomentumKgMPerS = preMomentum;
       record.postMomentumKgMPerS = momentum.value;
       // The averaged coupling overload reconstructs signed parallel motion
@@ -161,6 +191,7 @@ int SEP::ParticleMover_Parker(
     }
 
     if (status.code == StatusCode::OutOfDomain) {
+      ReducedParticles::Native::RecordTerminal(context,ReducedParticles::Native::Terminal::DomainExit,momentum.value);
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }

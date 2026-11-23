@@ -360,6 +360,21 @@ Result Matrix() {
 
 Result Isolation() {
   Checks checks;const auto before=ActualState();
+  // Persistence controls remain operational parser state. Both value forms
+  // and last-occurrence precedence must work without changing any model or
+  // source global before a complete material-run preflight.
+  const auto checkpoint=Parsed({"--input","declared.in","--reduced-shock-event","declared.event",
+      "--checkpoint-save","first.bin","--checkpoint-save=final.bin","--checkpoint-at-step=4",
+      "--resume-checkpoint","previous.bin"});
+  checks.Require(checkpoint.checkpointSavePath=="final.bin"&&checkpoint.checkpointAtStep==4&&
+      checkpoint.checkpointResumePath=="previous.bin","checkpoint parser lost value or precedence");
+  for(const auto& arguments:std::vector<std::vector<std::string>>{
+      {"--checkpoint-save","missing-step.bin"},{"--checkpoint-at-step=4"},
+      {"--input","declared.in","--reduced-shock-event","declared.event","--checkpoint-at-step=0","--checkpoint-save=x"},
+      {"--resume-checkpoint=x"},
+      {"--input","declared.in","--reduced-shock-event","declared.event","--resume-checkpoint=x","--test=PCLI01"}}) {
+    C::Options rejected;checks.Require(!Parse(arguments,rejected),"invalid checkpoint controls entered a run");
+  }
   for(unsigned invocation=0;invocation<32;++invocation) {
     const auto options=Parsed({"--coupling","off","--particles-per-iteration","19","--test-manager","on"});
     checks.Require(options.injectionParticlesPerIteration==19&&options.runTestManager,"private parser state changed under repetition");

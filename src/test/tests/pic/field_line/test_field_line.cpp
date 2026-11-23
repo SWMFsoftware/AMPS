@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include "pic_field_line_kernels.h"
 #include "pic_field_line_population.h"
+#include "pic_field_line_geometry.h"
 #include <cmath>
 #include <numeric>
 #include <vector>
@@ -183,4 +184,103 @@ AMPS_TEST_CASE("PIC-FIELDLINE-INVALID-001","field-line kernels reject bad coordi
   AMPS_EXPECT_TRUE(F::ExchangeIndexedValues({0,0},{1,2},2,1,unpacked)==F::Status::DuplicateIndex);
   AMPS_EXPECT_TRUE(F::InterpolatePolylineByArc({0,0,0,0,0,0},0.0,out)==F::Status::InvalidArgument);
   CheckInvalidLifecycle();
+}
+
+AMPS_TEST_CASE("PIC-FIELDLINE-MATERIAL-MOTION-001","all vertices move; repeated inner insertion and whole-segment removal are staged") {
+  namespace G=PIC::FieldLine::Geometry;
+  const std::vector<G::Point> old={{{10,0,0}},{{14,0,0}},{{18,0,0}},{{22,0,0}}};
+  G::Context c;c.arrivalS=1;c.minimumRadiusM=10;c.maximumRadiusM=20;
+  c.toleranceM=1e-10;c.maximumInsertions=10;
+  unsigned calls=0;
+  const G::Motion move=[&](std::size_t,const G::Point& x,double a,double b,G::Point* out) {
+    ++calls;*out=x;(*out)[0]+=5*(b-a);return G::Status{};
+  };
+  const G::InnerTrace trace=[](const G::Point& x,const G::Point&,double length,double,G::Point* out) {
+    *out=x;(*out)[0]-=length;return G::Status{};
+  };
+  G::Plan plan;
+  AMPS_EXPECT_TRUE(G::Prepare(old,c,move,trace,&plan).ok());
+  AMPS_EXPECT_TRUE(calls==old.size()&&old.front()[0]==10&&old.back()[0]==22);
+  AMPS_EXPECT_TRUE(plan.movedPositions.front()[0]==15&&plan.movedPositions.back()[0]==27);
+  AMPS_EXPECT_TRUE(plan.insertedPositions.size()==2&&plan.insertedPositions.back()[0]==7);
+  AMPS_EXPECT_TRUE(plan.removedBack==1);
+  // An old S=0.25 stays on its original pair after two prefix insertions.
+  // Its physical image advances by 5 m, independent of the particle mover.
+  const double fraction=0.25;
+  AMPS_EXPECT_NEAR((1-fraction)*plan.movedPositions[0][0]+fraction*plan.movedPositions[1][0],16,0);
+  // A large displacement can retire every old segment while a traced prefix
+  // still supplies valid new empty material inside the prescribed shell.
+  c.maximumInsertions=100;
+  const G::Motion large=[](std::size_t,const G::Point& x,double,double,G::Point* out) {
+    *out=x;(*out)[0]+=100;return G::Status{};
+  };
+  AMPS_EXPECT_TRUE(G::Prepare(old,c,large,trace,&plan).ok());
+  AMPS_EXPECT_TRUE(plan.insertedPositions.size()==25&&plan.removedBack==25);
+}
+AMPS_TEST_CASE("PIC-FIELDLINE-MATERIAL-DOMAIN-001","closest chord radius detects sphere crossings with exterior endpoints") {
+  namespace G=PIC::FieldLine::Geometry;
+  const G::Point center{{0,0,0}};
+  AMPS_EXPECT_NEAR(G::MinimumRadius({{-3,0,0}},{{3,0,0}},center),0,0);
+  AMPS_EXPECT_NEAR(G::MinimumRadius({{-3,4,0}},{{3,4,0}},center),4,0);
+  AMPS_EXPECT_NEAR(G::MinimumRadius({{3,0,0}},{{4,0,0}},center),3,0);
+  // The same physical shell test is invariant under a translated center.
+  AMPS_EXPECT_NEAR(G::MinimumRadius({{7,2,1}},{{13,2,1}},{{10,2,1}}),0,0);
+}
+AMPS_TEST_CASE("PIC-FIELDLINE-MATERIAL-ATOMIC-001","late motion and bad tracing reject without replacing a prepared result") {
+  namespace G=PIC::FieldLine::Geometry;
+  const std::vector<G::Point> old={{{10,0,0}},{{14,0,0}},{{18,0,0}}};
+  G::Context c;c.arrivalS=1;c.minimumRadiusM=10;c.maximumRadiusM=30;
+  c.toleranceM=1e-10;c.maximumInsertions=2;
+  G::Plan result;result.removedBack=99;
+  const G::Motion bad=[](std::size_t i,const G::Point& x,double,double,G::Point* out) {
+    *out=x;return i==2?G::Status::Error("controlled final vertex failure"):G::Status{};
+  };
+  const G::InnerTrace noProgress=[](const G::Point& x,const G::Point&,double,double,G::Point* out) {
+    *out=x;return G::Status{};
+  };
+  AMPS_EXPECT_TRUE(!G::Prepare(old,c,bad,noProgress,&result).ok()&&result.removedBack==99);
+  const G::Motion move=[](std::size_t,const G::Point& x,double,double,G::Point* out) {
+    *out=x;(*out)[0]+=1;return G::Status{};
+  };
+  AMPS_EXPECT_TRUE(!G::Prepare(old,c,move,noProgress,&result).ok()&&result.removedBack==99);
+  c.arrivalS=c.departureS;
+  AMPS_EXPECT_TRUE(!G::Prepare(old,c,move,noProgress,&result).ok());
+}
+AMPS_TEST_CASE("PIC-FIELDLINE-MATERIAL-EXPOSURE-001","new and old segments normalize by their own exposure, including vacuum") {
+  namespace G=PIC::FieldLine::Geometry;
+  G::Exposure old,fresh,vacuum;
+  for(int i=0;i<100;++i)old.Sample(0.75);
+  for(int i=0;i<2;++i){fresh.Sample(0.75);vacuum.Sample(0.75);}
+  old.Complete();fresh.Complete();vacuum.Complete();
+  AMPS_EXPECT_NEAR(old.Average(700),7,0);AMPS_EXPECT_NEAR(fresh.Average(14),7,0);
+  AMPS_EXPECT_NEAR(vacuum.Average(0),0,0);
+  AMPS_EXPECT_NEAR(old.completedSeconds,75,0);AMPS_EXPECT_NEAR(fresh.completedSeconds,1.5,0);
+  AMPS_EXPECT_TRUE(old.collecting==0&&fresh.completed==2);
+  fresh.Sample(0.75);AMPS_EXPECT_TRUE(fresh.completed==2&&fresh.collecting==1);
+  fresh.Complete();AMPS_EXPECT_TRUE(fresh.completed==1&&fresh.collecting==0);
+  G::Exposure absent;bool rejected=false;
+  try{absent.Average(0);}catch(const std::invalid_argument&){rejected=true;}
+  AMPS_EXPECT_TRUE(rejected&&!absent.HasCompletedMeasurement());
+  rejected=false;
+  try{fresh.Sample(0.5);}catch(const std::invalid_argument&){rejected=true;}
+  AMPS_EXPECT_TRUE(rejected&&fresh.fixedStepSeconds==0.75&&fresh.collecting==0);
+}
+AMPS_TEST_CASE("PIC-FIELDLINE-MATERIAL-TRACE-001","inner tracing follows curved B and material ordering independently of magnetic polarity") {
+  namespace G=PIC::FieldLine::Geometry;
+  G::TraceControl controls;controls.maximumStepM=1;controls.toleranceM=1e-10;controls.maximumAttempts=100;
+  for(double polarity:{-1.0,1.0}) {
+    const G::MagneticField field=[=](const G::Point& x,double,G::Point* b) {
+      *b={{-polarity*x[1],polarity*x[0],0}};return G::Status{};
+    };
+    G::Point end;
+    AMPS_EXPECT_TRUE(G::TraceAlongField({{10,0,0}},{{0,1,0}},1,7,field,controls,&end).ok());
+    AMPS_EXPECT_NEAR(end[0],10*std::cos(0.1),2e-10);
+    AMPS_EXPECT_NEAR(end[1],-10*std::sin(0.1),2e-10);
+  }
+  const G::MagneticField missing=[](const G::Point&,double,G::Point*) {
+    return G::Status::Error("controlled provider coverage hole");
+  };
+  G::Point unchanged{{1,2,3}};
+  AMPS_EXPECT_TRUE(!G::TraceAlongField({{10,0,0}},{{0,1,0}},1,7,missing,controls,&unchanged).ok());
+  AMPS_EXPECT_TRUE(unchanged==G::Point({{1,2,3}}));
 }

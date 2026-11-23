@@ -67,6 +67,122 @@ class Fixture(unittest.TestCase):
         return path
 
 
+class StandaloneIntegrationReports(Fixture):
+    def test_shared_registry_matches_complete_numerical_catalog(self):
+        # A newly added numerical case must remain visible through BOTH
+        # validation entry points. The real shared run caught a stale wrapper
+        # list even though all kernels passed; accepting a subset would hide
+        # failures. Compare the actual frozen source catalogs, not counts.
+        root=_HERE.parent
+        source=ast.parse((root/'srcSEP/test/run_standalone_integration_tests.py').read_text())
+        ids=[]
+        for node in source.body:
+            if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='IDS' for t in node.targets):
+                ids.extend(ast.literal_eval(node.value))
+            if isinstance(node,ast.AugAssign) and isinstance(node.target,ast.Name) and node.target.id=='IDS':
+                ids.extend(ast.literal_eval(node.value))
+        wrapper=ast.parse((root/'src/test/tests/models/cme/sep_standalone/run_test.py').read_text())
+        assignment=next(node for node in ast.walk(wrapper) if isinstance(node,ast.Assign) and
+            any(isinstance(t,ast.Name) and t.id=='expected' for t in node.targets))
+        self.assertEqual(ast.literal_eval(assignment.value.orelse),ids)
+        manifest=json.loads((root/'src/test/manifest.json').read_text())
+        entry=next(test for test in manifest['tests'] if test['id']=='CORE-SEP-STANDALONE-INTEGRATION-001')
+        self.assertEqual(entry['expected_cases'],ids)
+
+    def test_incomplete_successful_report_rejects(self):
+        self.write_json("native/summary.json", {"schema":"srcsep-native-standalone-integration-v1",
+            "results":[{"test_id":"SINT08","status":"PASS"}]})
+        with self.assertRaises(orch.ResultsUnavailable):
+            orch.reader_standalone_integration(self.out/"native",native=True)(self.ctx())
+
+    def test_complete_report_preserves_infrastructure_error(self):
+        ids=["SINT08","SINT09","SINT13N","SINT14N","SINT15N","SINT16N",
+             "SINT25N","SINT26N","SINT27N","SINT28N","SINT29N","SINT30N","SINT31N","SINT32N","MCP08"]
+        self.write_json("native/summary.json", {"schema":"srcsep-native-standalone-integration-v1",
+            "results":[{"test_id":identity,"status":"ERROR","message":"MPI launch failed"} for identity in ids]})
+        records=orch.reader_standalone_integration(self.out/"native",native=True)(self.ctx(exit_code=1))
+        self.assertEqual([record.status for record in records],["ERROR"]*len(ids))
+
+    def test_native_merger_remains_visible_in_both_registries(self):
+        # Population reduction must preserve immutable birth energy in the
+        # production adapter; a successful restart alone does not test a merge.
+        root=_HERE.parent
+        wrapper=ast.parse((root/'src/test/tests/models/cme/sep_standalone/run_test.py').read_text())
+        assignment=next(node for node in ast.walk(wrapper) if isinstance(node,ast.Assign) and
+            any(isinstance(t,ast.Name) and t.id=='expected' for t in node.targets))
+        ids=ast.literal_eval(assignment.value.body)
+        self.assertEqual(ids[-1],'MCP08')
+        manifest=json.loads((root/'src/test/manifest.json').read_text())
+        entry=next(t for t in manifest['tests'] if t['id']=='CORE-SEP-STANDALONE-NATIVE-001')
+        self.assertEqual(entry['expected_cases'],ids)
+
+    def test_material_report_requires_all_roles_and_preserves_errors(self):
+        # Manufacture report structure only. These are isolated reader negative
+        # controls, never claimed as native MPI or particle-history evidence.
+        rows=[]
+        for index in range(1,4):
+            for ranks in (1,2,4,8):
+                for role in ('continuous','write','resume'):
+                    rows.append(dict(id=f'MCP{index:02d}',ranks=ranks,role=role,status='PASS',cwd='/fixture'))
+                rows.append(dict(id=f'MCP{index+8:02d}',ranks=ranks,role='topology',status='PASS',cwd='/fixture'))
+            for writer,reader in ((1,8),(8,1)):
+                rows.append(dict(id=f'MCP{index+3:02d}',ranks=reader,writer_ranks=writer,role='repartition',status='PASS',cwd='/fixture'))
+        for ranks in (1,8):
+            rows.append(dict(id='MCP07',ranks=ranks,role='reject',status='PASS',cwd='/fixture'))
+            rows.append(dict(id='MCP12',ranks=ranks,role='late-reject',status='PASS',cwd='/fixture'))
+        payload=dict(schema='srcsep-material-checkpoint-v1',results=rows)
+        self.write_json('material/summary.json',payload)
+        self.assertEqual(len(orch.material_checkpoint_rows(self.out/'material')),58)
+        for defect in ('missing','duplicate','wrong-donor','unknown-status'):
+            corrupt=json.loads(json.dumps(payload))
+            if defect=='missing':corrupt['results'].pop()
+            elif defect=='duplicate':corrupt['results'][-1]=corrupt['results'][0]
+            elif defect=='wrong-donor':
+                next(r for r in corrupt['results'] if r['role']=='repartition')['writer_ranks']=2
+            else:corrupt['results'][0]['status']='success-but-not-verified'
+            self.write_json('material/summary.json',corrupt)
+            with self.assertRaises(orch.ResultsUnavailable):
+                orch.material_checkpoint_rows(self.out/'material')
+        payload['results'][0]['status']='ERROR'
+        payload['results'][0]['message']='actual MPI startup failed'
+        self.write_json('material/summary.json',payload)
+        records=orch.reader_material_checkpoint(self.out/'material')(self.ctx(exit_code=1))
+        self.assertEqual(records[0].status,'ERROR')
+
+    def test_stage7_requires_combined_thread_roles_and_individual_failures(self):
+        # Structure-only controls. Omitting a resume or worker configuration
+        # must not turn passing smoke output into restart qualification.
+        rows=[]
+        for identity in ('CP05C01','CP05C02','CP05C03','CP05C04','CP05C05',
+                         'CP05O01','CP05O02','CP05O03','CP05O04','CP05O05'):
+            rows.append(dict(id=identity,role='routine',threads=0,ranks=2,status='PASS',cwd='/fixture/'+identity))
+        for identity in ('CP05F01','CP05F02','CP05F03','CP05OF01','CP05OF02','CP05OF03'):
+            for role in ('write','resume'):
+                rows.append(dict(id=identity,role=role,threads=0,ranks=2,status='PASS',cwd='/fixture/'+identity+role))
+        rows.append(dict(id='MCP13',role='missing-fixture',threads=0,ranks=2,status='PASS',cwd='/fixture/guard'))
+        for identity in ('TCR01','TCR02','TCR03'):
+            for threads in (2,4):
+                for ranks in ((1,8) if threads==4 and identity=='TCR02' else (1,)):
+                    for role in ('continuous','write','resume'):
+                        rows.append(dict(id=identity,role=role,threads=threads,ranks=ranks,status='PASS',cwd='/fixture/'+identity+role+str(threads)+str(ranks)))
+        payload=dict(schema='srcsep-stage7-checkpoint-v1',fixtures_only=False,results=rows)
+        self.write_json('stage7/summary.json',payload)
+        self.assertEqual(len(orch.stage7_checkpoint_rows(self.out/'stage7')),44)
+        for defect in ('missing-resume','wrong-workers','fixture-only'):
+            altered=json.loads(json.dumps(payload))
+            if defect=='missing-resume':altered['results'].pop()
+            elif defect=='wrong-workers':altered['results'][-1]['threads']=1
+            else:altered['fixtures_only']=True
+            self.write_json('stage7/summary.json',altered)
+            with self.assertRaises(orch.ResultsUnavailable):orch.stage7_checkpoint_rows(self.out/'stage7')
+        payload['results'][-1]['status']='FAIL';payload['results'][-1]['message']='actual resumed history differs'
+        self.write_json('stage7/summary.json',payload)
+        records=orch.reader_stage7_checkpoint(self.out/'stage7')(self.ctx(exit_code=1))
+        self.assertEqual(records[-1].status,'FAIL')
+        steps={step.name:step for step in orch.srcsep_steps(self.out,argparse.Namespace())}
+        self.assertIsNotNone(steps['stage7-checkpoint-native'].reader)
+
+
 class StatusVocabulary(unittest.TestCase):
     def test_runner_spellings_map_to_four_statuses(self):
         cases = {"PASS": "PASS", "passed": "PASS", "ok": "PASS", "FAIL": "FAIL",

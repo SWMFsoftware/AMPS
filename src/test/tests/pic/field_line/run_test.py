@@ -4,7 +4,7 @@ import re,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[3]; sys.path.insert(0,str(ROOT))
 from lib.runner_support import RunnerError,case,command,error_result,load_context,main_guard,run_command,write_result # noqa:E402
-EXPECTED=["PIC-FIELDLINE-STRAIGHT-INTERP-001","PIC-FIELDLINE-CURVED-INTERP-001","PIC-FIELDLINE-EXCHANGE-001","PIC-FIELDLINE-PARTICLE-SPLIT-001","PIC-FIELDLINE-REPARTITION-001","PIC-FIELDLINE-INVALID-001"]
+EXPECTED=['PIC-FIELDLINE-STRAIGHT-INTERP-001', 'PIC-FIELDLINE-CURVED-INTERP-001', 'PIC-FIELDLINE-EXCHANGE-001', 'PIC-FIELDLINE-PARTICLE-SPLIT-001', 'PIC-FIELDLINE-REPARTITION-001', 'PIC-FIELDLINE-INVALID-001', 'PIC-FIELDLINE-MATERIAL-MOTION-001', 'PIC-FIELDLINE-MATERIAL-DOMAIN-001', 'PIC-FIELDLINE-MATERIAL-ATOMIC-001', 'PIC-FIELDLINE-MATERIAL-EXPOSURE-001', 'PIC-FIELDLINE-MATERIAL-TRACE-001']
 def main()->int:
  c=load_context("Test field-line interpolation, exchange, split and repartition"); repo=Path(c["repo_root"]); work=Path(c["work_dir"]); art=Path(c["artifact_dir"]); timeout=int(c["test"].get("timeout_seconds",120))
  req=list(c["test"].get("selected_cases",c["test"].get("expected_cases",EXPECTED)))

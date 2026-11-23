@@ -98,3 +98,22 @@ The full native wave comparison checks the actual Fortran callback path and
 all six exact sampled-file identities. Existing ECSIM manufactured operators,
 boundary cases and native MPI/core tests remain required regression gates.
 New backend-specific speedups are not inferred from these scalar results.
+
+PT also forwards the particle coordinate convention, separately from the HGR/HGI
+vector basis. Its CON_bline material-node contract maps to
+`plasma-comoving-v1`; changing it on a live population rejects. Material prefix
+changes remap particle indices by the change in first producer label and refresh
+Cartesian views from the new geometry. Removed segments retain absorbing
+boundaries with count/weight diagnostics. Noncontiguous labels require a separate
+explicit remeshing contract. Generic Eulerian PIC coupling does not enter this
+field-line import path.
+
+Imported material lines register their stable producer identity and geometry
+epoch with the native container before sampling. SWMF owns their positions:
+the local callback motion API must not also apply solar-wind advection. Import
+updates the native geometry generation and first material label, then rebuilds
+the MPI segment-ownership table after all line changes so exchange cannot use
+retired segment pointers. See [the material-container contract](../src/pic/README.md)
+for per-segment exposure normalization and `.sampling` output metadata. This
+registration does not qualify moving-topology checkpoint continuation; the old
+fixed-line codec rejects that unsupported state explicitly.

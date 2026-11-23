@@ -1467,7 +1467,7 @@ packaged production objects contain the feature.
 
 ## Conservative population control and native lifecycle gates
 
-`sh test/run_conservation_resampling_tests.sh` builds the same `CRS01`–`CRS10`
+`sh test/run_conservation_resampling_tests.sh` builds the same `CRS01`–`CRS11`
 callbacks used by the native registry, with strict C++11 warnings, ASan and
 UBSan. Set `SRCSEP_REPORT_DIR` to retain its JSON/JUnit reports. The group is
 `conservative-resampling`; these callbacks require no PIC initialization.
@@ -1484,6 +1484,7 @@ UBSan. Set `SRCSEP_REPORT_DIR` to retain its JSON/JUnit reports. The group is
 | CRS08 | Repeated conservative deletion retains original phase points and stops at the constraint rank. |
 | CRS09 | A bounded 1000-to-800 particle stress run retains original SI moments; measured duration is reported without a portable speed claim. |
 | CRS10 | A predictable stop retains expected weights; a selective whole-pass rollback negative control demonstrates its bias. |
+| CRS11 | Immutable source birth energy is conserved independently of current kinetic energy; an omitted-row control changes the birth measure, and missing/mixed/nonfinite histories reject. |
 
 The weight-only algorithm follows [Gonoskov, CPC 271 (2022) 108200](https://doi.org/10.1016/j.cpc.2021.108200)
 ([primary preprint](https://arxiv.org/html/1607.03755v2)). Its two nonnegative
@@ -2062,12 +2063,13 @@ cover the added negative control.
 
 The `fresh-process-checkpoint` orchestrator step runs
 `test/run_fresh_process_checkpoint_tests.py` on two MPI ranks. CP05F01, CP05F02
-and CP05F03 cover the fixed analytic diagnostic Parker, Dmumu and MFP API
+and CP05F03 cover the moving prescribed reduced-front Parker, Dmumu and MFP API
 continuations respectively. Each case launches a write job and then a separate
 resume job. Each role owns a distinct artifact directory and private PIC cwd;
 only the explicitly named checkpoint/final artifacts cross the process boundary.
 An ordinary single `--test CP05F01` invocation cannot establish this paired
-protocol and may correctly report SKIP when its role input is absent.
+protocol. A missing material fixture now produces structured ERROR before
+allocation; it cannot qualify through an absent role or a frozen nonzero-U line.
 
 ```sh
 python3 -B srcSEP/test/run_fresh_process_checkpoint_tests.py --amps ./amps --mpi-ranks 2 --output /tmp/sep-fresh-checkpoint
@@ -2337,3 +2339,263 @@ make -C srcSEP test-finite-amplitude-study-unit
 python3 -B srcSEP/test/run_tests.py --suite finite-amplitude-study --output-dir /tmp/sep-finite-bounded --plot none
 python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only finite-amplitude-study --output-dir /tmp/sep-finite-gate
 ```
+
+CP03G08–10 extend `bash srcSEP/test/run_background_derivative_tests.sh` with
+strict warnings, ASan and UBSan: both focused kernels and Parker follow exact
+plasma-comoving ballistic characteristics for every actual provider declaration
+(analytic, SWCME, reduced-front, SWMF and local evolution); material-label changes preserve the
+fraction under translation/stretching; unknown frames reject; and physical
+isotropic compression remains active in all three kernels. Fixed-grid controls
+retain bulk convection only in the shared helper outside the srcSEP provider
+contract. Unknown provider values reject. These are production-kernel manufactured tests; the
+native coupled run and restart/coupling regressions remain separate gates.
+
+## Standalone core integration, stages 0–4
+
+`test-standalone-integration-unit` is a prerequisite of `test` and
+`test-controlled-analytical`. It runs SINT01–07, SINT07R and SINT10–16 through
+production core/adapter/geometry/transport code in an owned temporary source
+snapshot. It emits individual JSON/JUnit results, exact commands and input
+hashes; strict warnings are errors. `--sanitizers` adds ASan/UBSan to the new
+adapter and numerical paths. Fixed statistical seeds, sample counts and
+acceptance bounds are in the source and retained logs. LeakSanitizer is not
+claimed in a ptrace-managed environment.
+
+`test-standalone-integration-native` requires a clean matching configured
+field-line archive selected with `AMPS_FIELD_LINE_NATIVE_BUILD`. Its actual
+MPI 1-/4-rank fixture exercises SINT08/09, SINT13N and SINT14N–16N. Every
+requested rank count/mode must finish. Startup errors, missing cases, stale
+objects and compile failures produce ERROR. No MPI dependency substitute is
+accepted. Native testing uses manufactured initial ions and a conditioned
+MFP no-event path; existing FTED/FTEM suites independently test scattering,
+hazard distributions and conservation. It introduces no production source.
+
+```sh
+python3 srcSEP/test/run_tests.py --suite standalone-integration \
+  --output-dir /tmp/sep-pure-FRESH --plot none
+python3 srcSEP/test/run_tests.py --suite standalone-integration-native \
+  --amps-source /path/to/matching/configured/AMPS \
+  --output-dir /tmp/sep-native-FRESH --plot none
+```
+
+Both suites retain per-case compatibility reports for the existing source
+runner, while command/hash files live in owned child directories. The shared
+registry names are `CORE-SEP-STANDALONE-INTEGRATION-001` and
+`CORE-SEP-STANDALONE-NATIVE-001`; the latter requires the declared
+`native-field-line` capability. The application orchestrator steps are
+`standalone-core-integration` and `standalone-core-native`, with readers that
+require the complete stable ID list. A missing/partial child report cannot
+become PASS. Optional capability SKIPs are never native qualification.
+
+The bounded evidence and known full-volume prerequisite timeout are recorded
+in [STANDALONE_INTEGRATION_STATUS.md](../validation/STANDALONE_INTEGRATION_STATUS.md).
+Moving restart and AMPS–BATS-R-US coupling remain their separate later-stage
+gates; historical runs are not attributed to this source snapshot.
+## Moving material checkpoint verification (roadmap stage 7)
+
+The prescribed reduced-core consumer uses checkpoint schema 5. The tests
+exercise production material ownership, particle histories, source ledgers,
+collective output and segment exposure. They do not promote a frozen-line
+analytical fixture or a live-wave subsystem to production qualification.
+
+| ID | Required native check |
+| --- | --- |
+| MCP01–03 | Parker/Dmumu/MFP: independent continuous, write and fresh-resume jobs on MPI 1, 2, 4 and 8 |
+| MCP04–06 | The same movers with MPI ownership changed 1→8 and 8→1 |
+| MCP07 | Corrupt-file collective rejection on MPI 1 and 8 with no publication/counter mutation |
+| MCP08 | Actual production population-controller reduction of a mixed cooled/fresh source, preserving immutable birth energy as a seventh moment |
+| MCP09–11 | Each mover resumes a later save with changed segment count, then advances through the next output |
+| MCP12 | Last-rank rejection after a valid nonempty detached replacement is prepared; no live pointer/state/counter changes, then an ordinary retry succeeds |
+
+MCP08 is in `run_native_standalone_integration.py`; the other IDs form
+`run_material_checkpoint_tests.py`'s complete 58-job campaign. Every resume
+requires nonempty, unique particle identities. Same-decomposition final images
+are byte-exact. Changed-MPI comparisons retain every history byte and exact
+exposure; only six-decimal native text serialization has its justified 2e-6
+comparison bound. SI number, birth-energy and signed current-energy balances
+retain their separate 1e-10 bound. No numerical tolerance is enlarged after a
+failed run. Unmeasured segments and measured vacuum remain distinct.
+
+Use a freshly configured, clean `test/sep_reduced_front__field_line` native
+build, which has the core source's physical proton mass and registered mover
+dispatch. The runner audits all PIC-header consumers; selected movers being
+fresh is insufficient when another object can supply an old inline pool method.
+
+```sh
+make -C srcSEP test-material-checkpoint-unit
+make -C srcSEP test-material-checkpoint-native \
+  NATIVE_BUILD_ROOT=/path/to/configured/AMPS \
+  MATERIAL_CHECKPOINT_OUTPUT=/path/to/FRESH/material-evidence
+```
+
+For a site that launches MPI externally, preserve the prepared commands and
+record **actual** return codes in each `process-result.json`; missing/crashed
+jobs cannot pass. Preparation alone is not execution evidence:
+
+```sh
+python3 srcSEP/test/run_native_standalone_integration.py \
+  --build-root /path/to/configured/AMPS --ranks 1 2 4 8 \
+  --output-dir /path/to/FRESH/native --prepare-only
+python3 srcSEP/test/run_material_checkpoint_tests.py \
+  --native-prepared /path/to/FRESH/native/prepared.json \
+  --output /path/to/FRESH/material --prepare-only
+# Execute prepared jobs in dependency order; prepare the isolated CRC control
+# after its writer succeeds, using --prepare-corruption. Then collect:
+python3 srcSEP/test/run_material_checkpoint_tests.py \
+  --output /path/to/FRESH/material --collect
+```
+
+The shared test registry exposes `CORE-SEP-MATERIAL-CHECKPOINT-001`; the
+application orchestrator exposes `material-checkpoint-native`. Both require
+the complete mover/role/decomposition catalog and import individual failures.
+`test-material-checkpoint-unit` is a routine `test` prerequisite. Its isolated
+negative controls detect changed birth/work accounts, missing/duplicate
+histories, wrong/global sampling denominators, missing/deadline/failed process
+receipts and changed source identities; four dependency controls detect stale
+headers and cross-build PIC authority. These controls are software checks,
+not substitute native evidence.
+
+Full-driver CLI restart is additionally checked after a complete physical
+step: save at 45 and resume to the same intended 64 steps, with fixed dt 300 s.
+The 64-step two-/four-thread worker checks do not complete the separate
+400-step production output gate. Current executed results, source snapshots,
+and the repaired legacy-fixture initialization are recorded in
+[the status report](../validation/STANDALONE_INTEGRATION_STATUS.md).
+
+### Complete material, operator and threaded continuation gate
+
+`test-stage7-checkpoint-native` runs a fixed catalog of **44 real MPI jobs**.
+CP05C01–05 are five two-rank material routines; CP05F01–03 have independent
+two-rank write/resume roles. Both use the real host step, explicit reduced
+event/startup deck, fixed dt 300 s, a nonempty accelerated source population,
+and prescribed scattering. MFP continuation must observe a physical scattering
+event. The existing malformed-checkpoint, hazard, Cartesian and flux-owner
+assertions remain mandatory.
+
+CP05O01–05 and CP05OF01–03 retain the old wave/codec assertions in a separate
+native executable. They advance isolated operators and serialization records,
+never particles or the host on a frozen nonzero-U line. They qualify codec and
+operator state only. No production material-owner guard is bypassed. MCP13
+requires a bare material case to exit 2 with a native ERROR report rather than
+abort without output.
+
+Material checkpoint records are serialized in immutable-particle-ID order.
+Worker arrival and native allocation order carry no physical information in
+this keyed model. Every complete normalized history record remains exact;
+geometry, samples and ledgers are still compared in full. CP05C01–03 reverse
+actual segment lists and require an unchanged complete image, restoring both
+link directions before subsequent host steps. MFP requires at least one
+multi-record segment. The fixed-line shared-stream operator codec retains its
+semantic list order. This is canonical serialization, not a tolerance or a
+partial-record comparison.
+
+TCR01–03 run each production mover continuously and through a separate-process
+save at step 45/resume to step 64, with two and four actual worker threads.
+Dmumu additionally runs on eight MPI ranks with four workers per rank. Final
+checkpoints must match byte for byte and every fixed-step number, birth-energy
+and signed current-energy ledger must satisfy the unchanged 1e-10 bound.
+These short restart tests supplement the separate 400-step output campaign.
+
+```sh
+AMPS_FIELD_LINE_NATIVE_BUILD=/path/to/base \
+AMPS_FIELD_LINE_THREAD2_BUILD=/path/to/thread2 \
+AMPS_FIELD_LINE_THREAD4_BUILD=/path/to/thread4 \
+make -C srcSEP test-stage7-checkpoint-native \
+  STAGE7_CHECKPOINT_OUTPUT=/path/to/FRESH/stage7
+```
+
+The `physics-checkpoint-native` Python **suite** alias selects this maintained
+gate. The obsolete bare-group orchestrator launch is replaced by
+`stage7-checkpoint-native`, preserving every CP05C/F assertion. The shared
+registry exposes all 20 logical IDs through `CORE-SEP-STAGE7-CHECKPOINT-001`.
+The collector requires the complete role/thread/rank catalog, actual process
+receipts, matching source/helper/archive/executable hashes and all native
+reports. Missing evidence is ERROR; an evaluated numerical mismatch is FAIL.
+`--prepare-only` and `--collect` support externally launched MPI, using each
+job's explicit `argv`, `cwd` and dependency list. Preparation is not a pass.
+
+Material fixture requests use the existing test-input channel, with a strict
+`SEP_CHECKPOINT_FRESH_PROCESS 2` header followed by quoted `role`, `prefix`,
+`startup_input` and `event` values in that order. Paths are absolute. Routine
+cases use role `routine`; fresh cases use `write`/`resume`. Operator-only roles
+retain protocol 1. The helper supplies the reviewed verification clock and
+source/coefficient settings before normal allocation; production defaults do
+not change. The material request requires actual reduced ownership, and its
+results report material epochs and physical dt.
+
+MCP12's callback receives only staged object counts. It may reject preparation
+but cannot publish or modify a replacement. It is rejected in production run
+purpose, has no CLI/environment hook, and must not call MPI because another
+rank can fail before reaching it. The normal collective agreement discards all
+detached replacements before returning the failure. The test checks complete
+state equality, caller counters and actual live vertex/segment pointers, then
+loads the same valid file normally.
+
+# Reduced source and return-boundary verification
+
+The maintained standalone core suite includes SINT17–SINT24 for source
+configuration, the DSA number Jacobian, actual-epoch offset intersections,
+proton/tube flux, outward pitch support and analytic first-passage laws.
+`make test-standalone-integration-unit` retains strict warning and structured
+failure propagation. SINT23 includes independent stationary and moving-front
+first-passage CDFs. SINT26 checks the exact rotation-axis background shortcut
+against off-axis dipole/wind identities while preserving every primitive
+validity check. SINT27 grades the core's exact parallel RH bracket selection
+against independent gas-dynamic identities, including transverse-flow controls
+that retain the general scan. No reference regeneration or relaxed tolerance is used.
+SINT28 adds exact closed-endpoint MFP clock checks over 4096 fixed-key numerical
+durations/early scatters, plus absorbed-clock and no-later-noise controls.
+SINT29 checks 64 constant-flow trajectories with short final numerical
+intervals against independent endpoints at the unchanged 1-mm tolerance.
+It is a positive stress check, not a reproduction of the long MFP failure.
+SINT30 retains the exact iteration-84 one-/four-rank trajectory failure and
+compares the corrected endpoint against an independent, converged midpoint
+oracle. The original position tolerance, maximum numerical step and work
+bound remain fixed; only the internal endpoint partition changes.
+
+SINT25N–SINT32N extend the linked native fixture to actual net-source births,
+all three movers, signed energy/number ledgers, labelled manufactured monoenergy,
+zero efficiency, atomic rejection and finite-front disconnection. The fixture
+also rejects a low-energy band with no outward escape: dropping those proposals
+would silently change the specified net rate. It
+checks actual output metadata against the core apex at a non-cadence epoch,
+and checks serialized nanotesla against the native tesla-valued record. It
+joins every native destination list after direct dispatch and performs the
+production MPI exchange before closing the source window. A separate complete application run
+is required to qualify the PIC::TimeStep driver and output sampling sequence.
+
+The native runner supports `--prepare-only` to compile/hash and list launch
+jobs when an environment restricts MPI inside Python subprocesses. Preparation
+produces no test PASS. Execute every listed real MPI job, retain each process's
+actual return code in `process-result.json`, then invoke the same runner/output/
+rank selection with `--collect`. Collection checks unchanged source/binary
+hashes and complete native results. Missing logs, return codes or case IDs are
+ERROR. Ordinary environments should use the default direct runner workflow.
+
+The complete-driver stage-6 gate also has a maintained evidence checker:
+
+```sh
+make -C srcSEP test-standalone-integration-application EVIDENCE_DIR=/path/to/application-campaign
+```
+
+The campaign directory must contain `launch-plan.json`, `build-sha256.json`,
+the immutable executable, and one `parker/`, `fte-dmumu/`, `fte-mfp/` directory
+with actual `process-result.json` receipts and `application.rank0.log` output.
+SAPP01–03 require all 400 physical 300-s steps, the complete sampling output,
+segment lifetimes reconstructed independently from topology commits, active
+background metadata, and number/birth/current-energy balances recomputed from
+printed measures at the original 1e-10 relative bound. It requires identical
+source histories across movers. Missing output, crashes or modified executable/
+inputs remain ERROR/FAIL; partial campaigns cannot satisfy the gate. The checker
+writes `verified-results.json` and `junit.xml` beside the retained launch evidence.
+The same Make target runs eleven negative controls against isolated copies of the
+completed output. Wrong physical clocks/cadence, a lost step, broken birth
+energy, altered segment dt, inactive shock metadata, nonfinite active fields,
+changed executable/source identities and missing/failed process receipts must all be
+rejected. Those deliberate corruptions are audit tests, not new simulations.
+The gate verifies every recorded source/header/archive hash as well as the
+executable and physical inputs; old output cannot certify a changed checkout.
+
+These tests quantify software/numerical behavior for the declared synthetic
+event. A manufactured release distance is not a production SEP calibration,
+and passing an unsupported-mode rejection is not downstream qualification.

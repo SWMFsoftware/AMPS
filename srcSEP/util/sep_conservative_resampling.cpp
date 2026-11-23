@@ -30,7 +30,8 @@ Transport::Status EvaluateConstraints(const std::vector<Particle>& particles,dou
   if(!outputRows||!outputWeights||particles.empty()||!std::isfinite(c)||c<=0)return invalid();
   std::set<std::uint64_t> identities;
   std::vector<double> weights;
-  std::vector<std::vector<double>> rows(6);
+  const bool birth=particles.front().hasBirthEnergy;
+  std::vector<std::vector<double>> rows(birth?7:6);
   for(const auto& p:particles) {
     if(p.identity==0||!identities.insert(p.identity).second||p.species<0||
        p.species!=particles[0].species||p.massKg!=particles[0].massKg||
@@ -38,7 +39,8 @@ Transport::Status EvaluateConstraints(const std::vector<Particle>& particles,dou
        !std::isfinite(p.chargeC)||!std::isfinite(p.localFraction)||
        p.localFraction<0||p.localFraction>1||!std::isfinite(p.parallelMPerS)||
        !std::isfinite(p.normalMPerS)||p.normalMPerS<0||
-       !std::isfinite(p.weight)||p.weight<=0)return invalid();
+       !std::isfinite(p.weight)||p.weight<=0||p.hasBirthEnergy!=birth||
+       (birth&&(!std::isfinite(p.birthKineticEnergyJ)||p.birthKineticEnergyJ<=0)))return invalid();
     const long double vp=p.parallelMPerS,vn=p.normalMPerS,v2=vp*vp+vn*vn;
     const long double c2=static_cast<long double>(c)*c;
     if(v2>=c2)return invalid();
@@ -49,6 +51,10 @@ Transport::Status EvaluateConstraints(const std::vector<Particle>& particles,dou
     rows[0].push_back(1.0);rows[1].push_back(static_cast<double>(kinetic));
     rows[2].push_back(static_cast<double>(gamma*p.massKg*vp));
     rows[3].push_back(mu);rows[4].push_back(mu*mu);rows[5].push_back(p.localFraction);
+    // Birth energy is an independent linear functional of representative
+    // weights. The rank-revealing solver may recognize a redundant row (e.g.
+    // a monoenergetic source) but must never replace it with current energy.
+    if(birth)rows[6].push_back(p.birthKineticEnergyJ);
     weights.push_back(p.weight);
   }
   outputRows->swap(rows);outputWeights->swap(weights);

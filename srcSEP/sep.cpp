@@ -1,6 +1,7 @@
 
 #include "sep.h"
 #include "adapters/swcme1d_adapter.h"
+#include "adapters/reduced_shock_background_adapter.h"
 #include "transport_common.h"
 #include "util/sep_population_production_adapter.h"
 
@@ -12,6 +13,7 @@ int SEP::Offset::MfpEventIndex=-1;
 int SEP::Offset::OperatorRandomStates=-1;
 int SEP::Offset::SplitEventCounter=-1;
 int SEP::Offset::BirthRecord=-1;
+int SEP::Offset::ReducedSourceRecord=-1;
 
 //selector of the shock wave model
 SEP::cShockModelType SEP::ShockModelType=SEP::cShockModelType::Analytic1D;
@@ -53,6 +55,36 @@ int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;
 int SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode=SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_analytic;
 
 
+SEP::Transport::Status SEP::QueryShockDiagnostic(double epochS,ShockDiagnostic* result) {
+  using namespace Transport;
+  if(!result||!std::isfinite(epochS))return Status::Error(StatusCode::InvalidArgument,
+      "shock output metadata requires a finite physical epoch and an output record");
+  ShockDiagnostic candidate;
+  if(ReducedShock::Enabled()) {
+    // The reduced provider takes precedence over the retained legacy selector.
+    // Its disabled Tenishev radius can contain an initialization sentinel;
+    // reporting that value beside real core transport would misidentify the
+    // physical front. Query the CORE leading ray at this output's exact epoch,
+    // not its separate prepared-cache cadence. No state is published here.
+    const auto view=ReducedShock::CapturePhysicalStep(epochS,epochS,ReducedShock::EventIdentity());
+    if(!view.ok())return Status::Error(StatusCode::UnsupportedConfiguration,view.status.message);
+    const auto sphere=view.value.SphereAt(epochS);
+    if(!sphere.ok())return Status::Error(StatusCode::UnsupportedConfiguration,sphere.status.message);
+    const auto apex=view.value.LeadingPointOnRay(sphere.value.direction,epochS);
+    if(!apex.ok())return Status::Error(StatusCode::UnsupportedConfiguration,apex.status.message);
+    candidate.apexRadiusM=0;
+    for(double x:apex.value)candidate.apexRadiusM=std::hypot(candidate.apexRadiusM,x);
+    candidate.modelName="reduced-SSE/Parker";
+    if(!std::isfinite(candidate.apexRadiusM)||candidate.apexRadiusM<=0)
+      return Status::Error(StatusCode::InvalidParticleState,"core output apex distance is nonfinite/nonpositive");
+  }else if(ShockModelType==cShockModelType::Analytic1D) {
+    candidate.apexRadiusM=ParticleSource::ShockWave::Tenishev2005::rShock;candidate.modelName="analytic-1D";
+  }else if(ShockModelType==cShockModelType::SwCme1d) {
+    candidate.apexRadiusM=SW1DAdapter::ShockRadiusM();candidate.modelName="SW-CME-1D";
+  }
+  *result=candidate;return Status::Ok();
+}
+
 //title that will be printed in Tecplot output file (simulation time and shock location)
 void SEP::TecplotFileTitle(char* title) {
   // This function is installed below as
@@ -64,27 +96,10 @@ void SEP::TecplotFileTitle(char* title) {
   // for the file currently being written, with no post-processing and no race
   // with the generic AMPS field-line writer.
 
-  double rShock=-1.0;
-  const char* ShockModelName="unknown";
-
-  // The SEP model can use either the original analytic 1-D shock description
-  // or the reduced 1-D SW/CME model.  The field-line writer is independent of
-  // those models, so this hook queries the currently active SEP shock state and
-  // appends it to the standard Tecplot title together with the simulation time.
-  switch (SEP::ShockModelType) {
-  case SEP::cShockModelType::Analytic1D:
-    rShock=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
-    ShockModelName="analytic-1D";
-    break;
-  case SEP::cShockModelType::SwCme1d:
-    rShock=SEP::SW1DAdapter::ShockRadiusM();
-    ShockModelName="SW-CME-1D";
-    break;
-  default:
-    rShock=-1.0;
-    ShockModelName="unknown";
-    break;
-  }
+  ShockDiagnostic shock;
+  const auto metadata=QueryShockDiagnostic(SEP::Background::SimulationTimeSeconds(),&shock);
+  if(!metadata.ok())exit(__LINE__,__FILE__,metadata.message.c_str());
+  const double rShock=shock.apexRadiusM;const char* ShockModelName=shock.modelName;
 
   // Keep the original information, time=<...>, because existing Tecplot macros
   // and post-processing scripts may rely on it.  The additional R_sh fields are
@@ -177,6 +192,10 @@ void SEP::RequestParticleData() {
       offset,sizeof(SEP::Transport::Birth::Record),
       alignof(SEP::Transport::Birth::Record));
   Offset::BirthRecord=offset;
+  // Two eight-byte scalar slots: schema and physical birth kinetic energy [J].
+  // The latter remains unchanged by cooling/scattering and exact splitting.
+  PIC::ParticleBuffer::RequestDataStorage(offset,16,alignof(double));
+  Offset::ReducedSourceRecord=offset;
   SEP::Transport::PICAdapter::RegisterPopulationControlHooks();
   SEP::PopulationControl::RegisterConservativeMerger();
 }

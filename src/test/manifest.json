@@ -308,10 +308,65 @@
       "level": "module",
       "tiers": ["nightly", "extended"],
       "runner": "tests/pic/field_line/run_test.py",
-      "description": "Field-line straight/curved interpolation, unique exchange, weighted splitting, and conservative repartition",
+      "description": "Field-line interpolation/exchange/splitting plus material geometry, magnetic tracing and segment sampling exposure",
       "requires": {"tools": ["cxx"], "paths": ["src/pic/pic_field_line_kernels.h", "src/pic/pic.h"], "capabilities": []},
-      "expected_cases": ["PIC-FIELDLINE-STRAIGHT-INTERP-001", "PIC-FIELDLINE-CURVED-INTERP-001", "PIC-FIELDLINE-EXCHANGE-001", "PIC-FIELDLINE-PARTICLE-SPLIT-001", "PIC-FIELDLINE-REPARTITION-001", "PIC-FIELDLINE-INVALID-001"],
+      "expected_cases": ["PIC-FIELDLINE-STRAIGHT-INTERP-001", "PIC-FIELDLINE-CURVED-INTERP-001", "PIC-FIELDLINE-EXCHANGE-001", "PIC-FIELDLINE-PARTICLE-SPLIT-001", "PIC-FIELDLINE-REPARTITION-001", "PIC-FIELDLINE-INVALID-001", "PIC-FIELDLINE-MATERIAL-MOTION-001", "PIC-FIELDLINE-MATERIAL-DOMAIN-001", "PIC-FIELDLINE-MATERIAL-ATOMIC-001", "PIC-FIELDLINE-MATERIAL-EXPOSURE-001", "PIC-FIELDLINE-MATERIAL-TRACE-001"],
       "timeout_seconds": 120
+    },
+    {
+      "id": "CORE-PIC-FIELD-LINE-NATIVE-SERIAL-001",
+      "component": "src/pic",
+      "level": "integration",
+      "tiers": [
+        "extended"
+      ],
+      "runner": "tests/pic/field_line/run_native_geometry.py",
+      "description": "Native material geometry/particle/sampling with explicit serial MPI dependency adapter; not MPI qualification",
+      "requires": {
+        "tools": [
+          "mpi_cxx",
+          "make"
+        ],
+        "paths": [
+          "src/test/tests/pic/field_line/native_geometry.cpp",
+          "src/test/tests/pic/field_line/native_geometry.mk"
+        ],
+        "capabilities": [
+          "native-field-line"
+        ]
+      },
+      "expected_cases": [
+        "PIC-FIELDLINE-NATIVE-SERIAL-001"
+      ],
+      "timeout_seconds": 450
+    },
+    {
+      "id": "CORE-PIC-FIELD-LINE-NATIVE-MPI-001",
+      "component": "src/pic",
+      "level": "integration",
+      "tiers": [
+        "extended"
+      ],
+      "runner": "tests/pic/field_line/run_native_geometry.py",
+      "description": "Native material geometry/particle/sampling in one real MPI rank; not decomposition qualification",
+      "requires": {
+        "tools": [
+          "mpi_cxx",
+          "make",
+          "mpiexec"
+        ],
+        "paths": [
+          "src/test/tests/pic/field_line/native_geometry.cpp",
+          "src/test/tests/pic/field_line/native_geometry.mk"
+        ],
+        "capabilities": [
+          "native-field-line"
+        ]
+      },
+      "expected_cases": [
+        "PIC-FIELDLINE-NATIVE-MPI1-001"
+      ],
+      "timeout_seconds": 450
     },
     {
       "id": "CORE-PIC-CALLBACK-OUTPUT-001",
@@ -1535,6 +1590,135 @@
       },
       "expected_cases_ref": "T11-SEP-COMMON",
       "timeout_seconds": 7200,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-SEP-STANDALONE-INTEGRATION-001",
+      "component": "src/models/sep_corona_swcme",
+      "level": "integration",
+      "tiers": [
+        "extended"
+      ],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Production standalone SEP/core adapter, net source and moving absorbing-boundary integration; native qualification remains explicit",
+      "requires": {
+        "tools": [
+          "python",
+          "cxx",
+          "make"
+        ],
+        "paths": [
+          "srcSEP/test/run_standalone_integration_tests.py"
+        ],
+        "capabilities": []
+      },
+      "expected_cases": [
+        "SINT01",
+        "SINT02",
+        "SINT03",
+        "SINT04",
+        "SINT05",
+        "SINT06",
+        "SINT07",
+        "SINT07R",
+        "SINT10",
+        "SINT11",
+        "SINT12",
+        "SINT13",
+        "SINT14",
+        "SINT15",
+        "SINT16",
+        "SINT17",
+        "SINT18",
+        "SINT19",
+        "SINT20",
+        "SINT21",
+        "SINT22",
+        "SINT23",
+        "SINT24",
+        "SINT26",
+        "SINT27",
+        "SINT28",
+        "SINT29",
+        "SINT30",
+        "SINT31",
+        "SINT32"
+      ],
+      "timeout_seconds": 600,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-SEP-STANDALONE-NATIVE-001",
+      "component": "src/models/sep_corona_swcme",
+      "level": "integration",
+      "tiers": [
+        "extended"
+      ],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Actual native reduced core material geometry, SSE connectivity, net source, absorbing returns, signed ledgers and all three movers; real MPI 1 and 4 ranks",
+      "requires": {
+        "tools": [
+          "python",
+          "mpi_cxx",
+          "make",
+          "mpiexec"
+        ],
+        "paths": [
+          "srcSEP/test/run_native_standalone_integration.py"
+        ],
+        "capabilities": [
+          "native-field-line"
+        ]
+      },
+      "expected_cases": [
+        "SINT08",
+        "SINT09",
+        "SINT13N",
+        "SINT14N",
+        "SINT15N",
+        "SINT16N",
+        "SINT25N",
+        "SINT26N",
+        "SINT27N",
+        "SINT28N",
+        "SINT29N",
+        "SINT30N",
+        "SINT31N",
+        "SINT32N",
+        "MCP08"
+      ],
+      "timeout_seconds": 1800,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-SEP-MATERIAL-CHECKPOINT-001",
+      "component": "src/models/sep_corona_swcme",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Three-mover moving material topology/sampling continuation on real MPI 1/2/4/8; exact histories across 1<->8 repartition and atomic corrupt-checkpoint rejection",
+      "requires": {
+        "tools": ["python", "mpi_cxx", "make", "mpiexec"],
+        "paths": ["srcSEP/test/run_material_checkpoint_tests.py"],
+        "capabilities": ["native-field-line"]
+      },
+      "expected_cases": ["MCP01", "MCP02", "MCP03", "MCP04", "MCP05", "MCP06", "MCP07", "MCP09", "MCP10", "MCP11", "MCP12"],
+      "timeout_seconds": 2400,
+      "exclusive": true
+    },
+    {
+      "id": "CORE-SEP-STAGE7-CHECKPOINT-001",
+      "component": "src/models/sep_corona_swcme",
+      "level": "integration",
+      "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Repaired moving-host checkpoint fixtures, isolated wave/codec assertions and combined two-/four-thread fresh production continuation, including real MPI eight ranks",
+      "requires": {"tools": ["python", "mpi_cxx", "make", "mpiexec"],
+                   "paths": ["srcSEP/test/run_stage7_checkpoint_tests.py"], "capabilities": ["native-field-line"]},
+      "expected_cases": ["CP05C01", "CP05C02", "CP05C03", "CP05C04", "CP05C05", "CP05F01", "CP05F02", "CP05F03",
+                         "CP05O01", "CP05O02", "CP05O03", "CP05O04", "CP05O05", "CP05OF01", "CP05OF02", "CP05OF03",
+                         "TCR01", "TCR02", "TCR03", "MCP13"],
+      "timeout_seconds": 2400,
       "exclusive": true
     },
     {

@@ -244,5 +244,26 @@ int main() {
       !SEP::Run::VerifyRestartCompatibility(frozen,other).ok(),
       "WP30 precedence, canonical SWCME fingerprint roundtrip, and restart compatibility");
 
+  // The old schema-four representation stays byte-compatible for default
+  // runs. An enabled finite-reference source has a separate schema-five tail:
+  // losing even one physical metre of L_ref must invalidate continuation.
+  auto reduced=merged;
+  auto& reducedSource=reduced.reducedParticles;reducedSource.enabled=true;
+  reducedSource.releaseDistanceM=1e7;reducedSource.minimumEnergyJ=1e-14;
+  reducedSource.maximumEnergyJ=1e-12;reducedSource.releaseFraction=0.001;reducedSource.samplesPerStep=8;
+  SEP::Run::FrozenConfiguration reducedFrozen,reducedRound,otherRelease;
+  const auto reducedStatus=SEP::Run::FrozenConfiguration::Create(reduced,&reducedFrozen);
+  std::string reducedCheckpoint;
+  const auto reducedSerialized=SEP::Run::Serialize(reducedFrozen,&reducedCheckpoint);
+  const auto reducedRead=SEP::Run::Deserialize(reducedCheckpoint,&reducedRound);
+  reducedSource.releaseDistanceM+=1;
+  const auto otherStatus=SEP::Run::FrozenConfiguration::Create(reduced,&otherRelease);
+  failures+=Check(runCheckpoint.find("SEP_RUN_CONFIGURATION 4\n")==0&&
+      reducedCheckpoint.find("SEP_RUN_CONFIGURATION 5\n")==0&&
+      reducedStatus.ok()&&reducedSerialized.ok()&&reducedRead.ok()&&otherStatus.ok()&&
+      reducedFrozen.fingerprint()==reducedRound.fingerprint()&&
+      !SEP::Run::VerifyRestartCompatibility(reducedRound,otherRelease).ok(),
+      "WP30-REDUCED finite reference source serialization and immutable physical release distance");
+
   return failures==0 ? 0 : 1;
 }

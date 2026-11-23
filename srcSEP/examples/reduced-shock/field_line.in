@@ -3,11 +3,11 @@
 ! the declared +Z 1-AU observer.  The shared provider itself begins at the
 ! low-coronal launch radius; srcSEP samples it only where this line exists.
 #begin run
-  ! This configured PIC step is 300 s.  The maintained standalone srcSEP build
-  ! advances its authoritative application clock in two AMPS update hooks per
-  ! outer driver iteration, so the provider sees exactly its declared 600-s
-  ! epoch cadence.  The runtime refuses off-cadence epochs rather than rounding
-  ! a mismatched application clock onto a different physical realization.
+  ! One complete AMPS physical step is 300 s. Particle sampling assumes the
+  ! same physical dt throughout the output interval; it MUST NOT be shortened
+  ! to fit the provider's separate 600-s prepared-front cache cadence. Native
+  ! material geometry and explicit-time core queries use the full physical
+  ! interval, including its endpoint, without an extra clock increment.
   time_step_s = 300
 #end run
 

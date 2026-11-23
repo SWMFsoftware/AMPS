@@ -51,6 +51,7 @@
     "SOURCE_MANIFEST.json",
     "sep.dfn",
     "makefile",
+    "test/native_standalone_integration.mk",
     "WP42_WP64_DISPOSITION.json",
     "validation/**/*"
   ],

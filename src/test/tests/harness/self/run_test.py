@@ -334,9 +334,15 @@ def test_selection_contract(context: Dict) -> None:
     # The shared chemical database adds exactly one source-only suite/case.
     # Pin the new independent totals explicitly rather than deriving expected
     # values from production grouping, which would conceal a lost owner.
-    assert [len(item["tests"]) for item in streams] == [52, 3, 2]
+    # Moving field lines added five container cases and two native owners;
+    # SEP integration adds the 30 numerical, 15 native (including MCP08), and
+    # ten material restart IDs. Pin their full inventory independently: do not
+    # calculate the expectation from the registry being tested.
+    # Stage 7 additionally registers one late material-restore rejection ID
+    # and the twenty-case native/operator/thread continuation owner.
+    assert [len(item["tests"]) for item in streams] == [58, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1086, 62, 46]
+            for item in streams] == [1169, 62, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(
@@ -423,12 +429,18 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-ECSIM-BOUNDARIES-001", "CORE-PIC-DEPOSITION-001",
         "CORE-PIC-FIELD-SOLVER-001", "CORE-PIC-AUXILIARY-001",
         "CORE-PIC-FIELD-LINE-001", "CORE-PIC-CALLBACK-OUTPUT-001",
+        "CORE-PIC-FIELD-LINE-NATIVE-SERIAL-001",
+        "CORE-PIC-FIELD-LINE-NATIVE-MPI-001",
         "CORE-PIC-RESTART-001", "CORE-PIC-DATAFILE-001",
         "CORE-PIC-OUTPUT-001",
         "CORE-MODEL-SEP-COMMON-001", "CORE-MODEL-SWCME-001",
         "CORE-MODEL-SEP-CORONAL-CME-001",
         "CORE-MODEL-SEP-CORONA-SWCME-FULL-001",
         "CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001",
+        "CORE-SEP-STANDALONE-INTEGRATION-001",
+        "CORE-SEP-STANDALONE-NATIVE-001",
+        "CORE-SEP-MATERIAL-CHECKPOINT-001",
+        "CORE-SEP-STAGE7-CHECKPOINT-001",
         "CORE-LEGACY-REGISTRY-AUDIT-001",
         "CORE-T12-PORTABILITY-001",
         "APPLICATION-ENCELADUS-FORWARD-001",
@@ -942,6 +954,12 @@ def test_traceability_contract(context: Dict) -> None:
         raise RuntimeError("cannot import traceability validator")
     validator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(validator)
+    # Compact historical SEP IDs are exact quoted registry literals. This
+    # negative control protects source ownership: prose, partial spellings or
+    # a longer nonexistent ID must not make an absent compact case look owned.
+    compact='\"MCP01\" \'SINT07R\' \"SINT14N\" MCP02 \"MCP100\" \"prefixMCP03\" \"MCP04suffix\" \"CP05C01\" \"CP05OF03\" \"TCR02\" \"CP05C010\" \"CP05CF01\"'
+    assert [m.group(1) for m in validator.COMPACT_SEP_ID.finditer(compact)] == [
+        'MCP01','SINT07R','SINT14N','CP05C01','CP05OF03','TCR02']
     validation = validator.Validation()
     trace = validator.load_json(TEST_ROOT / "source_traceability.json", validation)
     contracts = validator.load_json(

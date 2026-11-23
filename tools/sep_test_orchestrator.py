@@ -739,6 +739,107 @@ def reader_reduced_front(output_dir: Path) -> Reader:
     return read
 
 
+def reader_standalone_integration(output_dir: Path, native: bool = False) -> Reader:
+    """Require the complete stable stage catalog, even after a child crash.
+
+    A partial JSON file or a runner that printed only successful cases cannot
+    turn a crashed numerical test into a passing orchestration step.
+    """
+    expected = (["SINT08", "SINT09", "SINT13N", "SINT14N", "SINT15N", "SINT16N",
+                 "SINT25N", "SINT26N", "SINT27N", "SINT28N", "SINT29N", "SINT30N", "SINT31N", "SINT32N", "MCP08"] if native else
+                ["SINT01", "SINT02", "SINT03", "SINT04", "SINT05", "SINT06", "SINT07", "SINT07R",
+                 "SINT10", "SINT11", "SINT12", "SINT13", "SINT14", "SINT15", "SINT16",
+                 "SINT17", "SINT18", "SINT19", "SINT20", "SINT21", "SINT22", "SINT23", "SINT24", "SINT26", "SINT27", "SINT28", "SINT29", "SINT30", "SINT31", "SINT32"])
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload=read_json(output_dir / "summary.json")
+        schema="srcsep-native-standalone-integration-v1" if native else "srcsep-standalone-integration-v1"
+        rows=payload.get("results", [])
+        if payload.get("schema")!=schema or [row.get("test_id") for row in rows]!=expected:
+            raise ResultsUnavailable("standalone integration report is incomplete or has foreign case identities")
+        if any(row.get("status") not in {"PASS", "FAIL", "ERROR", "SKIP"} for row in rows):
+            raise ResultsUnavailable("standalone integration report has unknown result status")
+        return reader_reduced_front(output_dir)(ctx)
+    return read
+
+
+def material_checkpoint_rows(output_dir: Path) -> List[dict]:
+    """Require every material mover, MPI count and separate-process role.
+
+    A successful subset cannot establish continuation or repartition. Identity
+    includes the role and receiving rank count; the two repartitions also
+    require their explicit donor counts. MCP08 is the separate native merger
+    gate, not an alias for a successful checkpoint. This reader imports actual
+    collector results and never infers PASS from an empty/malformed report.
+    """
+    payload=read_json(output_dir / "summary.json")
+    expected=set()
+    for index in range(1,4):
+        for ranks in (1,2,4,8):
+            for role in ("continuous","write","resume"):
+                expected.add((f"MCP{index:02d}",ranks,role,0))
+            expected.add((f"MCP{index+8:02d}",ranks,"topology",0))
+        for writer,reader in ((1,8),(8,1)):
+            expected.add((f"MCP{index+3:02d}",reader,"repartition",writer))
+    for ranks in (1,8):
+        expected.add(("MCP07",ranks,"reject",0))
+        expected.add(("MCP12",ranks,"late-reject",0))
+    rows=payload.get("results",[])
+    keys=[(r.get("id"),r.get("ranks"),r.get("role"),r.get("writer_ranks",0)) for r in rows]
+    if payload.get("schema")!="srcsep-material-checkpoint-v1" or len(keys)!=len(expected) or set(keys)!=expected:
+        raise ResultsUnavailable("material checkpoint report is incomplete or has foreign/duplicate roles")
+    if any(r.get("status") not in {"PASS","FAIL","SKIP","ERROR"} for r in rows):
+        raise ResultsUnavailable("material checkpoint report has unknown result status")
+    return rows
+
+
+def reader_material_checkpoint(output_dir: Path) -> Reader:
+    """Retain per-role failure logs and the independent balance metrics."""
+    def read(ctx: StepContext) -> List[TestRecord]:
+        return [ctx.record(f"{row['id']}/ranks{row['ranks']}/{row['role']}",row['status'],
+            row.get('message','') or json.dumps(row.get('metrics',{}),sort_keys=True),
+            log=str(Path(row['cwd'])/'native.rank0.log'),evidence=[str(output_dir/'summary.json')])
+            for row in material_checkpoint_rows(output_dir)]
+    return read
+
+
+def stage7_checkpoint_rows(output_dir: Path) -> List[dict]:
+    """Require the full combined native/operator/thread restart campaign.
+
+    Writer-only or worker-only reports cannot qualify continuation. The exact
+    independent catalog retains every mover, both worker counts and the site's
+    eight-rank combined case. A prepared/subset report remains unavailable.
+    """
+    payload=read_json(output_dir/'summary.json')
+    native=('CP05C01','CP05C02','CP05C03','CP05C04','CP05C05')
+    operators=('CP05O01','CP05O02','CP05O03','CP05O04','CP05O05')
+    fresh=('CP05F01','CP05F02','CP05F03','CP05OF01','CP05OF02','CP05OF03')
+    keys={(i,'routine',0,2) for i in native+operators}
+    keys.update((i,r,0,2) for i in fresh for r in ('write','resume'))
+    keys.add(('MCP13','missing-fixture',0,2))
+    for i in ('TCR01','TCR02','TCR03'):
+        for count in (2,4):
+            for ranks in ((1,8) if i=='TCR02' and count==4 else (1,)):
+                keys.update((i,r,count,ranks) for r in ('continuous','write','resume'))
+    rows=payload.get('results',[])
+    actual=[(r.get('id'),r.get('role'),r.get('threads'),r.get('ranks')) for r in rows]
+    if payload.get('schema')!='srcsep-stage7-checkpoint-v1' or payload.get('fixtures_only') is not False or len(actual)!=len(keys) or set(actual)!=keys:
+        raise ResultsUnavailable('stage7 checkpoint report omits required native/operator/thread roles or contains duplicates')
+    if any(r.get('status') not in {'PASS','FAIL','SKIP','ERROR'} for r in rows):
+        raise ResultsUnavailable('stage7 checkpoint report has unknown result status')
+    return rows
+
+
+def reader_stage7_checkpoint(output_dir: Path) -> Reader:
+    """Expose each executed role and preserve its real failure evidence."""
+    def read(ctx: StepContext) -> List[TestRecord]:
+        return [ctx.record(f"{r['id']}/{Path(r['cwd']).name}",r['status'],
+            r.get('message','') or json.dumps(r.get('metrics',{}),sort_keys=True),
+            log=str(Path(r['cwd'])/('application.rank0.log' if r['threads'] else 'native.rank0.log')),
+            evidence=[str(output_dir/'summary.json'),str(Path(r['cwd'])/'process-result.json')])
+            for r in stage7_checkpoint_rows(output_dir)]
+    return read
+
+
 def reader_positive_shock(output_dir: Path) -> Reader:
     """validate_positive_shock_example.py --output-root DIR: DIR/summary.json.
     checks[] = {run, name, status, detail, log}; ``log`` is that run's
@@ -1040,7 +1141,31 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
     run_tests = out / "run-tests"
     pd_json = out / "pd-mover.json"
     return [
-        build_step("test/sep_parker_spiral__field_line"),
+        build_step("test/sep_reduced_front__field_line"),
+        Step("standalone-core-integration",
+             "reduced core state, material trajectories, finite SSE connectivity and three-solver numerical qualification",
+             [["python3", "srcSEP/test/run_standalone_integration_tests.py", "--output-dir", str(out / "standalone-core-integration")]],
+             reader=reader_standalone_integration(out / "standalone-core-integration"),
+             runner="srcSEP/test/run_standalone_integration_tests.py"),
+        Step("standalone-core-native",
+             "actual native reduced material owner, finite SSE connectivity and three production movers; real MPI ranks 1 and 4",
+             [["python3", "srcSEP/test/run_native_standalone_integration.py", "--build-root", ".", "--output-dir", str(out / "standalone-core-native")]],
+             reader=reader_standalone_integration(out / "standalone-core-native", native=True),
+             runner="srcSEP/test/run_native_standalone_integration.py"),
+        Step("material-checkpoint-native",
+             "real MPI 1/2/4/8 material sampling/topology restart and 1<->8 particle-history repartition; three production movers",
+             [["python3","srcSEP/test/run_native_standalone_integration.py","--build-root",".",
+               "--output-dir",str(out/"material-checkpoint-native"/"native"),"--ranks","1","2","4","8","--prepare-only"],
+              ["python3","srcSEP/test/run_material_checkpoint_tests.py","--native-prepared",
+               str(out/"material-checkpoint-native"/"native"/"prepared.json"),"--output",str(out/"material-checkpoint-native"/"campaign")]],
+             reader=reader_material_checkpoint(out/"material-checkpoint-native"/"campaign"),
+             runner="srcSEP/test/run_material_checkpoint_tests.py"),
+        Step("stage7-checkpoint-native",
+             "material CP05 compatibility, isolated wave/codec assertions, and two-/four-thread fresh production restart; real MPI including eight ranks",
+             [["python3","srcSEP/test/run_stage7_checkpoint_tests.py","--build-root",".",
+               "--output",str(out/'stage7-checkpoint-native')]],
+             reader=reader_stage7_checkpoint(out/'stage7-checkpoint-native'),
+             runner="srcSEP/test/run_stage7_checkpoint_tests.py"),
         Step("rng-lifecycle",
              "persistent stochastic state: repeated mover calls, full normal "
              "cache/checkpoint restoration, and MFP event partitioning",
@@ -1266,16 +1391,13 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
              reader=read_bracket_text,
              runner="srcSEP/test/run_frozen_collision_transaction_tests.sh",
              namespace="srcsep-registry"),
-        Step("physics-checkpoint-native",
-             "actual fixed-line analytic PIC physics save/resume and atomic "
-             "rejection; same MPI ownership, output continuation excluded",
-             [["python3", "srcSEP/test/run_tests.py", "--amps", "./amps",
-               "--group", "physics-checkpoint-native", "--output-dir",
-               str(out / "physics-checkpoint-native")]],
-             reader=reader_srcsep_run_tests(out / "physics-checkpoint-native"),
-             runner="srcSEP/test/run_tests.py", namespace="srcsep-registry"),
+        # CP05C01--05 now require explicit material startup data. Their full
+        # native coverage is owned by stage7-checkpoint-native above, together
+        # with the isolated operator assertions that the old fixed-line group
+        # combined with particle transport. Do not launch a second bare group:
+        # missing material ownership is correctly an initialization ERROR.
         Step("fresh-process-checkpoint",
-             "paired two-rank native write/fresh-resume API roles, unchanged linked executable and byte-exact final continuation; fixed analytic diagnostic scope",
+             "paired two-rank material write/fresh-resume API roles, unchanged linked executable and byte-exact final continuation; prescribed reduced-front transport",
              # Each child role creates its own private PIC working directory.
              # The runner exchanges only named checkpoint artifacts, and its
              # reader rechecks the retained child reports and final bytes.

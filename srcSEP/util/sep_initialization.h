@@ -77,6 +77,10 @@ struct Configuration {
   // field-line source event.
   double timeStepS = 0.0;
   std::uint64_t macroparticlesPerStep = 0;
+  // Direct source inputs [J, dimensionless], retained independently of the
+  // SWCME compatibility assignments. The reduced consumer uses its own core
+  // front's density/compression; these values do not select SWCME plasma.
+  double sourceMinimumEnergyJ=0,sourceMaximumEnergyJ=0,sourceNetFraction=0;
   // run.maximum_time_steps (optional): the main-loop step budget.  Absent
   // means the historical driver default; --total-iterations overrides it.
   bool maximumTimeStepsSpecified = false;

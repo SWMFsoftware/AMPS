@@ -14,6 +14,7 @@ using namespace std;
 
 #include "pic.h"
 #include "amps_fixed_step.h"
+#include "amps_fieldline_frame.h"
 
 //AMPS component code 
 #define _AMPS_SWMF_UNDEFINED_ -1
@@ -149,6 +150,8 @@ namespace AMPS2SWMF {
     double DensityMassUnitKg();
     double CoordinateUnitM();
     const std::string& CoordinateFrame();
+    // Immutable producer declaration; distinct from the HGR/HGI vector basis.
+    AMPS::FieldLine::CoordinateFrame ParticleCoordinateFrame();
     bool VelocityGradientAt(int line,int vertex,double fraction,double epochS,
                            std::array<double,9>* output,std::string* error);
   } 

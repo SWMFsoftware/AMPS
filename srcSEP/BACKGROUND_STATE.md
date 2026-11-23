@@ -348,3 +348,59 @@ native evidence. The complete input protocol, immutable per-rank traces,
 counter-policy distinction and exact qualification limits are documented in
 [`test/README.md`](test/README.md). Native completion is tied to the staged
 binary/status record, rather than inferred from the source-only trajectory gate.
+
+All srcSEP particle coordinates use `plasma-comoving-v1`, regardless of whether
+the data provider is analytic, SWCME, reduced-front, SWMF or local evolution.
+The provider identifies data authority, not a choice of particle reference
+frame. Imported SWMF metadata must agree with this contract. Unknown providers
+and incompatible imported frames reject before transport. Physical U and
+grad(U) remain distinct from the zero coordinate-advection value; the material
+particle equation never zeros thermodynamic compression. The legacy analytical native
+geometry/shock update ordering remains unqualified; see TRANSPORT_NUMERICS.md
+for the identified conditional-update and endpoint limitations.
+
+
+## Reduced-core material owner
+
+`ReducedShock::IntervalView` retains the actual core provider and explicit
+closed physical interval. Configuration changes cannot rebind an existing
+view. `CaptureInterval` preserves the strict prepared-cache validity API;
+`CapturePhysicalStep` queries the core's continuous analytical functions over
+its declared event support. It neither interpolates RH states nor advances the
+committed front as a side effect. Cache cadence, geometry generation and
+physical epoch are distinct metadata; none changes the AMPS physical timestep.
+
+`Native::InstallBackground` stages a copy of each native stored-data prefix,
+all current/previous B,U,np,p,T and optional ideal E=-U cross B, and the complete
+interval connectivity. Initial previous state is the same initial condition,
+not an invented earlier epoch. A repeated physical epoch preserves genuine
+previous state. `CadencePublication` stages the core's ordinary Prepare path
+on a value copy sharing immutable configuration/ambient; only its Current
+pointer is independent. No live core cache changes before readiness.
+`SnapshotStore::Publication` likewise preallocates/validates metadata; commit
+uses a single-use expected-owner token. Every native physical state is checked
+for exact replicated MPI agreement before publication. Local sampling
+numerators are not physical clocks and are never summed as extra exposure.
+
+`Native::Advance` stages every moved vertex and target-epoch primitive; a new
+vertex gets previous state from the actual inverse flow map. Old diagnostics
+are copied; no wave remap or source population is invented. Only the Parker
+exterior is admitted as a material native background. The core's PFSS query
+capability alone does not prove that branch satisfies the required material
+induction/continuity contract. Stages 0–4 preserve a prescribed, read-only
+ambient rather than extending one-sided RH limits through a downstream volume.
+# Reduced source ownership and PIC phase ordering
+
+The reduced core remains a prescribed ambient/front provider. Its
+`particle_mode=disabled` capability is unchanged. A separate application-owned
+consumer is enabled explicitly and bound into the run configuration; no
+downstream volume or core particle engine is implied.
+
+The host freezes the full physical source window before PIC changes its
+counter. PIC samples departure particles, then invokes the reduced source
+callback inside the immutable read phase. Future births are therefore absent
+from the earlier sample. Their own material-line positions/front states are
+queried at explicit birth epochs, and their remaining first movement is stored
+as a duration. Neither absolute timestamp rounding nor the provider's cache
+cadence changes AMPS dt, output cadence or exposure. After all workers join,
+geometry retirement and number/birth-energy/event-energy ledgers are audited.

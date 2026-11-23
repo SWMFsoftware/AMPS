@@ -69,6 +69,15 @@ std::string FixedNativeLineLayout() {
   layout<<std::hexfloat;
   for(int line=0;line<PIC::FieldLine::nFieldLine;++line) {
     auto& fieldLine=PIC::FieldLine::FieldLinesAll[line];
+    if(fieldLine.ExternallyManagedGeometry) {
+      // Material insertion/motion changes topology, never physical source
+      // identity. Require an explicit stable owner namespace rather than
+      // silently resetting source event counters after a coordinate change.
+      if(fieldLine.GetGeometryOwnerIdentity().empty())
+        exit(__LINE__,__FILE__,"material source line has no registered physical identity");
+      layout<<";material:"<<line<<':'<<fieldLine.GetGeometryOwnerIdentity().size()<<':'<<fieldLine.GetGeometryOwnerIdentity();
+      continue;
+    }
     const int segments=fieldLine.GetTotalSegmentNumber();
     layout<<';'<<line<<':'<<segments;
     for(int vertex=0;vertex<=segments;++vertex) {

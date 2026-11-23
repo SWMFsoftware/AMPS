@@ -1,5 +1,142 @@
 # AMPS interpolation routines
 
+## Material field-line geometry and segment sampling exposure
+
+The callback-driven `cFieldLine` contract is documented in
+[MOVING_FIELD_LINE_GEOMETRY_DESIGN.md](MOVING_FIELD_LINE_GEOMETRY_DESIGN.md).
+The container, magnetic tracing kernel, native sampling path and ownership-table
+replacement are implemented. Automatic analytical-model advancement is not yet
+wired: its physical state callback needs a declared prescribed-versus-material
+field-evolution contract. Real MPI/coupling execution and moving-geometry
+restart continuation remain separate, unqualified capabilities.
+
+The container owns topology, not the solar-wind model. First register a unique,
+stable physical identity with `RegisterGeometryOwner(identity, epoch, label)`;
+do this before source-history initialization or any sampling. Then call
+`PrepareGeometryStep(context, motion, trace, vertexState, &plan, edgeState)`.
+The motion function returns each old vertex's target Cartesian position [m]
+over the complete supplied interval [s], including both endpoints. It may use
+an exact flow map or a numerical integrator; the container never adds U*dt or
+changes AMPS' timestep. `Geometry::TraceAlongField` supplies spatially controlled
+RK4 magnetic tracing for the inner-extension callback. Magnetic polarity does
+not determine index direction: the current first chord orients the trace.
+
+Preparation stages all geometry, physical datum prefixes, particle views,
+detached records and ownership rows before publication. State callbacks receive
+an old index or `-1` for new material. Preserve existing unowned/integral datums,
+such as fluence, while updating owned physical fields. New records need actual
+provider data/history, not copied neighboring history. Stored edge physics
+requires an explicit edge initializer; the container cannot infer wave energy
+or injection normalization from segment length. Callbacks must not mutate the
+live line, particles, sampling state or authoritative provider during prepare.
+
+After workers/read phases have joined, the host must agree on readiness and
+the same candidate geometry across its participating MPI ranks. Commit with
+`CommitGeometryStep(&plan)`; no allocation or callback evaluation occurs there.
+Plans are single-use and reject changed geometry, ownership-table generations,
+particle views or sampling exposure. Prepared plans for different global lines
+must be committed/reprepared in order: a published ownership table invalidates
+an older plan's ownership snapshot. The host must complete old-topology wave
+work before changing indices and recompute shock/observer/source caches before
+publishing the next particle background. The generic legacy updater skips
+explicitly managed lines, preventing a second bulk displacement.
+
+Moved inner endpoints are extended along B until they cover the minimum
+heliocentric radius. Each extension requests the current first chord's length
+as magnetic arc length. New segments are empty and use existing particle source
+rules. Unavailable fields, no inward progress, degenerate segments, unsupported
+domain overshoot and exhausted tracing/insertion limits fail explicitly.
+Coverage bounds are not exact particle-absorption surfaces: a retained segment
+may straddle the maximum radius or extend below the minimum. Provider and AMR
+support must cover those endpoints; no extrapolation or coordinate clipping
+is supplied to hide insufficient coverage.
+
+Outer trimming uses the closest point of the whole segment to the Sun, since
+two exterior endpoints do not prove that their chord is exterior. Existing
+particles keep their material fraction and acquire S+k after k front insertions;
+their Cartesian views move with the mesh. Momentum, weights, birth/RNG state
+and identity are preserved. Retiring particles receive their target positions
+before deletion. `plan.Losses()` reports represented-number and stored-frame
+kinetic/parallel-moment diagnostics; local parallel components are not a global
+Cartesian momentum budget. `plan.RetiredSamples()` retains endpoint geometry,
+sample histories and opaque edge data for the owner's retirement ledger. The
+caller must consume those records before discarding the plan. Surviving
+ownership rows contain the actual new/live pointers, not recycled tail records.
+
+`cFieldLineSegment::SamplingExposure` owns collecting/completed sample counts,
+exposure seconds and the fixed physical dt. Sampling increments once per
+eligible segment, including vacuum, never per particle/species/substep. A new
+segment starts at zero exposure; changing its dt is an error. The two exposure
+windows complete/reset with their data buffers. Material endpoint numerators
+are normalized by each segment's lifetime before vertex projection, including
+both numerator and weight for weighted moments. This avoids diluting a two-
+sample segment by a neighboring hundred-sample history. Density retains the
+existing mean of W/V(t), not division by the final volume. Fluence uses physical
+dt and density*speed*dt; it is not divided by volume a second time.
+
+Timed segment accessors use the segment's completed count. The compatibility
+overload rejects a supplied global count that disagrees. An unmeasured timed
+datum yields NaN, distinguishable from measured vacuum by the exposure metadata.
+Arbitrary weighted edge datums must declare a registered scalar edge denominator
+with `SetSamplingWeightDatum`; a vertex offset is not an edge weight layout.
+Data output writes a `.sampling` sidecar with material labels, geometry epoch/
+generation, actual counts, seconds, fixed dt and measurement-validity flags.
+The current and previous vertex magnetic-field columns are labelled [nT].
+Their writer converts SI tesla records by 1e9; stored primitives and numerical
+consumers keep tesla. Output conversion must never modify the live datum.
+MPI sums numerators, validates replicated exposure/dt, and never sums exposure
+as though each rank supplied extra physical time. Unsupported CUDA material
+registration and the old fixed-geometry checkpoint codec reject explicitly.
+
+An inner extension changes a particle's stored line coordinate from `s` to
+`s + number_of_inserted_segments`. Although this is an integer translation,
+binary64 addition can round the fractional part when the result crosses an
+exponent boundary. Geometry preparation therefore computes the translated
+coordinate first, and derives Cartesian X from that exact stored value and
+the staged endpoints. Computing X from the old fraction could leave two
+different positions in the same particle record; restart correctly rejects
+that inconsistency. The transaction rejects a translation that cannot retain
+the segment address, instead of clipping a particle onto another segment.
+This refresh changes neither momentum, weight, stochastic history nor the
+physical timestep and adds no bulk-flow particle displacement. Native SINT08
+checks 32 non-dyadic manufactured coordinates across an exponent boundary,
+in addition to its original retirement and sampling checks.
+
+Segment-attached particle ownership follows the field-line MPI decomposition,
+not the Cartesian AMR decomposition. Every segment worker (serial, standard
+threads, or the particle-table path) therefore selects the same configured
+global physical timestep: the species entry in species-global mode, or entry
+zero in single-global mode. It passes a null Eulerian start node to the mover.
+A worker must not find an AMR block from Cartesian X merely to read dt: that
+block can belong to another rank and be unallocated locally. The eight-rank,
+four-thread TCR02 campaign exposed this at step 34. Node-attached motion keeps
+its existing block-local timestep behavior. Local-timestep configurations for
+segment-owned motion remain explicitly unsupported; no fallback, shortened
+step or change to sample exposure is introduced.
+
+Material sampling also uses a read-only sorted particle index for each segment.
+The key contains the species and exact bits of line coordinate, parallel and
+normal velocity, and individual weight: the per-particle inputs that determine
+the sampler's contributions. Equal keys yield identical contributions, and
+sorting bit patterns avoids an invalid floating comparison when the existing
+sampler encounters a malformed value. Its validity checks remain authoritative.
+The native linked lists, particle state, density/energy/fluence formulas and one
+exposure tick per complete step are unchanged. This removes scheduling order
+from floating addition; otherwise threaded arrivals could change a sampled sum
+by one ULP and violate exact restart despite identical particle histories.
+Any new per-particle sampler input must extend this key. Nonmaterial lines keep
+their existing traversal. SINT08 reverses the same 32 records and requires all
+sampled vertex bytes and material numerators to remain exact, restoring buffers,
+exposure, counters and list order between diagnostic trials. It fails with the
+old traversal and passes with canonical sampling.
+
+A clean regenerated CPU build is required because segment objects gained state.
+The registered `CORE-PIC-FIELD-LINE-001` suite contains eleven bounded kernel
+cases. Native container/particle/sampler gates have separate serial-dependency
+and one-rank MPI identities; see
+[the fixture instructions](../test/tests/pic/field_line/README.md). Neither is
+a substitute for coupled SEP/reference or MPI-decomposition qualification.
+
 This directory contains the AMPS particle-in-cell interpolation infrastructure. The principal implementation is in `pic_interpolation_routines.cpp`; the public types and entry points are declared in `pic.h` under `PIC::InterpolationRoutines`.
 
 ## Order-preserving performance work (2026-11-10)

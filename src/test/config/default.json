@@ -22,6 +22,7 @@
     "keep_work": "failures"
   },
   "capabilities": {
+    "native-field-line": {"available": false, "policy": "optional"},
     "moon-spice": {
       "available": false,
       "policy": "optional"

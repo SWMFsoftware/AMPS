@@ -1599,19 +1599,13 @@ void OutputSpectrumTecplot2D(long int iteration, double simulation_time) {
   // field-line title hook used for amps.FieldLines.out=*.dat and lets a Tecplot
   // animation identify where the CME/shock is relative to the spectral
   // turbulence features at the same simulation time.
-  double r_shock = 0.0;
-  const char* shock_model_name = "unknown";
-
-  switch (SEP::ShockModelType) {
-  case SEP::cShockModelType::Analytic1D:
-    r_shock = SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
-    shock_model_name = "analytic-1D";
-    break;
-  case SEP::cShockModelType::SwCme1d:
-    r_shock = SEP::SW1DAdapter::ShockRadiusM();
-    shock_model_name = "SW-CME-1D";
-    break;
-  }
+  // Share the provider/epoch resolver with field-line output. In particular,
+  // an active reduced front must never inherit a disabled legacy shock's
+  // radius or use a stale core cache epoch for these spectral diagnostics.
+  SEP::ShockDiagnostic shock;
+  const auto metadata=SEP::QueryShockDiagnostic(simulation_time,&shock);
+  if(!metadata.ok())exit(__LINE__,__FILE__,metadata.message.c_str());
+  const double r_shock=shock.apexRadiusM;const char* shock_model_name=shock.modelName;
 
   fout.setf(std::ios::scientific);
   fout << std::setprecision(16);

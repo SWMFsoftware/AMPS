@@ -5,6 +5,7 @@
 #include SRCSEP_SEP_COMMON_HEADER(sep_background_snapshot.h)
 
 #include <string>
+#include "amps_fieldline_frame.h"
 
 namespace SEP {
 namespace Background {
@@ -20,6 +21,23 @@ double SimulationTimeSeconds();
 // initializer writes field-line plasma or turbulence storage; it must never
 // infer authority from whether a legacy array happens to contain zeroes.
 Provider ConfiguredProvider();
+// All srcSEP field-line particle coordinates are plasma-comoving, irrespective
+// of which authority supplies B/U/shock data. Data provenance must never select
+// an Eulerian particle equation. Keep this mapping independent of AMPS startup
+// so the production contract is directly testable for every provider, including
+// a private local-evolution handoff. Unknown enum values reject explicitly.
+inline AMPS::FieldLine::CoordinateFrame DeclaredParticleCoordinateFrame(Provider provider) {
+  switch(provider) {
+    case Provider::Analytic:case Provider::Swcme:case Provider::ReducedShock:
+    case Provider::Swmf:case Provider::LocalEvolution:
+      return AMPS::FieldLine::CoordinateFrame::PlasmaComoving;
+    default:throw std::invalid_argument("unknown provider has no srcSEP particle-coordinate contract");
+  }
+}
+// Native metadata validation additionally checks that imported SWMF geometry
+// declares the same material convention. This never enables fixed-coordinate
+// particle advection; incompatible producer metadata is a configuration error.
+AMPS::FieldLine::CoordinateFrame ParticleCoordinateFrame();
 
 // Build the fingerprint of background-affecting configuration.  Mover choice
 // is intentionally excluded: selecting Parker versus focused transport changes

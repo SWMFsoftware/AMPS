@@ -293,6 +293,48 @@ Result PredictableStopping() {
   ok=ok&&bias>.49;
   return Finish(ok,"predictable stopping preserves each expected weight; outcome-dependent whole-pass rollback negative control produces 50 percent bias");
 }
+Result BirthEnergyConservation() {
+  auto particles=Inputs();
+  // Nonmonotone independent birth energies represent differently cooled
+  // source particles. Using the current energy for this extra row would pass
+  // the ordinary energy gate while changing the source cohort's denominator.
+  const double birth[]={11,2,19,5,3,23,7,17,13};
+  for(std::size_t i=0;i<particles.size();++i) {
+    particles[i].hasBirthEnergy=true;particles[i].birthKineticEnergyJ=birth[i]*1e-14;
+  }
+  const auto endpoints=C::Prepare(particles,1e-12);
+  bool ok=endpoints.weights.status==K::Status::Success;
+  double error=0,negativeControl=0;
+  const auto residual=[&](const std::vector<double>& weights) {
+    long double before=0,after=0;
+    for(std::size_t i=0;i<particles.size();++i) {
+      before+=static_cast<long double>(particles[i].weight)*birth[i];
+      after+=static_cast<long double>(weights[i])*birth[i];
+    }
+    return static_cast<double>(std::fabs(before-after)/before);
+  };
+  if(ok)for(const auto* weights:{&endpoints.weights.positive,&endpoints.weights.negative}) {
+    error=std::max(error,residual(*weights));
+    ok=ok&&MomentError(particles,*weights)<=1e-12;
+  }
+  auto legacy=particles;for(auto& p:legacy)p.hasBirthEnergy=false;
+  const auto omitted=C::Prepare(legacy,1e-12);
+  if(omitted.weights.status==K::Status::Success)
+    negativeControl=std::max(residual(omitted.weights.positive),residual(omitted.weights.negative));
+  ok=ok&&error<=1e-12&&negativeControl>1e-4;
+  // Missing/invalid records reject atomically, including a mixed population.
+  for(unsigned defect=0;defect<3;++defect) {
+    auto invalid=particles;
+    if(defect==0)invalid[0].hasBirthEnergy=false;
+    if(defect==1)invalid[0].birthKineticEnergyJ=0;
+    if(defect==2)invalid[0].birthKineticEnergyJ=std::numeric_limits<double>::quiet_NaN();
+    ok=ok&&C::Prepare(invalid,1e-12).weights.status==K::Status::InvalidInput;
+  }
+  auto result=Finish(ok,"birth-energy row conserves source history independently of current momentum; omitted-row negative control fails");
+  result.metrics.push_back({"birth_energy_relative_residual",error,1e-12,"<=","dimensionless"});
+  result.metrics.push_back({"omitted_row_negative_control",negativeControl,1e-4,">","dimensionless"});
+  return result;
+}
 Descriptor Make(const char* id,const char* name,TestCallback callback) {
   Descriptor descriptor;descriptor.id=id;descriptor.name=name;descriptor.group="conservative-resampling";
   descriptor.description=name;descriptor.callback=callback;
@@ -317,6 +359,7 @@ std::vector<Descriptor> ConservationResamplingDescriptors() {
           Make("CRS07","Unpreserved stress/current diagnostics",StressDiagnostics),
           Make("CRS08","Repeated conservative deletion refinement",RepeatedRefinement),
           Make("CRS09","Bounded thousand-particle conservation stress",ThousandParticleStress),
-          Make("CRS10","Predictable numerical stopping unbiasedness",PredictableStopping)};
+          Make("CRS10","Predictable numerical stopping unbiasedness",PredictableStopping),
+          Make("CRS11","Reduced-source birth energy conservation",BirthEnergyConservation)};
 }
 }}

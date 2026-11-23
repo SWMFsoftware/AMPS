@@ -1,5 +1,39 @@
 # Step 14 mover migration manifest
 
+## Stage-7 material checkpoint fixture migration, 2026-11-22
+
+| Former contract | Maintained replacement | Compatibility and reason |
+| --- | --- | --- |
+| CP05C01–05 on a frozen analytic line with nonzero U | Same stable IDs on an explicitly owned moving reduced-front material line | Real host steps, nonempty accelerated population, prescribed scattering and fixed dt 300 s; old bare startup is ERROR before allocation. |
+| CP05F01–03 protocol 1 fixed-line transport | Same IDs, strict protocol 2 with explicit startup deck/event and write/resume roles | Separate processes compare complete final files. Nondefault flux, malformed state and all old continuation assertions remain. |
+| Wave/codec checks mixed with fixed-line particle motion | CP05O01–05 / CP05OF01–03 in `test/native_checkpoint_operators.cpp` | Native isolated operator/serialization coverage, with no particle or host stepping. Operator role protocol 1 remains supported here. |
+| Orchestrator bare `physics-checkpoint-native` group | `stage7-checkpoint-native` complete 44-job gate | Every old C/F assertion is included. Python `--suite physics-checkpoint-native` aliases the same maintained gate; bare native cases require their explicit fixture. |
+| Only pre-decode corruption rejection | MCP12 rejection after valid nonempty detached preparation on MPI 1/8 | Rejection-only diagnostic callback exposes counts, is forbidden in production purpose, leaves state/pointers/counters unchanged and permits a normal retry. |
+| Cartesian remap from the old fractional coordinate | Derive Cartesian X from the exact newly stored translated line coordinate | Integer-prefix insertion can round a binary64 fraction. Coordinate and X must remain one canonical physical position; no clipping, timestep change or added bulk particle advection. |
+| Threaded field-line dt read through an Eulerian block | Shared configured-global timestep selection for segment workers | Field-line MPI owners need not allocate the containing AMR block. Same dt as the serial path; node-attached block-local stepping is retained. |
+| Material samples accumulated in mover arrival order | Read-only canonical physical-input sampling index | Exact sampled continuation without changing particle/list state, formulas or exposure. Reversing identical records fails the old native sampler and passes the repaired path. |
+| Material serialization in native arrival order | Complete normalized records ordered by immutable particle ID | Keyed transport has no physical arrival order; all record bytes remain exact. Fixed-line shared-stream operator ordering is preserved. |
+| Main/debug object dependencies declared before `MAINOBJ` | Define `MAINOBJ` before expanding the complete application object list | Prevents a worker/PIC header change from leaving stale weak inline pool definitions. A real Make negative control fails with the old ordering. |
+
+Native material checkpoint schema remains 5. The diagnostics API is not a
+production configuration option and does not change the on-disk layout or the
+normal load transaction. Intrinsic material primitive validation precedes the
+mandatory exact core-source comparison, so corrupt data receive precise errors
+without changing the admitted set of checkpoints. See the maintained
+[qualification report](validation/STANDALONE_INTEGRATION_STATUS.md) for exact
+source identities and execution results. Historical build8 schema-4 results
+below remain historical and do not certify this material path.
+
+## 2026-11-22 material-continuation interfaces, under qualification
+
+| Previous state/interface | Replacement and compatibility |
+| --- | --- |
+| Corrected physics checkpoint schema 4 | Schema 5: fieldwise material topology/identity/exposure, source ledgers and output phase. Earlier schemas are rejected; no invented history migration. Fixed analytic capability remains bounded separately. |
+| Function-local field-line `lastDataOutputFileNumber` | Explicit `PIC::FieldLine::LastDataOutputFileNumber`, persisted for the material continuation owner. |
+| `StoredDataBytes()` derived from collecting offset | Stable physical prefix excluding both diagnostic buffers, independent of their current phase. Signature unchanged. |
+| `cFieldLine::Output(FILE*,bool)` local formatting | Third optional `collective` argument; existing two-argument source calls preserve local behavior. Collective public output explicitly supplies it. Rebuild callers because the linked C++ signature changes. |
+| Six-row source-blind conservative merger | Additional immutable birth-energy row when all candidates carry reduced-source history. Legacy candidates keep their previous six rows. Mixed or missing reduced histories reject. |
+
 ## 2026-11-16 corrective interfaces and stored-state revisions
 
 | Former interface/state | Replacement and compatibility |

@@ -251,7 +251,7 @@ Core::Result<double> IntegrateTransportDepth(
 Core::Result<FocusedEscapeDistribution> BuildFocusedEscapeDistribution(
     double speed, int polarity, double bDotN, double advection,
     int intervals, double absoluteTolerance) {
-  if (!(speed > 0.0) || (polarity != -1 && polarity != 1) ||
+  if (!(speed > 0.0) || !Finite(speed) || (polarity != -1 && polarity != 1) ||
       !Finite(bDotN) || !Finite(advection) || intervals < 4 ||
       intervals % 2 != 0 || absoluteTolerance < 0.0)
     return Core::Result<FocusedEscapeDistribution>::Failure(
@@ -259,18 +259,29 @@ Core::Result<FocusedEscapeDistribution> BuildFocusedEscapeDistribution(
         "focused escape requires speed, polarity, and even quadrature intervals");
   FocusedEscapeDistribution result;
   result.mu.resize(static_cast<std::size_t>(intervals + 1));
-  result.cdf.resize(result.mu.size());
   const double h = 2.0 / intervals;
-  double accumulated = 0.0;
-  double previousFlux = 0.0;
   for (int i = 0; i <= intervals; ++i) {
-    const double mu = -1.0 + i * h;
-    const double normalSpeed = advection + speed * polarity * mu * bDotN;
-    const double flux = 0.5 * std::max(0.0, normalSpeed);
-    result.mu[static_cast<std::size_t>(i)] = mu;
-    if (i) accumulated += 0.5 * h * (previousFlux + flux);
-    result.cdf[static_cast<std::size_t>(i)] = accumulated;
-    previousFlux = flux;
+    result.mu[static_cast<std::size_t>(i)] = -1.0 + i * h;
+  }
+  // The flux is the positive part of an affine function of mu. Insert its
+  // kink before integration: the trapezoidal rule is then exact on every
+  // interval, including a partially open loss cone. A quadrature grid that
+  // straddles the kink overestimates the physical release flux.
+  const double slope=speed*polarity*bDotN;
+  if(slope!=0) {
+    const double threshold=-advection/slope;
+    if(threshold>-1&&threshold<1) {
+      auto where=std::lower_bound(result.mu.begin(),result.mu.end(),threshold);
+      if(where==result.mu.end()||*where!=threshold)result.mu.insert(where,threshold);
+    }
+  }
+  result.cdf.resize(result.mu.size());result.densityPerMu.resize(result.mu.size());
+  double accumulated=0;
+  for(std::size_t i=0;i<result.mu.size();++i) {
+    result.densityPerMu[i]=0.5*std::max(0.0,advection+slope*result.mu[i]);
+    if(i)accumulated+=0.5*(result.mu[i]-result.mu[i-1])*
+        (result.densityPerMu[i-1]+result.densityPerMu[i]);
+    result.cdf[i]=accumulated;
   }
   result.normalizationMPerS = accumulated;
   if (std::abs(bDotN) > 1.0e-12) {
@@ -287,6 +298,7 @@ Core::Result<FocusedEscapeDistribution> BuildFocusedEscapeDistribution(
   }
   result.status = FocusedEscapeStatus::Admissible;
   for (double& value : result.cdf) value /= accumulated;
+  for (double& value : result.densityPerMu) value /= accumulated;
   result.cdf.back() = 1.0;
   return Core::Result<FocusedEscapeDistribution>::Success(result);
 }
@@ -295,7 +307,8 @@ Core::Result<double> SampleFocusedMu(
     const FocusedEscapeDistribution& distribution, double uniform) {
   if (distribution.status != FocusedEscapeStatus::Admissible ||
       distribution.mu.size() < 2 || distribution.mu.size() !=
-          distribution.cdf.size() || uniform < 0.0 || uniform >= 1.0)
+          distribution.cdf.size() || distribution.mu.size()!=distribution.densityPerMu.size() ||
+      !Finite(uniform) || uniform < 0.0 || uniform >= 1.0)
     return Core::Result<double>::Failure(Core::StatusCode::InvalidState,
                                         "focused distribution is not sampleable");
   auto upper = std::upper_bound(distribution.cdf.begin(),
@@ -305,11 +318,18 @@ Core::Result<double> SampleFocusedMu(
   if (right == 0) right = 1;
   if (right >= distribution.cdf.size()) right = distribution.cdf.size() - 1;
   const double c0 = distribution.cdf[right - 1];
-  const double c1 = distribution.cdf[right];
-  const double f = c1 > c0 ? (uniform - c0) / (c1 - c0) : 0.0;
-  return Core::Result<double>::Success(
-      distribution.mu[right - 1] + f *
-      (distribution.mu[right] - distribution.mu[right - 1]));
+  const double width=distribution.mu[right]-distribution.mu[right-1];
+  const double f0=distribution.densityPerMu[right-1],f1=distribution.densityPerMu[right];
+  const double slope=(f1-f0)/width,area=uniform-c0;
+  // Invert area=f0*dx+slope*dx^2/2 using its rationalized positive root.
+  // There is no rejected-angle redraw, so every source identity retains its
+  // one semantic pitch draw and the intended positive-normal-flux measure.
+  const double root=std::sqrt(f0*f0+2*slope*area);
+  const double dx=area==0?0:2*area/(f0+root);
+  if(!Finite(dx)||dx<0||dx>width)
+    return Core::Result<double>::Failure(Core::StatusCode::NumericalFailure,
+        "focused flux-CDF inversion left its declared interval");
+  return Core::Result<double>::Success(distribution.mu[right-1]+dx);
 }
 
 Core::Result<Vec3> ParkerConormalDirection(const DiffusionTensor& tensor,

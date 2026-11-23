@@ -86,6 +86,16 @@ class AmbientModel final {
   std::shared_ptr<const EventConfiguration> event_;
   AmbientDefinition definition_;
   CoronalCME::PfssHarmonics pfss_;
+  // Immutable memoized PFSS results at the exact axial source-surface points.
+  // Both hemispheres and all four signed-zero (x,y) combinations are retained:
+  // the canonical Cartesian pole evaluator uses atan2 and its existing finite
+  // polar limit, so merging signed zeros could alter nonaxisymmetric harmonics.
+  // Failed canonical queries are cached as failures, never replaced by fields.
+  // Normalizing a Cartesian pole can produce a neighbouring representable
+  // radius. Cache each of five EXACT radii independently; no input is rounded
+  // to one of them, and an unmatched point still uses the ordinary evaluator.
+  std::array<double,5> axialSourceRadiiM_{};
+  std::array<Core::Result<CoronalCME::Vec3>,40> axialSourceFields_;
   std::vector<CoronalCME::IonSpecies> ions_;
   std::vector<double> logRadius_,logSpeed_,slope_,winding_;
   double massFluxPerSr_=0.0,soundSquared_=0.0,criticalRadiusM_=0.0;

@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <string.h>
+#include <cstring>
 #include <list>
 #include <utility>
 #include <map>
@@ -32,6 +33,7 @@
 #include <string>
 #include <sstream>
 #include <stdexcept>
+#include <memory>
 
 
 #include <iostream>
@@ -61,6 +63,7 @@
 #include "global.h"
 #include "pic_background_update_mode.h"
 #include "pic_field_line_population.h"
+#include "pic_field_line_geometry.h"
 #include "FluidPicInterface.h"
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -802,6 +805,19 @@ namespace PIC {
 
       int GetCompletedSamplingOffset() {return CompletedSamplingOffset;}
 
+      // Only the physical (unsampled) prefix is supplied by a geometry owner.
+      // Historical diagnostic buffers stay attached to their material record.
+      // The physical prefix is independent of which diagnostic buffer is
+      // collecting. After an output these two offsets exchange places; using
+      // CollectingSamplingOffset here used to copy a completed sample into a
+      // geometry owner's physical payload on every other output cycle.
+      static int StoredDataBytes() {return totalAssociatedDataLength-2*sampleDataLength;}
+      static int SampleDataBytes() {return sampleDataLength;}
+      static bool SamplingBuffersSwapped() {return CollectingSamplingOffset>CompletedSamplingOffset;}
+      static void RestoreSamplingBufferPhase(bool swapped) {
+        if(SamplingBuffersSwapped()!=swapped)swapSamplingBuffers();
+      }
+
       cFieldLineVertex() {
         IsSet=0;
 
@@ -1244,10 +1260,48 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
     public:
       static vector<cDatumStored*> DataStoredAtSegment;
       static vector<cDatumSampled*> DataSampledAtSegment;
+      // A weighted edge moment needs an edge-owned sampled weight datum.
+      // The vertex weight offset belongs to another layout and cannot serve
+      // as an implicit denominator for arbitrary segment diagnostics.
+      static cDatumSampled* SamplingWeightDatum;
+      static void SetSamplingWeightDatum(cDatumSampled& datum) {
+        if(datum.length!=1||std::find(DataSampledAtSegment.begin(),DataSampledAtSegment.end(),&datum)==DataSampledAtSegment.end())
+          throw std::invalid_argument("segment sampling weight datum must be a registered scalar");
+        SamplingWeightDatum=&datum;
+      }
  
       long int Temp_ID;
       bool ActiveFlag;
       int Thread;
+
+      // A segment's lifetime may begin halfway through a global output window.
+      // Exposure and endpoint contributions therefore travel with this object,
+      // not with its mutable array index or with a line-wide output counter.
+      Geometry::Exposure SamplingExposure;
+      std::vector<double> MaterialCollecting,MaterialCompleted;
+      void ResetMaterialSampling() {
+        SamplingExposure=Geometry::Exposure{};
+        // CPU pools construct vector members. The legacy CUDA raw allocator
+        // does not; material-owner registration rejects that unsupported path
+        // before any vector operation, while ordinary GPU lines remain usable.
+#if _CUDA_MODE_ != _ON_
+        MaterialCollecting.clear();MaterialCompleted.clear();
+#endif
+      }
+      void SampleMaterialDatum(cDatumSampled& datum,double value,int species,
+                               int endpoint,double shape,int component=0) {
+        if(datum.offset<0)return;
+        if(!std::isfinite(value)||!std::isfinite(shape)||species<0||species>=PIC::nTotalSpecies||
+            endpoint<0||endpoint>1||component<0||component>=datum.length)
+          throw std::invalid_argument("invalid material diagnostic contribution");
+        const std::size_t width=cFieldLineVertex::SampleDataBytes()/sizeof(double);
+        if(MaterialCollecting.size()!=2*width)
+          throw std::logic_error("material sampling call was not opened before particle deposition");
+        const std::size_t index=endpoint*width+datum.offset/sizeof(double)+datum.length*species+component;
+        const double next=MaterialCollecting.at(index)+shape*value;
+        if(!std::isfinite(next))throw std::overflow_error("material diagnostic numerator overflow");
+        MaterialCollecting[index]=next;
+      }
 
       //index of the first particle attached to the segment
       long int FirstParticleIndex;
@@ -1334,10 +1388,24 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
         int i,length=totalAssociatedDataLength/sizeof(double);
         double *p;
         for (i=0,p=(double*)AssociatedDataPointer;i<length;i++,p++) *p=0.0;
+        // Segment source-selection weights live outside associated storage.
+        // Pool reuse must not retain another segment's distribution, and a
+        // newly constructed segment must not expose heap bytes as a finite
+        // source weight. Zero means no legacy sampler has initialized it;
+        // ResetSegmentWeights still supplies the configured physical law.
+        for(int species=0;species<PIC::nTotalSpecies;++species)weight[species]=0.0;
       }
 
       //Manage Associated Data
       inline int AssociatedDataLength() { return totalAssociatedDataLength; }
+      // As for vertices, this prefix must not grow when diagnostic buffers
+      // exchange roles at output. Geometry/checkpoint owners copy physical
+      // state separately from the two sampling histories.
+      static int StoredDataBytes() {return totalAssociatedDataLength-2*sampleDataLength;}
+      static bool SamplingBuffersSwapped() {return CollectingSamplingOffset>CompletedSamplingOffset;}
+      static void RestoreSamplingBufferPhase(bool swapped) {
+        if(SamplingBuffersSwapped()!=swapped)swapSamplingBuffers();
+      }
       inline char* GetAssociatedDataBufferPointer() { return AssociatedDataPointer; }
       inline void SetAssociatedDataBufferPointer(char* ptr) { AssociatedDataPointer = ptr; }
 
@@ -1447,29 +1515,37 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
       //.......................................................................
       inline void GetDatumAverage(cDatumTimed& Datum, double* Out, int spec) {
         if (Datum.offset>=0) {
-          if (PIC::LastSampleLength>0) {
-            for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength;
+          if (SamplingExposure.completed>0) {
+            for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SamplingExposure.completed;
           }
-          else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
+          else for(int i=0; i<Datum.length; i++) Out[i] = std::numeric_limits<double>::quiet_NaN();
         }
       }
 
       inline void GetDatumAverage(cDatumTimed& Datum, double* Out, int spec,int SampleLength) {
+        // Compatibility overload: an external global counter cannot replace
+        // this material segment's lifetime. Reject mismatched normalization.
+        if(SampleLength<0||static_cast<std::uint64_t>(SampleLength)!=SamplingExposure.completed)
+          throw std::invalid_argument("caller sample length differs from segment exposure");
         if (Datum.offset>=0) {
           if (SampleLength>0) {
             for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength;
           }
-          else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
+          else for(int i=0; i<Datum.length; i++) Out[i] = std::numeric_limits<double>::quiet_NaN();
         }
       }
 
 
       inline double GetDatumAverage(cDatumTimed& Datum, int spec) {
-        return ((PIC::LastSampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
+        return ((SamplingExposure.completed>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SamplingExposure.completed : std::numeric_limits<double>::quiet_NaN();
       }
 
       inline double GetDatumAverage(cDatumTimed& Datum, int spec,int SampleLength) {
-        return ((SampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength : 0.0;
+        // Compatibility overload: an external global counter cannot replace
+        // this material segment's lifetime. Reject mismatched normalization.
+        if(SampleLength<0||static_cast<std::uint64_t>(SampleLength)!=SamplingExposure.completed)
+          throw std::invalid_argument("caller sample length differs from segment exposure");
+        return ((SampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength : std::numeric_limits<double>::quiet_NaN();
       }
 
       //get data averaged over sampled weight
@@ -1477,7 +1553,10 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
       inline void GetDatumAverage(cDatumWeighted& Datum, double* Out, int spec) {
         double TotalWeight=0.0;
 
-        GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
+        // No arbitrary vertex-layout offset may be read as an edge weight.
+        if(!SamplingWeightDatum||SamplingWeightDatum->offset<0)
+          throw std::logic_error("weighted segment moment has no declared sampled-weight denominator");
+        GetDatumCumulative(*SamplingWeightDatum, &TotalWeight, spec);
 
         if (Datum.offset>=0) {
           if (TotalWeight>0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+ Datum.offset)) / TotalWeight;
@@ -1488,7 +1567,10 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
       inline double GetDatumAverage(cDatumWeighted& Datum, int spec) {
         double TotalWeight=0.0;
 
-        GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
+        // No arbitrary vertex-layout offset may be read as an edge weight.
+        if(!SamplingWeightDatum||SamplingWeightDatum->offset<0)
+          throw std::logic_error("weighted segment moment has no declared sampled-weight denominator");
+        GetDatumCumulative(*SamplingWeightDatum, &TotalWeight, spec);
 
         return ((TotalWeight>0)&&(Datum.offset>=0)) ? *(spec +(double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / TotalWeight : 0.0;
       }
@@ -1504,6 +1586,7 @@ void SetDatumStoredAtVertex(double* val, PIC::Datum::cDatum* datum);
         begin = (end  = NULL);
         ActiveFlag=false;
         FirstParticleIndex=-1,tempFirstParticleIndex=-1;
+        for(int species=0;species<PIC::nTotalSpecies;++species)weight[species]=0.0;
       }
 
       //get cartesian coordinats of the location
@@ -1732,9 +1815,113 @@ void DeleteAttachedParticles();
       cFieldLineSegment *FirstSegment, *LastSegment;
       cFieldLineVertex  *FirstVertex,  *LastVertex;
 
+      // Immutable physical geometry/source ownership, deliberately independent
+      // of current vertex positions, segment count and rank decomposition.
+      std::string GeometryOwnerIdentity;
+      struct GeometryResources;
+
       //table of segment pointers needed for the segment random access
     public:
       vector<cFieldLineSegment*> SegmentPointerTable;
+
+      // The owner is registered before the first material sampling call. Its
+      // epoch and generation are independent of output/sample counters. Stable
+      // labels shift only when genuinely new material vertices enter at front.
+      bool ExternallyManagedGeometry=false;
+      double GeometryEpochS=0;
+      std::uint64_t GeometryGeneration=0;
+      std::int64_t FirstMaterialLabel=0;
+      const std::string& GetGeometryOwnerIdentity() const {return GeometryOwnerIdentity;}
+      Geometry::Status RegisterGeometryOwner(const std::string&,double,std::int64_t firstLabel=0);
+      struct GeometryPlan {
+      private:
+        friend class cFieldLine;
+        // Callers can inspect a prepared candidate for MPI agreement and loss
+        // accounting, but cannot alter validated coordinates or particle views
+        // between preparation and commit.
+        Geometry::Plan positions;
+        std::vector<std::vector<char> > storedVertexData;
+        std::vector<std::vector<char> > storedSegmentData;
+        struct ParticleView {long int particle;double coordinate;Geometry::Point position;};
+        std::vector<ParticleView> survivors;
+        std::vector<ParticleView> retiringParticles;
+        // Energy/momentum are in the stored plasma-comoving gyrotropic frame,
+        // not laboratory bulk-flow energy. Perpendicular mean momentum is zero
+        // for that representation; the signed parallel moment is retained.
+        struct Loss {int species;std::uint64_t macros;double represented,kineticJ,parallelMomentumKgMPerS;};
+        std::vector<Loss> losses;
+        struct ParticleStamp {long int particle,next;double coordinate,weight,parallel,normal;int species;};
+        std::vector<ParticleStamp> departureParticles;
+        std::vector<long int> departureHeads;
+        std::vector<Geometry::Exposure> departureExposure;
+        std::shared_ptr<GeometryResources> resources;
+        // Opaque archived diagnostics preserve the retired material record;
+        // the host must consume these in its output/loss ledger before reuse.
+        struct RetiredSample {std::int64_t label;Geometry::Exposure exposure;
+          std::vector<double> collecting,completed;
+          // Preserve arbitrary edge datums (including wave state) before pool
+          // reuse. Their typed owner decides intensive/extensive units and MPI
+          // reduction; blindly summing this opaque payload is not conservative.
+          std::vector<char> associatedData;
+          std::array<Geometry::Point,2> departureEndpoints,targetEndpoints;
+        };
+        std::vector<RetiredSample> retired;
+        cFieldLine* owner=nullptr;
+        bool consumed=false;
+      public:
+        GeometryPlan()=default;
+        const Geometry::Plan& Positions() const {return positions;}
+        const std::vector<Loss>& Losses() const {return losses;}
+        const std::vector<RetiredSample>& RetiredSamples() const {return retired;}
+      };
+      using VertexStateInitializer=std::function<Geometry::Status(
+          int,const Geometry::Point&,double,std::vector<char>*)>;
+      using SegmentStateInitializer=std::function<Geometry::Status(
+          int,const Geometry::Point&,const Geometry::Point&,double,std::vector<char>*)>;
+      // Motion is delegated over the full physical interval; the container
+      // never interprets a provider name or adds U*dt on its own. State and all
+      // particle views are validated before any vertex/topology publication.
+      Geometry::Status PrepareGeometryStep(const Geometry::Context&,
+          const Geometry::Motion&,const Geometry::InnerTrace&,
+          const VertexStateInitializer&,GeometryPlan*,
+          const SegmentStateInitializer& = SegmentStateInitializer{});
+      Geometry::Status CommitGeometryStep(GeometryPlan*);
+
+      // A detached restart candidate replaces this existing owner; it is not
+      // a second physical field line. Ordinary registration deliberately
+      // rejects duplicate identities, so authorize this narrow handoff from
+      // the live owner while keeping the candidate out of FieldLinesAll.
+      Geometry::Status PrepareCheckpointIdentity(cFieldLine& candidate,double epoch,
+          std::uint64_t generation,std::int64_t firstLabel) const {
+        if(&candidate==this||!ExternallyManagedGeometry||GeometryOwnerIdentity.empty()||
+            candidate.ExternallyManagedGeometry||candidate.nSegment<1||candidate.is_loop()||
+            !std::isfinite(epoch)||generation==std::numeric_limits<std::uint64_t>::max()||
+            firstLabel>std::numeric_limits<std::int64_t>::max()-candidate.nSegment)
+          return Geometry::Status::Error("invalid detached material checkpoint ownership handoff");
+        candidate.GeometryOwnerIdentity=GeometryOwnerIdentity;
+        candidate.ExternallyManagedGeometry=true;candidate.GeometryEpochS=epoch;
+        candidate.GeometryGeneration=generation;candidate.FirstMaterialLabel=firstLabel;
+        return Geometry::Status{};
+      }
+
+      // Quiescent replacement of a complete, already validated native line.
+      // The detached owner receives the old pools/lists and retires them only
+      // after the collective publication. No particle, sampling vector, string
+      // or segment table is allocated during this exchange. This is an owner
+      // operation for checkpoint continuation, not a physical geometry step.
+      void SwapCheckpointOwner(cFieldLine& other) noexcept {
+        using std::swap;
+        swap(IsSet,other.IsSet);swap(nSegment,other.nSegment);
+        swap(TotalLength,other.TotalLength);
+        for(int species=0;species<PIC::nTotalSpecies;++species)swap(TotalWeight[species],other.TotalWeight[species]);
+        swap(FirstSegment,other.FirstSegment);swap(LastSegment,other.LastSegment);
+        swap(FirstVertex,other.FirstVertex);swap(LastVertex,other.LastVertex);
+        GeometryOwnerIdentity.swap(other.GeometryOwnerIdentity);
+        SegmentPointerTable.swap(other.SegmentPointerTable);
+        swap(ExternallyManagedGeometry,other.ExternallyManagedGeometry);
+        swap(GeometryEpochS,other.GeometryEpochS);swap(GeometryGeneration,other.GeometryGeneration);
+        swap(FirstMaterialLabel,other.FirstMaterialLabel);
+      }
 
       //check whether the line is broken
       bool is_broken();
@@ -1748,6 +1935,7 @@ void DeleteAttachedParticles();
 
       cFieldLine() {
         IsSet = 0, nSegment = -1, TotalLength=-1.0;
+        for(int species=0;species<PIC::nTotalSpecies;++species)TotalWeight[species]=0;
         FirstSegment = (LastSegment = NULL);
         FirstVertex  = (LastVertex  = NULL);
       }
@@ -2028,7 +2216,9 @@ void DeleteAttachedParticles();
       double GetPlasmaDensity(double S);
  
       // print data stored on the field line
-      void Output(FILE* fout, bool GeometryOnly);
+      // Collective output is requested explicitly by FieldLine::Output.
+      // Direct/local callers retain their historical no-collective contract.
+      void Output(FILE* fout, bool GeometryOnly,bool collective=false);
     };
     //class cFieldLine --------------------------------------------------------
 
@@ -2083,6 +2273,10 @@ void DeleteAttachedParticles();
 
     //counter of the sampling cycles (can be different from PIC::SampleLength)
     extern int SampleCycleCounter;
+    // Last native field-line output committed to the completed buffers. Keep
+    // this owner state visible to the application checkpoint: a process-local
+    // static would swap an already completed window again after a restart.
+    extern long int LastDataOutputFileNumber;
 
 
     // inject particle onto the field line:
@@ -6846,6 +7040,14 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
 
     extern cThreadSegmentTable *ThreadSegmentTable;
     void GenerateThreadSegmentTable();
+    std::uint64_t GetThreadSegmentTableGeneration();
+    // Prepare an allocation-complete ownership-table replacement while a
+    // geometry candidate is still detached. Calling publish after the joined
+    // geometry commit performs only pointer publication/deallocation.
+    PIC::FieldLine::Geometry::Status PrepareThreadSegmentTableReplacement(
+        PIC::FieldLine::cFieldLine*,
+        const std::vector<PIC::FieldLine::cFieldLineSegment*>&,
+        std::function<void()>* publish);
 
     void ExchangeFieldLineParticles(cThreadSegmentTable& ThreadSegmentTable);
     void ExchangeFieldLineParticles();

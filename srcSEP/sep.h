@@ -202,6 +202,13 @@ namespace SEP {
 
   void Init();
 
+  // Output-only shock metadata in SI/HCI at an explicit physical epoch. For
+  // the reduced SSE provider R_sh denotes HELIOCENTRIC APEX distance, not the
+  // generating-sphere radius or a substitute local shock position. Resolve
+  // provider precedence here so every output consumer uses the same authority.
+  struct ShockDiagnostic {double apexRadiusM=-1;const char* modelName="unknown";};
+  Transport::Status QueryShockDiagnostic(double epochS,ShockDiagnostic* result);
+
   //title that will be printed inn Tecplot output file (simuation time)
   void TecplotFileTitle(char*);
 
@@ -2027,6 +2034,8 @@ double e_mev=e*J2MeV;
     // Native migration, exact splitting and corrected checkpoints copy this
     // value record together with the phase space and stochastic history.
     extern int BirthRecord;
+    // Reduced net-source cohort history; zero is an explicit other-source tag.
+    extern int ReducedSourceRecord;
   }
 
   //request data in the particle state vector

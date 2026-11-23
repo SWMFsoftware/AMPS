@@ -3,6 +3,7 @@
 
 #include "sep.h"
 #include "util/sep_birth_window.h"
+#include "amps_fieldline_frame.h"
 
 #include <cstdint>
 #include <array>
@@ -22,9 +23,10 @@ void SetStandaloneRunPurpose(RunPurpose purpose);
 RunPurpose CurrentRunPurpose();
 Status ProductionClosurePreflight();
 
-// Schema 4 adds explicit birth origin/window and pending first-move duration.
+// Schema 5 retains explicit birth/window history and adds reduced-source
+// cohort energy. Older layouts cannot reconstruct that immutable birth value.
 // Earlier/unknown records cannot recover omitted history exactly and are rejected.
-const std::uint64_t ParticleTransportSchema = UINT64_C(0x5352435345500004);
+const std::uint64_t ParticleTransportSchema = UINT64_C(0x5352435345500005);
 
 struct ParticleContext {
   long int pointer = -1;
@@ -88,6 +90,11 @@ ScalarResult SelectParticleSubstep(const ParticleContext& context,double elapsed
     StepDiagnostics* diagnostics);
 Status AdvanceAlongFieldLine(ParticleContext* context,
                              double displacementM);
+// Provider-specific front geometry remains in the background adapter, not in
+// a mover. supplied=false retains the legacy datum-based estimate. A supplied
+// result is a deterministic proximity limit, not a stochastic crossing law.
+Status QueryShockCrossingTime(const ParticleContext&,double relativeStreamingMPerS,
+                             double* timeS,bool* supplied);
 // Coordinate remains authoritative; preflight its canonical derived Cartesian
 // view, then publish PB::X with phase/RNG/birth/list state. Invalid geometry
 // returns a typed error before changing any particle bytes or attachment head.
@@ -138,6 +145,11 @@ struct LocalBackgroundView {
   std::string radiusFrameIdentity;
   double dLnAbsBdsPerM = 0.0;
   double plasmaAdvectionMPerS = 0.0;
+  // Physical U dot tangent above remains available to physical operators.
+  // Only this geometry-relative value enters coordinate displacements and
+  // segment-crossing limits. A material grid carries its bulk motion itself.
+  AMPS::FieldLine::CoordinateFrame particleCoordinateFrame=AMPS::FieldLine::CoordinateFrame::Unknown;
+  double coordinateAdvectionMPerS = 0.0;
   double parallelVelocityGradientPerS = 0.0;
   double velocityDivergencePerS = 0.0;
   double fieldAlignedStrainPerS = 0.0;

@@ -1,0 +1,7 @@
+! Species data for the reduced-source consumer only; no shared species table
+! is changed. Energy bounds elsewhere are total kinetic energies in joules.
+#species
+#component=H_PLUS
+  mass=1.67262192369e-27
+  charge=1.0
+#endspecies

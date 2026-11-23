@@ -130,5 +130,42 @@ int main() {
             listing.str().find("fte-mfp") != std::string::npos,
         "MOVCLI01", "help and --list-movers share canonical names");
 
+  options=SEP::Util::CLI::Options();
+  Check(Parse({"sep","--input","fixture.in","--reduced-shock-event=fixture.event",
+      "--reduced-shock-particles","ON","--reduced-shock-particles=off","--reduced-shock-particles=TrUe",
+      "--shock-release-distance-m=1e8","--shock-return-policy","DeLeTe",
+      "--shock-source-normalization=NET-UPSTREAM-ESCAPE"},options,output,error)&&
+      options.reducedParticles.enabled&&options.reducedParticles.releaseDistanceM==1e8&&
+      options.reducedParticles.returnPolicy==SEP::ReducedParticles::ReturnPolicy::Delete,
+      "REDCLI01","reduced consumer preserves value spellings, Boolean vocabulary and last occurrence wins");
+  options=SEP::Util::CLI::Options();
+  Check(Parse({"sep","--shock-return-policy=PASS"},options,output,error)&&
+      !SEP::ReducedParticles::Validate(options.reducedParticles).ok()&&
+      SEP::ReducedParticles::Validate(options.reducedParticles).message.find("not implemented")!=std::string::npos,
+      "REDCLI02","recognized pass policy stays typed unsupported rather than becoming delete");
+  options=SEP::Util::CLI::Options();
+  Check(Parse({"sep","--shock-source-normalization","GROSS-EMISSION"},options,output,error)&&
+      !SEP::ReducedParticles::Validate(options.reducedParticles).ok(),
+      "REDCLI03","gross normalization is not silently converted to net first passage");
+  bool malformed=true;
+  for(const auto& args:std::vector<std::vector<std::string>>{{"sep","--shock-return-policy=transparent"},
+      {"sep","--shock-release-distance-m=nan"},{"sep","--shock-boundary-tolerance-m=0"},
+      {"sep","--reduced-shock-particles=on"}}) {
+    options=SEP::Util::CLI::Options();malformed=malformed&&!Parse(args,options,output,error);
+  }
+  Check(malformed,"REDCLI04","malformed or context-free source switches cannot enter a long run");
+  options=SEP::Util::CLI::Options();
+  const bool checkpoint=Parse({"sep","--input=declared.in","--reduced-shock-event=declared.event",
+      "--checkpoint-save","first.bin","--checkpoint-save=final.bin","--checkpoint-at-step=4",
+      "--resume-checkpoint","previous.bin"},options,output,error);
+  Check(checkpoint&&options.checkpointSavePath=="final.bin"&&options.checkpointAtStep==4&&
+      options.checkpointResumePath=="previous.bin","MCPCLI01","checkpoint controls retain values and last-occurrence precedence");
+  bool checkpointRejected=true;
+  for(const auto& args:std::vector<std::vector<std::string>>{{"sep","--checkpoint-save=x"},
+      {"sep","--checkpoint-at-step=4"},{"sep","--resume-checkpoint=x"},
+      {"sep","--input=x","--reduced-shock-event=y","--checkpoint-save=z","--checkpoint-at-step=0"}}) {
+    options=SEP::Util::CLI::Options();checkpointRejected=checkpointRejected&&!Parse(args,options,output,error);
+  }
+  Check(checkpointRejected,"MCPCLI02","incomplete or invalid checkpoint requests reject before initialization");
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

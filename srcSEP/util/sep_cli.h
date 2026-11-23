@@ -10,6 +10,7 @@
 #include "sep_common_header_path.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_coefficient_registry.h)
 #include "sep_turbulence_core.h"
+#include "sep_reduced_particle_options.h"
 
 namespace SEP {
 namespace Util {
@@ -36,6 +37,16 @@ struct Options {
   // shock model.  A nonempty value means background-only operation: srcSEP
   // consumes ambient plasma/IMF and front epochs but injects no particles.
   std::string reducedShockEventPath;
+  // Operational checkpoint controls do not alter the frozen physics model or
+  // its total intended integration interval. A save writes after a complete
+  // fixed-dt step and stops; resume continues at the persisted step/output
+  // counters with the identical input/event/source configuration.
+  std::string checkpointResumePath,checkpointSavePath;
+  int checkpointAtStep=0;
+  // Explicit consumer opt-in: the core event continues to own ambient/front
+  // functions while this separate contract owns the particle source and
+  // absorbing boundary. The background-only default remains unchanged.
+  ReducedParticles::Configuration reducedParticles;
   // Build the actual AMPS mesh and complete application initialization, write
   // the declared mesh/field-line Tecplot products, and exit collectively
   // before the first particle step.  This mode requires a versioned --input

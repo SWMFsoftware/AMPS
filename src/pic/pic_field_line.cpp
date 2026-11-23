@@ -3,6 +3,7 @@
 //implementation of methods in namespace FieldLine
 
 #include "pic.h"
+#include <cstdio>
 
 //static variables of class cFieldLineVertex
 int PIC::FieldLine::cFieldLineVertex::totalAssociatedDataLength=-1;
@@ -16,6 +17,7 @@ int PIC::FieldLine::cFieldLineSegment::CollectingSamplingOffset=-1;
 int PIC::FieldLine::cFieldLineSegment::CompletedSamplingOffset=-1;
 vector<PIC::Datum::cDatumStored*> PIC::FieldLine::cFieldLineSegment::DataStoredAtSegment;
 vector<PIC::Datum::cDatumSampled*> PIC::FieldLine::cFieldLineSegment::DataSampledAtSegment;
+PIC::Datum::cDatumSampled* PIC::FieldLine::cFieldLineSegment::SamplingWeightDatum=nullptr;
 
 //hooks for calculating the magnertic tube radius and the volume of the field line segment
 PIC::FieldLine::fMagneticTubeRadius PIC::FieldLine::MagneticTubeRadius=NULL;
@@ -35,6 +37,7 @@ PIC::FieldLine::fUserDefinedTecplotFileTitle PIC::FieldLine::UserDefinedTecplotF
 
 //sample cycle counter 
 int PIC::FieldLine::SampleCycleCounter=0;
+long int PIC::FieldLine::LastDataOutputFileNumber=-1;
 
 //offset of the field line related data in a particle state vector
 int PIC::FieldLine::ParticleDataOffset=-1; 
@@ -57,8 +60,303 @@ int PIC::FieldLine::ParticleDataOffset=-1;
 namespace PIC {
   namespace FieldLine {
 
-    cDatumStored DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
-    cDatumStored DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",true);
+// Preparation owns detached records until commit transfers them into the
+// line. Shared ownership makes copied/moved plan handles safe to discard;
+// stale or rejected plans return every allocated record without touching live
+// topology. The prepared MPI rows are likewise allocation-complete here.
+struct cFieldLine::GeometryResources {
+  std::vector<cFieldLineVertex*> vertices;
+  std::vector<cFieldLineSegment*> segments;
+  std::vector<cFieldLineSegment*> index;
+  std::function<void()> publishOwnership;
+  std::uint64_t ownershipGeneration=0;
+  bool adopted=false;
+  ~GeometryResources() {
+    if(adopted)return;
+    for(auto* v:vertices)VerticesAll.deleteElement(v);
+    for(auto* edge:segments)SegmentsAll.deleteElement(edge);
+  }
+};
+
+Geometry::Status cFieldLine::RegisterGeometryOwner(const std::string& identity,
+    double epochS,std::int64_t firstLabel) {
+#if _CUDA_MODE_ == _ON_
+  return Geometry::Status::Error("material geometry requires constructed CPU segment storage; CUDA owner is not implemented");
+#endif
+  if(identity.empty()||!std::isfinite(epochS)||ExternallyManagedGeometry||nSegment<1||is_loop())
+    return Geometry::Status::Error("invalid or duplicate material geometry ownership registration");
+  if(firstLabel>std::numeric_limits<std::int64_t>::max()-nSegment)
+    return Geometry::Status::Error("material node labels exceed the signed identity range");
+  for(int line=0;line<nFieldLine;++line)
+    if(&FieldLinesAll[line]!=this&&FieldLinesAll[line].ExternallyManagedGeometry&&
+        FieldLinesAll[line].GetGeometryOwnerIdentity()==identity)
+      return Geometry::Status::Error("duplicate physical material line identity");
+  for(auto* edge=FirstSegment;edge;edge=edge->GetNext())
+    if(edge->SamplingExposure.collecting||edge->SamplingExposure.completed)
+      return Geometry::Status::Error("cannot reinterpret an existing fixed-grid sample history as material exposure");
+  GeometryOwnerIdentity=identity;GeometryEpochS=epochS;FirstMaterialLabel=firstLabel;
+  ExternallyManagedGeometry=true;return Geometry::Status{};
+}
+
+Geometry::Status cFieldLine::PrepareGeometryStep(const Geometry::Context& context,
+    const Geometry::Motion& motion,const Geometry::InnerTrace& trace,
+    const VertexStateInitializer& initialize,GeometryPlan* output,
+    const SegmentStateInitializer& initializeSegment) {
+  using Geometry::Status;
+  if(!output||!initialize||!ExternallyManagedGeometry||is_loop()||nSegment<1||
+      context.expectedGeneration!=GeometryGeneration||
+      (ExternallyManagedGeometry&&context.departureS!=GeometryEpochS))
+    return Status::Error("material geometry owner/epoch/generation/open-line precondition failed");
+  if(_PIC_PARTICLE_LIST_ATTACHING_!=_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_)
+    return Status::Error("material geometry requires explicit segment particle attachment");
+  GeometryPlan candidate;candidate.owner=this;
+  std::vector<Geometry::Point> old;
+  for(int i=0;i<=nSegment;++i) {
+    const double* x=GetVertex(i)->GetX();old.push_back({{x[0],x[1],x[2]}});
+  }
+  const auto prepared=Geometry::Prepare(old,context,motion,trace,&candidate.positions);
+  if(!prepared.ok())return prepared;
+  const std::size_t prefix=candidate.positions.insertedPositions.size();
+  if(prefix>static_cast<std::size_t>(std::numeric_limits<int>::max()-nSegment)||
+      prefix>(static_cast<std::uint64_t>(FirstMaterialLabel)-
+          static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::min()))||
+      GeometryGeneration==std::numeric_limits<std::uint64_t>::max())
+    return Status::Error("material topology label/index/generation overflow");
+  try {
+    // Stage complete physical datum prefixes. New records explicitly request
+    // index -1; the provider must supply a valid entry state, not a guessed
+    // previous history. Existing sampled buffers are never copied by this API.
+    const int stored=cFieldLineVertex::StoredDataBytes();
+    if(stored<0)return Status::Error("material vertex datum layout is uninitialized");
+    candidate.storedVertexData.resize(old.size()+prefix);
+    const std::size_t keptVertices=old.size()+prefix-candidate.positions.removedBack;
+    for(std::size_t i=0;i<old.size()+prefix;++i) {
+      const bool inserted=i>=old.size();
+      const std::size_t finalIndex=inserted?prefix-1-(i-old.size()):prefix+i;
+      // Do not query unsupported target-epoch primitives for records which
+      // are being retired. Their departure data are retained in the ledger.
+      if(finalIndex>=keptVertices)continue;
+      const auto& x=inserted?candidate.positions.insertedPositions[i-old.size()]:candidate.positions.movedPositions[i];
+      const auto status=initialize(inserted?-1:static_cast<int>(i),x,context.arrivalS,&candidate.storedVertexData[i]);
+      if(!status.ok())return status;
+      if(candidate.storedVertexData[i].size()!=static_cast<std::size_t>(stored))
+        return Status::Error("material vertex initializer returned the wrong physical datum layout");
+      // Stored field-line datums are double arrays. Invalid optional data must
+      // be rejected by the owner as well; no NaN replacement is allowed here.
+      for(int at=0;at+static_cast<int>(sizeof(double))<=stored;at+=sizeof(double)) {
+        double value;std::memcpy(&value,candidate.storedVertexData[i].data()+at,sizeof(value));
+        if(!std::isfinite(value))return Status::Error("nonfinite staged material vertex datum");
+      }
+    }
+    const int edgeBytes=cFieldLineSegment::StoredDataBytes();
+    if(edgeBytes<0)return Status::Error("material edge datum layout is uninitialized");
+    if(edgeBytes>0&&!initializeSegment)
+      return Status::Error("material geometry requires an explicit initializer for stored segment physics");
+    candidate.storedSegmentData.resize(keptVertices-1);
+    for(std::size_t i=0;i+1<keptVertices;++i) {
+      if(!initializeSegment)continue; // no stored edge physics is allocated
+      const auto point=[&](std::size_t index)->const Geometry::Point& {
+        return index<prefix?candidate.positions.insertedPositions[prefix-1-index]:
+            candidate.positions.movedPositions[index-prefix];
+      };
+      const int oldIndex=i<prefix?-1:static_cast<int>(i-prefix);
+      const auto status=initializeSegment(oldIndex,point(i),point(i+1),context.arrivalS,&candidate.storedSegmentData[i]);
+      if(!status.ok())return status;
+      if(candidate.storedSegmentData[i].size()!=static_cast<std::size_t>(edgeBytes))
+        return Status::Error("material edge initializer returned the wrong physical datum layout");
+      for(int at=0;at+static_cast<int>(sizeof(double))<=edgeBytes;at+=sizeof(double)) {
+        double value;std::memcpy(&value,candidate.storedSegmentData[i].data()+at,sizeof(value));
+        if(!std::isfinite(value))return Status::Error("nonfinite staged material edge datum");
+      }
+    }
+    candidate.losses.resize(PIC::nTotalSpecies);
+    for(int spec=0;spec<PIC::nTotalSpecies;++spec)candidate.losses[spec]={spec,0,0,0,0};
+    const int retained=nSegment-static_cast<int>(candidate.positions.removedBack);
+    for(int segment=0;segment<nSegment;++segment) {
+      auto* edge=GetSegment(segment);
+      candidate.departureHeads.push_back(edge->FirstParticleIndex);
+      candidate.departureExposure.push_back(edge->SamplingExposure);
+      if(edge->tempFirstParticleIndex.load()!=-1)
+        return Status::Error("material geometry update overlaps pending particle migration");
+      if(segment>=retained) {
+        GeometryPlan::RetiredSample retired;
+        retired.label=FirstMaterialLabel+segment;retired.exposure=edge->SamplingExposure;
+        retired.collecting=edge->MaterialCollecting;retired.completed=edge->MaterialCompleted;
+        const int bytes=edge->AssociatedDataLength();
+        if(bytes>0)retired.associatedData.assign(edge->GetAssociatedDataBufferPointer(),
+            edge->GetAssociatedDataBufferPointer()+bytes);
+        retired.departureEndpoints={{old[segment],old[segment+1]}};
+        retired.targetEndpoints={{candidate.positions.movedPositions[segment],candidate.positions.movedPositions[segment+1]}};
+        candidate.retired.push_back(std::move(retired));
+      }
+      for(long int p=edge->FirstParticleIndex;p!=-1;p=PIC::ParticleBuffer::GetNext(p)) {
+        const double s=PIC::ParticleBuffer::GetFieldLineCoord(p);
+        if(!std::isfinite(s)||s<segment||s>=segment+1)
+          return Status::Error("particle material coordinate disagrees with segment ownership");
+        const auto speciesValue=PIC::ParticleBuffer::GetI(p);
+        const double individual=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        const double parallel=PIC::ParticleBuffer::GetVParallel(p),normal=PIC::ParticleBuffer::GetVNormal(p);
+        if(speciesValue>=static_cast<unsigned int>(PIC::nTotalSpecies)||
+            !std::isfinite(individual)||individual<=0||!std::isfinite(parallel)||!std::isfinite(normal)||normal<0)
+          return Status::Error("invalid species/weight/velocity in a material particle record");
+        candidate.departureParticles.push_back({p,PIC::ParticleBuffer::GetNext(p),s,
+            individual,parallel,normal,static_cast<int>(speciesValue)});
+        // Head insertion changes the integer part of the stored global line
+        // coordinate. Binary64 addition S+prefix can round its fractional part
+        // when the index crosses a power of two (e.g. 15.x -> 16.x). X [m] is
+        // a DERIVED view of that published coordinate: interpolate using its
+        // post-addition fraction, exactly as cFieldLine::GetCartesian does.
+        // Using the old fraction left finite one-ULP contradictions in native
+        // records, which strict checkpoint/restart correctly rejected.
+        // This adds no plasma-relative displacement or solar-wind term: the
+        // owner already supplied the target-epoch endpoints once above.
+        const double mapped=s+prefix;
+        const double mappedSegment=static_cast<double>(segment)+prefix;
+        const double fraction=mapped-mappedSegment;
+        // Never silently clip a rounded coordinate onto another segment. If
+        // the address can no longer represent this material segment, reject
+        // the still-private transaction before any geometry/particle mutation.
+        if(!std::isfinite(mapped)||fraction<0.0||fraction>=1.0)
+          return Status::Error("material coordinate loses segment identity after prefix insertion");
+        const auto& a=candidate.positions.movedPositions[segment];
+        const auto& b=candidate.positions.movedPositions[segment+1];
+        Geometry::Point x;
+        for(int d=0;d<3;++d)x[d]=(1-fraction)*a[d]+fraction*b[d];
+        if(!Geometry::Finite(x))return Status::Error("invalid staged material particle Cartesian position");
+        if(segment<retained) {
+          candidate.survivors.push_back({p,mapped,x});
+        }else {
+          candidate.retiringParticles.push_back({p,mapped,x});
+          const int species=static_cast<int>(speciesValue);
+          if(species<0||species>=PIC::nTotalSpecies)return Status::Error("invalid species in material boundary loss");
+          const double weight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[species]*
+              PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+          auto& loss=candidate.losses[species];
+          if(!std::isfinite(weight)||weight<=0||!std::isfinite(loss.represented+weight)||
+              loss.macros==std::numeric_limits<std::uint64_t>::max())
+            return Status::Error("invalid/overflowing represented material boundary loss");
+          ++loss.macros;loss.represented+=weight;
+          const double parallel=PIC::ParticleBuffer::GetVParallel(p),normal=PIC::ParticleBuffer::GetVNormal(p);
+          const double cLight=299792458.0,mass=PIC::MolecularData::GetMass(species);
+          const double beta2=(parallel/cLight)*(parallel/cLight)+(normal/cLight)*(normal/cLight);
+          if(!std::isfinite(beta2)||beta2>=1||!std::isfinite(mass)||mass<=0)
+            return Status::Error("invalid relativistic particle state in material boundary loss");
+          const double gamma=1/std::sqrt(1-beta2);
+          // gamma-1 in this form avoids cancellation for low particle speeds.
+          loss.kineticJ+=weight*mass*cLight*cLight*beta2*gamma*gamma/(gamma+1);
+          loss.parallelMomentumKgMPerS+=weight*gamma*mass*parallel;
+          if(!std::isfinite(loss.kineticJ)||!std::isfinite(loss.parallelMomentumKgMPerS))
+            return Status::Error("material boundary energy/momentum ledger overflow");
+        }
+      }
+    }
+    // Allocate every detached record and ownership row during PREPARATION,
+    // before the host's all-rank readiness agreement. Commit below performs no
+    // allocation. New records own neither particles nor old sample history.
+    candidate.resources=std::make_shared<GeometryResources>();
+    auto& resources=*candidate.resources;
+    resources.vertices.reserve(prefix);resources.segments.reserve(prefix);
+    for(std::size_t i=0;i<prefix;++i) {
+      auto* vertex=VerticesAll.newElement();resources.vertices.push_back(vertex);
+      vertex->SetPrev(nullptr);vertex->SetNext(nullptr);vertex->cleanDataBuffer();
+      auto* edge=SegmentsAll.newElement();resources.segments.push_back(edge);
+      edge->SetPrev(nullptr);edge->SetNext(nullptr);edge->FirstParticleIndex=-1;
+      edge->tempFirstParticleIndex=-1;edge->ResetMaterialSampling();edge->cleanDataBuffer();
+      edge->Thread=FirstSegment->Thread;
+      // A recycled injection normalization must not enter a new empty edge.
+      for(int species=0;species<PIC::nTotalSpecies;++species)edge->SetWeight(0,species);
+    }
+    resources.index.assign(resources.segments.rbegin(),resources.segments.rend());
+    resources.index.insert(resources.index.end(),SegmentPointerTable.begin(),SegmentPointerTable.end());
+    std::vector<cFieldLineSegment*> finalEdges=resources.index;
+    finalEdges.resize(finalEdges.size()-candidate.positions.removedBack);
+    const auto ownership=PIC::ParallelFieldLines::PrepareThreadSegmentTableReplacement(this,finalEdges,&resources.publishOwnership);
+    if(!ownership.ok())throw std::runtime_error(ownership.message);
+    resources.ownershipGeneration=PIC::ParallelFieldLines::GetThreadSegmentTableGeneration();
+  }catch(const std::exception& e){return Status::Error(std::string("material state preparation failed: ")+e.what());}
+  *output=std::move(candidate);return Status{};
+}
+
+Geometry::Status cFieldLine::CommitGeometryStep(GeometryPlan* plan) {
+  using Geometry::Status;
+  if(!plan||plan->owner!=this||plan->consumed||
+      plan->positions.context.expectedGeneration!=GeometryGeneration||
+      plan->positions.oldPositions.size()!=static_cast<std::size_t>(nSegment+1))
+    return Status::Error("stale, foreign or already consumed material geometry plan");
+  for(int i=0;i<=nSegment;++i) {
+    const double* x=GetVertex(i)->GetX();
+    for(int d=0;d<3;++d)if(x[d]!=plan->positions.oldPositions[i][d])
+      return Status::Error("material geometry changed after plan preparation");
+  }
+  // A plan is valid only at the joined host boundary that prepared it. Even
+  // unchanged geometry cannot authorize committing stale particle views after
+  // injection, migration, weight changes or particle motion in between.
+  for(int i=0;i<nSegment;++i) {
+    if(GetSegment(i)->FirstParticleIndex!=plan->departureHeads[i]||GetSegment(i)->tempFirstParticleIndex.load()!=-1)
+      return Status::Error("material particle ownership changed after preparation");
+    const auto& now=GetSegment(i)->SamplingExposure;const auto& old=plan->departureExposure[i];
+    if(now.collecting!=old.collecting||now.completed!=old.completed||
+        now.collectingSeconds!=old.collectingSeconds||now.completedSeconds!=old.completedSeconds)
+      return Status::Error("material sampling changed after geometry preparation");
+  }
+  for(const auto& p:plan->departureParticles)
+    if(PIC::ParticleBuffer::GetNext(p.particle)!=p.next||
+        PIC::ParticleBuffer::GetFieldLineCoord(p.particle)!=p.coordinate||
+        PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p.particle)!=p.weight||
+        PIC::ParticleBuffer::GetVParallel(p.particle)!=p.parallel||
+        PIC::ParticleBuffer::GetVNormal(p.particle)!=p.normal||
+        PIC::ParticleBuffer::GetI(p.particle)!=p.species)
+      return Status::Error("material particle state changed after preparation");
+  const std::size_t prefix=plan->positions.insertedPositions.size();
+  if(!plan->resources||plan->resources->adopted||
+      plan->resources->ownershipGeneration!=PIC::ParallelFieldLines::GetThreadSegmentTableGeneration())
+    return Status::Error("material plan has stale or consumed prepared ownership resources");
+  auto& vertices=plan->resources->vertices;auto& segments=plan->resources->segments;
+  const int oldVertices=nSegment+1;
+  for(int i=0;i<oldVertices;++i) {
+    auto* vertex=GetVertex(i);
+    vertex->SetX(plan->positions.movedPositions[i].data());
+    if(!plan->storedVertexData[i].empty())std::memcpy(vertex->GetAssociatedDataBufferPointer(),
+        plan->storedVertexData[i].data(),plan->storedVertexData[i].size());
+  }
+  for(std::size_t i=0;i<prefix;++i) {
+    auto* vertex=vertices[i];auto* segment=segments[i];
+    vertex->SetX(plan->positions.insertedPositions[i].data());
+    if(!plan->storedVertexData[oldVertices+i].empty())std::memcpy(vertex->GetAssociatedDataBufferPointer(),
+        plan->storedVertexData[oldVertices+i].data(),plan->storedVertexData[oldVertices+i].size());
+    vertex->SetNext(FirstVertex);FirstVertex->SetPrev(vertex);
+    segment->SetVertices(vertex,FirstVertex);segment->SetNext(FirstSegment);
+    FirstSegment->SetPrev(segment);FirstVertex=vertex;FirstSegment=segment;
+    ++nSegment;
+  }
+  // Swapping a fully prepared index avoids both allocation during commit and
+  // invalidation of the live index's storage during an unsuccessful prepare.
+  SegmentPointerTable.swap(plan->resources->index);
+  // All new records now belong to the live line. Destruction of any copied
+  // plan must not recycle records that have been attached by this commit.
+  plan->resources->adopted=true;
+  // Publish the moved view even for records about to leave. Trajectory/death
+  // diagnostics must see the target-epoch location, not the old Cartesian X.
+  // No particle's momentum, statistical weight or stochastic history changes.
+  for(auto* views:{&plan->survivors,&plan->retiringParticles})for(auto& p:*views) {
+    PIC::ParticleBuffer::SetFieldLineCoord(p.coordinate,p.particle);
+    PIC::ParticleBuffer::SetX(p.position.data(),p.particle);
+  }
+  // Trim the complete candidate. A large displacement may also discard some
+  // empty prefix edges; old physical losses/samples remain available in plan.
+  CutBack(static_cast<int>(plan->positions.removedBack));
+  for(std::size_t i=0;i<plan->storedSegmentData.size();++i)
+    if(!plan->storedSegmentData[i].empty())std::memcpy(GetSegment(static_cast<int>(i))->GetAssociatedDataBufferPointer(),
+        plan->storedSegmentData[i].data(),plan->storedSegmentData[i].size());
+  FirstMaterialLabel-=static_cast<std::int64_t>(prefix);
+  UpdateLength();++GeometryGeneration;GeometryEpochS=plan->positions.context.arrivalS;
+  plan->resources->publishOwnership();
+  ExternallyManagedGeometry=true;plan->consumed=true;
+  return Status{};
+}
+
+    cDatumStored DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\"",false);
+    cDatumStored DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\"",true);
     cDatumStored DatumAtVertexPlasmaVelocity(3,"\"Plasma Vx [m/s]\",\"Plasma Vy [m/s]\",\"Plasma Vz [m/s]\"",true);
     cDatumStored DatumAtVertexPlasmaDensity(1,"\"Plasma number density [1/m^3]\"", true);
     cDatumStored DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", true);
@@ -67,8 +365,8 @@ namespace PIC {
     cDatumStored DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",true);
     cDatumStored DatumAtVertexShockLocation(1,"\"Shock Location\"",true);
 
-    cDatumStored DatumAtVertexPrevious::DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
-    cDatumStored DatumAtVertexPrevious::DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\"",false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\"",false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity(3,"\"Plasma Vx [m/s]\",\"Plasma Vy [m/s]\",\"Plasma Vz [m/s]\"",false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaDensity(1,"\"Plasma number density [1/m^3]\"", false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", false);
@@ -177,6 +475,12 @@ namespace PIC {
       FirstSegment=NULL,LastSegment=NULL;
       TotalLength=0.0,IsSet=0;
       SegmentPointerTable.clear();
+      // Deleting/replacing a line invalidates outstanding geometry plans even
+      // if an identical coordinate list is subsequently allocated in its slot.
+      if(GeometryGeneration==std::numeric_limits<std::uint64_t>::max())
+        exit(__LINE__,__FILE__,"field-line generation overflow during retirement");
+      ++GeometryGeneration;ExternallyManagedGeometry=false;GeometryEpochS=0;FirstMaterialLabel=0;
+      GeometryOwnerIdentity.clear();
     }
 
     //=========================================================================
@@ -199,6 +503,7 @@ namespace PIC {
 
         //allocate a new segement  
         newSegment=SegmentsAll.newElement();
+        newSegment->ResetMaterialSampling();
         newSegment->SetVertices(newVertex,FirstVertex);
 
         newSegment->SetPrev(NULL);
@@ -258,6 +563,7 @@ namespace PIC {
 
          //allocate the first segment
          LastSegment = (FirstSegment = SegmentsAll.newElement());
+         LastSegment->ResetMaterialSampling();
          LastSegment->SetVertices(LastVertex->GetPrev(), LastVertex);
          LastSegment->SetPrev(NULL);
          LastSegment->SetNext(NULL);
@@ -285,6 +591,7 @@ namespace PIC {
      //allocate segment
      cFieldLineSegment* newSegment;
      newSegment = SegmentsAll.newElement();
+     newSegment->ResetMaterialSampling();
      newSegment->SetVertices(LastVertex->GetPrev(), LastVertex);
       
      //connect it to the last segment in the line
@@ -710,7 +1017,7 @@ namespace PIC {
 
 
     //=========================================================================
-    void cFieldLine::Output(FILE* fout, bool OutputGeometryOnly=false) {
+    void cFieldLine::Output(FILE* fout, bool OutputGeometryOnly,bool collective) {
       namespace PB = PIC::ParticleBuffer;
 
       cFieldLineVertex *Vertex=FirstVertex;
@@ -774,8 +1081,11 @@ namespace PIC {
       for (auto d : DataStoredAtVertex) if (d->length>MaxVertexDatumLength) MaxVertexDatumLength=d->length;
       for (auto d : DataSampledAtVertex) if (d->length>MaxVertexDatumLength) MaxVertexDatumLength=d->length;
 
-      int nSegmentParticles[nSegment],nSegmentParticles_mu_negative[nSegment],nSegmentParticles_mu_positive[nSegment];
-      double ModelParticleSpeedTable[nSegment],v[3];
+      // Counts and speed SUMS belong to the actual particle owner. Reduce
+      // them before computing a mean; averaging owner-local means would give
+      // empty ranks equal statistical weight. Use wide counters for MPI sums.
+      std::vector<long long> nSegmentParticles(nSegment),nSegmentParticles_mu_negative(nSegment),nSegmentParticles_mu_positive(nSegment);
+      std::vector<double> ModelParticleSpeedTable(nSegment);double v[3];
 
       for (iSegment=0;iSegment<nSegment; iSegment++) {
         nSegmentParticles[iSegment]=0,nSegmentParticles_mu_negative[iSegment]=0,nSegmentParticles_mu_positive[iSegment]=0;
@@ -812,9 +1122,27 @@ namespace PIC {
             ptr=PB::GetNext(ptr);
           }
 
-          if (nSegmentParticles[iSegment]!=0) ModelParticleSpeedTable[iSegment]/=nSegmentParticles[iSegment];
         }
       }
+
+      std::vector<double> fluence;
+      if(collective) {
+        for(auto* counts:{&nSegmentParticles,&nSegmentParticles_mu_negative,&nSegmentParticles_mu_positive})
+          MPI_Allreduce(MPI_IN_PLACE,counts->data(),nSegment,MPI_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Allreduce(MPI_IN_PLACE,ModelParticleSpeedTable.data(),nSegment,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+        if(DatumAtVertexFluence.offset>=0) {
+          fluence.resize(nVertex);auto* vertex=FirstVertex;
+          for(int i=0;i<nVertex;++i,vertex=vertex->GetNext())vertex->GetDatum(DatumAtVertexFluence,fluence[i]);
+          MPI_Allreduce(MPI_IN_PLACE,fluence.data(),nVertex,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+          // This is a temporary output view. Writing a global cumulative sum
+          // back to every local primitive would count the same past fluence
+          // again at the next output. The checkpoint retains local integrals.
+          for(double value:fluence)if(!std::isfinite(value))
+            exit(__LINE__,__FILE__,"nonfinite collective field-line fluence");
+        }
+      }
+      for(int i=0;i<nSegment;++i)if(nSegmentParticles[i]!=0)
+        ModelParticleSpeedTable[i]/=nSegmentParticles[i];
 
 
       for (iVertex=0; iVertex<nVertex; iVertex++) {
@@ -853,7 +1181,16 @@ namespace PIC {
         for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end();  itrDatumStored++) {
           if ((*itrDatumStored)->doPrint) {
             Vertex->GetDatum(*(*itrDatumStored), Value);
-            for (int i=0; i<(*itrDatumStored)->length; i++) fprintf(fout, "%e ", Value[i]);
+            // Vertex B is authoritative SI [T] for coupling and transport.
+            // This established output interface explicitly advertises [nT];
+            // convert only the serialized value, never the stored primitive.
+            // The previous-state vector has the same units. Other datums keep
+            // their existing independent output contract. PrintName supplies
+            // separators, so vector labels above must not add a trailing comma.
+            if(collective&&(*itrDatumStored)==&DatumAtVertexFluence)Value[0]=fluence.at(iVertex);
+            const bool magnetic=(*itrDatumStored)==&DatumAtVertexMagneticField||
+                (*itrDatumStored)==&DatumAtVertexPrevious::DatumAtVertexMagneticField;
+            for (int i=0; i<(*itrDatumStored)->length; i++) fprintf(fout, "%e ", magnetic?1e9*Value[i]:Value[i]);
           }
         }
 
@@ -863,7 +1200,30 @@ namespace PIC {
           cDatumTimed*    ptrDatumTimed;
           cDatumWeighted* ptrDatumWeighted;
 
-          if ((*itrDatum)->type == PIC::Datum::cDatumSampled::Timed_) {
+          if(ExternallyManagedGeometry) {
+            // Keep the original endpoint shape-function projection, but divide
+            // each material history by its own exposure BEFORE adding it to a
+            // neighboring history. For weighted moments both numerator and
+            // sampled weight receive that division. Equal lifetimes reduce to
+            // the original static projection exactly, without age dilution.
+            const auto& datum=**itrDatum;
+            const bool weighted=datum.type==PIC::Datum::cDatumSampled::Weighted_;
+            const std::size_t width=cFieldLineVertex::SampleDataBytes()/sizeof(double);
+            for(int component=0;component<datum.length;++component) {
+              double numerator=0,denominator=0;bool measured=false;
+              for(auto* edge:vertexToSegmentsMap[iVertex]) {
+                if(!edge->SamplingExposure.HasCompletedMeasurement())continue;
+                measured=true;
+                const std::size_t endpoint=edge->GetBegin()==Vertex?0:1;
+                const double count=static_cast<double>(edge->SamplingExposure.completed);
+                numerator+=edge->MaterialCompleted.at(endpoint*width+datum.offset/sizeof(double)+component)/count;
+                if(weighted)denominator+=edge->MaterialCompleted.at(endpoint*width+
+                    DatumAtVertexParticleWeight.offset/sizeof(double))/count;
+              }
+              Value[component]=!measured?std::numeric_limits<double>::quiet_NaN():
+                  (weighted?(denominator>0?numerator/denominator:0):numerator);
+            }
+          }else if ((*itrDatum)->type == PIC::Datum::cDatumSampled::Timed_) {
             ptrDatumTimed = static_cast<cDatumTimed*> ((*itrDatum));
             Vertex->GetDatumAverage(*ptrDatumTimed, Value, 0,SampleCycleCounter);
           }
@@ -926,7 +1286,12 @@ namespace PIC {
           // Handle different sampling types
           if (it->type == PIC::Datum::cDatumSampled::Timed_) {
             cDatumTimed* ptrDatumTimed = static_cast<cDatumTimed*>(it);
-            segment->GetDatumAverage(*ptrDatumTimed, segmentValue, 0, SampleCycleCounter);
+            // Segment-local sampled datums have their own actual lifetime,
+            // even when their vertex projection uses geometric length weights.
+            const auto count=segment->SamplingExposure.completed;
+            if(count>static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+              exit(__LINE__,__FILE__,"segment sampling count exceeds legacy datum API");
+            segment->GetDatumAverage(*ptrDatumTimed, segmentValue, 0, static_cast<int>(count));
           } else if (it->type == PIC::Datum::cDatumSampled::Weighted_) {
             cDatumWeighted* ptrDatumWeighted = static_cast<cDatumWeighted*>(it);
             segment->GetDatumAverage(*ptrDatumWeighted, segmentValue, 0);
@@ -1052,12 +1417,54 @@ namespace PIC {
     //=========================================================================
     void Output(const char* fname, bool OutputGeometryOnly) {
 
-      static int lastDataOutputFileNumber=-1;
-
-      if ((OutputGeometryOnly==false)&&(lastDataOutputFileNumber!=DataOutputFileNumber)) {
-        //swap sampling offsets
+      if ((OutputGeometryOnly==false)&&(LastDataOutputFileNumber!=DataOutputFileNumber)) {
+        // Validate replicated topology before entering per-segment collectives;
+        // different loop lengths would otherwise hang or mix physical edges.
+        long lineCount=nFieldLine,lineLow=0,lineHigh=0;
+        MPI_Allreduce(&lineCount,&lineLow,1,MPI_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Allreduce(&lineCount,&lineHigh,1,MPI_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+        if(lineLow!=lineHigh)exit(__LINE__,__FILE__,"field-line sampling topology disagrees over MPI");
+        // Complete each segment's actual lifetime exposure together with its
+        // own buffers. Replicated geometry counts must agree over MPI; summing
+        // them would multiply physical exposure by the process count.
+        cFieldLineSegment::swapSamplingBuffers();
+        for(int line=0;line<nFieldLine;++line) {
+          auto& fieldLine=FieldLinesAll[line];
+          int shape[2]={fieldLine.GetTotalSegmentNumber(),fieldLine.ExternallyManagedGeometry?1:0},shapeLow[2],shapeHigh[2];
+          MPI_Allreduce(shape,shapeLow,2,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Allreduce(shape,shapeHigh,2,MPI_INT,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+          if(shapeLow[0]!=shapeHigh[0]||shapeLow[1]!=shapeHigh[1])
+            exit(__LINE__,__FILE__,"material sampling owner/segment counts disagree over MPI");
+          for(auto* edge=fieldLine.GetFirstSegment();edge;edge=edge->GetNext()) {
+            edge->SamplingExposure.Complete();
+            edge->flushCollectingSamplingBuffer();
+            if(!fieldLine.ExternallyManagedGeometry)continue;
+            unsigned long long count=edge->SamplingExposure.completed,low=0,high=0;
+            MPI_Allreduce(&count,&low,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+            MPI_Allreduce(&count,&high,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+            if(low!=high)exit(__LINE__,__FILE__,"material segment sampling exposures disagree over MPI");
+            double duration[2]={edge->SamplingExposure.completedSeconds,edge->SamplingExposure.fixedStepSeconds};
+            double durationLow[2],durationHigh[2];
+            MPI_Allreduce(duration,durationLow,2,MPI_DOUBLE,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+            MPI_Allreduce(duration,durationHigh,2,MPI_DOUBLE,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+            if(durationLow[0]!=durationHigh[0]||durationLow[1]!=durationHigh[1])
+              exit(__LINE__,__FILE__,"material sampling durations/timesteps disagree over MPI");
+            edge->MaterialCompleted.swap(edge->MaterialCollecting);
+            std::fill(edge->MaterialCollecting.begin(),edge->MaterialCollecting.end(),0.0);
+            if(!edge->MaterialCompleted.empty()) {
+              if(edge->MaterialCompleted.size()>static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                exit(__LINE__,__FILE__,"material sample MPI count overflow");
+              MPI_Allreduce(MPI_IN_PLACE,edge->MaterialCompleted.data(),
+                  static_cast<int>(edge->MaterialCompleted.size()),MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+              for(double value:edge->MaterialCompleted)if(!std::isfinite(value))
+                exit(__LINE__,__FILE__,"material sample reduction produced a nonfinite numerator");
+            }
+          }
+        }
+        // Legacy vertex buffers retain their existing layout. Material output
+        // below uses separately normalized segment-endpoint histories instead.
         cFieldLineVertex::swapSamplingBuffers();
-	lastDataOutputFileNumber=DataOutputFileNumber;
+	LastDataOutputFileNumber=DataOutputFileNumber;
 
         PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtVertex(&PIC::FieldLine::DatumAtVertexParticleWeight);
       
@@ -1080,8 +1487,13 @@ namespace PIC {
       }
 
 
-      FILE* fout;
-      fout = fopen(fname,"w");
+      // Reductions and per-line traversal remain collective, but the shared
+      // destination has exactly one writer. Other ranks serialize into their
+      // private /dev/null stream so existing local formatting callbacks remain
+      // valid without concurrent fopen/truncation of the requested data file.
+      const std::string stagedOutput=std::string(fname)+".tmp";
+      FILE* fout=std::fopen(PIC::ThisThread==0?stagedOutput.c_str():"/dev/null","w");
+      if(!fout)exit(__LINE__,__FILE__,"cannot stage field-line output");
       
       fprintf(fout, "TITLE=\"Field line geometry\"\n");
 
@@ -1140,13 +1552,48 @@ switch (DIM) {
       
       for (int iFieldLine=0; iFieldLine<nFieldLine; iFieldLine++) {
         fprintf(fout,"ZONE T=\"Field-line %i\" F=POINT\n",iFieldLine);
-        FieldLinesAll[iFieldLine].Output(fout, OutputGeometryOnly);
+        FieldLinesAll[iFieldLine].Output(fout, OutputGeometryOnly,!OutputGeometryOnly);
       }
       
       //reset the sanple counpter 
       SampleCycleCounter=0;
 
-      fclose(fout);
+      bool outputFailed=std::ferror(fout)!=0;
+      outputFailed=std::fclose(fout)!=0||outputFailed;
+      if(PIC::ThisThread==0&&!outputFailed)outputFailed=std::rename(stagedOutput.c_str(),fname)!=0;
+      if(outputFailed)exit(__LINE__,__FILE__,"cannot publish complete field-line output");
+      if(!OutputGeometryOnly&&PIC::ThisThread==0) {
+        bool material=false;
+        for(int line=0;line<nFieldLine;++line)material=material||FieldLinesAll[line].ExternallyManagedGeometry;
+        if(material) {
+          // Export actual lifetimes independently of Tecplot's vertex rows.
+          // A completed count of zero is explicitly "no measurement", not a
+          // vacuum density. Atomic replacement keeps this metadata file
+          // from being mistaken for a complete sample after a failed write.
+          const std::string destination=std::string(fname)+".sampling";
+          const std::string temporary=destination+".tmp";
+          FILE* metadata=std::fopen(temporary.c_str(),"w");
+          if(!metadata)exit(__LINE__,__FILE__,"cannot open material sampling metadata");
+          bool failed=std::fprintf(metadata,
+              "# material-segment exposure v1; SI seconds; count=0 means no measurement\n"
+              "# line material_label geometry_epoch_s generation completed_samples completed_seconds fixed_dt_s valid\n")<0;
+          for(int line=0;line<nFieldLine;++line) {
+            const auto& geometry=FieldLinesAll[line];if(!geometry.ExternallyManagedGeometry)continue;
+            int index=0;
+            for(auto* edge=FieldLinesAll[line].GetFirstSegment();edge;edge=edge->GetNext(),++index) {
+              const auto& e=edge->SamplingExposure;
+              failed=std::fprintf(metadata,"%d %lld %.17g %llu %llu %.17g %.17g %d\n",line,
+                  static_cast<long long>(geometry.FirstMaterialLabel+index),geometry.GeometryEpochS,
+                  static_cast<unsigned long long>(geometry.GeometryGeneration),
+                  static_cast<unsigned long long>(e.completed),e.completedSeconds,e.fixedStepSeconds,
+                  e.HasCompletedMeasurement()?1:0)<0||failed;
+            }
+          }
+          failed=std::fclose(metadata)!=0||failed;
+          if(failed||std::rename(temporary.c_str(),destination.c_str())!=0)
+            exit(__LINE__,__FILE__,"cannot publish complete material sampling metadata");
+        }
+      }
     }
 
     //=========================================================================
@@ -1173,7 +1620,42 @@ switch (DIM) {
 
       for (iFieldLine=0;iFieldLine<nFieldLine;iFieldLine++) {
         for (Segment=FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
-          ptr=Segment->FirstParticleIndex;
+          // One exposure tick per eligible segment, including a vacuum.
+          // Never count particles, species or mover substeps as extra samples.
+          Segment->SamplingExposure.Sample(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
+          if(FieldLinesAll[iFieldLine].ExternallyManagedGeometry) {
+            const std::size_t width=2*cFieldLineVertex::SampleDataBytes()/sizeof(double);
+            if(Segment->MaterialCollecting.size()!=width)
+              Segment->MaterialCollecting.assign(width,0.0);
+          }
+          // Joined mover lists have a scheduling-dependent insertion order.
+          // Material restart retains accumulated binary64 samples, so even a
+          // one-ULP change in addition order breaks exact continuation while
+          // particle trajectories remain identical. Sample a READ-ONLY index
+          // in a deterministic order of the physical inputs used below:
+          // species, line coordinate, parallel/normal velocity and individual
+          // weight. Equal keys produce identical contributions. No particle,
+          // list, sampling formula, exposure count or physical dt is changed.
+          // Compare raw scalar bits to define a total order even for invalid
+          // values; the ordinary sampler's validity checks still own rejection.
+          // Keep this key synchronized with any future per-particle sampling
+          // input. Nonmaterial legacy lines retain their historical traversal.
+          std::vector<std::pair<std::array<std::uint64_t,5>,long int>> materialOrder;
+          if(FieldLinesAll[iFieldLine].ExternallyManagedGeometry) {
+            for(ptr=Segment->FirstParticleIndex;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) {
+              const double values[4]={PIC::ParticleBuffer::GetFieldLineCoord(ptr),
+                  PIC::ParticleBuffer::GetVParallel(ptr),PIC::ParticleBuffer::GetVNormal(ptr),
+                  PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr)};
+              std::array<std::uint64_t,5> key{{static_cast<std::uint64_t>(PIC::ParticleBuffer::GetI(ptr)),0,0,0,0}};
+              static_assert(sizeof(double)==sizeof(std::uint64_t),"material sampling requires binary64 keys");
+              for(unsigned i=0;i<4;++i)std::memcpy(&key[i+1],&values[i],sizeof(double));
+              materialOrder.push_back({key,ptr});
+            }
+            std::sort(materialOrder.begin(),materialOrder.end(),[](const auto& a,const auto& b){return a.first<b.first;});
+          }
+          std::size_t materialAt=0;
+          ptr=FieldLinesAll[iFieldLine].ExternallyManagedGeometry?
+              (materialOrder.empty()?-1:materialOrder.front().second):Segment->FirstParticleIndex;
 
           while (ptr!=-1) {
             spec=PIC::ParticleBuffer::GetI(ptr);
@@ -1182,7 +1664,8 @@ switch (DIM) {
             LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
 
             PIC::FieldLine::Sampling(ptr,LocalParticleWeight,NULL);
-            ptr=PIC::ParticleBuffer::GetNext(ptr);
+            ptr=FieldLinesAll[iFieldLine].ExternallyManagedGeometry?
+                (++materialAt<materialOrder.size()?materialOrder[materialAt].second:-1):PIC::ParticleBuffer::GetNext(ptr);
           }
         }
       }
@@ -1250,6 +1733,21 @@ switch (DIM) {
         }
       }
     }
+
+    struct MaterialSamplingSink {
+      cFieldLineVertex* vertex;
+      cFieldLineSegment* segment;
+      bool managed;
+      int endpoint;
+      void SampleDatum(cDatumSampled& datum,double value,int species,double shape) {
+        vertex->SampleDatum(datum,value,species,shape);
+        if(managed)segment->SampleMaterialDatum(datum,value,species,endpoint,shape);
+      }
+      void SampleDatum(cDatumSampled& datum,double value,int species,int component,double shape) {
+        vertex->SampleDatum(datum,value,species,component,shape);
+        if(managed)segment->SampleMaterialDatum(datum,value,species,endpoint,shape,component);
+      }
+    };
 
     void Sampling(long int ptr, double Weight, char* CellSamplingBuffer){
       // namespace alias
@@ -1330,10 +1828,10 @@ switch (DIM) {
       //time step
       switch (_SIMULATION_TIME_STEP_MODE_) {
       case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
-        TimeStep=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+        TimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
 	break;
       case _SINGLE_GLOBAL_TIME_STEP_:
-        TimeStep=PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
+        TimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
         break;
       default:
 	exit(__LINE__,__FILE__,"Error: not implemented");
@@ -1420,31 +1918,33 @@ switch (DIM) {
       }
 
       const double SafeFluxSpeed=Speed;
+      MaterialSamplingSink sample{V,CurrentSegment,
+          FieldLinesAll[iFieldLine].ExternallyManagedGeometry,0};
 
       // The actual calls below use the guarded cFieldLineVertex::SampleDatum()
       // implementation.  The per-contribution guard in cFieldLineVertex protects
       // every sampled datum from NaN/Inf, while the checks above make sure the
       // quantities used here are physically and numerically well-defined.
-      V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume, spec, (1-w));
-      V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (1-w));
-      V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
-      V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
-      V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, (1-w));
+      sample.SampleDatum(DatumAtVertexNumberDensity,Weight/volume, spec, (1-w));
+      sample.SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (1-w));
+      sample.SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
+      sample.SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
+      sample.SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, (1-w));
 
       //sample binned number density
       int ibin=DatumAtVertexNumberDensityEnergyBinned.GetBinIndex(E*J2MeV);
-      if (ibin>=0) V->SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,(1-w));
+      if (ibin>=0) sample.SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,(1-w));
 
-      V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, (1-w));
-      V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, (1-w));
+      sample.SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, (1-w));
+      sample.SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, (1-w));
 
       if (CosPitchAngleSign>0.0) {
-        V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*SafeFluxSpeed/volume, spec, (1-w));
+        sample.SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
+        sample.SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*SafeFluxSpeed/volume, spec, (1-w));
       }
       else {
-        V->SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (1-w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*SafeFluxSpeed/volume, spec, (1-w));
+        sample.SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (1-w));
+        sample.SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*SafeFluxSpeed/volume, spec, (1-w));
       }
 
       if (DatumAtVertexFluence.is_active()==true) {
@@ -1452,30 +1952,30 @@ switch (DIM) {
 
         V->GetDatum(DatumAtVertexFluence,t);
         if (IsSafeFieldLineSamplingValue(t)==false) t=0.0;
-        t+=Weight/volume*SafeFluxSpeed*(1-w)/volume*TimeStep;
+        t+=Weight/volume*SafeFluxSpeed*(1-w)*TimeStep;
         if (IsSafeFieldLineSamplingValue(t)==true) V->SetDatum(DatumAtVertexFluence,t);
       }
 
 
-      V = Vnext;
-      V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume,spec,  (w));
-      V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (w));
-      V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
-      V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, w);
-      V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, w);
+      V = Vnext;sample.vertex=Vnext;sample.endpoint=1;
+      sample.SampleDatum(DatumAtVertexNumberDensity,Weight/volume,spec,  (w));
+      sample.SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (w));
+      sample.SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
+      sample.SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, w);
+      sample.SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, w);
 
-      if (ibin>=0) V->SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,w);
+      if (ibin>=0) sample.SampleDatum(DatumAtVertexNumberDensityEnergyBinned,Weight/volume, spec, ibin,w);
 
-      V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, w);
-      V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, w);
+      sample.SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, w);
+      sample.SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, w);
 
       if (CosPitchAngleSign>0.0) {
-        V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*SafeFluxSpeed/volume, spec, (w));
+        sample.SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));
+        sample.SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*SafeFluxSpeed/volume, spec, (w));
       }
       else {
-        V->SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (w));
-        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*SafeFluxSpeed/volume, spec, (w));
+        sample.SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (w));
+        sample.SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*SafeFluxSpeed/volume, spec, (w));
       }
 
       if (DatumAtVertexFluence.is_active()==true) {
@@ -1483,7 +1983,7 @@ switch (DIM) {
 
         V->GetDatum(DatumAtVertexFluence,t);
         if (IsSafeFieldLineSamplingValue(t)==false) t=0.0;
-        t+=Weight/volume*SafeFluxSpeed*(w)/volume*TimeStep;
+        t+=Weight/volume*SafeFluxSpeed*(w)*TimeStep;
         if (IsSafeFieldLineSamplingValue(t)==true) V->SetDatum(DatumAtVertexFluence,t);
       }
 
@@ -1767,6 +2267,7 @@ switch (DIM) {
       TimeLastUpdate += dt;
 
       for (int iFieldLine=0; iFieldLine<nFieldLine; iFieldLine++) {
+        if(FieldLinesAll[iFieldLine].ExternallyManagedGeometry)continue;
         int cnt = 0;
         bool done = false;
 
@@ -1933,6 +2434,31 @@ if (DIM != 3) {
 
 namespace Mover{
 namespace FieldLine{
+  // A segment-owned particle belongs to the FIELD-LINE decomposition, which
+  // need not match the Cartesian AMR block containing its derived position.
+  // Its complete physical interval [s] is therefore the configured global
+  // species interval, exactly as in the serial segment sweep. Looking up a
+  // local Cartesian block can fail on another MPI owner, or select an unrelated
+  // spatial timestep. Share this selection across all segment worker paths;
+  // worker count must never change the sampling interval or transport physics.
+  // Spatially local timesteps have no defined segment-owned contract here and
+  // remain an explicit unsupported configuration, never a global fallback.
+  static double SegmentParticleTimeStep(int species) {
+    if(species<0||species>=PIC::nTotalSpecies)
+      exit(__LINE__,__FILE__,"invalid species in field-line timestep selection");
+    double dt=0.0;
+    #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+    dt=PIC::ParticleWeightTimeStep::GlobalTimeStep[species];
+    #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+    dt=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    #else
+    exit(__LINE__,__FILE__,"segment-owned field-line motion requires a global physical timestep");
+    #endif
+    if(!std::isfinite(dt)||dt<=0.0)
+      exit(__LINE__,__FILE__,"invalid global physical timestep for field-line motion");
+    return dt;
+  }
+
   //manager executing the particle moving procedure when the partice lists are attached to the field line segments
   void MoveParticlesMultiThread(int this_thread_id,int thread_id_table_size) {
     namespace FL = PIC::FieldLine;
@@ -1941,7 +2467,7 @@ namespace FieldLine{
     long int SegmentCounter=0;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
     long int ptr,ptr_next;
-    double *x,LocalTimeStep;
+    double LocalTimeStep;
     int spec;
     PB::byte* ParticleData;
     FL::cFieldLineSegment* Segment; 
@@ -1957,14 +2483,12 @@ namespace FieldLine{
  
           ParticleData=PB::GetParticleDataPointer(ptr);
 
-          x=PB::GetX(ParticleData);
           spec=PB::GetI(ParticleData);
 
-          node=PIC::Mesh::mesh->findTreeNode(x,node);
-          if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
-          if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
-
-          LocalTimeStep=node->block->GetLocalTimeStep(spec);
+          // This manager is entered only for segment-attached particles.
+          // Pass no Eulerian node, just as the serial field-line manager does.
+          // The mover consumes the immutable line snapshot, not a mesh block.
+          LocalTimeStep=SegmentParticleTimeStep(spec);
           PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
 
           ptr=ptr_next;
@@ -2079,17 +2603,18 @@ int _process_mode=_process_by_segments;
       switch (_PIC_PARTICLE_LIST_ATTACHING_) {
       case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
         node=NULL;
+        LocalTimeStep=SegmentParticleTimeStep(spec);
         break;
       case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
         node=PIC::Mesh::mesh->findTreeNode(x,node);
         if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
         if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+	LocalTimeStep=node->block->GetLocalTimeStep(spec);
 	break;
       default:
         exit(__LINE__,__FILE__,"Error: the option is unknown");
       }
 
-      LocalTimeStep=node->block->GetLocalTimeStep(spec); 
       PIC::Mover::DispatchParticleMover(ptr,LocalTimeStep,node);
     }
 
@@ -2118,13 +2643,7 @@ int _process_mode=_process_by_segments;
       case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
         node=NULL;
 
-        #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-        LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
-        #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
-        LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-        #else
-        exit(__LINE__,__FILE__,"not implemented");
-        #endif
+        LocalTimeStep=SegmentParticleTimeStep(spec);
 
         break;
       case _PIC_PARTICLE_LIST_ATTACHING_NODE_:

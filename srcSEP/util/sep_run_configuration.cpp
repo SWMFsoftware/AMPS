@@ -88,6 +88,11 @@ std::string Canonical(const Configuration& c) {
       <<c.injection.spectrum.minimum<<' '<<c.injection.spectrum.maximum<<' '
       <<c.injection.spectrum.powerIndex<<' '
       <<static_cast<int>(c.injection.angular)<<'\n';
+  // Preserve the exact schema-4 identity for legacy/default runs. An enabled
+  // reduced consumer appends a separately versioned physical source contract;
+  // its finite release distance cannot disappear from restart compatibility.
+  if(ReducedParticles::Canonical(c.reducedParticles)!=ReducedParticles::Canonical(ReducedParticles::Configuration{}))
+    out<<"REDUCED_PARTICLES_1 "<<ReducedParticles::Canonical(c.reducedParticles)<<'\n';
   return out.str();
 }
 
@@ -126,6 +131,8 @@ Configuration Defaults() {
 }
 
 Transport::Status Validate(const Configuration& c) {
+  const auto reduced=ReducedParticles::Validate(c.reducedParticles);
+  if(!reduced.ok())return reduced;
   if (!std::isfinite(c.swcmeFallbackDensityM3.value) ||
       !(c.swcmeFallbackDensityM3.value>0.0) ||
       !std::isfinite(c.swcmeFallbackSpeedMPerS.value) ||
@@ -212,7 +219,9 @@ Transport::Status FrozenConfiguration::Create(const Configuration& c,
 
 Transport::Status Serialize(const FrozenConfiguration& c,std::string* text) {
   if (!text) return Error("run configuration checkpoint output is null");
-  *text="SEP_RUN_CONFIGURATION 4\n"+c.fingerprint()+"\n"+Canonical(c.get());
+  const bool extension=ReducedParticles::Canonical(c.get().reducedParticles)!=
+      ReducedParticles::Canonical(ReducedParticles::Configuration{});
+  *text=std::string("SEP_RUN_CONFIGURATION ")+(extension?"5\n":"4\n")+c.fingerprint()+"\n"+Canonical(c.get());
   return Transport::Status::Ok();
 }
 
@@ -226,7 +235,7 @@ Transport::Status Deserialize(const std::string& text,FrozenConfiguration* resul
       swcmePolicySource,swcmeDensitySource,swcmeSpeedSource,
       swcmeDivergenceSource,swcmeFingerprintSource,
       turbulenceSplitting;
-  if (!(in>>magic>>version>>fingerprint) || magic!="SEP_RUN_CONFIGURATION" || version!=4 ||
+  if (!(in>>magic>>version>>fingerprint) || magic!="SEP_RUN_CONFIGURATION" || (version!=4&&version!=5) ||
       !(in>>mover>>moverSource>>shock>>shockSource>>scenario>>scenarioSource
           >>swcmePolicy>>swcmePolicySource
           >>c.swcmeFallbackDensityM3.value>>swcmeDensitySource
@@ -261,6 +270,16 @@ Transport::Status Deserialize(const std::string& text,FrozenConfiguration* resul
           >>c.injection.spectrum.minimum>>c.injection.spectrum.maximum
           >>c.injection.spectrum.powerIndex>>angular))
     return Error("run configuration checkpoint is invalid or truncated");
+  if(version==5) {
+    std::string tag;int returnPolicy=0,normalization=0;
+    auto& r=c.reducedParticles;
+    if(!(in>>tag>>r.enabled>>returnPolicy>>normalization>>r.releaseDistanceM>>r.minimumEnergyJ
+        >>r.maximumEnergyJ>>r.releaseFraction>>r.samplesPerStep>>r.campaignSeed
+        >>r.boundaryToleranceM>>r.verificationMonoenergeticEnergyJ)||tag!="REDUCED_PARTICLES_1")
+      return Error("reduced particle source checkpoint contract is missing or truncated");
+    r.returnPolicy=static_cast<ReducedParticles::ReturnPolicy>(returnPolicy);
+    r.normalization=static_cast<ReducedParticles::Normalization>(normalization);
+  }
   c.mover.value=static_cast<Mover::ProductionMover>(mover);
   c.mover.source=static_cast<ValueSource>(moverSource);
   c.shockModel.value=static_cast<ShockModel>(shock);
@@ -292,6 +311,8 @@ Transport::Status Deserialize(const std::string& text,FrozenConfiguration* resul
       static_cast<Turbulence::OperatorSplitting>(turbulenceSplitting);
   c.injection.spectrum.measure=static_cast<Injection::Measure>(measure);
   c.injection.angular=static_cast<Injection::AngularDistribution>(angular);
+  in>>std::ws;
+  if(!in.eof())return Error("run configuration checkpoint has unexpected trailing fields");
   Transport::Status status=FrozenConfiguration::Create(c,result);
   if (!status.ok()) return status;
   return result->fingerprint()==fingerprint ? Transport::Status::Ok()

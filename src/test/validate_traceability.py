@@ -35,6 +35,12 @@ INVENTORY_STATUS = {
     "exempt": "partial",
 }
 STABLE_ID = re.compile(r"(?<![A-Z0-9])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)(?![A-Z0-9])")
+# The SEP registries retain historical compact IDs rather than renaming tests
+# when they enter the shared harness. Recognize their complete quoted literals
+# in explicitly declared registry sources. Restricting both prefix and grammar
+# prevents an arbitrary uppercase prose word, partial ID or filename from
+# manufacturing a source owner. The manifest still requires unique ownership.
+COMPACT_SEP_ID = re.compile(r'''['"]((?:SINT[0-9]{2}[NR]?)|(?:MCP[0-9]{2})|(?:CP05(?:OF|C|F|O)[0-9]{2})|(?:TCR[0-9]{2}))['"]''')
 
 
 class Validation:
@@ -121,6 +127,7 @@ def case_ids_in_sources(sources: Iterable[str], validation: Validation) -> Set[s
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         identifiers.update(match.group(1) for match in STABLE_ID.finditer(text))
+        identifiers.update(match.group(1) for match in COMPACT_SEP_ID.finditer(text))
     return identifiers
 
 

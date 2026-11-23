@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <functional>
 
 namespace SEP {
 namespace Transport {
@@ -37,6 +38,9 @@ struct FocusedTransportMfpBackground {
   // Particle pitch is measured along increasing geometric line coordinate.
   // E+ propagates along B; polarity maps that direction to this coordinate.
   double dLnAbsBdsPerM = 0.0;
+  // Compatibility field name: advection relative to the declared geometry
+  // [m/s], supplied by the adapter. Zero on plasma-comoving material lines;
+  // U dot tangent on fixed geometry. Physical grad(U) is supplied separately.
   double plasmaAdvectionMPerS = 0.0;
   double parallelVelocityGradientPerS = 0.0;
   double velocityDivergencePerS = 0.0;
@@ -71,7 +75,22 @@ struct FocusedTransportMfpIncrement {
   double displacementM = 0.0;
   MfpEventDiagnostics diagnostics;
   std::string coefficientProvenance;
+  bool absorbed=false;
+  double elapsedS=0;
 };
+
+struct MfpBoundaryDecision {Status status;bool absorb=false;double fraction=1;};
+// Called for each accepted deterministic interval BEFORE the instantaneous
+// endpoint scatter. Its dense interpolant is linear in arc and mu and linear
+// in log(p), matching this interval's frozen midpoint streaming/cooling map.
+// A first hit truncates that interpolant without drawing an event branch,
+// scattering angle, or next optical depth after the particle has been killed.
+// Time arguments are explicit beginning/end offsets [s] in the core interval,
+// NOT beginning plus duration. The final end is the caller's exact dtS; the
+// consumer must not reconstruct it by adding a rounded post-event remainder.
+using MfpIntervalBoundary=std::function<MfpBoundaryDecision(
+    const FocusedTransportMfpState&,const FocusedTransportMfpState&,
+    double elapsedBeginS,double elapsedEndS)>;
 
 // Draw t=-ln(xi)/nu from an open-interval uniform stream. A zero rate returns
 // positive infinity, which is the declared no-event/ballistic limit.
@@ -101,7 +120,8 @@ FocusedTransportMfpIncrement AdvanceFocusedTransportMfp(
     double maximumDeterministicIntervalS,
     const MeanFreePathProvider& provider,
     RandomStream& random,
-    ThreadLocalWaveAccumulator* waveAccumulator);
+    ThreadLocalWaveAccumulator* waveAccumulator,
+    const MfpIntervalBoundary& boundary=MfpIntervalBoundary{});
 
 }  // namespace Transport
 }  // namespace SEP

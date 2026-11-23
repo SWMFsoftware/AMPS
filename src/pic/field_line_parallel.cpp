@@ -1,5 +1,6 @@
 
 #include "pic.h"
+#include <memory>
 
 #include <unordered_set>
 #include <stdexcept>
@@ -237,50 +238,93 @@ void PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(PIC::FieldLine:
     }
 }
 
-void PIC::ParallelFieldLines::GenerateThreadSegmentTable() {
-namespace FL = PIC::FieldLine;
-  int i,iFieldLine,*cnt;
-
-  if (ThreadSegmentTable!=NULL) exit(__LINE__,__FILE__,"Error: re-initialization of ThreadSegmentTable");
-
-  if (FL::FieldLinesAll==NULL) return;
- 
-  ThreadSegmentTable=new cThreadSegmentTable[FL::nFieldLine];
-  cnt=new int [PIC::nTotalThreads];
-
-
-  //count the number of segments
-  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
-    for (i=0;i<PIC::nTotalThreads;i++) cnt[i]=0; 
-
-    for (auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
-      cnt[Segment->Thread]++;
+namespace {
+// Counts describe the allocated table, not whichever line count happens to be
+// live after a later import. They permit safe retirement of old row arrays.
+int ownedTableLines=0,ownedTableRanks=0;
+std::uint64_t ownedTableGeneration=0;
+struct PreparedThreadRows {
+  PIC::ParallelFieldLines::cThreadSegmentTable* rows=nullptr;
+  int lines=0,ranks=0;
+  ~PreparedThreadRows() {
+    if(!rows)return;
+    for(int line=0;line<lines;++line) {
+      if(rows[line].Table) {
+        for(int rank=0;rank<ranks;++rank)delete[] rows[line].Table[rank];
+        delete[] rows[line].Table;
+      }
+      delete[] rows[line].TableLength;
     }
-
-    ThreadSegmentTable[iFieldLine].TableLength=new int [PIC::nTotalThreads];
-    ThreadSegmentTable[iFieldLine].Table=new FL::cFieldLineSegment** [PIC::nTotalThreads];
-
-    for (int thread=0;thread<PIC::nTotalThreads;thread++) {
-      ThreadSegmentTable[iFieldLine].TableLength[thread]=cnt[thread];
-      ThreadSegmentTable[iFieldLine].Table[thread]=(cnt[thread]!=0) ? new FL::cFieldLineSegment*[cnt[thread]] : NULL; 
-    }
-
-    //populate the table 
-    for (i=0;i<PIC::nTotalThreads;i++) cnt[i]=0;
-
-    for (auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
-      ThreadSegmentTable[iFieldLine].Table[Segment->Thread][cnt[Segment->Thread]]=Segment;
-      cnt[Segment->Thread]++;
-    }
+    delete[] rows;
   }
-
-  delete [] cnt;
+};
 }
-
-
-
-//        PIC::ParallelFieldLines::GetFieldLinePopulationStat();
-
+std::uint64_t PIC::ParallelFieldLines::GetThreadSegmentTableGeneration() {return ownedTableGeneration;}
+PIC::FieldLine::Geometry::Status
+PIC::ParallelFieldLines::PrepareThreadSegmentTableReplacement(
+    PIC::FieldLine::cFieldLine* replacement,
+    const std::vector<PIC::FieldLine::cFieldLineSegment*>& candidate,
+    std::function<void()>* publish) {
+  namespace FL=PIC::FieldLine;using FL::Geometry::Status;
+  if(!publish||PIC::nTotalThreads<=0)return Status::Error("invalid material ownership table context");
+  // The public collection uses long indices but the legacy exchange rows use
+  // int indices. Reject an unrepresentable collection before narrowing or
+  // traversing it; a wrapped row count could otherwise leave dangling owners.
+  if(FL::nFieldLine<0||FL::nFieldLine>std::numeric_limits<int>::max()||
+      (FL::nFieldLine>0&&!FL::FieldLinesAll))
+    return Status::Error("material ownership table line collection is invalid or too large");
+  if(ownedTableGeneration==std::numeric_limits<std::uint64_t>::max())
+    return Status::Error("material ownership table generation overflow");
+  bool found=replacement==nullptr;
+  for(int line=0;line<FL::nFieldLine;++line)found=found||&FL::FieldLinesAll[line]==replacement;
+  // A standalone local cFieldLine does not own the application's global map.
+  if(!found){*publish=[](){};return Status{};}
+  try {
+    auto prepared=std::make_shared<PreparedThreadRows>();
+    prepared->lines=FL::nFieldLine;prepared->ranks=PIC::nTotalThreads;
+    prepared->rows=new cThreadSegmentTable[prepared->lines];
+    for(int line=0;line<prepared->lines;++line) {
+      std::vector<FL::cFieldLineSegment*> edges;
+      if(&FL::FieldLinesAll[line]==replacement)edges=candidate;
+      else for(auto* edge=FL::FieldLinesAll[line].GetFirstSegment();edge;edge=edge->GetNext())edges.push_back(edge);
+      auto& row=prepared->rows[line];
+      row.TableLength=new int[prepared->ranks]();
+      row.Table=new FL::cFieldLineSegment**[prepared->ranks]();
+      for(auto* edge:edges) {
+        if(!edge||edge->Thread<0||edge->Thread>=prepared->ranks)
+          return Status::Error("material edge has invalid MPI ownership");
+        if(row.TableLength[edge->Thread]==std::numeric_limits<int>::max())
+          return Status::Error("material ownership table row overflow");
+        ++row.TableLength[edge->Thread];
+      }
+      for(int rank=0;rank<prepared->ranks;++rank)
+        if(row.TableLength[rank])row.Table[rank]=new FL::cFieldLineSegment*[row.TableLength[rank]];
+      std::vector<int> at(prepared->ranks,0);
+      for(auto* edge:edges)row.Table[edge->Thread][at[edge->Thread]++]=edge;
+    }
+    const auto* expected=ThreadSegmentTable;
+    const auto expectedGeneration=ownedTableGeneration;
+    *publish=[prepared,expected,expectedGeneration]() {
+      // A changed pointer means a concurrent ownership writer violated the
+      // joined-boundary contract; continuing with mixed maps is prohibited.
+      if(ThreadSegmentTable!=expected||ownedTableGeneration!=expectedGeneration)
+        throw std::logic_error("ownership table changed during material geometry commit");
+      PreparedThreadRows old;
+      old.rows=ThreadSegmentTable;old.lines=ownedTableLines;old.ranks=ownedTableRanks;
+      ThreadSegmentTable=prepared->rows;ownedTableLines=prepared->lines;ownedTableRanks=prepared->ranks;
+      ++ownedTableGeneration;
+      prepared->rows=nullptr;
+    };
+  }catch(const std::exception& e){return Status::Error(std::string("material ownership table preparation failed: ")+e.what());}
+  return Status{};
+}
+void PIC::ParallelFieldLines::GenerateThreadSegmentTable() {
+  if(PIC::FieldLine::FieldLinesAll==nullptr)return;
+  std::function<void()> publish;
+  const auto status=PrepareThreadSegmentTableReplacement(nullptr,{},&publish);
+  if(!status.ok())exit(__LINE__,__FILE__,status.message.c_str());
+  publish();
+}
 
 //===================================   EXCHANGE PARTICLES BETWEEN PROCESSES ============================================
 void PIC::ParallelFieldLines::ExchangeFieldLineParticles(cThreadSegmentTable &ThreadSegmentTable) {

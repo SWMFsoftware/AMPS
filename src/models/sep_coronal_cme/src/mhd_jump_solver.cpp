@@ -238,7 +238,48 @@ Core::Result<MhdShockSolution> SolveObliqueFastShock(
   Candidate previous;
   double previousCompression = 0.0;
   constexpr int kScanIntervals = 4096;
-  for (int index = 0; index <= kScanIntervals; ++index) {
+  // Exactly parallel B and exactly normal incident flow have the ordinary
+  // gas-dynamic compressive root: B_n is continuous and its contributions
+  // cancel from the normal momentum and energy jumps. Use that identity only
+  // to FIND a pair of the existing scan-grid candidates. Do not accept the
+  // analytic state directly: DownstreamForCompression, bisection, entropy,
+  // characteristic ordering and every normalized RH residual below remain
+  // authoritative. Moving polar-line boundary queries otherwise repeat this
+  // 4096-point search thousands of times per physical AMPS step.
+  //
+  // Test components individually: a norm can underflow and misclassify a
+  // small nonzero transverse field as exactly parallel. No angular threshold
+  // or field floor is introduced. Leave weak roots near the identity branch
+  // on the original scan, and use that same scan whenever the proposed pair
+  // does not provide two finite physical candidates with a sign change. This
+  // is a search optimization, not a fallback that admits failed physics.
+  const Vec3 transverseField=Tangential(upstream.magneticFieldT,normal);
+  const Vec3 transverseVelocity=Tangential(upstream.velocityMPerS,normal);
+  if (transverseField.x==0&&transverseField.y==0&&transverseField.z==0&&
+      transverseVelocity.x==0&&transverseVelocity.y==0&&transverseVelocity.z==0) {
+    const double inverseSonicMachSquared=gammaAdiabatic*upstream.pressurePa/
+        (upstream.massDensityKgM3*inflow*inflow);
+    const double parallelCompression=(gammaAdiabatic+1)/
+        (gammaAdiabatic-1+2*inverseSonicMachSquared);
+    const double gridWidth=(upperCompression-lowerCompression)/kScanIntervals;
+    if (Finite(parallelCompression)&&parallelCompression>lowerCompression+2*gridWidth&&
+        parallelCompression<upperCompression) {
+      const int index=static_cast<int>(std::ceil((parallelCompression-lowerCompression)/gridWidth));
+      // Retain the original expression for each grid coordinate, including
+      // its rounding order. The analytic root supplies no new bracket width,
+      // residual tolerance, compression cutoff or downstream state.
+      if (index>0&&index<=kScanIntervals) {
+        const double a=lowerCompression+(upperCompression-lowerCompression)*(index-1)/kScanIntervals;
+        const double b=lowerCompression+(upperCompression-lowerCompression)*index/kScanIntervals;
+        const auto low=DownstreamForCompression(upstream,normal,shockNormalSpeedMPerS,gammaAdiabatic,a);
+        const auto high=DownstreamForCompression(upstream,normal,shockNormalSpeedMPerS,gammaAdiabatic,b);
+        if (low.valid&&high.valid&&(low.energyResidual/energyScale)*(high.energyResidual/energyScale)<=0) {
+          left=a;right=b;fLeft=low.energyResidual/energyScale;fRight=high.energyResidual/energyScale;bracketed=true;
+        }
+      }
+    }
+  }
+  for (int index = 0; !bracketed&&index <= kScanIntervals; ++index) {
     const double compression = lowerCompression +
         (upperCompression - lowerCompression) * index / kScanIntervals;
     const Candidate candidate = DownstreamForCompression(

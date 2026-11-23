@@ -1,4 +1,5 @@
 #include "transport_common.h"
+#include "reduced_shock_boundary.h"
 #include "coefficient_providers.h"
 
 #include "util/sep_focused_transport_core.h"
@@ -38,6 +39,10 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
   ScalarResult momentum = MomentumFromSpeed(
       speed, context.state.massKg, SpeedOfLight);
   if (!momentum.status.ok()) AbortFocusedStatus(momentum.status);
+  bool initialReturn=false;
+  status=ReducedParticles::Native::AbsorbInitialReturn(context,momentum.value,&initialReturn);
+  if(!status.ok())AbortFocusedStatus(status);
+  if(initialReturn)return _PARTICLE_LEFT_THE_DOMAIN_;
   double mu = speed > 0.0 ? context.state.vParallelMPerS / speed : 0.0;
   mu = std::max(-1.0, std::min(1.0, mu));
 
@@ -49,6 +54,10 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
       context, PICAdapter::StochasticOperator::Dmumu, &random, &eventIndex);
   if (!status.ok()) AbortFocusedStatus(status);
   StepDiagnostics diagnostics;
+  // Keep only the last checked numerical interval for this particle move.
+  // New geometry is always rechecked before scattering noise; physical dt,
+  // its final endpoint and the sampling exposure remain caller-owned.
+  BoundaryIntervalControl boundaryControl;
   while (elapsedS < dtTotal) {
     if (eventIndex == std::numeric_limits<std::uint64_t>::max())
       AbortFocusedStatus(Status::Error(StatusCode::StepUnderflow,
@@ -65,8 +74,11 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
 
     const double segmentLengthM = context.segment->GetLength();
     std::vector<StepLimit> limits;
+    // Use the same geometry-relative speed as the actual core displacement.
+    // Adding U here alone would impose an unrelated Eulerian crossing limit
+    // even after removing the double advection from material particle motion.
     const double streamingSpeed =
-        std::fabs(local.plasmaAdvectionMPerS + speed * mu);
+        std::fabs(local.coordinateAdvectionMPerS + speed * mu);
     if (streamingSpeed > 0.0) {
       limits.push_back(StepLimit(
           "fte-streaming", tolerances.geometryFraction * segmentLengthM /
@@ -105,6 +117,10 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
     const ScalarResult selected = PICAdapter::SelectParticleSubstep(
         context, elapsedS, limits, tolerances.minimumStepS, &diagnostics);
     if (!selected.status.ok()) AbortFocusedStatus(selected.status);
+    double intervalS=selected.value;
+    ReducedParticles::Native::BoundaryInterval boundary;
+    status=ReducedParticles::Native::PrepareBoundary(context,elapsedS,&intervalS,&boundary,&boundaryControl);
+    if(!status.ok())AbortFocusedStatus(status);
 
     const double startCoordinate = context.state.coordinate;
     const double preMomentum = momentum.value;
@@ -112,7 +128,7 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
     const double preNormal = context.state.vNormalMPerS;
     ThreadLocalWaveAccumulator identityAccumulator;
     FocusedTransportBackground focusedBackground(
-        local.dLnAbsBdsPerM, local.plasmaAdvectionMPerS,
+        local.dLnAbsBdsPerM, local.coordinateAdvectionMPerS,
         local.parallelVelocityGradientPerS,
         SEP::AccountAdiabaticCoolingFlag
             ? local.velocityDivergencePerS : 0.0);
@@ -130,12 +146,26 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
         AdvanceFocusedTransportDmumu(
             FocusedTransportState(0.0, momentum.value, mu),
             focusedBackground,
-            context.state.massKg, SpeedOfLight, selected.value,
+            context.state.massKg, SpeedOfLight, intervalS,
             provider, random,
             SEP::AlfvenTurbulence_Kolmogorov::ParticleCouplingMode
                 ? &identityAccumulator : NULL);
     if (!increment.status.ok()) AbortFocusedStatus(increment.status);
     RecordAcceptedStep(&diagnostics);
+    // This focused numerical interval has a linear accepted streaming path;
+    // resolve its first moving-front hit before publishing phase space. Pitch
+    // diffusion has already supplied this interval's endpoint, so absorption
+    // never retries or redraws the stochastic angular increment.
+    const auto hit=ReducedParticles::Native::CheckBoundary(boundary,0,
+        increment.displacementM,0,intervalS,0,random);
+    if(!hit.status.ok())AbortFocusedStatus(hit.status);
+    if(hit.hit) {
+      const double terminalP=preMomentum*std::exp(hit.fraction*std::log(increment.state.momentumKgMPerS/preMomentum));
+      ReducedParticles::Native::TransportWork(context,preMomentum,terminalP);
+      ReducedParticles::Native::RecordTerminal(context,ReducedParticles::Native::Terminal::ShockReturn,terminalP);
+      PIC::ParticleBuffer::DeleteParticle(ptr);return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+    ReducedParticles::Native::TransportWork(context,preMomentum,increment.state.momentumKgMPerS);
 
     status = PICAdapter::AdvanceAlongFieldLine(&context,
                                                increment.displacementM);
@@ -160,7 +190,7 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
       contribution.statisticalWeight = context.statisticalWeight;
       contribution.stableParticleId = context.stableParticleId;
       contribution.snapshotGeneration = context.snapshotGeneration;
-      contribution.dtS = selected.value;
+      contribution.dtS = intervalS;
       contribution.preMomentumKgMPerS = preMomentum;
       contribution.postMomentumKgMPerS = momentum.value;
       contribution.midpointParallelVelocityMPerS =
@@ -192,12 +222,13 @@ int SEP::ParticleMover_FocusedTransport_Dmumu(
     }
 
     if (status.code == StatusCode::OutOfDomain) {
+      ReducedParticles::Native::RecordTerminal(context,ReducedParticles::Native::Terminal::DomainExit,momentum.value);
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
     if (!status.ok()) AbortFocusedStatus(status);
 
-    elapsedS += selected.value;
+    elapsedS += intervalS;
     eventIndex++;
   }
 

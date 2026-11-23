@@ -125,6 +125,11 @@ struct FocusedEscapeDistribution {
   double diagnosticMuC = 0.0;
   std::vector<double> mu;
   std::vector<double> cdf;
+  // Normalized positive normal-flux density at the same mu nodes [1/mu].
+  // The zero-flux threshold is an explicit node. Sampling integrates this
+  // piecewise linear density exactly rather than linearly interpolating its
+  // quadratic CDF, which could release particles with inward normal speed.
+  std::vector<double> densityPerMu;
 };
 Core::Result<FocusedEscapeDistribution> BuildFocusedEscapeDistribution(
     double particleSpeedMPerS, int magneticPolarity,

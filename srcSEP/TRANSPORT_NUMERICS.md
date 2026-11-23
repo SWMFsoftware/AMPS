@@ -31,17 +31,82 @@ evaluated in the local plasma frame:
 `dp/dt = -(p/3) div(U)`, therefore `p(t+dt)=p(t) exp[-div(U) dt/3]`.
 
 The geometric coordinate and stored parallel velocity follow the line tangent
-`t`; the retained fixed-grid adapters use bulk advection `U·t`. The user's
-material-tube choice requires vertices moving with `U` and particle coordinates
-relative to that grid; that moving-grid transport port remains separate and is
-not qualified by the retained-adapter timing tests below. Magnetic branch signs follow B, with an explicit
-polarity conversion. The immutable background read phase supplies the full
-provider velocity-gradient tensor, `div(U)`, `bb:grad(U)`, the separate
-projected-velocity derivative, `d ln|B|/ds`, Alfvén speed, and snapshot validity
-from one generation. Temporal vertex density alone does not supply divergence.
-The focusing length convention
-is `L=-1/(d ln|B|/ds)`; a uniform magnetic field has infinite `L` and zero
-focusing rather than an error.
+`t`. All srcSEP field-line particle coordinates are plasma-comoving, independent
+of the provider of magnetic field, plasma state, or shock data.
+The native adapter preserves physical `U dot t` and the full physical grad(U),
+but supplies a separate coordinate-advection value to all three mover cores:
+exactly zero for every srcSEP provider, including analytic, SWCME, reduced-front,
+SWMF and local-evolution data. A provider cannot select an Eulerian particle
+equation. The shared fixed-grid helper remains available for other applications
+and manufactured controls; it is not a selectable srcSEP provider mode.
+Both focused predictor/corrector paths and geometry/shock-crossing limits use
+that same coordinate-relative value. Parker retains its separate Ito diffusion
+drift. Physical compression, field-aligned strain and wave-frame transforms
+continue to consume physical plasma inputs. The public core background field
+`plasmaAdvectionMPerS` retains its historical name for fixture compatibility;
+its argument is explicitly advection relative to the declared geometry.
+
+This particle equation requires a material geometry owner as well. The current
+analytical path is not yet qualified as a coherent moving-grid host: the generic
+`PIC::FieldLine::Update()` is conditional on DATAFILE/global-clock build modes,
+executes inside `PIC::TimeStep()` after departure shock distances/snapshots are
+prepared, and skips the last vertex. A shock intersection with current native
+vertices alone does not prove that the vertices represent the required epoch.
+The approved material boundary rule moves every existing node, including both
+endpoints, extends the inner end along B until it covers the minimum radius,
+and removes wholly exterior trailing segments. New segments start empty and
+use existing source rules. The callback API and required geometry, sampling,
+conservation and restart work are specified in
+`../src/pic/MOVING_FIELD_LINE_GEOMETRY_DESIGN.md`. The generic native transaction
+and sampling implementation are available; the analytical owner still needs
+its declared prescribed-versus-material physical state callback and qualified
+geometry/shock publication ordering. Preflight rejects an unregistered owner.
+The fixed-geometry checkpoint codec rejects material topology/exposure rather
+than synthesizing restart history. This is not yet a complete analytical host
+or a full coupled/native-MPI qualification.
+
+The PT/CON_bline wrapper declares its plasma-advected label convention on the
+wire; this declaration enters the immutable source namespace and background
+fingerprint. It cannot change on a live population. Prefix insertion/removal
+maps S by oldFirstLabel-newFirstLabel, retaining the material segment fraction.
+Surviving particle X is refreshed from the newly published geometry before
+sampling; weights, momentum, identity and RNG state are unchanged. Removed
+segments follow the existing absorbing endpoint policy and emit represented
+particle-loss counts/weights. Noncontiguous producer labels reject rather than
+silently invent a remeshing map. New footpoint labels are boundary construction,
+not permission to move surviving particles to unrelated labels. This remains
+the existing departure-snapshot/operator-split geometry policy; it does not
+introduce temporal field extrapolation or qualify arbitrary relabelling/remeshing.
+The AMPS global timestep and sampling exposure remain unchanged.
+
+For the registered reduced-material owner, checkpoint schema 5 retains topology,
+labels, the actual background/cache epochs, all particle history, diagnostic
+buffer phase and each segment's exposure. Native MPI continuation is qualified
+separately from the retained fixed-line codec. After a head insertion the stored
+binary64 coordinate is authoritative: Cartesian X is interpolated from its
+translated fractional part, because integer addition can round that fraction.
+An unrepresentable segment address rejects the private geometry transaction;
+no particle is clipped to another segment.
+
+Segment-attached workers select the configured global physical timestep without
+looking up an Eulerian AMR block. Field-line ownership and block ownership can
+belong to different MPI ranks. Material sampling reads a canonical index ordered
+by species and the exact bits of S, parallel/normal velocity and individual
+weight. These are the per-particle sampling inputs; equal keys yield equal
+contributions. The index changes neither particle/list state nor any sampling
+formula. It removes thread-arrival order from binary64 diagnostic addition,
+while retaining one exposure tick at the same fixed dt. These contracts are
+graded by SINT08's reversed-order native sample and the TCR01–03 fresh-process
+threaded restart cases. The isolated wave/codec CP05O/OF cases do not qualify
+particle motion on a frozen nonzero-U line or self-consistent wave feedback.
+
+The keyed reduced-material checkpoint serializes each complete normalized
+particle record in immutable-ID order. Thread arrival and pool allocation are
+not physical ordering variables. Sampling, inventory and conservative
+population control already use deterministic orders, so this changes neither
+transport nor a ledger. The fixed-line shared-stream operator codec retains
+its semantic list order. Native material continuation additionally reverses
+actual lists and requires the complete image to remain exact.
 
 ## Status, boundaries, and substeps
 
@@ -569,3 +634,247 @@ observational gates require their actual configured application runs. Source
 checks and dependency-light tests do not replace them. The current native build
 and campaign dispositions are recorded in [STATUS.md](STATUS.md); each passed
 software diagnostic remains distinct from production/scientific qualification.
+
+
+## Reduced-core Parker material integration
+
+For physical-number representatives, the forward Parker measure is
+`N ds dp = 4 pi p^2 A f ds dp`, with conserved tube flux `A |B|=Phi`.
+Transforming `(1/A) partial_s(A kappa partial_s f)` to the forward
+number-density equation gives the Itô drift `partial_s kappa + kappa
+partial_s ln A`. Consequently the material-line step is
+
+```text
+ds = [partial_s kappa - kappa partial_s ln|B|] dt + sqrt(2 kappa) dW
+p_new = p_old exp[-div(U) dt/3].
+```
+
+The segment-plus-fraction conversion supplies units/arc metric only; it cannot
+replace this tube-area term. No extra particle weight renormalization or U
+coordinate drift is applied. The native shell includes this same drift when
+selecting its internal geometry limit. The core helper defaults to constant
+area for existing manufactured constant-area fixtures; the native flux tube
+passes its actual log-area gradient explicitly. Invalid/nonfinite metric and
+overflow reject before a random draw.
+
+Both focused solvers retain the full plasma-frame gyrotropic coefficients:
+`dmu/dt=(1-mu^2)/2[-v partial_s ln|B|+mu(div(U)-3 bb:grad(U))]` and
+`dln(p)/dt=-[(1-mu^2)div(U)+(3mu^2-1)bb:grad(U)]/2`. The latter averages to
+Parker cooling for isotropic pitch. Physical U, its tensor, Alfvén speed and
+shock inflow remain available even though relative coordinate advection is
+zero. Internal subdivision refines these operators at the same physical
+endpoint; it does not change physical dt or the sampling interval.
+
+The reduced native owner prepares geometry over the completed full driver
+window. Its read-only interval view maps every departure vertex to an explicit
+query time before finding finite SSE intersections. The returned segment
+fraction labels that same material edge at the requested time. Prefix
+insertion changes live indices only at commit; stage 5 sources must map these
+interval labels to the committed topology rather than mix future fronts with
+old positions. Derived vertex shock distances are diagnostics. The reduced
+MFP limiter uses the complete supported root list, with cut speed
+`(Vn-U1 dot n)/(tangent dot n)` relative to material, avoiding a false zero
+where two nearest-root diagnostic branches switch. Tangency returns explicit
+unsupported proximity estimation rather than an obliquity floor. This limiter
+is not a stochastic first-passage solver or an acceleration prescription.
+
+SINT06 verifies core material continuity and induction by an independent
+worldline derivative; SINT07R checks curved-field tangent convergence after a
+fixed 600-s motion. SINT14 grades the tube drift against exact conditional and
+Gaussian moments. SINT15 grades focusing/cooling against analytical
+coefficients, angular quadrature and constant-gradient exact characteristics.
+SINT16 uses equivalent `D_mumu=nu(1-mu^2)/2`, `lambda=v/nu` and
+`kappa=v^2/(3 nu)`. It compares independent finite-time persistent-flight and
+Parker second moments with fixed seeds/confidence criteria; different early
+angular distributions of the two scattering processes are preserved.
+
+Actual native SINT14N–16N checks use the unchanged 300-s example step and
+manufactured slow ions on the real core ambient. The MFP path is explicitly
+conditioned to survive without a scattering event; existing FTEM tests grade
+waiting times, residual hazards and wave-frame conservation. These diagnostics
+qualify the native adapters with the pure solver tests, not a physical shock
+source, turbulent feedback or downstream transport.
+
+The native SINT15N comparison exposed a separate time-centering error in
+`fte-dmumu`: using the final cooled speed throughout streaming created a
+first-order displacement bias. Each deterministic half now advances log(p)
+and mu together by midpoint, predicts coefficient position using half-step
+speed, and integrates parallel velocity by endpoint trapezoid. SINT15 adds an
+exact relativistic exponentially cooling streaming reference and a second-order
+internal-refinement check. The same full AMPS timestep and original native
+trajectory bounds are retained; no output/sample opportunity is inserted.
+# Finite-reference reduced source and absorbing return
+
+The core Parker exterior skips winding-angle quadrature only for an exact
+Cartesian rotation-axis position: rotating that direction about the axis is
+the identity for any magnetogram. It still evaluates the same PFSS footpoint,
+full plasma primitive, magnetic-null condition and declared coverage. Nonzero
+transverse coordinates retain the ordinary winding integration, including
+finite-difference queries near the axis. SINT26 checks independent axial-dipole
+and radial-wind relations; this optimization introduces no constant-wind or
+radial-field approximation to the general provider.
+
+The core MHD jump solver similarly uses the exact gas-dynamic compression
+identity only to locate two of its existing scan-grid candidates when both
+transverse B and incident velocity are componentwise zero. Both candidates
+must still be physical and bracket the energy residual. The unchanged
+bisection and all entropy, characteristic-ordering and RH-residual checks
+then determine admission. Nonzero transverse components, weak roots near the
+identity branch or an unsuccessful proposed bracket use the original scan.
+SINT27 grades independent parallel-shock identities; the core RH3D catalog
+grades oblique, perpendicular, weak and inadmissible cases. No shock model,
+compression cutoff or residual tolerance changes.
+
+Repeated native boundary queries memoize successful roots per worker using the
+retained immutable material-view owner and the exact floating-point epoch.
+There is no timestamp quantization, trajectory interpolation or shared mutable
+cache. A geometry publication clears the worker's entries, including a common
+physical endpoint whose arc label changed after prefix insertion. Retaining
+the shared owner prevents address reuse from aliasing an old view. Invalid
+epochs still take the provider's strict error path; the 4096-entry memory bound
+only causes a full recomputation on eviction. Native SINT25N–28N compare a
+repeated query bitwise and retain the independent full-intersection 1-mm bound;
+their second physical step also exercises owner replacement after motion.
+
+An application-owned net first-passage source reuses the core DSA number law
+`dN/dp ∝ p^(2-3r/(r-1))`, with local core RH compression `r`. Its physical
+normal offset `L_ref > 0` is fixed under numerical refinement. Placement is an
+intersection of the same material line with the finite leading sphere's
+upstream offset at the actual birth epoch. A normal Cartesian displacement of
+the connected shock point would generally leave an oblique magnetic line.
+
+Birth proposals stratify the complete physical window: `t_j=t0+dt*(j+u_j)/N`.
+Their physical weights are `R(t_j)*dt/N`. This is unbiased Monte Carlo time
+integration of a prescribed rate, not an assumption that `R` is constant or a
+Poisson physical counting model. Disconnected/sub-fast proposals create no
+particles. Unsupported or failed preparations return errors before allocation
+and source-counter publication. Zero efficiency creates no source particles.
+
+The positive-normal-flux angular law is proportional to
+`max(U_ref·n - V_ref,n + v*polarity*mu*(b·n),0)/2`. The core inserts its exact
+zero-flux threshold into the integration nodes and inverts the integrated
+linear density, including partial loss cones. It does not interpolate a
+quadratic CDF linearly or redraw unsupported angles. Parker retains the same
+source's angular marginal and isotropic diagnostic projection; the focused
+equations retain the escaping angular distribution.
+
+The admitted **net** spectrum requires positive outward angular support at its
+minimum momentum at the actual reference point (or at the explicit verification
+monoenergy). The maximum normal particle velocity is monotone in speed, so this
+qualifies the finite band. An empty cone rejects the source transaction before
+allocation and counter commit. Dropping slow proposals would reduce the net
+rate; redrawing or renormalizing would change its prescribed DSA marginal.
+Neither operation supplies the missing gross-to-net escape law. SINT32N uses
+an incompatible 1–2 eV band and requires atomic rejection. The retained
+`no_focused_escape` ledger field stays zero for an admitted net source.
+
+MFP boundary callbacks receive explicit beginning/end offsets in each numerical
+interval. The final end is the caller's exact closed endpoint. After a scatter,
+`elapsed+(duration-elapsed)` can exceed that endpoint by an ULP. The core now
+carries the endpoint through its callback and commits it directly, without
+clamping queries or increasing the boundary tolerance. Absorbed clocks
+interpolate from the nearer endpoint and preserve fractions zero/one exactly.
+SINT28 uses 4096 fixed-key non-dyadic internal durations and early event times:
+the retained old kernel misses 66 endpoints; the correction misses none.
+Physical AMPS dt and the sampling schedule remain unchanged.
+
+Material trajectory RK4 now bisects the complete requested interval for both
+maximum-step and accuracy refinement, retaining adjacent exact endpoints.
+Repeated maximum-size steps formerly left an arbitrarily short final tail;
+at heliocentric coordinates its proportional error budget could be smaller
+than coordinate roundoff, and further halving made that budget smaller still.
+The captured iteration-84 case exhausted 100000 attempts with about 0.00049 s
+remaining. The endpoint-preserving partition removes this artificial tail.
+The local estimate still receives positionTolerance*abs(h)/totalDuration;
+there is no roundoff acceptance floor or unused-budget redistribution.
+Maximum-step subdivision also consumes the unchanged work bound. SINT30
+reproduces the old failure and grades the correction against a separately
+converged midpoint trajectory. Internal RK intervals do not change physical
+AMPS dt or segment sampling exposure.
+
+The polar shock-root search retains the actual first/last advected endpoints
+and all provider validity checks. It uses the departure mesh only to suggest
+a narrower search bracket, validates both suggested vertices with the same
+core trajectory map at the exact query epoch, and otherwise continues binary
+search in a proved range. Native tests require exact equality with the retained
+full-range binary search as well as the existing full-polyline 1-mm check.
+
+The immutable core ambient memoizes canonical PFSS results only at exactly
+equal axial source points. It retains both hemispheres and all signed-zero
+azimuthal limits used by the existing Cartesian pole evaluator. Five nearby
+representable radii retain separate canonical results; unmatched feet use
+the ordinary PFSS query. Nonaxisymmetric SINT31 controls
+compare with uncached canonical evaluations and retain magnetic-null rejection.
+No time, position or field value is rounded to obtain a cache hit.
+
+Shock diagnostics resolve the same reduced authority as transport. The
+`reduced-SSE/Parker` title's `R_sh` is the heliocentric leading apex radius,
+evaluated at the actual output epoch, rather than the SSE generating-sphere
+radius or an inactive legacy shock's radius. The shared diagnostic query also
+serves spectral output. Native tests query a non-cadence epoch so an old
+prepared-front cache cannot satisfy the metadata check accidentally.
+
+Field-line vertex primitives store B in tesla. The established text columns
+advertise nanotesla, so serialization multiplies current and previous B by
+1e9. This is an output conversion only; coefficients, transport, geometry and
+live vertex records retain SI values. The native fixture compares the actual
+written column against live B with the writer's declared text precision.
+
+On material coordinates, relative particle displacement contains no added U.
+The moving shock's coordinate follows its HCI trajectory relative to advected
+vertices. The background's actual U remains in front-relative flux, strain,
+cooling and scattering-frame physics. Existing departure-snapshot transport
+composition remains in force; explicit-time source/front geometry does not
+change the background snapshot's ownership or turn RH limits into a volume.
+
+For a frozen-coefficient Parker numerical interval with signed upstream
+endpoint distances d0,d1 and K=kappa*dt, a bridge with two positive endpoints
+hits with probability `exp(-d0*d1/K)`. The conditional first-hit time is sampled
+without replacing the Gaussian endpoint. Endpoint signs alone miss returned
+paths. The linear moving-boundary approximation is refined before stochastic
+draws using quarter/midpoint material-root checks and an explicit SI tolerance;
+the host timestep and sample count remain unchanged. Internal interval/curve
+refinement and coefficient convergence are numerical qualifications, not an
+observational or universal diffusion-approximation qualification.
+
+Each particle move retains its last checked boundary interval as a numerical
+proposal hint. Every new proposal still evaluates the actual start/end and
+quarter/midpoint material roots with the same spatial tolerance, topology
+checks, 64-attempt budget and minimum-step/progress guards, before any particle
+noise/event draw. After eight checked intervals a factor-two growth probe
+allows recovery from a short interval near a mesh vertex. Reusing a hint never
+authorizes an unchecked future interval or interpolated background.
+
+The history is local to one particle move and resets at its next physical
+call. It changes no AMPS timestep, sampling exposure, birth endpoint or
+persistent RNG record. The internal numerical mesh can change individual
+fixed-seed trajectories; the conditional first-passage laws and numerical error
+bounds remain fixed. SINT32 grades the production refiner with s(t)=t^2:
+128 identical accepted intervals at a 1-mm bound require 149 checks with the
+hint versus 1024 cold checks. Failed preparation must leave history unchanged.
+
+Focused intervals resolve the first crossing of their accepted streaming
+interpolant. The MFP kernel invokes the boundary for every interval between
+events, before the endpoint scattering operation. An absorbed particle draws
+no later scattering angle, branch or optical depth. Its terminal momentum uses
+the same interval's logarithmic-momentum interpolant. Existing field-line
+endpoint exit rules are retained and recorded separately from shock return.
+
+The joined ledger checks candidate minus no-focused-escape exclusions against
+committed source number and birth energy, then checks committed equals retained
+plus shock-return, domain-exit and geometry-retirement measures. Birth energy
+is immutable per physical representative; event energy is evaluated at the
+actual numerical loss. Signed deterministic flow work and prescribed wave-frame
+scattering work are separate. Source energy is an explicitly supplied already
+accelerated population, not a newly resolved accelerator energy budget.
+The ledger prints retained birth energy separately from retained current
+kinetic energy, so external checks can recompute both balances independently.
+
+The first particle consumer admits one transverse supported leading front.
+Tangency, multiple simultaneous absorbing fronts, occupied connectivity/
+criticality changes and unsupported downstream continuation return explicit
+errors. They do not receive obliquity floors, guessed branches or ambient
+continuation. The existing conservative merger lacks a birth-energy invariant;
+if its actual trigger is reached for this source, it rejects before changing
+weights. Cohort-preserving resampling, remapping and moving restart belong to
+stage 7. Exact splitting already copies the complete cohort record.

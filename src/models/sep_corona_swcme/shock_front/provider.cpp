@@ -425,6 +425,15 @@ Core::Result<GeometrySample> Provider::EvaluateRay(CoronalCME::Vec3 ray,
       configuration_->direction,{},configuration_->halfWidthRad,0},ray,stableId);
 }
 
+Core::Result<GeneratingSphere> Provider::Sphere(double epoch) const {
+  const auto state=Trajectory(epoch);
+  if(!state.ok())return Core::Result<GeneratingSphere>::Failure(state.status.code,state.status.message);
+  const double sine=std::sin(configuration_->halfWidthRad);
+  const double center=state.value.apexRadiusM/(1+sine);
+  return Core::Result<GeneratingSphere>::Success({center*configuration_->direction,
+      center*sine,configuration_->direction,std::cos(configuration_->halfWidthRad)});
+}
+
 Core::Result<ShockRecord> Provider::EvaluateFrontPoint(
     CoronalCME::Vec3 position,double epoch,std::uint64_t stableId) const {
   using Return=Core::Result<ShockRecord>;

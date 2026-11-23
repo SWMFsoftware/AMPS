@@ -2,6 +2,7 @@
 #include "sep_source_lifecycle.h"
 #include "sep_run_configuration.h"
 #include "../transport_common.h"
+#include "../reduced_shock_particles.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -89,7 +90,14 @@ void Merge(int species,long int& head,int spatialBins,int parallelBins,int norma
     throw std::runtime_error("conservative merger list does not belong to this physical segment owner");
   const auto event=events.find(EventKey(line,species));
   if(event==events.end())throw std::runtime_error("conservative merger has no persisted physical source event");
-  auto random=SourceLifecycle::Random(event->second,static_cast<std::uint64_t>(segment),UINT64_C(0x4d45524745));
+  // Front insertion changes array indices without changing the surviving
+  // material segment. Key the numerical population event by that segment's
+  // stable label, not by its transient index or MPI owner. Conversion of a
+  // negative signed label to uint64_t is defined modulo 2^64 and injective
+  // over int64_t, so inward extensions retain distinct reproducible streams.
+  const auto material=FL::FieldLinesAll[line].ExternallyManagedGeometry?
+      FL::FieldLinesAll[line].FirstMaterialLabel+segment:segment;
+  auto random=SourceLifecycle::Random(event->second,static_cast<std::uint64_t>(material),UINT64_C(0x4d45524745));
   const double tolerance=Run::Active().get().populationControl.relativeInvariantTolerance;
   std::sort(pointers.begin(),pointers.end(),[](long int a,long int b){return Identity(a)<Identity(b);});
   std::vector<Conservative::Particle> particles;
@@ -106,6 +114,15 @@ void Merge(int species,long int& head,int spatialBins,int parallelBins,int norma
     particle.parallelMPerS=PB::GetVParallel(pointer);particle.normalMPerS=PB::GetVNormal(pointer);
     particle.massKg=PIC::MolecularData::GetMass(species);
     particle.chargeC=PIC::MolecularData::GetElectricCharge(species);
+    if(ReducedParticles::Native::Enabled()) {
+      // Anonymous native particle extensions migrate and split with the whole
+      // record. Read the immutable source record; never manufacture a missing
+      // birth energy from an evolved velocity or from a neighbouring particle.
+      ReducedParticles::Native::SourceRecord source;
+      std::memcpy(&source,PB::GetParticleDataPointer(pointer)+SEP::Offset::ReducedSourceRecord,sizeof(source));
+      if(source.schema!=1)throw std::runtime_error("conservative reduced merger requires source birth-energy history");
+      particle.hasBirthEnergy=true;particle.birthKineticEnergyJ=source.birthKineticEnergyJ;
+    }
     parallelMaximum=std::max(parallelMaximum,std::fabs(particle.parallelMPerS));
     normalMaximum=std::max(normalMaximum,std::fabs(particle.normalMPerS));
     particles.push_back(particle);

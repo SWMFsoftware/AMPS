@@ -277,7 +277,17 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --input=<path>              Equivalent equals-sign form.\n"
       << "  --reduced-shock-event <path> Couple the shared HCI reduced front and\n"
       << "                               ambient provider to native field-line state.\n"
-      << "                               Requires --input; runs with zero particles.\n"
+      << "                               Requires --input; particles default to off.\n"
+      << "  --reduced-shock-particles <on|off> Enable the net first-passage source.\n"
+      << "  --shock-release-distance-m <m> Required positive physical normal\n"
+      << "                               distance when particles are enabled; no default.\n"
+      << "  --shock-return-policy <delete|pass> Default delete; pass is unimplemented\n"
+      << "                               and terminates at native startup.\n"
+      << "  --shock-source-normalization <net-upstream-escape|gross-emission>\n"
+      << "                               Default net-upstream-escape; gross is unimplemented.\n"
+      << "  --shock-boundary-tolerance-m <m> Numerical surface-linearization tolerance.\n"
+      << "  --reduced-source-verification-energy-j <J> Explicit manufactured monoenergy\n"
+      << "                               source; zero (default) selects core DSA.\n"
       << "  --initialization-only       Complete AMPS/model initialization, write the\n"
       << "                               configured mesh and field-line Tecplot files,\n"
       << "                               then finalize MPI before the first time step.\n"
@@ -410,6 +420,9 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "\n"
       << "Authoritative run controls (WP30):\n"
       << "  --total-iterations <N>       Positive standalone driver iteration count.\n"
+      << "  --resume-checkpoint <path>   Resume a qualified reduced material run.\n"
+      << "  --checkpoint-save <path> --checkpoint-at-step <N>\n"
+      << "                               Save after full physical step N and stop.\n"
       << "  --shock-model <analytical|swcme1d>\n"
       << "  --cme-scenario <fast|slow>   Select the frozen SWCME parameter set.\n"
       << "  --swcme-failure-policy <strict|clamp-radius|diagnostic-fallback>\n"
@@ -551,6 +564,40 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       continue;
     }
 
+    // Keep all source switches in the maintained parser. Both value spellings
+    // and case-insensitive enums share the historical last-occurrence policy;
+    // unsupported physical choices are recognized here and rejected by the
+    // native preflight, before any particle or source history is allocated.
+    if(option_name=="--reduced-shock-particles") {
+      if(!ParseBooleanOption(argc,argv,i,option_name,value_from_equals,
+          "reduced-shock particle consumer",options.reducedParticles.enabled,err))return false;
+      continue;
+    }
+    if(option_name=="--shock-release-distance-m"||option_name=="--shock-boundary-tolerance-m"||
+        option_name=="--reduced-source-verification-energy-j") {
+      double& value=option_name=="--shock-release-distance-m"?options.reducedParticles.releaseDistanceM:
+          option_name=="--shock-boundary-tolerance-m"?options.reducedParticles.boundaryToleranceM:
+          options.reducedParticles.verificationMonoenergeticEnergyJ;
+      if(!ParseDoubleOption(argc,argv,i,option_name,value_from_equals,
+          option_name.c_str(),option_name!="--shock-boundary-tolerance-m",value,err))return false;
+      continue;
+    }
+    if(option_name=="--shock-return-policy"||option_name=="--shock-source-normalization") {
+      std::string value;
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,value,err))return false;
+      value=ToLower(value);
+      if(option_name=="--shock-return-policy") {
+        if(value=="delete")options.reducedParticles.returnPolicy=ReducedParticles::ReturnPolicy::Delete;
+        else if(value=="pass")options.reducedParticles.returnPolicy=ReducedParticles::ReturnPolicy::Pass;
+        else {err<<"ERROR: --shock-return-policy requires delete or pass.\n";return false;}
+      } else {
+        if(value=="net-upstream-escape")options.reducedParticles.normalization=ReducedParticles::Normalization::NetUpstreamEscape;
+        else if(value=="gross-emission")options.reducedParticles.normalization=ReducedParticles::Normalization::GrossEmission;
+        else {err<<"ERROR: --shock-source-normalization requires net-upstream-escape or gross-emission.\n";return false;}
+      }
+      continue;
+    }
+
     if (option_name == "--initialization-only") {
       if (!value_from_equals.empty()) {
         err << "ERROR: option '--initialization-only' does not take a value.\n";
@@ -560,6 +607,17 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       continue;
     }
 
+    if(option_name=="--resume-checkpoint"||option_name=="--checkpoint-save") {
+      auto& path=option_name=="--resume-checkpoint"?options.checkpointResumePath:options.checkpointSavePath;
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,path,err))return false;
+      if(path.empty()){err<<"ERROR: checkpoint path must be nonempty.\n";return false;}
+      continue;
+    }
+    if(option_name=="--checkpoint-at-step") {
+      if(!ParsePositiveIntegerOption(argc,argv,i,option_name,value_from_equals,
+          "complete physical checkpoint step",options.checkpointAtStep,err))return false;
+      continue;
+    }
     if (option_name == "--initialization-output-dir") {
       if (!GetOptionValue(argc, argv, i, option_name, value_from_equals,
                           options.initializationOutputDirectory, err)) {
@@ -1276,6 +1334,18 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
   if (!options.reducedShockEventPath.empty() && options.inputPath.empty()) {
     err << "ERROR: --reduced-shock-event requires --input so the native "
            "field-line geometry and timestep are explicit.\n";
+    return false;
+  }
+  const bool checkpoint=!options.checkpointResumePath.empty()||!options.checkpointSavePath.empty()||options.checkpointAtStep!=0;
+  if(checkpoint&&(options.reducedShockEventPath.empty()||options.initializationOnly||
+      options.listTests||options.listMovers||executionRequested||options.runTestManager)) {
+    err<<"ERROR: checkpoint operation requires an ordinary --reduced-shock-event material run.\n";return false;
+  }
+  if(options.checkpointSavePath.empty()!=(options.checkpointAtStep==0)) {
+    err<<"ERROR: --checkpoint-save and --checkpoint-at-step must be supplied together.\n";return false;
+  }
+  if(options.reducedParticles.enabled&&options.reducedShockEventPath.empty()) {
+    err<<"ERROR: --reduced-shock-particles on requires --reduced-shock-event and --input.\n";
     return false;
   }
   if (!options.initializationOutputDirectory.empty() &&

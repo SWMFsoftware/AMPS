@@ -1,5 +1,72 @@
 # srcSEP field-line solar energetic particle transport
 
+## Material continuation qualification, 2026-11-22
+
+Stage 7 is complete for the prescribed reduced SSE/Parker material profile:
+all 150 required MPI job checks pass, including two-/four-worker restart and
+1↔8 ownership changes. The legacy checkpoint fixtures now use explicit moving
+material transport; isolated wave/codec checks retain their old assertions
+separately. See the status report for exact scope and source identities.
+Stages 8–9 are not yet qualified. Checkpoint schema 5 records the prescribed
+reduced-core material line, its stable labels, topology, epoch/generation, complete particle
+histories, source counters and signed ledgers, sampling exposure and native
+buffer phase. Earlier corrected checkpoint schemas are rejected explicitly.
+See [the status report](validation/STANDALONE_INTEGRATION_STATUS.md) for actual
+executions; availability of an interface alone is not production qualification.
+
+For this material path, `--checkpoint-save PATH --checkpoint-at-step N` writes
+after complete physical step N and stops. `--resume-checkpoint PATH` restores
+before opening the next particle/sampling window. Supply the same initialization
+deck, reduced event, source, mover and intended total iteration count to both
+roles. These operational switches do not change the frozen physical run or dt.
+They require an ordinary reduced-material run and cannot be mixed with test or
+initialization-only modes. No SWMF restart or other backend is admitted by these
+switches.
+
+Changing MPI count is restricted to the keyed reduced-source consumer. New
+owners are selected from stable material labels; particles retain every source
+and stochastic-history byte. Local collecting numerators and cumulative source
+ledgers are added once, then carried on rank zero; completed material numerators
+and exposure already represent the whole physical ensemble and are retained
+once. A future output reduction therefore does not multiply historical samples
+by the old or new number of ranks. The retained fixed-line codec does not establish a material owner. CP05C/F
+fixtures now supply explicit reduced-material startup data; their original
+wave/codec operator checks are retained separately as CP05O/OF without particle
+stepping. Missing material inputs produce structured ERROR before allocation.
+Live local wave evolution is not encoded by this material path.
+
+Material checkpoint images order complete normalized particle records by
+immutable ID. Thread arrival and pool allocation do not define a physical
+ordering for this keyed source/mover model. Sampling uses its own read-only
+canonical physical-input index; inventories and conservative resampling use
+ID order. Every stochastic-history byte, numerator and signed ledger is
+retained. The fixed-line operator codec preserves its older semantic list
+order. This prevents scheduling alone from changing exact continuation.
+
+The physical prefix of native vertex/segment storage is independent of the
+alternating collecting/completed offsets. Geometry updates must copy that prefix
+only, while diagnostic histories stay with their material segment. Using the
+current collecting offset as its length accidentally included completed samples
+on alternate output cycles. The corrected accessor uses total storage minus the
+two diagnostic buffers. Collective field-line output also now has one shared
+file writer, sums counts/speed sums before computing means, and reduces fluence
+into a temporary view without writing a global cumulative value back to every
+rank. Output data are staged before file publication.
+
+The saved physical epoch also does not imply a new front-cache cadence. A
+checkpoint retains the actual committed core cache epoch/generation and builds
+its restored material interval from that staged owner. This preserves provider
+identity even if a host has not refreshed a cache at the current particle time.
+Segment source-selection weights are initialized to zero on construction and
+pool reuse; the configured legacy sampler must still initialize its own law.
+Heap contents or a previous pool occupant are not a physical source law.
+
+Reduced-source conservative merging adds immutable birth kinetic energy [J]
+to the existing number/current-energy/momentum/pitch/position constraints.
+Current energy cannot replace birth energy after cooling. No missing history is
+reconstructed and no survivor is moved to repair a failed moment check. The
+merger keeps sparse/rank-limited populations rather than relaxing a gate.
+
 `srcSEP` models solar energetic particle (SEP) transport along magnetic field
 lines embedded in three-dimensional space.  The field lines carry solar-wind,
 interplanetary magnetic-field, shock, and turbulence state from analytic
@@ -57,15 +124,18 @@ evolution. Existing k values remain logarithmic bin centers. Physical validity
 limits await the convergence study; dependent production paths reject an
 unqualified closure explicitly. Controlled diagnostic tests remain available.
 
-Corrected particle storage now uses transport schema 4 and keyed-stream schema 2.
+Corrected reduced-source particle storage now uses transport schema 5 and
+keyed-stream schema 2.
 It retains all three operator streams, cached normal variates, accepted-interval
 counters, residual scattering optical depth, scattering-event index and split
 serial, plus the declared birth window and first-movement duration. Schema-4
 native birth tests now pass on one and two ranks after correcting an explicit
-fixture epoch; current same-process checkpoint tests also pass with schema 4.
-Fixed-analytic API continuation now also passes separate write/resume MPI
-processes for all three movers, including persisted geometric flux caches.
-Production resume entry points and live-four-state persistence remain open.
+fixture epoch. Historical schema-4 fixed-analytic API campaigns passed
+same-process and separate write/resume MPI roles, including geometric flux
+caches; the current legacy fixed-line startup is incompatible with the
+material-owner requirement and is not qualified by those historical passes.
+The schema-5 prescribed reduced-material production resume path passes the
+campaign above. Live-four-state persistence remains open.
 Exact PIC splitting
 initializes children at the actual split site;
 the original parent retains its stochastic history, and a byte clone used for
@@ -884,8 +954,12 @@ invalid input and a stability-limit underflow are errors rather than silent
 clamps.
 
 The canonical Parker mover advances the Itô process
-`ds=(U_parallel+d(kappa)/ds)dt+sqrt(2*kappa*dt)dW`, with `kappa` and its SI
-gradient supplied together by `SpatialDiffusionProvider`. The canonical
+`ds=[d(kappa)/ds+kappa*dln(A)/ds]dt+sqrt(2*kappa) dW`, on the material line,
+with `A |B|=Phi`, `kappa` and its SI gradient supplied together by
+`SpatialDiffusionProvider`. These fixed-number representatives carry the
+physical-number measure `4 pi p^2 A f ds dp`; mapping metres to the segment
+coordinate does not supply the tube-area drift. Physical U remains available
+for strain, cooling and shock-relative speed. The canonical
 `fte-dmumu` mover obtains `Dmumu`, `dDmumu/dmu`, provenance, and turbulence-state
 identity from `PitchAngleDiffusionProvider`; it uses symmetric deterministic /
 stochastic / deterministic splitting, reflective pitch-angle boundaries, and
@@ -1555,3 +1629,108 @@ helpers or restore missing history in old particles. See
 [../srcInterface/README.md](../srcInterface/README.md) for contracts and limits.
 Focused kernel passes are not a full regression pass: the original eight-rank
 run and unchanged energy/pitch-angle reference comparisons remain required.
+
+All srcSEP field-line providers now pass zero bulk coordinate advection to the
+1D movers while retaining physical U, grad(U), scattering and cooling inputs.
+Data provenance never selects an Eulerian particle equation. The legacy analytical
+native moving-grid/shock ordering remains unqualified: its generic update is
+conditional and skips the last vertex. The reduced-core Parker owner described
+below supplies a separate registered, complete-endpoint geometry transaction. The approved correction moves all nodes
+and extends the inner end along B, creating empty segments that use the existing
+particle source rules. The proposed callback API, radial coverage boundaries,
+particle-loss ledgers, material-coordinate remap, segment-local exposure and
+geometry/shock ordering are specified in
+[the moving-geometry implementation design](../src/pic/MOVING_FIELD_LINE_GEOMETRY_DESIGN.md).
+The generic native container/sampling implementation is available; automatic
+analytical-model advancement still needs its physical state callback contract.
+Particle preflight rejects an unregistered geometry owner, so plasma-comoving
+particles cannot silently run on an unmoving analytical mesh. The existing
+fixed-geometry checkpoint codec also rejects these material lines rather than
+inventing missing topology/exposure history. Real MPI and full coupled/reference
+qualification remain separate gates. Geometry frame metadata,
+material label remapping and the existing snapshot-time policy are documented
+in TRANSPORT_NUMERICS.md; CP03G08–10 provide independent frame controls.
+
+
+## Standalone core integration, stages 0–4
+
+The selected existing reduced SSE provider now drives one configured open
+Parker-exterior material line. The initial curve is traced through the core B;
+every vertex follows the core's actual HCI U, including radial acceleration
+and azimuthal flow. The native owner runs after the completed particle read
+phase and before the next step's connectivity/source queries. It stages all
+vertex states, inverse-flow history for inserted material, connectivity and
+metadata before MPI readiness. Allocation/query failure leaves live geometry,
+particles, segment exposure and published metadata unchanged.
+
+Inner extension follows B by complete first-segment arc increments, not by
+minus U: the wind and spiral field generally point in different directions.
+Each inserted segment starts empty with zero exposure. Removing an entirely
+exterior tail chord deletes its particles once and archives its local sampling
+history; represented-number/energy losses are reported. Existing material
+coordinates retain their segment fraction under stretching and shift index
+only for prefix insertion. Geometry integration subdivisions do not add sample
+opportunities or modify the global physical timestep.
+
+The adapter exports explicit electron/proton/alpha densities, core thermal
+state, Cartesian grad(B) and grad(U), epochs and immutable interval ownership.
+Native ion density is proton density; mass density uses the same declared
+composition. A continuous-time core query can cross a prepared cache cadence
+without shortening dt. No core plasma, field or shock equation is copied here.
+The generating SSE sphere supplies candidates only: rear roots and unsupported
+flanks are rejected, genuine multiple intersections are retained, and each
+accepted point carries the core normal, speed, classification and jump state.
+
+Stages 0–4 do not select a source, acceleration law or downstream boundary.
+Production reduced runs retain the zero-particle invariant and require explicit
+prescribed turbulence with local evolution/feedback disabled. Diagnostic tests
+manufacture initial particles to exercise all three native movers. No physical
+downstream volume, moving-geometry restart, PFSS material evolution or general
+CME backend admission is claimed. See the [roadmap](INTEGRATION_ROADMAP_STANDALON.md),
+[test contract](validation/STANDALONE_INTEGRATION_TEST_CONTRACT.md),
+[example](examples/reduced-shock/README.md), and
+[stage report](validation/STANDALONE_INTEGRATION_STATUS.md) for evidence and limits.
+# Reduced-front particle consumer (roadmap stages 5–6)
+
+The reduced-core adapter can now supply an explicitly enabled upstream SEP
+consumer. See [the executable example and contract](examples/reduced-shock/README.md)
+and [qualification status](validation/STANDALONE_INTEGRATION_STATUS.md). The
+existing event remains a prescribed ambient/front authority; enabling this
+consumer does not enable a particle engine or downstream volume in the core.
+
+Use `--reduced-shock-particles on` with a strictly positive physical
+`--shock-release-distance-m`. No release-distance default is supplied.
+The existing local-compression DSA implementation owns the momentum law;
+upstream-plasma-frame isotropy owns the parent angular distribution. Focused
+births use outward-normal-flux weighting; Parker consumes the angular marginal
+and uses an isotropic diagnostic projection. Number/energy normalization and
+birth position are unchanged by that equation-specific angular projection.
+
+`--shock-return-policy delete` is the default. `pass` terminates through the
+native AMPS error handler because downstream transport is not implemented.
+`--shock-source-normalization net-upstream-escape` is the first implemented
+normalization. `gross-emission` is recognized and rejected with the missing
+accelerator-to-reference escape contract explained; it is never silently
+converted to net emission. This preserves the core production source gate.
+
+The physical AMPS timestep stays constant. Full-window stratified birth times,
+remaining first movements, curved-front numerical refinement and Parker
+Brownian-bridge first passage do not add sampling opportunities or shorten the
+host step. The new particle-history schema is five; legacy records cannot
+invent missing birth energy. Default run-configuration serialization remains
+version four, while an explicit reduced-source extension uses version five.
+Moving-geometry checkpoint/resume now passes the separate real-MPI stage-7
+campaign for the prescribed reduced-core profile above; that result does not
+qualify fixed analytical initialization or a different backend.
+
+Complete stage-6 campaigns are audited with
+`make -C srcSEP test-standalone-integration-application EVIDENCE_DIR=...`.
+The maintained checker requires the actual process receipts, all 400 fixed
+physical steps, complete output and material-segment exposure, identical
+source histories across movers and independently recomputed number/birth/
+current-energy balances. Its negative controls reject deliberately corrupted
+copies of real completed output. See the qualification report for exact source
+identities, commands and results; a short component run does not close this gate.
+The declared stage-6 synthetic campaign now passes this complete-driver gate
+with all three movers. Parallel lifecycle/restart is the stage-7 gate described above. Additional
+backend and broader release qualification remain stages 8–9.

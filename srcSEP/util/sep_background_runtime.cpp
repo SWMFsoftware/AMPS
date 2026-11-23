@@ -87,6 +87,7 @@ std::string CurrentConfigurationFingerprint() {
   // included, preserving identical provider state in cross-mover comparisons.
   canonical << "schema=srcsep-background-v3"
             << ";provider=" << ProviderName(ConfiguredProvider())
+            << ";particle-coordinate-frame=" << AMPS::FieldLine::CoordinateFrameName(ParticleCoordinateFrame())
             << ";coefficient-radius-frame=" << RadiusFrame::ContractIdentity(ConfiguredProvider())
             << ";reduced-event="
             << (ReducedShock::Enabled() ? ReducedShock::EventIdentity() : "none")
@@ -119,6 +120,12 @@ std::string CurrentConfigurationFingerprint() {
     canonical<<";analytic-radial="<<AnalyticRadial::CanonicalDeclaration(
         AnalyticRadial::DeclaredNativeWind());
   }
+  if(ConfiguredProvider()==Provider::ReducedShock) {
+    // The legacy adapter's ambiguous numberDensityM3 remains an electron
+    // compatibility field, whereas native transport now stores explicit np.
+    // Prevent an older ne-based checkpoint from sharing this interpretation.
+    canonical<<";reduced-native-density=proton-v1;reduced-query=interval-v1";
+  }
   if(ConfiguredProvider()==Provider::Swmf) {
     canonical<<";imported-wave-contract="<<Waves::StandardBatsrus::ContractIdentity();
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -132,6 +139,23 @@ std::string CurrentConfigurationFingerprint() {
   }
 
   return FingerprintConfiguration(canonical.str());
+}
+
+AMPS::FieldLine::CoordinateFrame ParticleCoordinateFrame() {
+  const auto provider=ConfiguredProvider();
+  const auto frame=DeclaredParticleCoordinateFrame(provider);
+  if(provider==Provider::Swmf) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    // Geometry provenance is validated, not used to choose a different
+    // particle equation. A fixed imported grid cannot silently restore U*dt
+    // in the srcSEP field-line movers; its owner must supply material geometry.
+    if(AMPS2SWMF::FieldLineData::ParticleCoordinateFrame()!=frame)
+      throw std::logic_error("srcSEP requires plasma-comoving SWMF field-line geometry");
+#else
+    throw std::logic_error("SWMF coordinate-frame declaration is unavailable in this build");
+#endif
+  }
+  return frame;
 }
 
 void PublishModelOwnedSnapshot(Provider provider, double epoch_seconds,
@@ -158,9 +182,19 @@ void PublishModelOwnedSnapshot(Provider provider, double epoch_seconds,
   // Analytic/SWCME updates historically retain one geometry generation.  The
   // reduced provider has an event-defined physical generation even though its
   // line topology stays fixed, so its caller supplies that nonzero identity.
-  const std::uint64_t generation=explicit_generation!=0
+  std::uint64_t generation=explicit_generation!=0
       ? explicit_generation
       : (current?current->field_line_generation():UINT64_C(1));
+  // A material line's geometry generation changes when it actually moves or
+  // changes topology, independently of a provider cache/output cadence. The
+  // initial registered geometry is generation one in snapshot numbering.
+  for(int line=0;line<PIC::FieldLine::nFieldLine;++line) {
+    const auto& geometry=PIC::FieldLine::FieldLinesAll[line];
+    if(!geometry.ExternallyManagedGeometry)continue;
+    if(geometry.GeometryGeneration==std::numeric_limits<std::uint64_t>::max())
+      throw std::logic_error("material snapshot geometry generation overflow");
+    generation=std::max(generation,geometry.GeometryGeneration+1);
+  }
 
   BackgroundSnapshot snapshot(
       provider, Ownership::ModelOwned, epoch_seconds, epoch_seconds,
@@ -179,6 +213,13 @@ void PrepareSnapshotForParticleStep() {
   if (!std::isfinite(simulation_time)) {
     throw std::logic_error("PIC simulation clock returned a non-finite value");
   }
+  // Zero bulk particle advection requires an actual material geometry owner.
+  // Provider names and nonzero endpoint U do not establish that owner. Reject
+  // an unregistered analytical/imported line before a production particle can
+  // silently lose its bulk motion; tests must satisfy the same invariant.
+  for(int line=0;line<PIC::FieldLine::nFieldLine;++line)
+    if(!PIC::FieldLine::FieldLinesAll[line].ExternallyManagedGeometry)
+      throw std::logic_error("srcSEP plasma-comoving particles require an explicitly registered material geometry owner");
 
   std::shared_ptr<const BackgroundSnapshot> current = store.Current();
 

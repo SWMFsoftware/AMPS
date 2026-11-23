@@ -47,6 +47,9 @@ struct FocusedTransportBackground {
         velocityDivergencePerS(divergence) {}
 
   double dLnAbsBdsPerM = 0.0;
+  // Compatibility field name: advection relative to the declared geometry
+  // [m/s], supplied by the adapter. Zero on plasma-comoving material lines;
+  // U dot tangent on fixed geometry. Physical grad(U) is supplied separately.
   double plasmaAdvectionMPerS = 0.0;
   double parallelVelocityGradientPerS = 0.0;
   double velocityDivergencePerS = 0.0;
@@ -114,7 +117,8 @@ double FocusedLogMomentumRatePerS(
 // Symmetric deterministic/stochastic/deterministic splitting is declared here
 // so every caller uses the same order: half focusing/velocity-gradient drift
 // and half cooling, one Ito D_mumu kick, then the remaining deterministic half;
-// streaming uses the midpoint pitch angle.  D_mumu is evaluated from one
+// momentum and pitch advance together by midpoint, and streaming uses the
+// trapezoidal parallel velocity (including cooling of speed). D_mumu uses one
 // provider sample carrying the turbulence-state identity used for deposition.
 FocusedTransportIncrement AdvanceFocusedTransportDmumu(
     const FocusedTransportState& initial,

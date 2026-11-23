@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run paired native checkpoint roles in genuinely separate MPI processes.
+"""Run fresh native checkpoint roles with explicit material startup inputs.
 
-This is a software/API continuation gate on the documented fixed analytic
-diagnostic scope. It does not add a production resume parser or qualify the
-material-grid/four-polarization/relativistic-source physics. Each process owns
-unique scratch, while only explicitly named checkpoint artifacts cross roles.
+The maintained CP05F IDs now use complete host steps on the approved moving
+reduced background. --operator-only selects the separately linked frozen wave/
+codec fixture, which never traces particles. Both paths preserve actual child
+return codes, full reports and byte-exact final checkpoint comparison.
 """
 from __future__ import annotations
 
@@ -67,8 +67,10 @@ def main() -> int:
     parser.add_argument("--mpi-ranks", type=int, default=1)
     parser.add_argument("--mpi-exec", default="mpiexec")
     parser.add_argument("--timeout", type=float, default=1200)
-    parser.add_argument("--cases", nargs="+", choices=("CP05F01", "CP05F02", "CP05F03"),
-                        default=("CP05F01", "CP05F02", "CP05F03"))
+    parser.add_argument("--operator-only", action="store_true")
+    parser.add_argument("--startup-input", type=Path,default=SOURCE/"examples/reduced-shock/field_line.in")
+    parser.add_argument("--event", type=Path,default=SOURCE/"examples/reduced-shock/positive_1au.event")
+    parser.add_argument("--cases", nargs="+",choices=("CP05F01","CP05F02","CP05F03","CP05OF01","CP05OF02","CP05OF03"))
     args = parser.parse_args()
     amps, output = args.amps.resolve(), args.output.resolve()
     if not amps.is_file() or args.mpi_ranks < 1 or args.timeout <= 0:
@@ -77,8 +79,11 @@ def main() -> int:
         parser.error("choose a new or empty output directory; previous evidence is preserved")
     output.mkdir(parents=True, exist_ok=True)
     executable_hash = binary_hash(amps)
+    cases=args.cases or (["CP05OF01","CP05OF02","CP05OF03"] if args.operator_only else ["CP05F01","CP05F02","CP05F03"])
+    if any(identifier.startswith("CP05OF")!=args.operator_only for identifier in cases):
+        parser.error("case IDs and --operator-only scope disagree")
     results = []
-    for case in dict.fromkeys(args.cases):
+    for case in dict.fromkeys(cases):
         case_dir = output / case
         case_dir.mkdir()
         prefix = case_dir / "physics"
@@ -90,8 +95,11 @@ def main() -> int:
             request = role_dir / "fixture.args"
             # All nested paths are explicit absolute output paths. There is no
             # input-directory search, writable link to source, or env parser.
-            request.write_text("SEP_CHECKPOINT_FRESH_PROCESS 1\nrole " + quoted(role) +
-                               "\nprefix " + quoted(str(prefix)) + "\n", encoding="utf-8")
+            version=1 if args.operator_only else 2
+            text="SEP_CHECKPOINT_FRESH_PROCESS "+str(version)+"\nrole "+quoted(role)+"\nprefix "+quoted(str(prefix))+"\n"
+            if not args.operator_only:
+                text+="startup_input "+quoted(str(args.startup_input.resolve(strict=True)))+"\nevent "+quoted(str(args.event.resolve(strict=True)))+"\n"
+            request.write_text(text,encoding="utf-8")
             report = role_dir / "srcsep-tests.json"
             command = [args.mpi_exec, "-n", str(args.mpi_ranks), str(amps),
                        "--test", case, "--test-input", str(request),
@@ -121,7 +129,8 @@ def main() -> int:
         print(case, results[-1]["status"], failure, flush=True)
     summary = {"schema": "srcsep-fresh-process-checkpoint-v1", "mpi_ranks": args.mpi_ranks,
                "executable": str(amps), "executable_sha256": executable_hash,
-               "scope": "fixed-analytic-native-diagnostic-API;production-resume-CLI=false;output-continuation=false",
+               "scope": "isolated-frozen-wave-codec;particle_motion=false" if args.operator_only else
+                        "prescribed-reduced-material-native-host;physical_dt_unchanged=true",
                "results": results}
     temporary = output / "summary.json.tmp"
     temporary.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

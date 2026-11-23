@@ -129,6 +129,24 @@ Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::CreateResolved(
   model->event_=std::move(event);
   model->definition_=definition;
   model->pfss_=pfss.value;
+  // A Parker-exterior query on the exact rotation axis repeatedly asks PFSS
+  // for one of these identical source points, at every trajectory RK stage.
+  // Compute its original canonical result once per immutable model. This is
+  // memoization, not an axisymmetric field approximation. Keep the failure
+  // result and signed-zero azimuthal limits; other source points still execute
+  // EvaluateCartesian normally. No query outside its actual domain is repaired.
+  const double axialInside=definition.ambient.sourceSurfaceRadiusM*
+      (1-64*std::numeric_limits<double>::epsilon());
+  model->axialSourceRadiiM_[2]=axialInside;
+  for(unsigned i=1;i<=2;++i) {
+    model->axialSourceRadiiM_[2-i]=std::nextafter(model->axialSourceRadiiM_[3-i],0.0);
+    model->axialSourceRadiiM_[2+i]=std::nextafter(model->axialSourceRadiiM_[1+i],
+        std::numeric_limits<double>::infinity());
+  }
+  for(unsigned j=0;j<model->axialSourceRadiiM_.size();++j)
+    for(unsigned i=0;i<8;++i)
+      model->axialSourceFields_[8*j+i]=model->pfss_.EvaluateCartesian({
+          i&1?-0.0:0.0,i&2?-0.0:0.0,i&4?-model->axialSourceRadiiM_[j]:model->axialSourceRadiiM_[j]});
   const auto& c=model->definition_.composition;
   model->ions_={{"H+",1,1,CoronalCME::Constants::kProtonMassKg,c.protonTemperatureK}};
   if(c.alphaToProtonNumberRatio>0)model->ions_.push_back({"He++",
@@ -302,11 +320,33 @@ Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epoch
   double density=0;
   const double speed=WindSpeed(radius);
   if(radius>=ambient.sourceSurfaceRadiusM) {
-    const Vec3 direction=Rotate(Unit(body),Winding(radius));
+    // On the exact Cartesian rotation axis, every azimuthal rotation leaves
+    // the position direction unchanged. Avoid integrating the Parker winding
+    // angle for that identity operation: moving polar material lines query
+    // this primitive at every RK stage and particle-boundary refinement.
+    // This is exact for any PFSS magnetogram, not an axisymmetric-field or
+    // constant-wind approximation. Off-axis points retain the full winding
+    // integration. In both branches the same PFSS, magnetic-null, coverage,
+    // plasma and finite-value checks below remain authoritative; no validity
+    // test or physical component of the background is bypassed.
+    const Vec3 direction=(body.x==0&&body.y==0)?Unit(body):
+        Rotate(Unit(body),Winding(radius));
     const double inside=ambient.sourceSurfaceRadiusM*
         (1-64*std::numeric_limits<double>::epsilon());
     const Vec3 foot=(inside/Norm(direction))*direction;
-    const auto source=pfss_.EvaluateCartesian(foot);
+    // Floating-point normalization can put an axial foot one ULP away from
+    // inside. Reuse a result ONLY for an exactly equal source point, including
+    // the signs of its zero coordinates. Every cached radius has its own
+    // independently evaluated canonical result; an unmatched foot uses PFSS.
+    // no coordinate quantization, radius tolerance or field interpolation is
+    // introduced. All subsequent null, plasma and finite-value checks remain.
+    const unsigned axialKey=(std::signbit(foot.x)?1U:0U)|
+        (std::signbit(foot.y)?2U:0U)|(std::signbit(foot.z)?4U:0U);
+    std::size_t axialIndex=axialSourceFields_.size();
+    if(foot.x==0&&foot.y==0)for(std::size_t j=0;j<axialSourceRadiiM_.size();++j)
+      if(std::abs(foot.z)==axialSourceRadiiM_[j]){axialIndex=8*j+axialKey;break;}
+    const auto source=axialIndex<axialSourceFields_.size()?
+        axialSourceFields_[axialIndex]:pfss_.EvaluateCartesian(foot);
     if(!source.ok())return Return::Failure(source.status.code,source.status.message);
     const double radialField=CoronalCME::Dot(source.value,Unit(foot))*
         std::pow(ambient.sourceSurfaceRadiusM/radius,2);
