@@ -568,6 +568,7 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
 		      VectorPointList & pointList_II, 
 		      std::array<double, 3> & xMin_D,
 		      std::array<double, 3> & xMax_D){
+#if _MESH_DIMENSION_ == 3
   std::string nameSub = "find_output_list";
 
   /*Something like this. Note: the node shared by two blocks 
@@ -660,6 +661,13 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
     xMax_D[iDim] = xMaxG_D[iDim];
   }
 
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::CPLR::FLUID::find_output_list requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 

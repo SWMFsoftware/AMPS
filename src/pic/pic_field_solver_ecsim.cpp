@@ -661,6 +661,7 @@ static void CheckDivECorrectionSupported() {
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+#if _MESH_DIMENSION_ == 3
  
   double x[3];
   //power of 3 array created
@@ -753,6 +754,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, i
   rhs = -4*Pi*CenterOffset[netChargeIndex]+CenterOffset[divEIndex];
   */
   return;
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
@@ -760,6 +768,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_Legacy(int i,int j,int
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+#if _MESH_DIMENSION_ == 3
 	
 	
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
@@ -1389,6 +1398,13 @@ if (_PIC_STENCIL_NUMBER_==375) {
     }
    
     RhsSupportLength_CenterNodes = iElement;     
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil_Legacy requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
@@ -1491,6 +1507,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData(char *
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
+#if _MESH_DIMENSION_ == 3
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block==NULL) continue;
@@ -1562,10 +1579,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
   }
 
   
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 // update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
+#if _MESH_DIMENSION_ == 3
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -1687,6 +1712,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
     }// for (int k=0;k<_BLOCK_CELLS_Z_;k++)
   }// for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
 
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
@@ -1900,6 +1932,7 @@ static inline void ECSIM_AddGuidingCenterMagnetizationCurrentToCorners(
 _TARGET_HOST_ _TARGET_DEVICE_
 bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,
     double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
+#if _MESH_DIMENSION_ == 3
   double *B_CenterStorage[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
   double *B_CornerStorage[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
   // Per-call host views borrow node-data addresses, never previous-epoch fields.
@@ -2463,10 +2496,19 @@ __syncwarp;
 #endif
 
   return res;
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return false; // not reached: exit() terminates the run
+#endif
 };
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 _TARGET_HOST_ _TARGET_DEVICE_
 bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
+#if _MESH_DIMENSION_ == 3
   double *B_CenterStorage[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
   double *B_CornerStorage[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
   // Per-call host views borrow node-data addresses, never previous-epoch fields.
@@ -3274,11 +3316,20 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
   CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
 
   return res;
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return false; // not reached: exit() terminates the run
+#endif
 };
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
+#if _MESH_DIMENSION_ == 3
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -4245,6 +4296,13 @@ barrier.Sync();
 
 
   CumulativeTiming::UpdateJMassMatrixTime_MPI.UpdateTimer();
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
@@ -4687,6 +4745,7 @@ void exchangeParticleLocal(){
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
+#if _MESH_DIMENSION_ == 3
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -4932,11 +4991,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
   exchangeParticleLocal();
 
   
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
 // update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld){
+#if _MESH_DIMENSION_ == 3
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -5073,6 +5140,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
 
   PIC::Parallel::ProcessBlockBoundaryNodes();
   PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(false);
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
@@ -5128,6 +5202,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
+#if _MESH_DIMENSION_ == 3
   PIC::Mesh::cDataBlockAMR *block;
   long int LocalCellNumber;    
 
@@ -5202,11 +5277,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
   }
 
 
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
   
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
+#if _MESH_DIMENSION_ == 3
   PIC::Mesh::cDataBlockAMR *block;
   long int LocalCellNumber;    
 
@@ -5255,6 +5338,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
     
   }//for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
 
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
   
 
@@ -6156,6 +6246,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C_Block(cTreeNodeA
 
 //compute E^(n+1)  from E^(n+theta) and E^n
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
+#if _MESH_DIMENSION_ == 3
   double WaveEnergySum =0.0;
   double CellVolume=1.0;
 
@@ -6263,6 +6354,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     printf("Total Wave Energy:%f\n",TotalWaveEnergy);
   }
   
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
  
 
@@ -7226,6 +7324,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
 
 int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+#if _MESH_DIMENSION_ == 3
   // 0:    not boundary cell
   // 1:001 x-direction face  
   // 2:010 y-direction face
@@ -7270,10 +7369,19 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
   int val =  isCornerBoundary(sum,node)+isEdgeBoundary(sum,node)+isFaceBoundary(sum,node);
 
   return val;
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return 0; // not reached: exit() terminates the run
+#endif
 }
 
 
 int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+#if _MESH_DIMENSION_ == 3
   // 0:    not boundary corner
   // 1:001 x-direction face  
   // 2:010 y-direction face
@@ -7317,6 +7425,14 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   int val =  isCornerBoundary(sum,node)+isEdgeBoundary(sum,node)+isFaceBoundary(sum,node);
 
   return val;
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return 0; // not reached: exit() terminates the run
+#endif
 }
 
 

@@ -374,6 +374,7 @@ namespace {
   _TARGET_HOST_ _TARGET_DEVICE_
   bool AddRowStencilCell(PIC::InterpolationRoutines::cRowStencil *RowStencil,double Weight,
       cInterpolationTreeNode *SourceNode,int i,int j,int k) {
+#if _MESH_DIMENSION_ == 3
     if ((RowStencil==NULL)||(SourceNode==NULL)) return false;
 
     const int ijk[3]={i,j,k};
@@ -416,6 +417,14 @@ namespace {
     }
 
     return AddRowStencilCellByCoordinate(RowStencil,Weight,x,SourceNode);
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::InterpolationRoutines (anonymous namespace)::AddRowStencilCell requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return false; // not reached: exit() terminates the run
+#endif
   }
 
   /*
@@ -1583,6 +1592,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
 _TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil,PIC::InterpolationRoutines::cRowStencil *RowStencil,bool BuildPointerStencil) {
+#if _MESH_DIMENSION_ == 3
   long int nd;
   PIC::Mesh::cDataCenterNode *cell;
 
@@ -1816,6 +1826,13 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
     else Stencil.flush();
   }
   else if ((BuildPointerStencil==true)&&(Stencil.Length>0)&&(PointerDropped==true)) Stencil.Normalize();
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 //init stencil for the corner based interpolation

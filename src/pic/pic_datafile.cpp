@@ -704,7 +704,7 @@ void PIC::CPLR::DATAFILE::SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) SaveBinaryFile(NULL,startNode->downNode[nDownNode]);
+    for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) SaveBinaryFile(NULL,startNode->downNode[nDownNode]);
   }
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
@@ -803,7 +803,7 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) LoadBinaryFile(NULL,startNode->downNode[nDownNode]);
+    for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) LoadBinaryFile(NULL,startNode->downNode[nDownNode]);
   }
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
@@ -1135,7 +1135,7 @@ void PIC::CPLR::DATAFILE::SaveTestReferenceData(const char *fName,cTreeNodeAMR<P
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) SaveTestReferenceData(NULL,startNode->downNode[nDownNode]);
+    for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) SaveTestReferenceData(NULL,startNode->downNode[nDownNode]);
   }
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
@@ -1531,7 +1531,7 @@ void PIC::CPLR::DATAFILE::MULTIFILE::CopyCurrDataFile2NextDataFile(cTreeNodeAMR<
         }
       }
     }
-    else for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) CopyCurrDataFile2NextDataFile(startNode->downNode[nDownNode]);
+    else for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) CopyCurrDataFile2NextDataFile(startNode->downNode[nDownNode]);
   }
 }
 

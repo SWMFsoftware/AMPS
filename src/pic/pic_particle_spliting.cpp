@@ -714,6 +714,13 @@ PIC::ParticleBuffer::SetX(x0,pnew);
 
 //=======================================================================================
 void PIC::ParticleSplitting::Split::Scatter(int particle_num_limit_min,int particle_num_limit_max) {
+#if (_BLOCK_CELLS_X_%2!=0)||(_BLOCK_CELLS_Y_%2!=0)||(_BLOCK_CELLS_Z_%2!=0)
+  // The 2x2x2 cell-group scatter below needs an even number of cells in
+  // each block direction (e.g. not a DIM1 block, _BLOCK_CELLS_Y_=1).  The
+  // former runtime check is resolved by the preprocessor, so the group
+  // indexing is not compiled where it can never run.
+  exit(__LINE__,__FILE__,"Error: the number of cells in a block has to be even in each direction. Change the input file");
+#else
   int inode,i,j,k,i0,j0,k0,di,dj,dk,nParticles;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   long int p;
@@ -1255,6 +1262,7 @@ if (PIC::ThisThread==0) PrintStat(s,i,j,k,node);
       }
     }
   }
+#endif
 }  
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -112,6 +112,36 @@ extern int RequiredConvergedWindows;
 // retain the historical output and cost when this switch is off.
 extern bool Stage9ScienceDiagnosticsEnabled;
 
+// Run length of the nightly regression test (MakefileTest/Table, test "i3").
+// ./Config.pl -amps-test=on compiles with _PIC_NIGHTLY_TEST_MODE_=_PIC_MODE_ON_
+// (Makefile: TESTMODE=on).  As in the other AMPS applications, e.g. the 3D
+// driver srcHartley2/main.cpp and srcCG/main.cpp, that build fixes the run
+// length in the code instead of the input.  ApplyNightlyTestRunControls()
+// then replaces the runtime-input values of simulation.sampling_length,
+// simulation.max_iterations and (when positive)
+// simulation.weight_adaptation_interval.  All three are counts of completed
+// PIC::TimeStep calls, not physical seconds; local time steps are species
+// dependent.  With these values a run is one sampling window, output out=0 is
+// written at iteration 2000, and the regular particle-weight adaptation then
+// runs once at that iteration (interval = window, as in input/i3.in).  The run
+// stops before the convergence test can be applied, so a nightly run is a
+// regression check of the code output, not a converged solution.  A production
+// build (_PIC_NIGHTLY_TEST_MODE_ = _PIC_MODE_OFF_, src/pic/picGlobal.dfn) is
+// not affected.
+constexpr long int NightlyTestSamplingLength=2000;
+constexpr long int NightlyTestMaxIterations=2000;
+constexpr long int NightlyTestWeightAdaptationInterval=2000;
+
+// In a nightly-test build, install the three run controls above in place of
+// the runtime-input values and report both on rank 0.  The function does
+// nothing in other builds, or when the radial backend is disabled.  It must be
+// called after the runtime input is applied and before Validate(), so that
+// the replaced values are validated (e.g. LoadBalanceInterval<=SamplingLength)
+// and Initialize() sets PIC::RequiredSampleLength from them.  A legacy
+// adaptation interval of -1 (adapt at every sampling break) is kept, because
+// it already follows the sampling window.
+void ApplyNightlyTestRunControls();
+
 bool Validate(std::string *error=NULL);
 
 // Complete the AMPS initialization that follows radial mesh construction,

@@ -89,6 +89,7 @@ void PopulateAllNodeThisThread(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode
 }
 
 void PIC::Mover::SetBlockCellIntersectTypes(){
+#if _MESH_DIMENSION_ == 3
   //block types: 1, outside body,not intersection with body
   // 2, has intersection with body 
   // 3, inside the body, no intersection with body  
@@ -256,6 +257,13 @@ void PIC::Mover::SetBlockCellIntersectTypes(){
   }//iBlock
   
 
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::Mover::SetBlockCellIntersectTypes requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 int nodeIndexInArr(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
@@ -398,6 +406,7 @@ void findNeibNodesWithCutCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
 
 }
 int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundaryFlag) {
+#if _MESH_DIMENSION_ == 3
   namespace PB = PIC::ParticleBuffer;
   const bool isSphere=IsSphereGeometry();
   //if firstBoundaryFlag is true, the particle is injected from the boundary
@@ -1074,6 +1083,14 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   PIC::ParticleBuffer::SetX(xFinal,ParticleData);
 
   return _PARTICLE_MOTION_FINISHED_;
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::Mover::TrajectoryTrackingMover_new requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return -1; // not reached: exit() terminates the run
+#endif
 }
 
 

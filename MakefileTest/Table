@@ -2145,15 +2145,27 @@ Keys=-model-data-path=${PTDIR} -spice-path=/scratch/02452/vtenishe/SPICE/cspice 
 -------------------------------------------------------------------------------
 I3 (3I/ATLAS): regression test of the DIM1 radial comet model with brightness
 (srcHartley2, built from input/i3.conf in test mode). Two runs of case 1 from
-input/i3-test.in, 10000 iterations each with one sampling window of 10000 iterations:
+input/i3-test.in. As in the other applications, the test-mode build
+(_PIC_NIGHTLY_TEST_MODE_, -amps-test=on) sets the run length in the code
+(srcHartley2/RadialSimulation.h, NightlyTest*): 2000 iterations, one sampling window of
+2000 iterations, and the regular particle-weight adaptation (interval 2000) after that
+output; the run log reports the replaced runtime-input values (10000 in i3-test.in).
 case1 uses the default STATE_RESOLVED OH loss, and case1sa selects the alternative
 on the command line (--chemistry-variant OH_LOSS=SA1982_VH,
-srcHartley2/CHEMISTRY_VARIANTS.md). The seven radial profiles and the H Lyman-alpha
-and OH brightness profiles of each run (output out=0) are compared with their
-references output/test_i3/<run>.<species>[.brightness]$(TESTi3-REF).ref_np<N>.gz, the
-unchanged AMPS output files for N MPI processes (N=4 and N=8). The references are made
-per machine and compiler: those of passion (GCC) carry the tag [5] (Ref= below), and
-untagged references serve every other machine.
+srcHartley2/CHEMISTRY_VARIANTS.md). A run ends at the iteration limit, before the
+convergence test can be applied, so the test checks that the code output is unchanged;
+it is neither a convergence test nor a validation. The seven radial profiles and the
+H Lyman-alpha and OH brightness profiles of each run (output out=0) are compared with
+their references output/test_i3/<run>.<species>[.brightness]$(TESTi3-REF).ref_np<N>.gz,
+the unchanged AMPS output files for N MPI processes; N is read from the run's amps.log.
+Both runs use $(TESTMPIRUN4) (mpirun -np 4 when it is not set, as in the other tests
+that need a fixed layout), so N=4 in the nightly test and in "make test_i3"; the default
+${MPIRUN} (Makefile.def: NP=2) is not used, because no N=2 references exist.
+References present (SWMF_data PT/AMPS/data/output/test_i3): passion, GCC, tag [5]
+(Ref= below), for N=4 and N=8. SWMF_data has no untagged references (none has been
+committed): on another machine or compiler, or for another N, each result reports
+"reference ... is missing" and is not compared (the test does not pass). The case5
+files there are not used by this test.
 
 #>
 Name=i3
@@ -2188,9 +2200,10 @@ Run=
 >>>@echo Test test_i3 has started: `date`
 >>>@# Each case runs in its own directory (AMPS writes PT/ and the mesh files into the current directory).
 >>>@# Its log amps.log also gives the number of MPI processes to the Check rule.
->>>cd $(TESTi3DIR)/case1 && ${MPIRUN} ../amps -i ../i3-test.in -case 1 2>&1 | tee amps.log
+>>>@# The layout is fixed to that of the references (N=4 by default): ${MPIRUN} would use NP=2 of Makefile.def.
+>>>cd $(TESTi3DIR)/case1 && $(or ${TESTMPIRUN4},mpirun -np 4) ../amps -i ../i3-test.in -case 1 2>&1 | tee amps.log
 >>>@# case1sa: case 1 with the alternative OH loss SA1982_VH (lifetime table named in i3-test.in, path relative to it).
->>>cd $(TESTi3DIR)/case1sa && ${MPIRUN} ../amps -i ../i3-test.in -case 1 --chemistry-variant OH_LOSS=SA1982_VH 2>&1 | tee amps.log
+>>>cd $(TESTi3DIR)/case1sa && $(or ${TESTMPIRUN4},mpirun -np 4) ../amps -i ../i3-test.in -case 1 --chemistry-variant OH_LOSS=SA1982_VH 2>&1 | tee amps.log
 >>>@# The results res/<run>.<species>.dat and res/<run>.<species>.brightness.dat are the unchanged output files.
 >>>-@for C in 1 1sa; do                                                                               \
 >>>for S in H.s=0 H2.s=1 O.s=2 OH.s=3 H2O.s=4 CO.s=5 CO2.s=6 H.brightness.s=0 OH.brightness.s=3; do  \

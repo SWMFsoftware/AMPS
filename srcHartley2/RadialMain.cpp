@@ -892,6 +892,10 @@ int main(int argc,char **argv) {
         validationError.c_str());
     return EXIT_FAILURE;
   }
+  // A nightly-test build (./Config.pl -amps-test=on) runs the fixed test
+  // length of RadialSimulation.h instead of the runtime-input run controls;
+  // applied here so that Validate() checks the values that will be executed.
+  Comet::RadialSimulation::ApplyNightlyTestRunControls();
   if (!Comet::RadialSimulation::Validate(&validationError)) {
     std::fprintf(stderr,"Invalid radial simulation: %s\n",
         validationError.c_str());

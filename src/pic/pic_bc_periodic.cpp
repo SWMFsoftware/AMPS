@@ -87,6 +87,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticles() {
 
 _TARGET_GLOBAL_ 
 void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock) {
+#if _MESH_DIMENSION_ == 3
   int i,j,k,idim;
   long int ptr,NextPtr;
   double *x;
@@ -178,9 +179,17 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cTreeNodeAMR<PI
 
 
   }
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& BlockPair) {
+#if _MESH_DIMENSION_ == 3
   int i,j,k;
   long int ptr,NewParticle,NextPtr;
 
@@ -281,6 +290,13 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
 
     pipe.closeRecv(GhostBlockThread);
   }
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 
@@ -508,6 +524,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataMPI(cBlockPairTable& 
 
 
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::BC::ExternalBoundary::Periodic::findCorrespondingRealBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* GhostPtr) {
+#if _MESH_DIMENSION_ == 3
   double  xGhostCenter[3], xTrueCenter[3];
 
   // find location of the center of the true block                                                                                            
@@ -524,6 +541,14 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::BC::ExternalBoundary::Periodic::fin
   }
 
   return PIC::Mesh::mesh->findTreeNode(xTrueCenter);
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::BC::ExternalBoundary::Periodic::findCorrespondingRealBlock requires a 3D mesh (_MESH_DIMENSION_==3)");
+  return NULL; // not reached: exit() terminates the run
+#endif
 }
 
 //Initialize the periodic boundary manager
@@ -756,6 +781,7 @@ void PIC::BC::ExternalBoundary::Periodic::GetBoundaryExtensionLength() {
 
 
 void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> &BlockVector, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * startNode=NULL){
+#if _MESH_DIMENSION_ == 3
   int NullNodeNum=0;
 
   if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
@@ -772,6 +798,13 @@ void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<c
     BlockVector.push_back(startNode);
     startNode->IsGhostNodeFlag=true;
   }
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 

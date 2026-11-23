@@ -219,6 +219,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,                                                                           vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_corner_vector,
               vector<cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable>& support_center_vector) {
+#if _MESH_DIMENSION_ == 3
   
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
@@ -1651,6 +1652,13 @@ int idx2;
   //shrink_to_fit support vectors 
   support_center_vector.shrink_to_fit();
   support_corner_vector.shrink_to_fit();
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil requires a 3D mesh (_MESH_DIMENSION_==3)");
+#endif
 }
 
 

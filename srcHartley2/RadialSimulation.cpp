@@ -3305,6 +3305,33 @@ void Comet::RadialSimulation::RequestAllocationBurstEmergency() {
 #endif
 }
 
+void Comet::RadialSimulation::ApplyNightlyTestRunControls() {
+  // See RadialSimulation.h.  The macro is defined for every build
+  // (src/pic/picGlobal.dfn: OFF; -D ... =_PIC_MODE_ON_ when TESTMODE=on).
+  if (_PIC_NIGHTLY_TEST_MODE_ != _PIC_MODE_ON_ || !Enabled) return;
+
+  const long int inputSamplingLength=SamplingLength;
+  const long int inputMaxIterations=MaxIterations;
+  const long int inputAdaptationInterval=ParticleWeightAdaptationInterval;
+
+  SamplingLength=NightlyTestSamplingLength;
+  MaxIterations=NightlyTestMaxIterations;
+  if (ParticleWeightAdaptationInterval>0)
+    ParticleWeightAdaptationInterval=NightlyTestWeightAdaptationInterval;
+
+  // The run log must show that the executed run controls differ from the
+  // runtime input, so that no receipt of the input is mistaken for the run.
+  if (PIC::ThisThread==0) {
+    std::fprintf(PIC::DiagnospticMessageStream,
+        "$PREFIX: nightly test mode (_PIC_NIGHTLY_TEST_MODE_=on): run controls replaced: "
+        "sampling_length=%ld (runtime input %ld) max_iterations=%ld (runtime input %ld) "
+        "weight_adaptation_interval=%ld (runtime input %ld)\n",
+        SamplingLength,inputSamplingLength,MaxIterations,inputMaxIterations,
+        ParticleWeightAdaptationInterval,inputAdaptationInterval);
+    std::fflush(PIC::DiagnospticMessageStream);
+  }
+}
+
 bool Comet::RadialSimulation::Validate(std::string *error) {
   if (!Enabled) return true;
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_

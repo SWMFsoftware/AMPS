@@ -66,9 +66,17 @@ The nightly test `i3` (block `Name=i3` in `MakefileTest/Table`, family
 references:
 
 ```sh
-make test_i3 MPIRUN="mpirun -np 4"      # compile, run directory, run, check
+make test_i3                            # compile, run directory, run, check (4 MPI processes)
+make test_i3 TESTMPIRUN4="mpirun -np 8" # the same with the second reference layout, N = 8
 cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff without a tag)
 ```
+
+Since 2026-11-23 the runs use `$(or ${TESTMPIRUN4},mpirun -np 4)`, like the
+other Table tests that need a fixed layout, and no longer `${MPIRUN}`. With
+`${MPIRUN}` a plain `make test_i3` ran with `NP=2` (`Makefile.def`), and every
+result was reported as `reference ... ref_np2.gz is missing`. References exist
+only for N = 4 and N = 8. The nightly scripts set `TESTMPIRUN4="mpirun -np 4"`
+(`utility/TestScripts/AMPS-gpu/RunGNU.sh`), so the nightly test uses N = 4.
 
 - **Build.** `input/i3.conf` built in test mode (`-amps-test=on`), like the
   other nightly tests, with a removed `build/` directory. Test mode switches
@@ -80,14 +88,44 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   `node->xmin`/`node->xmax`, which have `_MESH_DIMENSION_` elements, and the
   block-crossing check of the radial mover (`src/pic/pic_mover.cpp`) compared
   the Cartesian x coordinate, not the radius, with the radial block limits.
+  Until 2026-11-23 the DIM1 build also gave 47
+  `-Waggressive-loop-optimizations` warnings in `src/pic`. They came from
+  3D-only code, which indexes `xmin`/`xmax`/`downNode` past their
+  `_MESH_DIMENSION_` size, and none of it is reached in i3. Since then:
+  - the child-node loops use `(1<<_MESH_DIMENSION_)`;
+  - the bodies of 25 3D-only functions are compiled only for
+    `_MESH_DIMENSION_ == 3`, and otherwise stop with `exit()`;
+  - `Split::Scatter`'s even-block check is done by the preprocessor.
+
+  The build is free of warnings, and the i3 outputs were byte-identical before
+  and after this change. Record:
+  `test_output/i3/rerun_2026-11-23_baseline/compile_warnings_proposal.md` and
+  `test_output/i3/warning_fix_2026-11-23/`.
 - **Input.** `input/i3-test.in` holds cases 1 and 5 of `input/i3.in`
   unchanged; the reduced nightly entry selects case 1 in two OH-loss variants.
   Case 5 remains available in the deck for explicit runs. Only three run
   controls of the common block differ:
   `simulation.reference_injection_particles = 8` (59) and
   `simulation.max_iterations = 10000` (150000), with
-  `simulation.sampling_length = 10000` as before. Each case thus runs one
-  sampling window, and output `out=0` is written at iteration 10000.
+  `simulation.sampling_length = 10000` as before.
+- **Run length (test-mode build).** Like the other applications (e.g. the 3D
+  driver `srcHartley2/main.cpp`, `srcCG/main.cpp`), the test-mode build sets
+  the run length in the code, not in the input. With
+  `_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_` (`-amps-test=on`),
+  `Comet::RadialSimulation::ApplyNightlyTestRunControls()` (called in
+  `RadialMain.cpp` before `RadialSimulation::Validate()`) replaces the
+  runtime-input values with the named constants of `RadialSimulation.h`:
+  `NightlyTestSamplingLength = 2000`, `NightlyTestMaxIterations = 2000` and,
+  when the input interval is positive, `NightlyTestWeightAdaptationInterval =
+  2000`. Each case thus runs one sampling window, writes output `out=0` at
+  iteration 2000, and then makes one regular weight adaptation (interval =
+  window, as in `input/i3.in`). The log line `nightly test mode
+  (_PIC_NIGHTLY_TEST_MODE_=on): run controls replaced: ...` gives the
+  executed and the runtime-input values. A production build is unaffected.
+  So the 10000-iteration controls of `input/i3-test.in` apply only when the
+  deck is run with a production build. Until 2026-11-23 the test ran 10000
+  iterations. The references were then regenerated for 2000 (see
+  "References" below).
   `prepare_i3_cases.py` does not write this file; it is derived from the
   generated `input/i3.in`. It predates the O I 130.4-nm brightness records
   added to `input/i3.in` on 2026-11-19 (three emission records and two solar
@@ -139,7 +177,54 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   the block's `Ref=5{gcc}@@(0+passion)` sets `$(TESTi3-REF)=[5]` there, as for
   the other tests on passion. Every other machine uses the untagged names, so
   the references of a second machine can be added as untagged files without
-  touching those of passion. The passion references were regenerated on
+  touching those of passion. As of 2026-11-23, however, no untagged `test_i3`
+  reference has ever been committed to SWMF_data (none is in its history). On
+  any machine other than passion, every result is therefore reported as
+  `reference ... is missing` and is not compared.
+
+  **2026-11-23 regeneration (2000-iteration nightly run length).** The 36
+  passion files used by the test (`case1`, `case1sa`; N = 4 and 8) were
+  regenerated after the nightly run length moved into the code
+  (`_PIC_NIGHTLY_TEST_MODE_`, see "Run length" above). Evidence, in this order:
+  1. Before the change, a fresh `make test_i3` with N = 8 reproduced the
+     previous 10000-iteration references byte for byte (18/18).
+  2. The new build (one executable, SHA-256 `5ab92edc…bbe8a51`) gave
+     byte-identical results in two independent runs per layout (18/18 for
+     N = 4 and for N = 8).
+  3. The pre-change executable, run with only the three run controls of a
+     copy of `input/i3-test.in` set to 2000 (no line moved), reproduced the
+     new N = 4 results byte for byte (18/18). The code change therefore only
+     replaces those three run controls.
+  4. After installation, `make test_i3_check` passed on all four runs,
+     including the two independent repeats.
+
+  No rates, seeds, model inputs or comparison tolerances were changed. The 18
+  `case5` files were not touched. The previous files, their SHA-256 sums, the
+  logs and the scripts are kept in
+  `test_output/i3/refgen_nightly_macro_2026-11-23/` (not committed).
+  At iteration 2000 the regular weight adaptation runs but changes no weight
+  (adaptation log at iteration 2000: `particles=47544->47544 split=0
+  roulette=0`, N = 4). The 10000-iteration
+  test exercised actual splits (482 at iteration 10000). The shorter nightly
+  run therefore no longer covers a weight change.
+
+  **2026-11-23, second regeneration (comment update of `input/i3-test.in`).**
+  The brightness headers record the input line of
+  `chemistry.variant.OH_LOSS` (`source=runtime input ../i3-test.in:NN`). The
+  comment-only update of the deck moved that key from line 54 to line 71, so
+  `case1.H.brightness` and `case1.OH.brightness` changed in that header line.
+  The 36 references were therefore made again, with the build that includes
+  the DIM<3 warning fix. Evidence:
+  1. With the unchanged deck, that build reproduced the installed references
+     byte for byte (N = 4 and 8, 18/18 each).
+  2. Two independent runs per layout with the updated deck were byte-identical.
+  3. Against the installed references, the only difference was `:54` → `:71`
+     in those two files. The other 16 outputs per layout were byte-identical.
+
+  Record: `test_output/i3/refgen_comment_update_2026-11-23/`. Adding or
+  removing lines above that key in `input/i3-test.in` requires new references.
+
+  The passion references were previously regenerated on
   2026-11-22 from `b4980503e35c498d42a689188e0f6fc2e4913d94`, including
   the DIM1 domain-boundary callback fix `848e9c5`, for all 27 outputs and
   N = 4 and 8 (54 gzip files: 36 replacements and 18 new `case1sa` files).
@@ -167,17 +252,23 @@ cat 'test_i3[5].diff'                   # empty: the test passed (test_i3.diff w
   not replace or qualify untagged references.
   To regenerate the references of one machine and one N after a `make test_i3`
   run with that N (`T` is the machine's tag, `[5]` on passion, empty
-  elsewhere):
+  elsewhere; N = 4 is `make test_i3`, N = 8 is
+  `make test_i3 TESTMPIRUN4="mpirun -np 8"`):
 
   ```sh
-  N=8; T='[5]'
+  N=4; T='[5]'
   for f in run_test_i3/res/*.dat; do
     gzip -n -9 -c $f > "data/output/test_i3/$(basename $f .dat)$T.ref_np$N.gz"
   done
   ```
 
-- **Historical timing measurements.** These include older case5 workloads;
-  the current Table runs only case1 and case1sa. On passion (Intel i9-10980XE,
+- **Timing of the 2000-iteration test (passion, 2026-11-23).** The complete
+  `make test_i3` (N = 4) took 2.6 min. The compilation (8 jobs) took about
+  1.9 min, and the two runs 42 s together. With N = 8 the two runs took about
+  24 s. The adaptation log line at iteration 2000 reports `particles=47544`
+  (N = 4; 240796 at iteration 10000 in the N = 8 baseline).
+- **Historical timing measurements (10000 iterations).** These include older
+  case5 workloads; the current Table runs only case1 and case1sa. On passion (Intel i9-10980XE,
   18 cores, shared with other jobs;
   2026-11-16) the compilation takes 1.6 min, and the run with 4 MPI
   processes 20 to 22 min (case 1 8 min, case 5 12 to 14 min). With 8

@@ -76,6 +76,7 @@ Node* Locate(const double* x,const double* direction,Node* hint,bool across=fals
   return PIC::Mesh::mesh->findTreeNode(probe,hint);
 }
 void Insert(long int ptr,PIC::ParticleBuffer::byte* data,Node* node,const State& state) {
+#if _MESH_DIMENSION_ == 3
   if(!node||!node->block)Error("destination block is unavailable; verify allocated MPI halo");
   double probe[3];
   for(int d=0;d<3;++d) {
@@ -107,6 +108,13 @@ void Insert(long int ptr,PIC::ParticleBuffer::byte* data,Node* node,const State&
 #else
   (void)ptr;(void)data;(void)block;
   Error("this physical-time tracer requires the qualified MPI-only list mode");
+#endif
+#else
+  // DIM<3 build: this is a 3D algorithm.  It uses all three components of
+  // node->xmin/xmax (or of the cell indices), which have _MESH_DIMENSION_
+  // elements, so in a DIM1/DIM2 build it would read past those arrays.  It is
+  // not defined for DIM<3, so stop here instead of reading other memory.
+  exit(__LINE__,__FILE__,"Error: PIC::Mover::ForceCutSurface (anonymous namespace)::Insert requires a 3D mesh (_MESH_DIMENSION_==3)");
 #endif
 }
 void ChangeWeightBase(long int ptr,int species,Node* from,Node* to) {
