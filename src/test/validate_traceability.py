@@ -40,7 +40,7 @@ STABLE_ID = re.compile(r"(?<![A-Z0-9])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)(?![A-Z0-9]
 # in explicitly declared registry sources. Restricting both prefix and grammar
 # prevents an arbitrary uppercase prose word, partial ID or filename from
 # manufacturing a source owner. The manifest still requires unique ownership.
-COMPACT_SEP_ID = re.compile(r'''['"]((?:SINT[0-9]{2}[NR]?)|(?:MCP[0-9]{2})|(?:CP05(?:OF|C|F|O)[0-9]{2})|(?:TCR[0-9]{2}))['"]''')
+COMPACT_SEP_ID = re.compile(r'''['"]((?:SINT[0-9]{2}[NR]?)|(?:MCP[0-9]{2})|(?:CP05(?:OF|C|F|O)[0-9]{2})|(?:TCR[0-9]{2})|(?:SBACK[0-9]{2})|(?:SAPP[0-9]{2}))['"]''')
 
 
 class Validation:

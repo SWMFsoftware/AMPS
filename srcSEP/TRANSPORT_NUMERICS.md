@@ -1,5 +1,15 @@
 # Field-line transport and turbulence numerical contract
 
+The stage-8 support matrix rejects backgrounds without a qualified material
+evolution contract independently of mover selection. Stage-9 full application
+execution uses the original fixed dt=300 s, 400-step output window and signed
+number/birth-energy/current-energy ledgers. The maintained launcher verifies
+matching build/input identity and actual receipts before the unchanged
+independent checker reconstructs each segment's age/exposure. No test runner
+may shorten the physical step, insert extra samples or use a global denominator
+for younger material segments. See the
+[stage-8/9 contract](validation/STAGES8_9_TEST_CONTRACT.md).
+
 Steps 6–10 define one numerical vocabulary for every public srcSEP mover and one
 canonical implementation each for the Parker and coefficient-driven focused
 transport equations. The kernels under `util/` intentionally depend on neither

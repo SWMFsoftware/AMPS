@@ -67,6 +67,52 @@ class Fixture(unittest.TestCase):
         return path
 
 
+class BackendAndApplicationReports(Fixture):
+    def application(self):
+        return {'schema':'srcsep-stage6-application-v1','results':[
+            dict(test_id=identity,mode=mode,status='PASS',physical_steps=400,
+                 physical_dt_s=300.0,acceptance_relative_budget_bound=1e-10)
+            for identity,mode in zip(('SAPP01','SAPP02','SAPP03'),('parker','fte-dmumu','fte-mfp'))]}
+
+    def test_full_application_complete_catalog(self):
+        self.write_json('verified-results.json',self.application())
+        self.assertEqual(len(orch.reader_standalone_application(self.out)(self.ctx())),3)
+
+    def test_full_application_rejects_partial_or_changed_window(self):
+        for change in ('missing','mode','dt','steps','tolerance'):
+            payload=self.application()
+            if change=='missing':payload['results'].pop()
+            elif change=='mode':payload['results'][0]['mode']='fte-mfp'
+            elif change=='dt':payload['results'][0]['physical_dt_s']=299
+            elif change=='steps':payload['results'][0]['physical_steps']=40
+            else:payload['results'][0]['acceptance_relative_budget_bound']=1e-9
+            self.write_json('verified-results.json',payload)
+            with self.assertRaises(orch.ResultsUnavailable):orch.reader_standalone_application(self.out)(self.ctx())
+
+    def test_full_application_preserves_actual_fail_and_error(self):
+        payload=self.application();payload['results'][0].update(status='ERROR',message='actual MPI startup error')
+        payload['results'][1].update(status='FAIL',message='signed ledger does not close')
+        self.write_json('verified-results.json',payload)
+        self.assertEqual([r.status for r in orch.reader_standalone_application(self.out)(self.ctx(exit_code=1))],['ERROR','FAIL','PASS'])
+
+    def test_backend_rejection_catalog_and_scope_are_exact(self):
+        payload={'schema':'srcsep-backend-admission-v1','native':True,'results':[
+            dict(test_id=identity,status='PASS') for identity in ('SBACK06','SBACK07','SBACK08')]}
+        self.write_json('summary.json',payload)
+        self.assertEqual(len(orch.reader_backend_admission(self.out,native=True)(self.ctx())),3)
+        with self.assertRaises(orch.ResultsUnavailable):orch.reader_backend_admission(self.out)(self.ctx())
+        payload['results'].pop();self.write_json('summary.json',payload)
+        with self.assertRaises(orch.ResultsUnavailable):orch.reader_backend_admission(self.out,native=True)(self.ctx())
+
+    def test_stage8_9_shared_catalogs_are_registered(self):
+        root=_HERE.parent;manifest=json.loads((root/'src/test/manifest.json').read_text())
+        expected={'CORE-SEP-BACKEND-ADMISSION-001':['SBACK01','SBACK02','SBACK03','SBACK04','SBACK05'],
+                  'CORE-SEP-BACKEND-NATIVE-001':['SBACK06','SBACK07','SBACK08'],
+                  'CORE-SEP-FULL-APPLICATION-001':['SAPP01','SAPP02','SAPP03']}
+        for name,ids in expected.items():
+            self.assertEqual(next(t for t in manifest['tests'] if t['id']==name)['expected_cases'],ids)
+
+
 class StandaloneIntegrationReports(Fixture):
     def test_shared_registry_matches_complete_numerical_catalog(self):
         # A newly added numerical case must remain visible through BOTH
@@ -589,6 +635,37 @@ class CoronalCme(Fixture):
 
 
 class UnittestText(Fixture):
+    def test_fully_qualified_method_format_preserves_case_and_failure_log(self):
+        # Python 3.14 prints the method in parentheses as well as before it.
+        # This is actual stream syntax, not a change to the test's stable ID.
+        text = ("test_a (test_mod.Viewer.test_a) ... ok\n"
+                "test_b (test_mod.Viewer.test_b) ... FAIL\n"
+                "FAIL: test_b (test_mod.Viewer.test_b)\n"
+                "AssertionError: retained native failure\n")
+        records = {r.test_id:r for r in orch.read_unittest(self.ctx("new-python", text))}
+        self.assertEqual({k:r.status for k,r in records.items()},
+                         {"Viewer.test_a":"PASS", "Viewer.test_b":"FAIL"})
+        self.assertIn("retained native failure", Path(records['Viewer.test_b'].log).read_text())
+
+    def test_launcher_step_requires_every_control_and_rejects_missing_or_skip(self):
+        step = next(s for s in orch.srcsep_steps(self.out,argparse.Namespace())
+                    if s.name=='standalone-application-runner')
+        # Discover the real unittest names from syntax without importing its
+        # fixtures, then require every name through the maintained step reader.
+        source=ast.parse((_HERE.parent/'srcSEP/test/test_standalone_application_runner.py').read_text())
+        methods=[node.name for owner in source.body if isinstance(owner,ast.ClassDef)
+                 for node in owner.body if isinstance(node,ast.FunctionDef) and node.name.startswith('test_')]
+        self.assertEqual(len(methods),11)
+        def lines(selected,skip=False):
+            return ''.join(f"{name} (__main__.ApplicationPlan.{name}) ... " +
+                ("skipped 'missing prerequisite'" if skip and index==0 else 'ok')+'\n'
+                for index,name in enumerate(selected))
+        records=step.reader(self.ctx(log_text=lines(methods)))
+        self.assertEqual({r.test_id for r in records},{'ApplicationPlan.'+m for m in methods})
+        self.assertTrue(all(r.status=='PASS' for r in records))
+        for text in (lines(methods[:-1]),lines(methods,skip=True)):
+            self.assertTrue(any(r.status=='ERROR' for r in step.reader(self.ctx(log_text=text))))
+
     def test_verbose_lines_docstrings_and_failure_blocks(self):
         text = ("test_a (test_mod.Viewer) ... ok\n"
                 "test_b (test_mod.Viewer)\nDocstring first line. ... FAIL\n"

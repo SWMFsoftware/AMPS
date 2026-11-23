@@ -1,4 +1,5 @@
 #include "field_line_bundle_adapter.h"
+#include "../util/sep_backend_admission.h"
 
 #include <cerrno>
 #include <cmath>
@@ -152,6 +153,21 @@ SEP::Core::Result<std::vector<SEP::FieldLine::LineRecord>> BuildLineMeshes(
 
 SEP::Core::Status FieldLineBundleAdapter::LoadAndPublish(
     const std::string& directory, const SnapshotPublisher& publisher) {
+  // Keep the established symbol and semantics for neutral snapshot consumers.
+  return LoadAndPublish(directory,publisher,BundleUse::SnapshotExchange);
+}
+
+SEP::Core::Status FieldLineBundleAdapter::LoadAndPublish(
+    const std::string& directory, const SnapshotPublisher& publisher, BundleUse use) {
+  // Reject before reading/publishing a candidate: an unsupported material
+  // request must not replace the prior snapshot or invoke a caller's native
+  // allocation callback. Ordinary immutable snapshot exchange is preserved.
+  if(use==BundleUse::MaterialTransport)
+    return SEP::Background::Admission::RequireMovingTransport(
+        SEP::Background::Admission::Backend::CoronalBundle);
+  if(use!=BundleUse::SnapshotExchange)
+    return SEP::Core::Status::Failure(SEP::Core::StatusCode::InvalidConfiguration,
+        "Unknown neutral bundle use; no snapshot/material fallback is permitted");
   if (!publisher)
     return SEP::Core::Status::Failure(
         SEP::Core::StatusCode::InvalidConfiguration,

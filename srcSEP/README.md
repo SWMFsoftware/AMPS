@@ -1,5 +1,23 @@
 # srcSEP field-line solar energetic particle transport
 
+## Existing backend admission and complete application validation
+
+The [standalone support matrix](validation/STANDALONE_BACKEND_SUPPORT.md)
+names the exact supported reduced SSE/Parker profile and the missing contracts
+of the other existing core backends. SWCME1D material transport rejects before
+allocation and at the common mover entry; diagnostic queries remain available.
+Neutral coronal-CME snapshot exchange remains compatible, while an explicit
+material-transport request rejects without publishing. These checks do not
+qualify propagation on rejected models or alter SWMF/3-D Eulerian routes.
+
+The maintained launcher `test/run_standalone_application.py` now executes the
+original three-mover, 400-step application gate against a matching configured
+build. Its independent checker retains dt=300 s, complete segment exposure
+history and the original conservation bounds. PREPARED is not PASS. The shared
+registry and application orchestrator expose this full gate and the backend
+admission cases; [test instructions](test/README.md) give exact commands.
+Current execution results are recorded separately from implementation status.
+
 ## Material continuation qualification, 2026-11-22
 
 Stage 7 is complete for the prescribed reduced SSE/Parker material profile:
@@ -7,7 +25,12 @@ all 150 required MPI job checks pass, including two-/four-worker restart and
 1↔8 ownership changes. The legacy checkpoint fixtures now use explicit moving
 material transport; isolated wave/codec checks retain their old assertions
 separately. See the status report for exact scope and source identities.
-Stages 8–9 are not yet qualified. Checkpoint schema 5 records the prescribed
+Stages 8–9 are complete for the approved admission/rejection and supported
+reduced-profile scope: eight backend gates, the repeated 150-job native
+campaign, all three 400-step applications and nine coupling comparisons pass.
+Other backend transport remains rejected; the full-regional core's unchanged
+180-s refinement timeout remains an explicit ERROR in the current report.
+Checkpoint schema 5 records the prescribed
 reduced-core material line, its stable labels, topology, epoch/generation, complete particle
 histories, source counters and signed ledgers, sampling exposure and native
 buffer phase. Earlier corrected checkpoint schemas are rejected explicitly.
@@ -1732,5 +1755,8 @@ current-energy balances. Its negative controls reject deliberately corrupted
 copies of real completed output. See the qualification report for exact source
 identities, commands and results; a short component run does not close this gate.
 The declared stage-6 synthetic campaign now passes this complete-driver gate
-with all three movers. Parallel lifecycle/restart is the stage-7 gate described above. Additional
-backend and broader release qualification remain stages 8–9.
+with all three movers. Parallel lifecycle/restart is the stage-7 gate described
+above. Stages 8–9 preserve the supported reduced profile, enforce the published
+backend admission matrix and repeat its required native/application/coupling
+gates. They do not qualify propagation on rejected backends or observational
+agreement.

@@ -1,5 +1,15 @@
 # Immutable background snapshots and the simulation clock
 
+Stage-8 backend admission is specified in
+[STANDALONE_BACKEND_SUPPORT.md](validation/STANDALONE_BACKEND_SUPPORT.md).
+An immutable single-epoch bundle and connection-history horizon do not imply
+material primitive/geometry evolution through a physical step. The legacy
+exchange API remains available, but explicit moving-transport requests reject
+without replacing its owning snapshot. SWCME diagnostic state cannot be made
+material by adding U to relative particle motion or borrowing another core's
+density law. Typed rejection precedes allocation and is repeated at mover
+entry. The existing reduced profile retains its full interval contract.
+
 Step 2 establishes one explicit state boundary between background providers and
 particle transport. It does not change the governing transport equations or
 select a different mover.

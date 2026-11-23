@@ -2,6 +2,7 @@
 #include "util/sep_provider_radius_frame.h"
 #include "util/sep_reproducible_reduction.h"
 #include "util/sep_background_derivatives.h"
+#include "util/sep_backend_admission.h"
 #include "util/sep_analytic_radial_background.h"
 #include "util/sep_population_control.h"
 #include "util/sep_resonant_collision.h"
@@ -484,6 +485,15 @@ Status LoadParticle(long int pointer, ParticleContext* context) {
   if (!context || pointer < 0) {
     return Status::Error(StatusCode::InvalidArgument,
                          "particle context and handle must be valid");
+  }
+  // A diagnostic run purpose may disable unrelated wave-closure checks, but
+  // it cannot turn a nonconservative/frozen backend into material transport.
+  // Enforce this again at the shared mover entry for parser-free library hosts
+  // and all three movers, before touching particle records or stochastic state.
+  if(Background::ConfiguredProvider()==Background::Provider::Swcme) {
+    const auto admission=Background::Admission::RequireMovingTransport(
+        Background::Admission::Backend::Swcme1D);
+    if(!admission.ok())return Status::Error(StatusCode::UnsupportedConfiguration,admission.message);
   }
   const Status closure=ProductionClosurePreflight();
   if(!closure.ok())return closure;

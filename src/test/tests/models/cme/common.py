@@ -63,6 +63,15 @@ def prepare_model_repo(repo: Path, work: Path, include_sep3d: bool = False) -> P
     copy_tree(repo / "src" / "general" / "input",
               root / "src" / "general" / "input")
     copy_tree(repo / "srcSEP" / "adapters", root / "srcSEP" / "adapters")
+    # The real neutral importer now distinguishes immutable snapshot exchange
+    # from unsupported material transport. Retain that exact production header
+    # and its neutral include resolver in the isolated compile closure. Copying
+    # only adapters would hide this dependency until the SCCM linked build;
+    # copying PIC/application state or replacing the guard is unnecessary.
+    utility = root / "srcSEP" / "util"
+    utility.mkdir()
+    for name in ("sep_backend_admission.h", "sep_common_header_path.h"):
+        shutil.copy2(str(repo / "srcSEP" / "util" / name), str(utility / name))
     if include_sep3d:
         # The maintained reduced-front C++ harness identifies the repository
         # by walking upward to this normative task marker.  Copying the real

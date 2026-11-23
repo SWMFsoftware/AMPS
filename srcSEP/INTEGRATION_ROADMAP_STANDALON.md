@@ -450,7 +450,7 @@ serialization were repaired without changing physical dt, acceptance bounds or
 reference solutions. Exact final images, actual process receipts and the frozen
 build closure are recorded in
 [the maintained status report](validation/STANDALONE_INTEGRATION_STATUS.md).
-Stages 8–9 remain pending.
+The subsequent stages 8–9 have their own scoped qualification record below.
 
 ### Work
 
@@ -482,6 +482,21 @@ independently justified statistical criteria for stochastic observables.
 dependency adapter cannot satisfy this gate.
 
 ## Stage 8 — Admit the other existing core backends
+
+**COMPLETE (2026-11-22) for the approved admission scope.** SBACK01–05
+pass strict and ASan/UBSan checks; SBACK06–08 pass actual two-rank preflight
+for all three movers. The maintained diagnostic/exchange interfaces remain
+available. Rejected backends gain no propagation qualification from these
+passing rejection tests.
+
+**Authorized scope clarification, 2026-11-22:** the user selected “Reject
+unsupported modes; qualify existing supported transport.” The executable
+SWCME1D, neutral-bundle and full-regional interfaces do not currently establish
+all required material contracts. Preserve their diagnostic capabilities, add
+explicit admission/rejection checks and publish the exact
+[support matrix](validation/STANDALONE_BACKEND_SUPPORT.md). This scope does
+not authorize an invented core plasma evolution law or qualify rejected
+transport. Implementation and current regression receipts remain distinct.
 
 ### Work
 
@@ -515,6 +530,27 @@ A passing rejection test qualifies rejection behavior; it does not qualify
 transport with that unsupported model.
 
 ## Stage 9 — Register and run the complete regression campaign
+
+**COMPLETE (2026-11-22) for the supported reduced SSE/Parker scope.** The
+fresh 150-job native/restart/thread campaign, three 400-step applications,
+eight admission/compatibility gates, four coupling builds and nine coupling
+comparisons pass. Physical dt stays 300 s; the 1e-10 budget bound, original
+references and byte-exact continuation gates are unchanged. Eleven original
+application-verifier controls, eleven maintained launcher controls and 45
+orchestrator checks pass. Exact commands and source/build identities are in
+[the qualification report](validation/STANDALONE_INTEGRATION_STATUS.md).
+The broad core/geometry scope is 341 PASS / 181 SKIP / one ERROR: the
+full-regional refinement's unchanged 180-s timeout remains unqualified and
+blocks its dependent backend. This scoped completion does not certify the
+whole shared registry or any rejected moving-background model.
+
+The new maintained `test/run_standalone_application.py` executes the original
+SAPP01–03 complete-window gate; previously only its external-evidence verifier
+was registered as a Make audit. Shared suites now include the full application
+and SBACK01–08 admission cases, with matching application-orchestrator readers.
+The unchanged dt/window, source, reference and budget contracts and all other
+required campaign roles are recorded in
+[STAGES8_9_TEST_CONTRACT.md](validation/STAGES8_9_TEST_CONTRACT.md).
 
 Every new test must be reachable through the existing validation procedure.
 New `srcSEP` runners must be included in the shared orchestrator with

@@ -75,6 +75,8 @@ SEP_CORONA_SWCME_OBJECTS := $(patsubst \
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
 STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
+                    test-backend-admission-unit test-backend-admission-native \
+                    test-standalone-application-runner-unit test-standalone-application-native \
                     test-standalone-integration-native \
                     test-material-checkpoint-native test-material-checkpoint-unit \
                     test-stage7-checkpoint-native test-stage7-checkpoint-unit \
@@ -854,6 +856,20 @@ test-stage7-checkpoint-unit:
 # These bounded core/adapter cases are routine code-validation prerequisites.
 # Native MPI qualification remains an explicit configured-build step above.
 test test-controlled-analytical: test-standalone-integration-unit test-material-checkpoint-unit test-stage7-checkpoint-unit
+
+# Backend admission is routine verification. Unsupported core modes retain
+# their diagnostic APIs but cannot silently enter moving material transport.
+.PHONY: test-backend-admission-unit test-backend-admission-native test-standalone-application-runner-unit test-standalone-application-native
+test-backend-admission-unit:
+	python3 -B test/run_backend_admission_tests.py
+test-backend-admission-native:
+	python3 -B test/run_backend_admission_tests.py --native --amps "$(NATIVE_BUILD_ROOT)/amps"
+test-standalone-application-runner-unit:
+	python3 -B test/test_standalone_application_runner.py
+test-standalone-application-native:
+	python3 -B test/run_standalone_application.py --build-root "$(NATIVE_BUILD_ROOT)" --output-dir "$(APPLICATION_OUTPUT)"
+APPLICATION_OUTPUT ?= $(abspath test_output/standalone-application)
+test test-controlled-analytical: test-backend-admission-unit test-standalone-application-runner-unit
 
 # Audit completed real-MPI application receipts and a complete physical output
 # window. Explicit evidence is required: missing/crashed/partial campaigns are

@@ -40,6 +40,7 @@
 #include "turbulence_production_adapter.h"
 #include "util/sep_cli.h"
 #include "util/sep_background_runtime.h"
+#include "util/sep_backend_admission.h"
 #include "util/sep_initialization.h"
 #include "util/sep_native_startup_input.h"
 #include "util/sep_checkpoint_native_validation.h"
@@ -823,6 +824,19 @@ int main(int argc,char **argv) {
     }
     ~ControlledSourceScope() {SEP::BoundingBoxInjection::BoundaryInjectionMode=saved;}
   } controlledSourceScope(componentTestMode);
+  // Refuse an unsupported production material backend before native geometry,
+  // particles or sampling buffers are allocated. Initialization-only and pure
+  // component queries retain their existing diagnostic role; LoadParticle()
+  // independently refuses actual SWCME motion even in a diagnostic fixture.
+  if(!componentTestMode&&!cli_options.initializationOnly&&
+      SEP::Background::ConfiguredProvider()==SEP::Background::Provider::Swcme) {
+    const auto admission=SEP::Background::Admission::RequireMovingTransport(
+        SEP::Background::Admission::Backend::Swcme1D);
+    if(!admission.ok()) {
+      if(PIC::ThisThread==0)std::cerr<<"ERROR: "<<admission.message<<'\n';
+      return 1;
+    }
+  }
   const auto closurePreflight=SEP::Transport::PICAdapter::ProductionClosurePreflight();
   if(!cli_options.initializationOnly&&!closurePreflight.ok()) {
     if(PIC::ThisThread==0)std::cerr<<"ERROR: "<<closurePreflight.message<<'\n';

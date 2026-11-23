@@ -87,6 +87,10 @@ SOURCE_SUITES: Dict[str, str] = {
     "d03-native-integration": "test-d03-native-integration",
     "standalone-integration": "test-standalone-integration-unit",
     "standalone-integration-native": "test-standalone-integration-native",
+    "backend-admission": "test-backend-admission-unit",
+    "backend-admission-native": "test-backend-admission-native",
+    "standalone-application-runner": "test-standalone-application-runner-unit",
+    "standalone-application-native": "test-standalone-application-native",
     "stage7-checkpoint-native": "test-stage7-checkpoint-native",
     # The old native group combined moving particles with a frozen nonzero-U
     # line. Preserve an obvious suite entry, but let the maintained campaign

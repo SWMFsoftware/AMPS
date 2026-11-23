@@ -1722,6 +1722,33 @@
       "exclusive": true
     },
     {
+      "id": "CORE-SEP-BACKEND-ADMISSION-001",
+      "component": "src/models/sep_common", "level": "integration", "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Canonical SWCME diagnostic equivalence and neutral exchange compatibility; explicit rejection of unsupported moving material backends",
+      "requires": {"tools": ["python", "cxx"], "paths": ["srcSEP/test/run_backend_admission_tests.py"], "capabilities": []},
+      "expected_cases": ["SBACK01", "SBACK02", "SBACK03", "SBACK04", "SBACK05"],
+      "timeout_seconds": 600, "exclusive": true
+    },
+    {
+      "id": "CORE-SEP-BACKEND-NATIVE-001",
+      "component": "src/models/sep_common", "level": "integration", "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Three standalone movers reject unsupported SWCME material transport before native allocation on real MPI two ranks",
+      "requires": {"tools": ["python", "mpiexec"], "paths": ["srcSEP/test/run_backend_admission_tests.py"], "capabilities": ["native-field-line"]},
+      "expected_cases": ["SBACK06", "SBACK07", "SBACK08"],
+      "timeout_seconds": 600, "exclusive": true
+    },
+    {
+      "id": "CORE-SEP-FULL-APPLICATION-001",
+      "component": "src/models/sep_common", "level": "integration", "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Three-mover full reduced SSE/Parker application: 400 unchanged 300-s physical steps, complete material sampling output and independent number/energy ledgers",
+      "requires": {"tools": ["python", "make", "mpi_cxx", "mpiexec"], "paths": ["srcSEP/test/run_standalone_application.py"], "capabilities": ["native-field-line"]},
+      "expected_cases": ["SAPP01", "SAPP02", "SAPP03"],
+      "timeout_seconds": 5700, "exclusive": true
+    },
+    {
       "id": "CORE-MODEL-SWCME-001",
       "component": "src/models/swcme",
       "level": "integration",

@@ -19,6 +19,12 @@ namespace SEP1D { namespace Adapters {
 using SnapshotPublisher = std::function<SEP::Core::Status(
     const SEP::FieldLine::FieldLineSet&)>;
 
+// Historical LoadAndPublish is a validated single-epoch exchange operation.
+// MaterialTransport is a distinct request; connection-history coverage alone
+// cannot grant it temporal plasma/geometry support. The default preserves the
+// existing two-argument neutral exchange ABI and its pure operator tests.
+enum class BundleUse { SnapshotExchange, MaterialTransport };
+
 // Typed representation of one repeated [line_mesh.ID] section.  The stable
 // mesh ID is configuration identity, whereas stableLineId is the immutable
 // physical identity stored in the imported bundle.  Keeping those two names
@@ -53,6 +59,9 @@ class FieldLineBundleAdapter {
  public:
   SEP::Core::Status LoadAndPublish(const std::string& directory,
                                    const SnapshotPublisher& publisher);
+  SEP::Core::Status LoadAndPublish(const std::string& directory,
+                                   const SnapshotPublisher& publisher,
+                                   BundleUse use);
   SEP::Core::Result<SEP::FieldLine::NodeState> Evaluate(
       const std::string& stableLineId, double arcLengthM) const;
   const std::string& BundleIdentity() const noexcept { return identity_; }

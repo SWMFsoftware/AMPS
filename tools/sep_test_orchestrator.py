@@ -762,6 +762,45 @@ def reader_standalone_integration(output_dir: Path, native: bool = False) -> Rea
     return read
 
 
+def reader_backend_admission(output_dir: Path, native: bool = False) -> Reader:
+    """Keep rejection evidence distinct from successful backend propagation."""
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload=read_json(output_dir/'summary.json')
+        expected=[f'SBACK{i:02d}' for i in (range(6,9) if native else range(1,6))]
+        rows=payload.get('results',[])
+        if payload.get('schema')!='srcsep-backend-admission-v1' or payload.get('native') is not native or [r.get('test_id') for r in rows]!=expected:
+            raise ResultsUnavailable('backend admission report has missing/foreign/duplicate cases')
+        if any(r.get('status') not in {'PASS','FAIL','SKIP','ERROR'} for r in rows):
+            raise ResultsUnavailable('backend admission report has unknown status')
+        return [ctx.record(r['test_id'],r['status'],r.get('message',''),log=r.get('log',''),
+                           evidence=[str(output_dir/'summary.json')]) for r in rows]
+    return read
+
+
+def reader_standalone_application(output_dir: Path) -> Reader:
+    """A complete output window is required for every actual production mover.
+
+    Preparation receipts and short/native fixtures have different schemas and
+    cannot satisfy this gate. Preserve each original numerical FAIL or runtime
+    ERROR; an unrelated successful mover cannot hide the missing case.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload=read_json(output_dir/'verified-results.json')
+        rows=payload.get('results',[])
+        if payload.get('schema')!='srcsep-stage6-application-v1' or [r.get('test_id') for r in rows]!=['SAPP01','SAPP02','SAPP03']:
+            raise ResultsUnavailable('full application report is incomplete or has foreign case identities')
+        if [r.get('mode') for r in rows]!=['parker','fte-dmumu','fte-mfp']:
+            raise ResultsUnavailable('full application mover catalog differs from the maintained gate')
+        for row in rows:
+            if row.get('status') not in {'PASS','FAIL','SKIP','ERROR'}:
+                raise ResultsUnavailable('full application report has unknown status')
+            if row['status']=='PASS' and (row.get('physical_steps')!=400 or row.get('physical_dt_s')!=300.0 or row.get('acceptance_relative_budget_bound')!=1e-10):
+                raise ResultsUnavailable('full application PASS lacks the unchanged physical window/budget gate')
+        return [ctx.record(r['test_id'],r['status'],r.get('message','complete 400-step application window'),
+            log=r.get('log',''),evidence=[str(output_dir/'verified-results.json')]) for r in rows]
+    return read
+
+
 def material_checkpoint_rows(output_dir: Path) -> List[dict]:
     """Require every material mover, MPI count and separate-process role.
 
@@ -884,6 +923,19 @@ _UNITTEST_VERDICT = re.compile(
 _UNITTEST_BLOCK = re.compile(r"^(FAIL|ERROR): (test\w*) \(([^)]+)\)")
 
 
+def _unittest_identity(method: str, qualified: str) -> str:
+    """Keep case IDs stable across Python's two verbose unittest formats.
+
+    Older Python prints module.Class; newer Python includes the method in
+    module.Class.method. Remove only that exact terminal method, rather than
+    interpreting it as the class and losing the original case identity. The
+    same mapping must attach failure blocks to their previously parsed case.
+    """
+    if qualified.endswith("." + method):
+        qualified = qualified[:-(len(method) + 1)]
+    return f"{qualified.split('.')[-1]}.{method}" if "." in qualified else method
+
+
 def read_unittest(ctx: StepContext) -> List[TestRecord]:
     """Python unittest with verbosity 2 (step log text).
 
@@ -897,8 +949,7 @@ def read_unittest(ctx: StepContext) -> List[TestRecord]:
     for number, line in enumerate(lines, start=1):
         name = _UNITTEST_NAME.match(line)
         if name:
-            pending = (f"{name.group(2).split('.')[-1]}.{name.group(1)}"
-                       if "." in name.group(2) else name.group(1), number)
+            pending = (_unittest_identity(name.group(1), name.group(2)), number)
         verdict = _UNITTEST_VERDICT.search(line)
         if verdict and pending:
             word = verdict.group(1)
@@ -916,8 +967,7 @@ def read_unittest(ctx: StepContext) -> List[TestRecord]:
         end = number + 1
         while end < len(lines) and not lines[end].startswith(("=" * 20, "-" * 20)):
             end += 1
-        key = (f"{block.group(3).split('.')[-1]}.{block.group(2)}"
-               if "." in block.group(3) else block.group(2))
+        key = _unittest_identity(block.group(2), block.group(3))
         path = write_test_log(ctx, key, "\n".join(lines[number:end]) + "\n",
                               source=str(ctx.step_log), first=number + 1, last=end)
         record = records.get(key) or ctx.record(key, block.group(1))
@@ -1142,6 +1192,37 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
     pd_json = out / "pd-mover.json"
     return [
         build_step("test/sep_reduced_front__field_line"),
+        Step("backend-admission",
+             "existing core diagnostic equivalence and explicit unsupported material-backend rejection; no propagation claim",
+             [["python3","srcSEP/test/run_backend_admission_tests.py","--output-dir",str(out/'backend-admission')]],
+             reader=reader_backend_admission(out/'backend-admission'), runner="srcSEP/test/run_backend_admission_tests.py"),
+        Step("backend-admission-native",
+             "all three standalone movers reject unsupported SWCME material transport before allocation on two real MPI ranks",
+             [["python3","srcSEP/test/run_backend_admission_tests.py","--native","--amps","./amps","--output-dir",str(out/'backend-admission-native')]],
+             reader=reader_backend_admission(out/'backend-admission-native',native=True), runner="srcSEP/test/run_backend_admission_tests.py --native"),
+        Step("standalone-application-runner",
+             "software controls require immutable complete launch plans, matching receipts, explicit preparation and complete error reports",
+             [["python3", "-B", "srcSEP/test/test_standalone_application_runner.py"]],
+             # A successful subset must not conceal a lost evidence/error-path
+             # control. These software checks do not certify particle motion.
+             reader=reader_required_unittest([
+                 "ApplicationPlan.test_exact_complete_catalog",
+                 "ApplicationPlan.test_missing_mover_rejects",
+                 "ApplicationPlan.test_short_run_rejects",
+                 "ApplicationPlan.test_changed_source_rejects",
+                 "ApplicationPlan.test_foreign_receipt_rejects",
+                 "ApplicationPlan.test_preflight_errors_preserve_all_movers",
+                 "ApplicationPlan.test_paths_are_shell_quoted",
+                 "ApplicationPlan.test_preparation_is_not_execution",
+                 "ApplicationPlan.test_existing_application_evidence_is_immutable",
+                 "ApplicationPlan.test_existing_backend_evidence_is_immutable",
+                 "ApplicationPlan.test_malformed_backend_plan_reports_each_required_error"]),
+             runner="srcSEP/test/test_standalone_application_runner.py"),
+        Step("standalone-full-application",
+             "all three production movers complete 400 fixed 300-s steps, material sampling output and independent signed-ledger checks",
+             [["python3","srcSEP/test/run_standalone_application.py","--build-root",".","--output-dir",str(out/'standalone-full-application')]],
+             reader=reader_standalone_application(out/'standalone-full-application'),
+             runner="srcSEP/test/run_standalone_application.py",long=True),
         Step("standalone-core-integration",
              "reduced core state, material trajectories, finite SSE connectivity and three-solver numerical qualification",
              [["python3", "srcSEP/test/run_standalone_integration_tests.py", "--output-dir", str(out / "standalone-core-integration")]],

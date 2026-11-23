@@ -12,6 +12,11 @@ from lib.runner_support import case, load_context, run_command, write_result, er
 
 def main():
     context=load_context('Standalone SEP/core integration')
+    extension={'CORE-SEP-BACKEND-ADMISSION-001':'backend',
+               'CORE-SEP-BACKEND-NATIVE-001':'backend-native',
+               'CORE-SEP-FULL-APPLICATION-001':'application'}.get(context['test']['id'])
+    if extension:
+        return maintained_extension(context,extension)
     if context['test']['id']=='CORE-SEP-MATERIAL-CHECKPOINT-001':
         return material_checkpoint(context)
     if context['test']['id']=='CORE-SEP-STAGE7-CHECKPOINT-001':
@@ -125,6 +130,50 @@ def stage7_checkpoint(context):
         status='ERROR' if any(r['status']=='ERROR' for r in imported) else 'FAIL' if any(r['status']=='FAIL' for r in imported) else 'SKIP' if any(r['status']=='SKIP' for r in imported) else 'PASS'
         return write_result(context,status,'stage7 material/native/thread continuation; isolated wave codec is separate from physical transport',
                             cases=imported,evidence=[str(local/'summary.json'),str(local/'prepared.json'),str(local/'junit.xml')])
+    except Exception as error:return error_result(context,error)
+
+
+def maintained_extension(context,kind):
+    """Import complete stage-8/9 catalogs, retaining each original case status.
+
+    Backend results qualify rejection/diagnostic compatibility. The application
+    reader separately requires the original physical window and budget bound.
+    A partial report or successful unrelated mover cannot satisfy either gate.
+    """
+    try:
+        repo=Path(context['repo_root']);local=Path(context['artifact_dir'])/'local'
+        build=Path(os.environ.get('AMPS_FIELD_LINE_NATIVE_BUILD',str(repo)))
+        if kind=='application':
+            argv=[sys.executable,str(repo/'srcSEP/test/run_standalone_application.py'),
+                  '--build-root',str(build),'--output-dir',str(local)]
+            report=local/'verified-results.json';identities=['SAPP01','SAPP02','SAPP03']
+        else:
+            argv=[sys.executable,str(repo/'srcSEP/test/run_backend_admission_tests.py'),'--output-dir',str(local)]
+            identities=['SBACK01','SBACK02','SBACK03','SBACK04','SBACK05']
+            if kind=='backend-native':
+                argv+=['--native','--amps',str(build/'amps')]
+                identities=['SBACK06','SBACK07','SBACK08']
+            report=local/'summary.json'
+        result=run_command(argv,repo,timeout=5700 if kind=='application' else 600)
+        payload=json.loads(report.read_text());rows=payload['results']
+        if [r.get('test_id') for r in rows]!=identities:
+            raise RuntimeError('stage8/9 report has missing/foreign/duplicate cases')
+        sys.path.insert(0,str(repo/'tools'))
+        from sep_test_orchestrator import reader_backend_admission,reader_standalone_application
+        # Run the shared strict schema/window reader without changing results.
+        class ImportContext:
+            def record(self,*args,**kwargs):return args
+        reader=(reader_standalone_application(local) if kind=='application' else
+                reader_backend_admission(local,native=kind=='backend-native'))
+        reader(ImportContext())
+        failed=any(r['status'] in ('FAIL','ERROR') for r in rows)
+        if result.returncode!=int(failed):raise RuntimeError('stage8/9 child exit disagrees with its case results')
+        selected=context['test'].get('selected_cases',identities)
+        imported=[case(r['test_id'],r['status'],r.get('message',payload.get('scope','complete fixed-step native campaign')))
+                  for r in rows if r['test_id'] in selected]
+        status='ERROR' if any(r['status']=='ERROR' for r in imported) else 'FAIL' if any(r['status']=='FAIL' for r in imported) else 'SKIP' if any(r['status']=='SKIP' for r in imported) else 'PASS'
+        return write_result(context,status,payload.get('scope','stage8/9 bounded qualification'),cases=imported,
+                            evidence=[str(report),str(local/'junit.xml')])
     except Exception as error:return error_result(context,error)
 
 

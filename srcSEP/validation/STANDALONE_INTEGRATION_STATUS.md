@@ -1,11 +1,172 @@
 # Standalone core integration: implementation and qualification status
 
+## Stages 8–9 COMPLETE for the approved scope, 2026-11-22
+
+Stage 8 is complete and its eight admission/compatibility gates pass for
+the user-approved scope: **reject unsupported modes; qualify existing supported
+transport**. The exact [support matrix](STANDALONE_BACKEND_SUPPORT.md) preserves
+the maintained diagnostic interfaces while rejecting unqualified SWCME1D,
+single-epoch bundle and full-regional material transport. No missing plasma
+evolution or source closure is invented. The standalone preflight rejects
+before allocation; shared mover entry also rejects for parser-free hosts and
+diagnostic purpose. Neutral exchange preserves its original two-argument ABI.
+
+Stage 9 is complete for the prescribed reduced SSE/Parker profile. Its
+maintained launcher, individual shared-registry
+cases, strict orchestrator readers, source/build audits and documentation are
+implemented. Current evidence root:
+`/data/vtenishe/TEST/sep-stages8-9-20261123T003839Z`.
+Baseline commit is `b498050`; the user's Makefile and unrelated assets remain
+preserved. The [test contract](STAGES8_9_TEST_CONTRACT.md) fixes scope and gates.
+
+Executed current results:
+
+- SBACK01–05: strict and ASan/UBSan PASS, including canonical frame/configuration
+  identity and an explicit multispecies density/pressure comparison.
+- SBACK06–08: actual two-process MPI preflight PASS for all three movers;
+  unsupported SWCME exits 1 before particle/mesh allocation.
+- The first SAPP01–03 campaign, `application-final400/`, completed **400
+  unchanged 300-s physical steps for each mover**, with actual MPI exit 0 and
+  independent complete-output verification. Maximum relative budget residual
+  was **2.2022684795608913e-15** against **1e-10**. All 357 surviving segments
+  had independently reconstructed exposure, ranging from 5 to 400 samples.
+  Final review then repaired launcher evidence-overwrite/error-reporting paths;
+  the original script snapshot is retained in `pre-review-launcher-sources/`.
+  The final campaign, `application-qualified400/`, binds the reviewed launcher
+  to the same physical code, assets and executable. **All three movers have
+  actual exit 0 and SAPP01–03 PASS**, each with 400 complete 300-s steps ending
+  at 120000 s. Its largest relative budget residual is again
+  **2.2022684795608913e-15**, with all 357 segment exposures independently
+  reconstructed (5–400 samples). Original references are unchanged.
+- All 11 original corrupted-output verifier controls PASS on both complete
+  campaigns. Eleven new launcher
+  controls and 45 orchestrator controls PASS; shared harness 13/13 PASS.
+  The eleven controls also pass through their explicit maintained application
+  orchestrator step, which rejects incomplete/skipped controls. Final review
+  corrected Python 3.14 fully qualified unittest identity parsing and captured
+  expected child ERROR reports as asserted fixture data. The original
+  misparsed nine-record stream is retained in `orchestrator-gap-unit.log`.
+- Numerical integration suite: 30 ASan/UBSan PASS. Background derivative/frame
+  gate: 10 PASS with strict/ASan/UBSan; LeakSanitizer is unavailable under ptrace
+  and no leak qualification is claimed.
+- Native geometry/source/transport/merger campaign: **48 actual MPI jobs PASS**,
+  all 15 case IDs passing on MPI 1/2/4/8.
+- Fresh four-profile AMPS–BATS-R-US campaign: **four builds PASS, nine actual
+  MPI phases exit 0, nine numerical comparisons PASS** against the original
+  physical inputs/references/limits. This includes restart continuity, divE,
+  dynamic allocation, Europa, OH and dynamic flux rope.
+- Material restart/repartition: **58 actual MPI jobs PASS**, including all
+  three movers, same-count MPI 1/2/4/8 restart, keyed 1↔8 repartition and late
+  preparation rollback/retry. Maximum relative budget residual is
+  **1.0709645106117594e-15**; independently compared text output differs by
+  **0.0**.
+- Checkpoint/thread continuation: **44 actual MPI jobs PASS**, including
+  two-/four-worker continuation and D_mumu on eight MPI ranks with four workers
+  per rank. Complete same-decomposition images are byte-exact, up to
+  **21,425,968 bytes**. Maximum relative budget residual is
+  **1.466477706182233e-15**. MCP13's intended native ERROR/exit 2 qualifies its
+  missing-prerequisite rejection, not physical transport. The original
+  **1e-10** bound and **300-s** physical step remain unchanged throughout.
+
+The five broad core/geometry suites retain their exact catalogs. Their latest
+individual scope is 341 PASS, 181 declared SKIP and one ERROR: the existing
+full-regional `CSWC0628-MASS-TIME` refinement exceeds its unchanged 180-s bound.
+It remains unqualified and its backend remains rejected. A newly exposed
+isolated-copy compile dependency was repaired by including the real admission
+and neutral include-path headers; the coronal-CME rerun has 219 PASS/3 SKIP.
+The original failed compile and stale harness-membership reports remain
+retained separately; final shared harness checks pass after exact membership
+registration. No assertion or numerical threshold was removed.
+
+Direct MPI launch is required in this execution environment. Earlier
+shell-wrapped native/restart attempts failed MPI socket startup and retain
+ERROR reports in `native-final/` and `material-final/`. Qualified results use
+new directories, actual direct commands and process receipts. One interrupted
+external collector's unobserved resume is retained as an uncollected attempt;
+its return code is not inferred and the role is rerun. External full-driver
+timing observations are labelled upper bounds through completion polling;
+the actual commands enforce the original 1800-s deadline. Core native tests
+and restart jobs retain their original per-job deadlines.
+
+### Current evidence and execution procedure
+
+All paths below are relative to the current evidence root above. JSON/JUnit,
+prepared commands, hashes and per-rank logs remain together; they are external
+campaign artifacts and are not added to the source distribution.
+
+| Role | Evidence |
+| --- | --- |
+| Final strict source admission / native rejection | `backend-source-delivery/summary.json`, `backend-delivery/summary.json` |
+| Admission strict + ASan/UBSan | `backend-composition-final/summary.json` |
+| Numerical transport/geometry sanitizer suite | `numerical-sanitizers/summary.json` |
+| Native 48-job / 15-ID result | `native-qualified/summary.json`, `prepared.json`, job `process-result.json` |
+| Material 58-job result | `material-qualified/summary.json`, `prepared.json`, job receipts and native logs |
+| Combined checkpoint/thread 44-job result | `checkpoint-qualified/summary.json`, `prepared.json`, job receipts and native logs |
+| Final reviewed full-application launcher | `application-qualified400/launch-plan.json`, `build-sha256.json`, per-mover process receipts and logs |
+| Four coupling builds / nine phases and comparisons | `coupling/build-results.json`, `validation-results.json`, `run-plan.json`, `run-evidence/` |
+| Final compiled-code/source/receipt audit | `evidence-audit-final.json`, `audit_final_evidence.py` |
+| Maintained orchestration / software controls | `orchestrator-launcher-release/run_all_test.json`, `launcher-controls-release.log`, `orchestrator-controls-release.log` |
+| Original failed or superseded attempts | `native-final/`, `material-final/`, `application-final400/`, `pre-review-launcher-sources/`, retained broad-core reports |
+
+Native collection commands, executed from the primary AMPS checkout after
+actual externally launched jobs completed, are:
+
+```sh
+STAGE89_EVIDENCE=/data/vtenishe/TEST/sep-stages8-9-20261123T003839Z
+python3 -B srcSEP/test/run_native_standalone_integration.py --output-dir "$STAGE89_EVIDENCE/native-qualified" --ranks 1 2 4 8 --collect
+python3 -B srcSEP/test/run_material_checkpoint_tests.py --output "$STAGE89_EVIDENCE/material-qualified" --collect
+python3 -B srcSEP/test/run_stage7_checkpoint_tests.py --output "$STAGE89_EVIDENCE/checkpoint-qualified" --collect
+python3 -B srcSEP/test/run_backend_admission_tests.py --native --amps "$STAGE89_EVIDENCE/native/amps" --output-dir "$STAGE89_EVIDENCE/backend-delivery" --collect
+```
+
+The final application was prepared with the same maintained launcher, using
+`--build-root "$STAGE89_EVIDENCE/native" --output-dir
+"$STAGE89_EVIDENCE/application-qualified400" --prepare-only`. Its exact MPI
+commands are frozen in `launch-plan.json`; the 1800-s deadline is part of each
+command. The final collector and unchanged corrupt-output controls were run
+after all three actual process results existed, and both exited 0:
+
+```sh
+python3 -B srcSEP/test/run_standalone_application.py --output-dir "$STAGE89_EVIDENCE/application-qualified400" --collect
+python3 -B srcSEP/test/test_standalone_application_verifier.py --campaign-dir "$STAGE89_EVIDENCE/application-qualified400"
+```
+
+Per-mover final metrics are:
+
+| Mover | Complete steps / dt | Maximum relative ledger residual | Segment exposures |
+| --- | --- | --- | --- |
+| Parker | 400 / 300 s | 1.6247344858249657e-15 | 357 segments, 5–400 samples |
+| FTE–D_mumu | 400 / 300 s | 2.2022684795608913e-15 | 357 segments, 5–400 samples |
+| FTE–mean-free-path | 400 / 300 s | 1.137819815206874e-15 | 357 segments, 5–400 samples |
+
+The owned normal native build uses the ordinary
+`./Config.pl -application=test/sep_reduced_front__field_line` and
+`make -j24 amps`. Separately configured two-/four-worker builds retain their
+PIC worker configuration and audit every PIC-header object consumer. The
+compiler is GCC/GFortran **9.4.0**, with Open MPI/OpenRTE **4.0.3**. Native
+prepared manifests retain **544**, **545** and **1342** source/build/input hash
+entries, respectively; the final application retains **552**. The coupling
+overlay retains **6434** source identities, with later differences explicitly
+limited to documentation and test-harness files. Its six executable hashes
+and all **20** original/frozen input/reference assets match. Pinned SWMF
+`c60b22dc38cc33741029a982c9352be58a439297` and BATS-R-US
+`9b7e4c7823e53de0e0d5f4b2d516d391b032f973` were reused without network updates.
+
+Changed production paths are `main.cpp`, shared `transport_common.cpp`, the
+neutral bundle adapter and its new typed admission header. Test runners,
+Make/source aliases, shared registry/catalog/traceability, orchestrator readers
+and documentation expose those contracts without changing core equations.
+The user's Makefile is byte-identical to its starting snapshot; no files are
+staged or committed. Proposed imperative commit subject:
+`Qualify supported standalone SEP transport and reject unsupported backends`.
+
 ## Stage 7 COMPLETE, 2026-11-22
 
 Stage 7 is complete for the prescribed reduced SSE/Parker material profile.
 All 150 required real-MPI job checks pass against the final rebuilt executables.
 The legacy checkpoint fixtures and the numerical/threading defects exposed by
-their qualification are repaired. Stages 8–9 have not begun in this batch.
+their qualification are repaired. This historical stage-7 batch preceded the
+stage-8/9 campaign recorded above.
 Current evidence root:
 `/data/vtenishe/TEST/sep-stage7-completion-20261122T182436Z`.
 The original dirty checkout and Makefile are retained in `baseline.json`,

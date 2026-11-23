@@ -340,9 +340,11 @@ def test_selection_contract(context: Dict) -> None:
     # calculate the expectation from the registry being tested.
     # Stage 7 additionally registers one late material-restore rejection ID
     # and the twenty-case native/operator/thread continuation owner.
-    assert [len(item["tests"]) for item in streams] == [58, 3, 2]
+    # Stage 8 adds five compatibility/admission and three native rejection
+    # cases. Stage 9 adds the three complete 400-step application cases.
+    assert [len(item["tests"]) for item in streams] == [61, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1169, 62, 46]
+            for item in streams] == [1180, 62, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(
@@ -441,6 +443,9 @@ def test_selection_contract(context: Dict) -> None:
         "CORE-SEP-STANDALONE-NATIVE-001",
         "CORE-SEP-MATERIAL-CHECKPOINT-001",
         "CORE-SEP-STAGE7-CHECKPOINT-001",
+        "CORE-SEP-BACKEND-ADMISSION-001",
+        "CORE-SEP-BACKEND-NATIVE-001",
+        "CORE-SEP-FULL-APPLICATION-001",
         "CORE-LEGACY-REGISTRY-AUDIT-001",
         "CORE-T12-PORTABILITY-001",
         "APPLICATION-ENCELADUS-FORWARD-001",

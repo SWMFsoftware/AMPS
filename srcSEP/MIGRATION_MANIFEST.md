@@ -1,5 +1,14 @@
 # Step 14 mover migration manifest
 
+## Stage-8/9 admission and execution interfaces
+
+| Existing interface | Change | Compatibility / reason |
+| --- | --- | --- |
+| SWCME scalar diagnostic adapter | Preserved; actual material transport now explicitly rejects in main and shared mover entry | A constant wind/Leblanc density is not a conservative material-state evolution prescription |
+| Neutral `LoadAndPublish(directory,publisher)` | Original symbol/semantics retained; new overload takes `BundleUse` | `SnapshotExchange` preserves exchange; `MaterialTransport` rejects before publication; unknown enum rejects |
+| Completed stage-6 application verifier / SAPP01–03 | Preserved unchanged; new maintained launcher plus shared/orchestrator registration | Existing physical window/limits retained; prepare/execute/collect are distinct |
+| Shared case catalog | Add SBACK01–08 and register existing SAPP01–03 | No previous ID repurposed; catalog/traceability/harness counts updated |
+
 ## Stage-7 material checkpoint fixture migration, 2026-11-22
 
 | Former contract | Maintained replacement | Compatibility and reason |
