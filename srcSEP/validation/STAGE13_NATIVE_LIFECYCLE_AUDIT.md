@@ -19,12 +19,14 @@ A downstream RH primitive supplies total pressure only: species heating,
 downstream gradients and a downstream material volume are not inferred.
 A sub-fast geometric surface has no fabricated jump or source eligibility.
 
-The shared `Swcme3dSpherePfssParkerKinematicV1` profile remains unqualified for
+The shared `Swcme3dSpherePfssParkerKinematicV1` and
+`Swcme3dSpherePfssParkerThermalV1` profiles still require qualification for
 `MaterialTransport` and `PhysicalDownstream` in
 `src/models/sep_common/sep_material_background.h`. `RequireStep` and
 `BindSnapshot` therefore reject actual live-step attachment. `S13AD01` exercises
-this adapter using `InitializationLevel::None`; it is a linked adapter test,
-not evidence of a native material run or of observational agreement.
+both profiles using `InitializationLevel::None`. It provides linked adapter
+evidence. The thermal profile supplies an independent identity and the actual
+electron, proton and alpha temperatures and Cartesian gradients at query time.
 
 The production `amps_time_step()` path in `main_lib.cpp` currently performs its
 material geometry transaction only through `ReducedShock::Native::Advance`.
@@ -92,11 +94,11 @@ same fixed physical step, not extra physical sampling opportunities.
 
 ## Missing native qualification before live transport/source admission
 
-- **Physical wind and thermal realization:** qualify continuity, signed
-  induction, vector momentum/force and the declared thermal/work terms along
-  the actual nonradial open tubes. The present kinematic isothermal fixture's
-  required sustaining force cannot be silently interpreted as a closed
-  force-free solar wind. This audit neither modifies nor chooses that solver.
+- **Physical wind and thermal realization:** qualify the actual event's
+  nonradial open tubes. Controlled tests cover continuity, signed induction,
+  the field-aligned momentum equation and species heat accounting over a
+  resolved axisymmetric band. The full transverse force and observational
+  thermal/work bounds still require event inputs.
 - **Native startup/publication:** install one real spherical material owner,
   its actual tube metrics, all mandatory vertex datums and immutable physical
   identity/configuration. Agree preparation across ranks before publication.

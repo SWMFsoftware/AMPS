@@ -197,6 +197,50 @@ Result VerifySphericalMaterialAdapter() {
            retained.value.magneticFieldT == state.value.magneticFieldT &&
            M::Payload(interval.Identity()) == capturedIdentity,
            "detached owner lifetime or physical identity depended on the caller's event handle");
+
+    // Exercise the new thermal owner in the same linked bridge. The sample
+    // at 1 AU is beyond the thermal blends. Its alpha temperature must come
+    // from the local EOS. The serialized descriptor must retain the separate
+    // owner identity, and live steps still require native qualification.
+    definition.resolvedWind = S::Verification::ThermalFamily();
+    const auto thermal = S::Event::Create(definition);
+    expect(thermal.ok(), thermal.status.message.c_str());
+    const auto thermalView = SW3DSphericalAdapter::Capture(thermal.value, controls, 0, 20, 21, 8);
+    expect(thermalView.ok(), thermalView.status.message.c_str());
+    const auto& thermalIdentity = thermalView.value->Identity();
+    expect(thermalIdentity.profile == M::Profile::Swcme3dSpherePfssParkerThermalV1 &&
+           thermalIdentity.eventIdentity != descriptor.eventIdentity &&
+           thermalIdentity.eosIdentity != descriptor.eosIdentity,
+           "thermal wind reused the isothermal identity");
+    const auto thermalEncoding = M::Encode(thermalIdentity);
+    expect(thermalEncoding.ok(), thermalEncoding.status.message.c_str());
+    const auto thermalDecoded = M::Decode(thermalEncoding.value);
+    expect(thermalDecoded.ok() && M::Payload(thermalDecoded.value) == M::Payload(thermalIdentity),
+           "thermal descriptor lost its profile or physical identity on round trip");
+    auto thermalQuery = departureQuery;
+    constexpr double theta = .49;
+    thermalQuery.positionM = {S::Verification::Au * std::sin(theta), 0,
+                             S::Verification::Au * std::cos(theta)};
+    const auto thermalSample = thermalView.value->Sample(thermalQuery);
+    expect(thermalSample.ok(), thermalSample.status.message.c_str());
+    const auto thermalDirect = thermal.value->Evaluate(
+        {thermalQuery.positionM[0], thermalQuery.positionM[1], thermalQuery.positionM[2]}, 0);
+    expect(thermalDirect.ok(), thermalDirect.status.message.c_str());
+    const auto& tm = thermalSample.value;
+    const auto& td = thermalDirect.value.ambient;
+    expect(tm.species->at(2).temperatureK == td.primitive.alphaTemperatureK &&
+           tm.species->at(2).temperatureK != definition.ambient.composition.alphaTemperatureK &&
+           tm.species->at(0).temperatureK == td.primitive.electronTemperatureK &&
+           tm.species->at(1).temperatureK == td.primitive.protonTemperatureK &&
+           *tm.pressurePa == td.primitive.plasma.pressurePa &&
+           tm.velocityGradientPerS->values == td.gradientU &&
+           tm.magneticGradientTPerM->values == td.gradientB,
+           "thermal bridge substituted an anchor temperature or changed a spatial derivative");
+    expect(thermalView.value->RequireStep(0, 20, 20, M::Region::ParkerExterior).code ==
+               Core::StatusCode::UnsupportedCapability &&
+           M::Require(thermalIdentity.profile, M::Use::PhysicalDownstream, M::Region::Sheath).code ==
+               Core::StatusCode::UnsupportedCapability,
+           "resolved thermal data alone granted live or downstream admission");
     result.status = Status::Pass;
     result.message = "Linked spherical core/SEP primitive, motion and RH export agree and keep native admission closed";
   } catch (const std::exception& error) {
@@ -204,7 +248,7 @@ Result VerifySphericalMaterialAdapter() {
     result.message = error.what();
   }
   result.configuration.push_back("scope=detached-canonical-adapter;native-material-admission=closed");
-  result.configuration.push_back("physical-inputs=existing-manufactured-open-field-fixture;new-physics=none");
+  result.configuration.push_back("physical-inputs=manufactured-open-field-and-thermal-population-fixtures");
   result.metrics.emplace_back("adapter_assertions", static_cast<double>(assertions), 0, ">", "count");
   return result;
 }

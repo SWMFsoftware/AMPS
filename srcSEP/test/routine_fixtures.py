@@ -238,7 +238,7 @@ def run(args, framework=None):
         if requested is not None:
             # An explicit caller selection narrows execution, never the full
             # catalog admission audit. --routine leaves this unset and still
-            # requires all222; --all reuses every Routine result before adding
+            # requires the complete catalog. --all reuses every Routine result before adding
             # every Extended descriptor, and single-ID adapters reuse exactly
             # their reviewed startup without fabricating another callback.
             require(requested and len(set(requested))==len(requested) and set(requested)<=set(expected),

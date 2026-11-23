@@ -126,7 +126,7 @@ class SphericalOwner final : public M::Owner {
         {"proton", p.plasma.protonNumberDensityM3, p.protonTemperatureK}};
     if (c.alphaToProtonNumberRatio > 0)
       result.species->push_back({"alpha", c.alphaToProtonNumberRatio * p.plasma.protonNumberDensityM3,
-                                 c.alphaTemperatureK});
+                                 p.alphaTemperatureK});
     if (sample.derivativesValid) {
       // The core stencils preserve topology and polarity. Include both in the
       // branch identity so opposite sectors cannot be merged by a consumer.
@@ -163,7 +163,13 @@ Core::Result<std::shared_ptr<const M::Interval>> Capture(
     return R::Failure(Core::StatusCode::InvalidConfiguration, "explicit spherical trajectory accuracy and work controls are required");
 
   M::Descriptor d;
-  d.profile = M::Profile::Swcme3dSpherePfssParkerKinematicV1;
+  // Bind the thermal profile and its EOS under a distinct descriptor. The
+  // temperature anchors alone do not describe the solved species pressure
+  // outside the thermal transition. Both profiles still require separate
+  // qualification before this interval can bind a native material step.
+  const bool resolved = static_cast<bool>(event->ResolvedWind());
+  d.profile = resolved ? M::Profile::Swcme3dSpherePfssParkerThermalV1 :
+                         M::Profile::Swcme3dSpherePfssParkerKinematicV1;
   d.revision = 1;
   d.capabilities = M::MaterialRequirements | M::Bit(M::Capability::ShockSurface);
   d.backgroundGeneration = backgroundGeneration;
@@ -173,7 +179,8 @@ Core::Result<std::shared_ptr<const M::Interval>> Capture(
   d.physicalConfigurationIdentity = d.eventIdentity;
   d.materialIdentity = d.eventIdentity + ":open-tubes";
   d.compositionIdentity = d.eventIdentity + ":explicit-e-p-alpha";
-  d.eosIdentity = d.eventIdentity + ":isothermal-ambient-adiabatic-jump";
+  d.eosIdentity = d.eventIdentity + (resolved ? ":isopoly-ambient-adiabatic-jump" :
+                                               ":isothermal-ambient-adiabatic-jump");
   d.frame = "HCI";
   d.units = "SI";
   d.beginS = beginS;

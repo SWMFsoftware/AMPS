@@ -14,7 +14,7 @@ Stage 12 baseline. Its immutable state, three-component material map,
 all-root line connections, explicit force/heat diagnostics and limitations are
 in [the Stage 13 guide](docs/STAGE13_SPHERICAL_SHOCK_ONLY.md). The prescribed
 isothermal candidate remains distinct from a force-balanced or observed wind;
-no downstream-volume or native SEP qualification is inferred. The ten focused
+no downstream-volume or native SEP qualification is inferred. The focused
 core records run through `make test-spherical-shock-only` and local `make test`.
 
 The thermal-only open-tube solver traces a supported axisymmetric PFSS tube,
@@ -23,7 +23,10 @@ exports a same-epoch spherical shock query using the existing RH solver.
 The Stage 13 guide documents its mass and thermal anchors, source-surface
 matching, supported geometry, and the remaining native and observational
 qualification. `S13SC04` checks the force balance, signed fluxes, and local
-shock classification on the manufactured dipole.
+shock classification on the manufactured dipole. `S13SC11` and `S13SC12`
+exercise the resolved spatial family, Cartesian derivatives and the fixed-step
+material map across the PFSS–Parker handoff. The event uses its selected wind
+consistently for primitive, motion and shock queries.
 
 ## Current cross-ray work (2026-11-10)
 

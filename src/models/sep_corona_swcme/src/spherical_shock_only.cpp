@@ -89,7 +89,7 @@ std::string AmbientIdentity(const AmbientDefinition& d) {
       << a.traceMaximumSteps << ';' << a.windTablePoints;
   return CoronalCME::ComputeContentChecksum(out.str());
 }
-std::string EventIdentity(const Definition& d) {
+std::string EventIdentity(const Definition& d,const OpenTubeIsoPolyFamily* resolvedWind) {
   std::ostringstream out;
   out.imbue(std::locale::classic());
   out << std::hexfloat;
@@ -105,6 +105,7 @@ std::string EventIdentity(const Definition& d) {
     for (double x : *knots)
       out << ';' << x;
   }
+  if(resolvedWind)out << ";resolved-wind:" << resolvedWind->Identity();
   return CoronalCME::ComputeContentChecksum(out.str());
 }
 Core::Status Controls(const Numerics& c) {
@@ -186,8 +187,25 @@ Core::Result<std::shared_ptr<const Event>> Event::Create(const Definition& input
   if (!ambient.ok())
     return Return::Failure(ambient.status.code, ambient.status.message);
   event->ambient_ = ambient.value;
-  event->identity_ = EventIdentity(event->definition_);
+  // One immutable wind supplies all resolved spatial samples, geometry and
+  // front queries. Failure to prepare never falls back to the old kinematic
+  // wind, which would change upstream speed, pressure and shock eligibility.
+  if(input.resolvedWind) {
+    const auto wind=OpenTubeIsoPolyFamily::Prepare(event->ambient_,*input.resolvedWind);
+    if(!wind.ok())return Return::Failure(wind.status.code,wind.status.message);
+    event->resolvedWind_=wind.value;
+  }
+  event->identity_ = EventIdentity(event->definition_,event->resolvedWind_.get());
   return Return::Success(std::move(event));
+}
+
+Core::Result<AmbientState> Event::AmbientAt(Vec3 x,double t,std::vector<double>* speciesHeat) const {
+  if(!resolvedWind_)return OpenAt(*ambient_,x,t);
+  auto sample=resolvedWind_->EvaluateWithDerivatives(x,t,1);
+  using Return=Core::Result<AmbientState>;
+  if(!sample.ok())return Return::Failure(sample.status.code,sample.status.message);
+  if(speciesHeat)*speciesHeat=std::move(sample.value.speciesNetHeatWPerM3);
+  return Return::Success(std::move(sample.value.ambient));
 }
 
 Core::Result<Sample> Event::Evaluate(Vec3 x, double t) const {
@@ -195,14 +213,14 @@ Core::Result<Sample> Event::Evaluate(Vec3 x, double t) const {
   if (!Covers(definition_, t))
     return Return::Failure(StatusCode::OutOfDomain,
                            "spherical candidate time is outside its actual history");
-  const auto state = OpenAt(*ambient_, x, t);
+  Sample result;
+  const auto state = AmbientAt(x,t,&result.speciesNetHeatWPerM3);
   if (!state.ok())
     return Return::Failure(state.status.code, state.status.message);
   const auto front = swcme::kinematics::evaluate(definition_.front, t);
   if (front.status != swcme::kinematics::Status::Ok)
     return Return::Failure(StatusCode::OutOfDomain,
                            "spherical front has no history at the requested epoch");
-  Sample result;
   result.ambient = state.value;
   const double r = Norm(x);
   result.support = SupportAtRadius(definition_, r);
@@ -243,14 +261,18 @@ Core::Result<Sample> Event::Evaluate(Vec3 x, double t) const {
   result.requiredMechanicalPowerWPerM3 =
       Dot(p.velocityMPerS, result.requiredExternalForceNPerM3);
   const double gamma = definition_.ambient.composition.gammaAdiabatic;
-  result.requiredIsothermalHeatWPerM3 =
+  // The full pressure equation is valid for the stated shared adiabatic
+  // index, whether T varies or not. It measures the heat required by the
+  // prescribed thermal law, including compressional work and advection.
+  result.requiredThermalHeatWPerM3 =
       (pressureRate + gamma * p.plasma.pressurePa * divergence) / (gamma - 1);
+  if(!resolvedWind_)result.requiredIsothermalHeatWPerM3=result.requiredThermalHeatWPerM3;
   if (!Finite(result.inductionResidualTPerS) ||
       !Finite(result.requiredExternalForceNPerM3) ||
       !std::isfinite(result.continuityResidualKgM3S) ||
       !std::isfinite(result.fieldAlignedForcePerMassMPerS2) ||
       !std::isfinite(result.requiredMechanicalPowerWPerM3) ||
-      !std::isfinite(result.requiredIsothermalHeatWPerM3))
+      !std::isfinite(result.requiredThermalHeatWPerM3))
     return Return::Failure(StatusCode::NumericalFailure,
                            "material balance diagnostic is nonfinite");
   return Return::Success(std::move(result));
@@ -267,20 +289,35 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
       !Covers(definition_, begin + duration))
     return Return::Failure(StatusCode::OutOfDomain,
                            "material trajectory interval is outside declared coverage");
-  const auto initialSample = OpenAt(*ambient_, initial, begin);
+  const auto initialSample = AmbientAt(initial,begin);
   if (!initialSample.ok())
     return Return::Failure(initialSample.status.code, initialSample.status.message);
+  // The interface refinement advances by metres or less at heliocentric
+  // radii of order 10^9 m. Evolve the spatial profile's displacements and
+  // F-I so that the local error estimate sees the RK increments without
+  // losing them to roundoff in the large coordinate/identity offsets.
+  const Vec3 origin = resolvedWind_ ? initial : Vec3{};
+  const double identityOffset = resolvedWind_ ? 1 : 0;
+  const auto position=[&](const State& x) {return origin+Vec3{x[0],x[1],x[2]};};
+  const auto deformation=[&](const State& x,unsigned i,unsigned j) {
+    return x[3+3*i+j]+(i==j?identityOffset:0);
+  };
   State start{};
-  start[0] = initial.x;
-  start[1] = initial.y;
-  start[2] = initial.z;
+  start[0] = initial.x-origin.x;
+  start[1] = initial.y-origin.y;
+  start[2] = initial.z-origin.z;
   for (unsigned i = 0; i < 3; ++i)
-    start[3 + 3 * i + i] = 1;
+    start[3 + 3 * i + i] = 1-identityOffset;
   std::size_t attempts = 0;
+  struct StageRates {
+    double maximumSpeed = 0;
+    double maximumDeformationRate = 0;
+    bool coronal = false;
+    bool exterior = false;
+  };
   const auto derivative = [&](const State& state, double relativeTime, State& out,
-                              double& maximumSpeed) {
-    const auto sample =
-        OpenAt(*ambient_, {state[0], state[1], state[2]}, begin + relativeTime);
+                              StageRates& rates) {
+    const auto sample = AmbientAt(position(state),begin+relativeTime);
     if (!sample.ok())
       return sample.status;
     const auto& a = sample.value;
@@ -288,14 +325,18 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
     out[0] = v.x;
     out[1] = v.y;
     out[2] = v.z;
-    maximumSpeed = std::max(maximumSpeed, Norm(v));
+    rates.maximumSpeed = std::max(rates.maximumSpeed, Norm(v));
+    rates.coronal |= a.primitive.region == AmbientRegion::PfssOpen;
+    rates.exterior |= a.primitive.region == AmbientRegion::ParkerExterior;
     // Variational equation for THE SAME flow: Fdot=grad(U)*F. A density
     // ratio alone is never relabeled as a complete three-dimensional map.
     for (unsigned i = 0; i < 3; ++i)
       for (unsigned j = 0; j < 3; ++j) {
         out[3 + 3 * i + j] = 0;
         for (unsigned k = 0; k < 3; ++k)
-          out[3 + 3 * i + j] += a.gradientU[3 * i + k] * state[3 + 3 * k + j];
+          out[3 + 3 * i + j] += a.gradientU[3 * i + k] * deformation(state,k,j);
+        rates.maximumDeformationRate =
+            std::max(rates.maximumDeformationRate,std::abs(out[3 + 3 * i + j]));
       }
     for (double value : out)
       if (!std::isfinite(value))
@@ -304,30 +345,42 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
     return Core::Status::Success();
   };
   const auto rk = [&](const State& original, double t, double h, State& out,
-                      double& maximumSpeed) {
+                      StageRates& rates) {
     State k1{}, k2{}, k3{}, k4{}, temporary{};
-    auto status = derivative(original, t, k1, maximumSpeed);
+    auto status = derivative(original, t, k1, rates);
     if (!status.ok())
       return status;
     for (unsigned i = 0; i < 12; ++i)
       temporary[i] = original[i] + h * k1[i] / 2;
-    status = derivative(temporary, t + h / 2, k2, maximumSpeed);
+    status = derivative(temporary, t + h / 2, k2, rates);
     if (!status.ok())
       return status;
     for (unsigned i = 0; i < 12; ++i)
       temporary[i] = original[i] + h * k2[i] / 2;
-    status = derivative(temporary, t + h / 2, k3, maximumSpeed);
+    status = derivative(temporary, t + h / 2, k3, rates);
     if (!status.ok())
       return status;
     for (unsigned i = 0; i < 12; ++i)
       temporary[i] = original[i] + h * k3[i];
-    status = derivative(temporary, t + h, k4, maximumSpeed);
+    status = derivative(temporary, t + h, k4, rates);
     if (!status.ok())
       return status;
     for (unsigned i = 0; i < 12; ++i)
       out[i] = original[i] + h * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]) / 6;
     return Core::Status::Success();
   };
+  // Reserve part of the caller's total error budget for the one-sided
+  // gradient at the physical PFSS/Parker interface. U is continuous but
+  // its azimuthal derivative changes there. Across the interface RK4's
+  // smooth Richardson estimate is invalid: an unresolved jump in Fdot
+  // gives O(h) error and an error budget proportional to h would never
+  // let that crossing converge. Accumulate an absolute allowance for
+  // interface panels and keep the usual shared budget for smooth panels.
+  const double smoothFraction = resolvedWind_ ? 0.5 : 1;
+  double crossingPositionBudget = (1-smoothFraction)*controls.positionToleranceM;
+  double crossingDeformationBudget = (1-smoothFraction)*controls.deformationTolerance;
+  const double sourceRadius=definition_.ambient.ambient.sourceSurfaceRadiusM;
+  const auto radiusOf=[&](const State& x) {return Norm(position(x));};
   std::function<Core::Status(const State&, double, double, State&)> advance;
   advance = [&](const State& original, double low, double high, State& out) {
     if (++attempts > controls.maximumAttempts)
@@ -340,16 +393,16 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
           StatusCode::NumericalFailure,
           "material trajectory cannot represent a required numerical subdivision");
     State coarse{}, half{}, fine{};
-    double maximumSpeed = 0;
+    StageRates rates;
     bool split = std::abs(h) > controls.maximumTimeStepS;
     if (!split) {
-      auto s = rk(original, low, h, coarse, maximumSpeed);
+      auto s = rk(original, low, h, coarse, rates);
       if (!s.ok())
         return s;
-      s = rk(original, low, h / 2, half, maximumSpeed);
+      s = rk(original, low, h / 2, half, rates);
       if (!s.ok())
         return s;
-      s = rk(half, middle, h / 2, fine, maximumSpeed);
+      s = rk(half, middle, h / 2, fine, rates);
       if (!s.ok())
         return s;
       double positionError = 0, deformationError = 0;
@@ -359,10 +412,27 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
       for (unsigned i = 3; i < 12; ++i)
         deformationError =
             std::max(deformationError, std::abs(fine[i] - coarse[i]) / 15);
-      const double share = std::abs(h / duration);
-      split = maximumSpeed * std::abs(h) > controls.maximumArcStepM ||
-              positionError > controls.positionToleranceM * share ||
-              deformationError > controls.deformationTolerance * share;
+      const bool handoff=resolvedWind_&&((rates.coronal&&rates.exterior)||
+          ((radiusOf(original)<sourceRadius)!=(radiusOf(fine)<sourceRadius)));
+      split = rates.maximumSpeed * std::abs(h) > controls.maximumArcStepM;
+      if(handoff) {
+        // Use a conservative first-order rate envelope from both quadratures
+        // for the tiny unresolved interval. Twice the measured maximum
+        // bounds the difference between two increments at that rate. It is
+        // charged only when this panel is accepted. No change to host dt,
+        // epoch, branch side or magnetic field is used to cross the interface.
+        const double positionCost=2*std::abs(h)*rates.maximumSpeed;
+        const double deformationCost=2*std::abs(h)*rates.maximumDeformationRate;
+        split=split||positionCost>crossingPositionBudget||deformationCost>crossingDeformationBudget;
+        if(!split) {
+          crossingPositionBudget-=positionCost;
+          crossingDeformationBudget-=deformationCost;
+        }
+      } else {
+        const double share = smoothFraction*std::abs(h/duration);
+        split=split||positionError>controls.positionToleranceM*share||
+            deformationError>controls.deformationTolerance*share;
+      }
     }
     if (!split) {
       out = fine;
@@ -381,13 +451,14 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
       return Return::Failure(status.code, status.message);
   }
   Motion result;
-  result.positionM = {final[0], final[1], final[2]};
-  const auto endpoint = OpenAt(*ambient_, result.positionM, begin + duration);
+  result.positionM = position(final);
+  const auto endpoint = AmbientAt(result.positionM,begin+duration);
   if (!endpoint.ok())
     return Return::Failure(endpoint.status.code, endpoint.status.message);
   result.velocityMPerS = endpoint.value.primitive.velocityMPerS;
-  for (unsigned i = 0; i < 9; ++i)
-    result.deformation[i] = final[3 + i];
+  for (unsigned i = 0; i < 3; ++i)
+    for (unsigned j = 0; j < 3; ++j)
+      result.deformation[3*i+j] = deformation(final,i,j);
   const auto& f = result.deformation;
   const long double determinant =
       static_cast<long double>(f[0]) * (static_cast<long double>(f[4]) * f[8] -
@@ -469,6 +540,8 @@ Core::Result<Shock> Event::Surface(Vec3 ray, double t) const {
 Core::Result<TubeShock> Event::SurfaceOnTube(const OpenTubeIsoPolyWind& wind,
     double azimuth,double epoch) const {
   using Return=Core::Result<TubeShock>;
+  if(resolvedWind_)return Return::Failure(StatusCode::UnsupportedCapability,
+      "resolved spherical events use their owned spatial wind through Surface or Connect");
   if(!wind.UsesAmbient(ambient_))return Return::Failure(StatusCode::InvalidConfiguration,
       "resolved wind and spherical event do not own the same immutable ambient inputs");
   if(!Covers(definition_,epoch))return Return::Failure(StatusCode::OutOfDomain,

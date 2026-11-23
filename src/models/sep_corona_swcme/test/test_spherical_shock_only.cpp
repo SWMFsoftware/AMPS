@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <stdexcept>
 
 #include "sep_corona_swcme/open_tube_isopoly.h"
@@ -623,12 +624,197 @@ void S13SC10() {
   }
 }
 }  // namespace
+namespace {
+
+// Analytic dipole flux coordinate. The query point is constructed without
+// the wind's field-line trace or its source-surface label calculation.
+C::Vec3 DipolePosition(double r,double source,double label,double phi) {
+  const double theta=r>=source?label:std::asin(std::sin(label)*std::sqrt(
+      3*source*source/(r*r+2*source*source*source/r)));
+  return r*C::Vec3{std::sin(theta)*std::cos(phi),std::sin(theta)*std::sin(phi),std::cos(theta)};
+}
+
+void S13SC11() {
+  double maxMass=0,maxInduction=0,maxParallel=0,maxHeat=0,maxDerivative=0;
+  for(int polarity:{1,-1}) {
+    auto definition=Fixture(polarity);
+    definition.resolvedWind=S::Verification::ThermalFamily();
+    const auto event=Event(definition);
+    const auto& family=event->ResolvedWind();
+    const double source=definition.ambient.ambient.sourceSurfaceRadiusM;
+    const double omega=definition.ambient.ambient.rotationRateRadPerS;
+    const auto& inputs=*definition.resolvedWind;
+    for(double label:{.31,.56}) {
+      A::OpenTubeIsoPolyRequest request;
+      static_cast<A::OpenTubeIsoPolyInputs&>(request)=inputs.population;
+      request.sourceColatitudeRad=label;
+      const auto single=A::OpenTubeIsoPolyWind::Prepare(event->Ambient(),request);
+      Require(single.ok(),single.status.message);
+      for(double r:{1.05*Rs,1.9*Rs,4*Rs,15*Rs,Au,5*Au}) {
+        constexpr double phi=.35;
+        const auto x=DipolePosition(r,source,label,phi);
+        const auto actual=event->Evaluate(x,100);
+        const auto expected=single.value.Evaluate(r,phi,100);
+        Require(actual.ok(),actual.status.message);
+        Require(expected.ok(),expected.status.message);
+        const auto& a=actual.value.ambient;
+        const auto& p=a.primitive;
+        const auto& ref=expected.value.primitive;
+        Near(p.plasma.pressurePa,ref.plasma.pressurePa,2e-8,
+            "Cartesian wind query resolved the wrong independent dipole tube");
+        Require(C::Norm(p.velocityMPerS-ref.velocityMPerS)<2e-8*C::Norm(p.velocityMPerS),
+            "Cartesian wind query changed the individually solved wind");
+        Require(p.magneticSector==polarity&&a.eventIdentity==family->Identity(),
+            "spatial wind lost its signed magnetic sector or provenance");
+
+        const auto relative=p.velocityMPerS-C::Cross({0,0,omega},x);
+        const double bNorm=C::Norm(p.magneticFieldT), uNorm=C::Norm(p.velocityMPerS);
+        const double rho=p.plasma.massDensityKgM3;
+        Near(rho*C::Norm(relative)/bNorm,inputs.population.massLoadingKgPerSWb,2e-11,
+            "spatial provider leaks mass loading across flux labels");
+        maxMass=std::max(maxMass,std::abs(actual.value.continuityResidualKgM3S)*r/(rho*uNorm));
+        maxInduction=std::max(maxInduction,C::Norm(actual.value.inductionResidualTPerS)*r/(bNorm*uNorm));
+        const double divB=a.gradientB[0]+a.gradientB[4]+a.gradientB[8];
+        Require(std::abs(divB)*r/bNorm<3e-6,"spatial field fails signed flux divergence check");
+        const double forceScale=uNorm*uNorm/r+C::Norm(a.gradientPressurePaPerM)/rho+
+            C::Constants::kSolarGravitationalParameterM3PerS2/(r*r);
+        maxParallel=std::max(maxParallel,std::abs(actual.value.fieldAlignedForcePerMassMPerS2)/forceScale);
+        const auto& heat=actual.value.speciesNetHeatWPerM3;
+        Require(heat.size()==3,"spatial wind lost the explicit alpha heat budget");
+        const double summed=std::accumulate(heat.begin(),heat.end(),0.0);
+        const double heatScale=p.plasma.pressurePa*uNorm/r;
+        maxHeat=std::max(maxHeat,std::abs(summed-actual.value.requiredThermalHeatWPerM3)/heatScale);
+        const double charge=p.plasma.protonNumberDensityM3*(1+2*definition.ambient.composition.alphaToProtonNumberRatio);
+        Near(p.plasma.electronNumberDensityM3,charge,1e-13,"spatial composition lost charge neutrality");
+        Require(std::isfinite(actual.value.requiredMechanicalPowerWPerM3),
+            "spatial closure discarded the physical work diagnostic");
+      }
+    }
+
+    // An independent wide, fourth-order Cartesian derivative uses samples
+    // from four additional tubes. It probes off-grid shear in r, theta and
+    // azimuth rather than recovering a derivative from the implementation.
+    const auto x=DipolePosition(1.5*Rs,source,.49,.35);
+    const auto got=event->Evaluate(x,100);
+    Require(got.ok(),got.status.message);
+    const double h=5e-4*C::Norm(x);
+    const auto& a=got.value.ambient;
+    for(unsigned j=0;j<3;++j) {
+      const C::Vec3 offset{j==0?h:0,j==1?h:0,j==2?h:0};
+      const auto velocity=[&](double n) {
+        const auto state=family->Evaluate(x+n*offset,100);
+        Require(state.ok(),state.status.message);
+        return state.value.primitive.velocityMPerS;
+      };
+      const C::Vec3 ref=(velocity(-2)-8*velocity(-1)+8*velocity(1)-velocity(2))/(12*h);
+      const C::Vec3 column{a.gradientU[j],a.gradientU[3+j],a.gradientU[6+j]};
+      maxDerivative=std::max(maxDerivative,C::Norm(ref-column)*C::Norm(x)/C::Norm(a.primitive.velocityMPerS));
+    }
+    const auto left=event->Evaluate(DipolePosition(source*(1-1e-7),source,.49,.35),100);
+    const auto right=event->Evaluate(DipolePosition(source*(1+1e-7),source,.49,.35),100);
+    Require(left.ok()&&right.ok(),"resolved spatial handoff does not cover both sides");
+    const auto& lp=left.value.ambient.primitive;
+    const auto& rp=right.value.ambient.primitive;
+    Require(lp.region==A::AmbientRegion::PfssOpen&&rp.region==A::AmbientRegion::ParkerExterior,
+        "spatial wind has the wrong one-sided source-surface branch");
+    Require(left.value.ambient.stencils[0]!=A::DifferenceStencil::CentralSecondOrder&&
+        right.value.ambient.stencils[0]!=A::DifferenceStencil::CentralSecondOrder,
+        "spatial derivative smoothed across the coronal handoff");
+    Near(lp.plasma.massDensityKgM3,rp.plasma.massDensityKgM3,1e-6,"spatial handoff density discontinuity");
+    Require(C::Norm(lp.magneticFieldT-rp.magneticFieldT)<1e-6*C::Norm(rp.magneticFieldT),
+        "spatial handoff magnetic discontinuity");
+    Require(!family->Evaluate(DipolePosition(Au,source,.8,.35),100).ok()&&
+        !family->Evaluate(DipolePosition(1.3*Rs,source,.8,.35),100).ok()&&
+        !family->Evaluate(DipolePosition(Au,source,.49,.35),1201).ok(),
+        "spatial wind extrapolated a traced source label or event epoch");
+
+    auto unsupported=definition;
+    unsupported.ambient.ambient.harmonics+=";1,1,0.00001,0";
+    Require(S::Event::Create(unsupported).status.code==SEP::Core::StatusCode::UnsupportedCapability,
+        "spatial family silently accepted an unimplemented nonaxisymmetric longitude map");
+    auto altered=definition;
+    altered.resolvedWind->population.massLoadingKgPerSWb*=1.01;
+    Require(Event(altered)->Identity()!=event->Identity(),"changed mass loading reused an old event identity");
+  }
+  Require(maxMass<3e-6&&maxInduction<3e-6,"spatial field violates continuity or ideal induction");
+  Require(maxParallel<3e-5,"resolved spatial wind exceeds the established parallel force gate");
+  Require(maxHeat<3e-5,"spatial pressure gradients and per-species heating disagree");
+  Require(maxDerivative<3e-6,"resolved spatial wind fails the independent Cartesian stencil");
+  std::cout<<std::setprecision(12)<<"spatial_max_mass="<<maxMass<<" induction="<<maxInduction
+      <<" parallel_force="<<maxParallel<<" heat="<<maxHeat<<" gradient="<<maxDerivative<<'\n';
+}
+
+void S13SC12() {
+  auto definition=Fixture();
+  definition.resolvedWind=S::Verification::ThermalFamily();
+  definition.front.V0_m_s=1.5e6;
+  const auto event=Event(definition);
+  const double source=definition.ambient.ambient.sourceSurfaceRadiusM;
+  const double omega=definition.ambient.ambient.rotationRateRadPerS;
+  // One full 300 s step starts inside the PFSS region and crosses the
+  // source surface; a second uses a disjoint exterior material sample.
+  constexpr double t=100, dt=300;
+  auto controls=S::Verification::IntegrationControls();
+  controls.maximumTimeStepS=300;
+  double maxMass=0,maxMagnetic=0,maxInverse=0;
+  for(double r:{source-1e6,Au}) {
+    const auto initial=DipolePosition(r,source,.49,.35);
+    const auto map=event->AdvanceFixed(initial,t,t+dt,dt,controls);
+    Require(map.ok(),map.status.message);
+    const auto from=event->ResolvedWind()->Evaluate(initial,t);
+    const auto to=event->ResolvedWind()->Evaluate(map.value.positionM,t+dt);
+    Require(from.ok()&&to.ok(),"resolved variational map has missing endpoint support");
+    const auto& a=from.value.primitive;
+    const auto& b=to.value.primitive;
+    if(r<source)Require(a.region==A::AmbientRegion::PfssOpen&&b.region==A::AmbientRegion::ParkerExterior,
+        "full fixed step failed to traverse the actual wind handoff");
+    maxMass=std::max(maxMass,std::abs(b.plasma.massDensityKgM3*map.value.jacobian/a.plasma.massDensityKgM3-1));
+    const auto frozen=Apply(map.value.deformation,a.magneticFieldT)/map.value.jacobian;
+    maxMagnetic=std::max(maxMagnetic,C::Norm(frozen-b.magneticFieldT)/C::Norm(b.magneticFieldT));
+    const auto reverse=event->Move(map.value.positionM,t+dt,t,controls);
+    Require(reverse.ok(),reverse.status.message);
+    maxInverse=std::max(maxInverse,C::Norm(reverse.value.positionM-initial));
+    if(r>=source) {
+      // In the exterior, theta is invariant and r U_phi is constant. The
+      // exact steady radial flow-map determinant is (r1/r0)^2 U_r1/U_r0.
+      const double r1=C::Norm(map.value.positionM);
+      const double ur0=C::Dot(a.velocityMPerS,initial/r);
+      const double ur1=C::Dot(b.velocityMPerS,map.value.positionM/r1);
+      Near(map.value.jacobian,std::pow(r1/r,2)*ur1/ur0,2e-8,"exterior material determinant");
+      Near(map.value.positionM.z/r1,initial.z/r,1e-13,"exterior material latitude drift");
+      const double dPhi=std::atan2(map.value.positionM.y,map.value.positionM.x)-.35;
+      Require(dPhi>=omega*source*source*dt/(r1*r1)&&dPhi<=omega*source*source*dt/(r*r),
+          "material map failed the inertial azimuthal angular-momentum bounds");
+    }
+  }
+  Require(!event->AdvanceFixed(DipolePosition(Au,source,.49,.35),t,t+dt-1,dt,controls).ok(),
+      "resolved material map accepted a shortened physical step");
+  Require(maxMass<2e-7&&maxMagnetic<2e-7&&maxInverse<.2,
+      "resolved fixed-step map violates mass, Cauchy magnetic transport, or the inverse map");
+  const auto shock=event->Surface(DipolePosition(4*Rs,source,.49,.35),t);
+  Require(shock.ok(),shock.status.message);
+  Require(shock.value.jump&&shock.value.jump->residuals.maximum<=1e-9&&
+      shock.value.jump->entropyLogIncrement>0,"resolved event has no admissible fast RH solution");
+  const auto direct=event->ResolvedWind()->Evaluate(shock.value.positionM,t);
+  Require(direct.ok(),direct.status.message);
+  const auto& p=direct.value.primitive;
+  const auto n=shock.value.outwardNormal;
+  const double c2=std::pow(p.plasma.soundSpeedMPerS,2),v2=std::pow(p.plasma.alfvenSpeedMPerS,2);
+  const double cosine=C::Dot(n,p.magneticFieldT)/C::Norm(p.magneticFieldT);
+  const double fast=std::sqrt(.5*(c2+v2+std::sqrt(std::pow(c2+v2,2)-4*c2*v2*cosine*cosine)));
+  Near(shock.value.fastMach,(shock.value.normalSpeedMPerS-C::Dot(p.velocityMPerS,n))/fast,
+      1e-13,"canonical shock used a different upstream wind");
+  std::cout<<std::setprecision(12)<<"spatial_map_max_mass="<<maxMass<<" magnetic="<<maxMagnetic
+      <<" inverse_m="<<maxInverse<<'\n';
+}
+} // namespace
+
 int main(int argc, char** argv) {
   const std::map<std::string, std::function<void()>> tests = {
       {"S13SC01", S13SC01}, {"S13SC02", S13SC02}, {"S13SC03", S13SC03},
       {"S13SC04", S13SC04}, {"S13SC05", S13SC05}, {"S13SC06", S13SC06},
       {"S13SC07", S13SC07}, {"S13SC08", S13SC08}, {"S13SC09", S13SC09},
-      {"S13SC10", S13SC10}};
+      {"S13SC10", S13SC10}, {"S13SC11", S13SC11}, {"S13SC12", S13SC12}};
   if (argc == 2 && std::string(argv[1]) == "--list") {
     for (const auto& row : tests)
       std::cout << row.first << '\n';

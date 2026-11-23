@@ -64,10 +64,10 @@ a downstream volume remain unavailable.
 
 The earlier radial isothermal speed requires a sustaining force when applied
 to the manufactured nonradial coronal tube. The [resolved thermal wind](../../src/models/sep_corona_swcme/docs/STAGE13_SPHERICAL_SHOCK_ONLY.md)
-solves the field-aligned momentum equation on a traced axisymmetric tube and
-supports local spherical shock queries using that wind. Its controlled
-tests do not qualify the required event wind, an ambient atlas and its
-Cartesian derivatives, or live field-line, source, escape and restart.
+solves the field-aligned momentum equation across a continuous band of
+axisymmetric tubes. Controlled tests verify the Cartesian derivatives, local
+spherical shock queries and material map over that band. Event-specific wind
+qualification and native field-line, source, escape and restart gates remain open.
 The [native lifecycle audit](STAGE13_NATIVE_LIFECYCLE_AUDIT.md) identifies the
 existing machinery for those gates. Observational scoring also requires the
 case-specific model inputs and measurement operators below.
@@ -98,7 +98,7 @@ sources and the tested archive routes for candidate wind realizations.
 | `ulysses-2003-oct-nov` | [COSPIN/HET proton spectra in the larger-domain control](cases/stage13/ulysses-2003-oct-nov/README.md). Combine the daily product with plasma, field, and transient-selection evidence for the selected intervals. |
 
 The `srcSEP` regression includes the seven `IPW01`–`IPW07` numerical wind
-cases, ten controlled core cases `S13SC01`–`10`, the linked bridge case
+cases, twelve controlled core cases `S13SC01`–`12`, the linked bridge case
 `S13AD01`, and the seven `.in` selector and reference integrity checks.
 The historical observational campaign is an explicit command because its
 authentic inputs and interpretation have their own qualification.

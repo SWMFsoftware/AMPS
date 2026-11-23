@@ -32,7 +32,7 @@ class ProtocolTests(unittest.TestCase):
                       "description": "labelled software protocol, no model output"}
                      for i in self.manifest["expected_ids"]]
         # Use actual membership, but self-contained artificial descriptor and
-        # route data. The complete222 catalog is asserted independently below.
+        # route data. The complete catalog is asserted independently below.
         self.manifest["fixtures"] = {row["id"]: {"kind": "native"} for row in self.rows}
         self.refresh()
         self.framework = P.framework_module()
@@ -79,13 +79,14 @@ class ProtocolTests(unittest.TestCase):
         code = P.run(args, self.framework)
         return code, json.loads((self.output / "srcsep-tests.json").read_text())
 
-    def test_exact_222_membership_and_no_extended_leak(self):
-        self.assertEqual(len(self.rows), 222)
+    def test_exact_223_membership_and_no_extended_leak(self):
+        self.assertEqual(len(self.rows), 223)
+        self.assertIn("S13AD01", self.manifest["expected_ids"])
         extra = dict(self.rows[0], id="EXTENDED999", **{"class": "extended"})
         self.catalog += "\n" + " | ".join(extra[k] for k in ("id", "group", "class", "initialization", "build_modes", "description"))
         code, report = self.run_driver()
         self.assertEqual(code, 0)
-        self.assertEqual(report["totals"]["passed"], 222)
+        self.assertEqual(report["totals"]["passed"], 223)
         self.assertEqual([r["id"] for r in report["results"]], self.manifest["expected_ids"])
         self.assertTrue(all("EXTENDED999" not in c for c in self.calls))
 
@@ -93,20 +94,20 @@ class ProtocolTests(unittest.TestCase):
         self.manifest["expected_ids"].pop()
         code, report = self.run_driver()
         self.assertEqual(code, 2)
-        self.assertEqual(len(report["results"]), 222)
+        self.assertEqual(len(report["results"]), len(self.rows))
         self.assertTrue(all(r["status"] == "ERROR" for r in report["results"]))
         self.assertEqual(len(self.calls), 1)
 
     def test_metadata_mutation_does_not_run_any_callback(self):
         self.catalog = self.catalog.replace("software-only", "changed-mode", 1)
         code, report = self.run_driver()
-        self.assertEqual((code, len(report["results"]), len(self.calls)), (2, 222, 1))
+        self.assertEqual((code, len(report["results"]), len(self.calls)), (2, len(self.rows), 1))
 
     def test_unavailable_is_required_error_with_continuation(self):
         identity = self.rows[20]["id"]
         self.manifest["fixtures"][identity] = {"kind": "unavailable", "reason": "declared fixture missing"}
         code, report = self.run_driver()
-        self.assertEqual((code, report["totals"]["passed"], report["totals"]["errors"]), (2, 221, 1))
+        self.assertEqual((code, report["totals"]["passed"], report["totals"]["errors"]), (2, len(self.rows) - 1, 1))
         self.assertEqual(next(r for r in report["results"] if r["id"] == identity)["status"], "ERROR")
 
     def test_child_fail_skip_crash_missing_duplicate_foreign(self):
@@ -116,7 +117,7 @@ class ProtocolTests(unittest.TestCase):
         code, report = self.run_driver()
         self.assertEqual(code, 2)
         self.assertEqual([r["status"] for r in report["results"][:6]], ["FAIL", "SKIP", "ERROR", "ERROR", "ERROR", "ERROR"])
-        self.assertEqual(len(report["results"]), 222)
+        self.assertEqual(len(report["results"]), len(self.rows))
         raw = self.output / self.rows[2]["id"] / "native.json"
         self.assertEqual(json.loads(raw.read_text())["results"][0]["status"], "PASS")
         self.assertEqual(json.loads((raw.parent / "process.json").read_text())["actual_exit_code"], 9)
@@ -183,7 +184,7 @@ class ProtocolTests(unittest.TestCase):
             return code
         self.framework._run_streaming=mutate
         code,report=self.run_driver()
-        self.assertEqual((code,len(report["results"]),report["totals"]["errors"]),(2,222,222))
+        self.assertEqual((code,len(report["results"]),report["totals"]["errors"]),(2,len(self.rows),len(self.rows)))
         self.assertEqual(len(self.calls),2) # discovery + firstnative; remainingblocked
         provenance=json.loads((self.output/"run_manifest.json").read_text())
         self.assertNotEqual(provenance["fixture_manifest_sha256"],provenance["fixture_manifest_final_sha256"])

@@ -16,8 +16,9 @@ namespace SEP {
 namespace CoronaSwcme {
 namespace SphericalShockOnly {
 
-// This is an explicitly prescribed ISOTHERMAL KINEMATIC candidate, not an
-// observationally calibrated wind or a qualified downstream CME volume.
+// Without a resolved wind request the event retains the historical
+// isothermal kinematic verification candidate. A resolved request selects
+// the thermal-only open-tube family for every spatial event evaluation.
 // Physical particle spheres and provider/derivative/material guards differ:
 // guards are actual caller-supplied AmbientDefinition support, never 8/10-AU
 // defaults or an extension inferred from a requested query.
@@ -26,6 +27,7 @@ struct Definition {
   swcme::kinematics::Config front;
   double physicalInnerRadiusM = 0, physicalOuterRadiusM = 0;
   std::string inputIdentity;
+  std::optional<OpenTubeIsoPolyFamilyInput> resolvedWind;
 };
 struct Numerics {
   double positionToleranceM = 0, deformationTolerance = 0;
@@ -45,6 +47,11 @@ struct Sample {
   // mismatch; no unapproved coronal heating/force closure is inferred.
   CoronalCME::Vec3 requiredExternalForceNPerM3;
   double fieldAlignedForcePerMassMPerS2 = 0, requiredMechanicalPowerWPerM3 = 0;
+  // Total from the spatial pressure equation; per-species rates come from
+  // the independently parameterized tube closure. SI W/m^3 in both cases.
+  double requiredThermalHeatWPerM3 = 0;
+  std::vector<double> speciesNetHeatWPerM3;
+  // Historical diagnostic for the isothermal kinematic profile only.
   double requiredIsothermalHeatWPerM3 = 0;
 };
 struct Motion {
@@ -89,6 +96,9 @@ class Event final {
   const std::shared_ptr<const AmbientModel>& Ambient() const {
     return ambient_;
   }
+  const std::shared_ptr<const OpenTubeIsoPolyFamily>& ResolvedWind() const {
+    return resolvedWind_;
+  }
   Core::Result<Sample> Evaluate(CoronalCME::Vec3, double epochS) const;
   Core::Result<Motion> Move(CoronalCME::Vec3, double beginS, double endS,
                             const Numerics&) const;
@@ -105,10 +115,13 @@ class Event final {
 
  private:
   Event() = default;
+  Core::Result<AmbientState> AmbientAt(CoronalCME::Vec3,double epochS,
+      std::vector<double>* speciesHeat=nullptr) const;
   Core::Result<Motion> Integrate(CoronalCME::Vec3, double beginS, double durationS,
                                  const Numerics&) const;
   Definition definition_;
   std::shared_ptr<const AmbientModel> ambient_;
+  std::shared_ptr<const OpenTubeIsoPolyFamily> resolvedWind_;
   std::string identity_;
 };
 

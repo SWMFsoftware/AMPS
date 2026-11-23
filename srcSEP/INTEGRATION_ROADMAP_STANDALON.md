@@ -848,9 +848,10 @@ for the build once and case-selection contract, the prescribed-scattering
 qualification plan, and the observation package status.
 
 The shared core now resolves the thermal-only transonic solution on a
-monotone axisymmetric open PFSS tube and evaluates the spherical upstream
-shock state on it. The remaining spherical-profile gates require a qualified
-event wind with full spatial derivatives and the native lifecycle. A
+band of monotone axisymmetric open PFSS tubes. The resolved event uses that
+wind's spatial derivatives for the material map and local spherical shock
+states. The remaining spherical-profile gates require an observationally
+qualified event wind and the native lifecycle. A
 nonaxisymmetric input additionally needs a conservative longitude mapping
 that accounts for the tube-dependent wind speed. See the
 [native lifecycle audit](validation/STAGE13_NATIVE_LIFECYCLE_AUDIT.md).

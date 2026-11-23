@@ -177,15 +177,63 @@ error `0.635988938` dex. Those outputs and the model CSV hash match the
 retained executable's replay exactly. The remaining six cases still lack
 the required spherical operators and reviewed event settings.
 
-Stage 13 remains open. Its next implementation gate is an immutable spatial
-wind realization with a continuous tube family, transverse derivatives and a
-validated longitude map if the input is nonaxisymmetric. The
-[native lifecycle audit](validation/STAGE13_NATIVE_LIFECYCLE_AUDIT.md) details
-the following zero-particle, source, physical escape and restart tests. The
-expanded linked adapter case verifies the detached bridge and fail-closed
-admission, including the exact species and primitive translations. Frozen
-observational gates and the Stage 12 wind are preserved. Current evidence is
-in `/data/vtenishe/TEST/stage13-isopoly-20261123`.
+### Resolved spatial wind and fixed-step material map
+
+The spherical event accepts an immutable thermal wind over a declared
+axisymmetric open band. Each query traces the actual coronal tube through the
+inner guard to the source surface, then solves its regular transonic branch
+through the outer guard. The one-sided Cartesian stencils differentiate U, B, density
+and pressure on the specified region and signed sector. The local spherical
+shock and material map consume those same resolved profiles. The detached
+adapter uses `swcme3d-sphere-pfss-parker-thermal-v1` and exports the actual
+local alpha temperature alongside the electron and proton temperatures.
+
+`S13SC11` checks the spatial primitives, independent dipole flux labels,
+signed conservation, parallel momentum, species heating and gradients.
+The first run of `S13SC12` found a step refinement failure across the
+PFSS–Parker handoff. The continuous U has a one-sided derivative jump, so
+the smooth Richardson estimate cannot control that panel with a proportional
+allowance. The resolved map now integrates displacements and F-I and accounts
+for interface panels against a reserved absolute error budget. The model's
+global step and sampling schedule are unaffected by these internal panels.
+In the manufactured tests the largest scaled continuity residual was
+`1.032e-8`, the induction residual `8.469e-10`, the field-aligned force
+residual `4.631e-8`, and the total versus per-species heat residual `1.562e-8`.
+The fixed 300 s forward/reverse campaign recorded relative errors of
+`4.003e-11` in mass and `1.800e-13` in the Cauchy magnetic update, and a
+maximum inverse-position error of `2.202e-6 m`. The diagnostic 300 s test
+took about three minutes in the strict build with the pointwise tube solves.
+`make -C srcSEP test-stage13-cases` passed twelve spherical core cases,
+seven wind cases and seven input-integrity checks. All nineteen core and
+wind cases passed ASan/UBSan with leak checks disabled. The rebuilt native
+`S13AD01` passed 44 assertions on one and two MPI ranks and through its
+isolated Routine route. The fixture manifest now covers all 223 linked
+Routine cases. The previous 222 descriptor metadata records and routes
+match the earlier manifest, and the 13 fixture and 10 wiring tests passed.
+The 20 material-background, six material-tube and twelve PCLI checks also
+passed. The observational campaign again returned one OV01 FAIL and six
+SKIPs. OV01's three failed metrics match the earlier replay.
+
+The enclosing `make -C srcSEP -j1 test` stopped at CV01 because the
+environment blocked Open MPI singleton initialization. All six CV01 native
+realizations then completed in separate one-rank MPI launches. The original
+reference generator, scorer and plotter ran with `/usr/bin/python3` and all
+ten criteria passed. The full Make campaign remains incomplete. The source
+and executable hashes, logs and case receipts are in the
+[run evidence](../../stage13-spatial-20261123.jVbl1t).
+
+A transverse force probe at source colatitude 0.49 rad reported required
+acceleration of 23.97 m/s² at 1.05 solar radii and 37.61 m/s² at 3 solar
+radii in this manufactured field. This is the residual of the prescribed
+geometry and chosen thermal inputs. It has no observational force authority.
+
+Stage 13 remains open. The solved manufactured band provides numerical
+verification. A dated event wind still needs defensible thermal/population
+inputs, comparison with independent observations and a bounded transverse
+momentum/work budget. A nonaxisymmetric realization also needs a conservative
+longitude map. The [native lifecycle audit](validation/STAGE13_NATIVE_LIFECYCLE_AUDIT.md)
+specifies the remaining field-line, source, physical escape and restart gates.
+The Stage 13 observational criteria and data provenance continue to apply.
 
 ## Stage 12 upstream physics decision, 2026-11-23
 

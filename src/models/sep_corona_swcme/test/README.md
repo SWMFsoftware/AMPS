@@ -221,12 +221,12 @@ reference fixture or selected physical problem may be weakened to obtain PASS.
 ## Standalone Stage 13 spherical candidate
 
 `make -C src/models/sep_corona_swcme -j8 test-spherical-shock-only` builds and
-executes the ten `S13SC01`--`S13SC10` core records. The executable accepts
+executes the twelve `S13SC01`--`S13SC12` core records. The executable accepts
 `--test ID`, `--all` and `--list`; this model's `make test` includes it without
 removing the existing owners. The shared manufactured fixture is
 `spherical_shock_only_fixture.h`, and
 [the implementation guide](../docs/STAGE13_SPHERICAL_SHOCK_ONLY.md) states the
-physical/numerical contract and the unclosed field-aligned momentum limit.
+physical/numerical contract and the current event qualification limits.
 These software checks do not substitute for native SEP, data-qualified wind,
 source/scattering calibration or downstream-volume tests.
 

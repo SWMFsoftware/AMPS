@@ -49,6 +49,20 @@ inline Definition Configuration(int polarity = 1) {
 inline Numerics IntegrationControls() {
   return {0.1, 1e-9, 20, 1e8, 65536};
 }
+inline OpenTubeIsoPolyFamilyInput ThermalFamily() {
+  OpenTubeIsoPolyFamilyInput family;
+  family.lowerSourceColatitudeRad=.24;
+  family.upperSourceColatitudeRad=.68;
+  family.inputIdentity="S13-manufactured-thermal-band";
+  auto& p=family.population;
+  p.massLoadingKgPerSWb=2e-6;
+  p.referenceDensityKgM3=1e-20;
+  p.electron={1.15,10*Rs,18*Rs};
+  p.proton={1.25,12*Rs,22*Rs};
+  p.alpha={1.20,12*Rs,25*Rs};
+  p.angularTraceToleranceRad=1e-12;
+  return family;
+}
 }  // namespace Verification
 }  // namespace SphericalShockOnly
 }  // namespace CoronaSwcme

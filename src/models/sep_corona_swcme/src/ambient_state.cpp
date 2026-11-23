@@ -3,6 +3,7 @@
 // the particle-free composite event and revalidated in Mars2.
 #include "sep_corona_swcme/ambient_state.h"
 
+#include "ambient_derivatives.h"
 #include "sep_coronal_cme/closed_field_plasma.h"
 #include "sep_coronal_cme/constants.h"
 #include "sep_coronal_cme/flux_tube_wind.h"
@@ -421,6 +422,7 @@ Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epoch
   out.plasma=plasma.value;
   out.protonTemperatureK=composition.protonTemperatureK;
   out.electronTemperatureK=composition.electronTemperatureK;
+  if(composition.alphaToProtonNumberRatio>0)out.alphaTemperatureK=composition.alphaTemperatureK;
   out.electronPressurePa=out.plasma.electronNumberDensityM3*
       CoronalCME::Constants::kBoltzmannJPerK*composition.electronTemperatureK;
   if(!ValidAmbientRegionSector(out.region,out.magneticSector))return Return::Failure(
@@ -440,15 +442,31 @@ Core::Result<AmbientState> AmbientModel::EvaluateWithDerivatives(
   out.epochS=epochS;
   out.generation=generation;
   out.eventIdentity=definition_.physicsFingerprint;
+  return Detail::DifferentiateAmbient(point,std::move(out),definition_.ambient.gradientRelativeStep,
+      [&](Vec3 p){return Evaluate(p,epochS);});
+}
+
+Core::Result<AmbientState> Detail::DifferentiateAmbient(Vec3 point,AmbientState out,
+    double relativeStep,const std::function<Core::Result<AmbientPrimitive>(Vec3)>& evaluate,
+    bool requireConvergedNeighbors) {
+  using Return=Core::Result<AmbientState>;
+  // For the resolved wind, only a declared geometric boundary permits a
+  // one-sided stencil. An unresolved sonic solution inside the supported
+  // population is a failed physics/numerical query, not a boundary.
+  const auto unresolved=[&](const Core::Result<AmbientPrimitive>& value) {
+    return requireConvergedNeighbors&&!value.ok()&&value.status.code!=Core::StatusCode::OutOfDomain;
+  };
   const double radius=Norm(point);
   for(int axis=0;axis<3;++axis) {
-    double step=std::max(1.0,definition_.ambient.gradientRelativeStep*radius);
+    double step=std::max(1.0,relativeStep*radius);
     bool resolved=false;
     for(int attempt=0;attempt<=12&&!resolved;++attempt,step*=0.5) {
       Vec3 delta;
       if(axis==0)delta.x=step;else if(axis==1)delta.y=step;else delta.z=step;
-      const auto plus=Evaluate(point+delta,epochS);
-      const auto minus=Evaluate(point-delta,epochS);
+      const auto plus=evaluate(point+delta);
+      const auto minus=evaluate(point-delta);
+      for(const auto* neighbor:{&plus,&minus})if(unresolved(*neighbor))
+        return Return::Failure(neighbor->status.code,neighbor->status.message);
       const bool goodPlus=plus.ok()&&SameBranch(out.primitive,plus.value);
       const bool goodMinus=minus.ok()&&SameBranch(out.primitive,minus.value);
       Vec3 magneticDerivative,velocityDerivative;
@@ -464,7 +482,8 @@ Core::Result<AmbientState> AmbientModel::EvaluateWithDerivatives(
         resolved=true;
       } else for(int sign:{1,-1}) {
         if((sign==1&&!goodPlus)||(sign==-1&&!goodMinus))continue;
-        const auto twice=Evaluate(point+2*sign*delta,epochS);
+        const auto twice=evaluate(point+2*sign*delta);
+        if(unresolved(twice))return Return::Failure(twice.status.code,twice.status.message);
         if(!twice.ok()||!SameBranch(out.primitive,twice.value))continue;
         const auto& first=sign==1?plus.value:minus.value;
         magneticDerivative=(-3*out.primitive.magneticFieldT+

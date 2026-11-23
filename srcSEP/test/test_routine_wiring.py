@@ -35,7 +35,6 @@ class WiringTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup);self.directory=Path(self.temporary.name)
         self.runner=load(SOURCE/'test/run_tests.py');self.calls=[]
         self.ids=json.loads((SOURCE/'test/routine_fixture_manifest.json').read_text())['expected_ids']
-        self.assertEqual(len(self.ids),222)
 
     def report(self, ids, status='PASS'):
         rows=[{'id':i,'name':i,'group':'software-only','status':status,
@@ -61,13 +60,14 @@ class WiringTests(unittest.TestCase):
         with self.assertRaisesRegex(self.runner.RunnerError,'descriptor-aware'):
             self.runner._native_command(args,self.directory/'x.json',self.directory/'x.xml')
 
-    def test_routine_entry_preserves_exact222_exports_and_default_seed(self):
+    def test_routine_entry_preserves_full_exports_and_default_seed(self):
         out=self.directory/'out';export=self.directory/'explicit/report.json';xml=self.directory/'explicit/report.xml'
         with patch.object(self.runner,'_routine_protocol_module',return_value=self.dispatcher()),redirect_stdout(io.StringIO()):
             code=self.runner.main(['--routine','--amps','software-only-executable','--plot','none','--output-dir',str(out),
                                    '--report-json',str(export),'--report-junit',str(xml)])
         self.assertEqual(code,0);report=json.loads(export.read_text())
         self.assertEqual([r['id'] for r in report['results']],self.ids)
+        self.assertIn('S13AD01', [r['id'] for r in report['results']])
         self.assertEqual(self.calls[0].native_args,[])
         self.assertIsNone(self.calls[0].mpi_np);self.assertTrue(xml.is_file())
 
@@ -78,7 +78,7 @@ class WiringTests(unittest.TestCase):
                                    '--output-dir',str(out),'--',*forwarded])
         self.assertEqual(code,2);self.assertEqual(self.calls[0].native_args,forwarded)
         self.assertEqual((self.calls[0].mpi_np,self.calls[0].mpiexec),(2,'labelled-mpiexec'))
-        self.assertEqual(json.loads((out/'srcsep-tests.json').read_text())['totals']['errors'],222)
+        self.assertEqual(json.loads((out/'srcsep-tests.json').read_text())['totals']['errors'],len(self.ids))
 
     def test_repeated_entry_retains_separate_raw_case_directories(self):
         out=self.directory/'out';out.mkdir();args=SimpleNamespace(amps='software-only',timeout=None,model_args=[],mpi_np=None,mpiexec='mpiexec')

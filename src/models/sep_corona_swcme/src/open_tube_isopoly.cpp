@@ -1,10 +1,13 @@
 #include "sep_corona_swcme/open_tube_isopoly.h"
 
+#include "ambient_derivatives.h"
+#include "sep_coronal_cme/configuration_parser.h"
 #include "sep_coronal_cme/constants.h"
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
+#include <locale>
+#include <sstream>
 
 namespace SEP::CoronaSwcme {
 namespace {
@@ -62,17 +65,20 @@ struct OpenTubeIsoPolyWind::Geometry {
     return Result<double>::Success(theta+h*(a.value+2*b.value+2*c.value+d.value)/6);
   }
 
-  Core::Status Trace(double tolerance) {
+  Result<std::vector<MeridionalNode>> Trace(double r,double theta,double target,
+      double tolerance) const {
+    using Return=Result<std::vector<MeridionalNode>>;
     const auto& a=ambient.ambient;
-    const double target=ambient.support.firstValidPlasmaRadiusM;
-    double r=a.sourceSurfaceRadiusM, theta=sourceTheta, step=a.traceStepM;
     const auto first=Direction(r,theta);
-    if(!first.ok())return first.status;
-    nodes.push_back({r,theta,first.value});
+    if(!first.ok())return Return::Failure(first.status.code,first.status.message);
+    std::vector<MeridionalNode> trace{{r,theta,first.value}};
+    if(r==target)return Return::Success(std::move(trace));
+    const double direction=target>r?1:-1;
+    double step=a.traceStepM;
     for(int i=0;i<a.traceMaximumSteps;++i) {
-      const double end=r-target<=step?target:r-step;
+      const double end=std::abs(target-r)<=step?target:r+direction*step;
       const double mid=r+(end-r)/2;
-      if(mid==r||mid==end)return Core::Status::Failure(StatusCode::NumericalFailure,
+      if(mid==r||mid==end)return Return::Failure(StatusCode::NumericalFailure,
           "open-tube wind could not refine its angular trace in the radial chart");
       const auto coarse=TraceStep(r,theta,end);
       const auto half=TraceStep(r,theta,mid);
@@ -83,19 +89,16 @@ struct OpenTubeIsoPolyWind::Geometry {
       // Resolve both the endpoint and dense trajectory. The geometry solver
       // will query the tube between trace nodes while locating sonic points.
       const double error=std::max(std::abs(coarse.value-fine.value)/15,
-          std::abs(half.value-Colatitude(next,nodes.back(),mid)));
+          std::abs(half.value-Colatitude(trace.back(),next,mid)));
       if(error>tolerance) { step*=0.5; continue; }
-      nodes.push_back(next);
-      if(end==target) {
-        std::reverse(nodes.begin(),nodes.end());
-        return Core::Status::Success();
-      }
+      trace.push_back(next);
+      if(end==target)return Return::Success(std::move(trace));
       r=end;
       theta=fine.value;
       step=std::min(a.traceStepM,1.75*step);
     }
-    return Core::Status::Failure(StatusCode::NumericalFailure,
-        "open-tube wind angular trace did not cover the declared inner guard within the work limit");
+    return Return::Failure(StatusCode::NumericalFailure,
+        "open-tube wind angular trace did not reach the declared radial endpoint within the work limit");
   }
 
   double Theta(double r) const {
@@ -145,8 +148,17 @@ struct OpenTubeIsoPolyWind::Geometry {
 
 Result<OpenTubeIsoPolyWind> OpenTubeIsoPolyWind::Prepare(std::shared_ptr<const AmbientModel> ambient,
     const OpenTubeIsoPolyRequest& request) {
+  if(!ambient)return Result<OpenTubeIsoPolyWind>::Failure(StatusCode::InvalidConfiguration,
+      "open-tube wind requires an ambient authority");
+  const double source=ambient->Definition().ambient.sourceSurfaceRadiusM;
+  return PrepareThrough(std::move(ambient),request,source,request.sourceColatitudeRad);
+}
+
+Result<OpenTubeIsoPolyWind> OpenTubeIsoPolyWind::PrepareThrough(
+    std::shared_ptr<const AmbientModel> ambient,const OpenTubeIsoPolyInputs& request,
+    double radius,double theta) {
   using Return=Result<OpenTubeIsoPolyWind>;
-  if(!ambient||!(request.sourceColatitudeRad>=0&&request.sourceColatitudeRad<=C::Constants::kPi)||
+  if(!ambient||!(theta>=0&&theta<=C::Constants::kPi)||
       !Positive(request.referenceDensityKgM3)||!Positive(request.massLoadingKgPerSWb)||
       !Positive(request.angularTraceToleranceRad)||request.angularTraceToleranceRad>=1)
     return Return::Failure(StatusCode::InvalidConfiguration,
@@ -159,17 +171,35 @@ Result<OpenTubeIsoPolyWind> OpenTubeIsoPolyWind::Prepare(std::shared_ptr<const A
   auto g=std::make_shared<Geometry>();
   g->pfss=ambient->pfss_;
   g->ambient=ambient->Definition();
-  g->sourceTheta=request.sourceColatitudeRad;
   const double source=g->pfss.SourceSurfaceRadiusM();
-  const auto field=g->pfss.Evaluate(source,g->sourceTheta,0);
+  const double inner=g->ambient.support.firstValidPlasmaRadiusM;
+  if(!std::isfinite(radius)||radius<inner||radius>g->ambient.support.coverageRadiusM||inner>source)
+    return Return::Failure(StatusCode::OutOfDomain,
+        "resolved wind query needs a covered radius and a trace through the source surface");
+  const double seedRadius=std::min(radius,source);
+  const auto field=g->pfss.Evaluate(seedRadius,theta,0);
   if(!field.ok())return Return::Failure(field.status.code,field.status.message);
   g->sourceBr=field.value.brT;
   if(std::abs(g->sourceBr)<=g->ambient.ambient.minimumMagneticFieldT)
-    return Return::Failure(StatusCode::OutOfDomain,"open-tube source lies on an unresolved magnetic neutral line");
+    return Return::Failure(StatusCode::OutOfDomain,"open-tube seed lies on an unresolved magnetic neutral line");
+  // Seed at the exact requested colatitude inside the corona, then integrate
+  // in both directions. This makes the dense center sample a point on its
+  // own field line, including at chart edges where using an adjacent tube's
+  // theta would bias the transverse derivative. In the exterior theta is
+  // already a material label because both U_theta and B_theta vanish.
+  const auto outward=g->Trace(seedRadius,theta,source,request.angularTraceToleranceRad);
+  if(!outward.ok())return Return::Failure(outward.status.code,outward.status.message);
+  auto inward=g->Trace(seedRadius,theta,inner,request.angularTraceToleranceRad);
+  if(!inward.ok())return Return::Failure(inward.status.code,inward.status.message);
+  g->sourceTheta=outward.value.back().theta;
+  const auto sourceField=g->pfss.Evaluate(source,g->sourceTheta,0);
+  if(!sourceField.ok())return Return::Failure(sourceField.status.code,sourceField.status.message);
+  g->sourceBr=sourceField.value.brT;
+  g->nodes=std::move(inward.value);
+  std::reverse(g->nodes.begin(),g->nodes.end());
+  g->nodes.insert(g->nodes.end(),outward.value.begin()+1,outward.value.end());
   g->angularMomentum=g->ambient.ambient.rotationRateRadPerS*source*source*
       std::sin(g->sourceTheta);
-  const auto trace=g->Trace(request.angularTraceToleranceRad);
-  if(!trace.ok())return Return::Failure(trace.code,trace.message);
 
   const auto& c=g->ambient.composition;
   const auto unit=C::EvaluatePlasmaFromElectronDensity(1,c.electronTemperatureK,
@@ -246,8 +276,10 @@ Result<OpenTubeIsoPolySample> OpenTubeIsoPolyWind::Evaluate(double r,double phi,
   p.protonTemperatureK=balance.value.temperatureK[1];
   p.electronPressurePa=balance.value.partialPressurePa[0];
   std::vector<C::IonSpecies> ions={{"H+",1,1,C::Constants::kProtonMassKg,p.protonTemperatureK}};
-  if(c.alphaToProtonNumberRatio>0)ions.push_back({"He++",c.alphaToProtonNumberRatio,2,
-      C::Constants::kAlphaMassKg,balance.value.temperatureK[2]});
+  if(c.alphaToProtonNumberRatio>0) {
+    p.alphaTemperatureK=balance.value.temperatureK[2];
+    ions.push_back({"He++",c.alphaToProtonNumberRatio,2,C::Constants::kAlphaMassKg,p.alphaTemperatureK});
+  }
   const double fieldMagnitude=C::Norm(p.magneticFieldT);
   if(!std::isfinite(fieldMagnitude)||fieldMagnitude<=g.ambient.ambient.minimumMagneticFieldT)
     return Return::Failure(StatusCode::OutOfDomain,
@@ -262,6 +294,101 @@ Result<OpenTubeIsoPolySample> OpenTubeIsoPolyWind::Evaluate(double r,double phi,
   p.plasma=plasma.value;
   out.balance=std::move(balance.value);
   return Return::Success(std::move(out));
+}
+
+Result<std::shared_ptr<const OpenTubeIsoPolyFamily>> OpenTubeIsoPolyFamily::Prepare(
+    std::shared_ptr<const AmbientModel> ambient,const OpenTubeIsoPolyFamilyInput& input) {
+  using Return=Result<std::shared_ptr<const OpenTubeIsoPolyFamily>>;
+  const double lower=input.lowerSourceColatitudeRad, upper=input.upperSourceColatitudeRad;
+  if(!ambient||input.inputIdentity.empty()||!(0<lower&&lower<upper&&upper<C::Constants::kPi))
+    return Return::Failure(StatusCode::InvalidConfiguration,
+        "resolved spatial wind needs an identified, ordered nonpolar source-surface band");
+  const double source=ambient->Definition().ambient.sourceSurfaceRadiusM;
+  int sector=0;
+  // Construction probes both edges and the center. Every later query still
+  // traces and solves its own tube. These three probes alone provide no
+  // guarantee of regular transonic branches throughout an arbitrary band.
+  for(double theta:{lower,lower+(upper-lower)/2,upper}) {
+    const auto tube=OpenTubeIsoPolyWind::PrepareThrough(ambient,input.population,source,theta);
+    if(!tube.ok())return Return::Failure(tube.status.code,tube.status.message);
+    const int current=tube.value.geometry_->sourceBr>0?1:-1;
+    if(sector&&sector!=current)return Return::Failure(StatusCode::OutOfDomain,
+        "resolved spatial wind cannot join opposite magnetic sectors");
+    sector=current;
+  }
+  // Seal the physical and numerical inputs. A modified thermal law or
+  // support band must carry a new identity in every derived epoch sample.
+  std::ostringstream seal;
+  seal.imbue(std::locale::classic());
+  seal << std::hexfloat << "open-tube-isopoly-family-v1;";
+  for(const auto& value:{ambient->Identity(),input.inputIdentity})
+    seal << value.size() << ':' << value;
+  const auto& p=input.population;
+  for(double value:{lower,upper,p.massLoadingKgPerSWb,p.referenceDensityKgM3,
+      p.angularTraceToleranceRad,p.relativeWindTolerance})seal << value << ';';
+  for(const auto& band:{p.electron,p.proton,p.alpha})
+    seal << band.polytropicIndex << ';' << band.blendBeginRadiusM << ';' << band.blendEndRadiusM << ';';
+  seal << p.criticalScanIntervals;
+  auto result=std::shared_ptr<OpenTubeIsoPolyFamily>(new OpenTubeIsoPolyFamily);
+  result->ambient_=std::move(ambient);
+  result->input_=input;
+  result->sector_=sector;
+  result->identity_=C::ComputeContentChecksum(seal.str());
+  return Return::Success(std::move(result));
+}
+
+Result<OpenTubeIsoPolySample> OpenTubeIsoPolyFamily::Evaluate(Vec3 point,double epoch) const {
+  using Return=Result<OpenTubeIsoPolySample>;
+  const auto& support=ambient_->Definition().support;
+  const double cylindricalRadius=std::hypot(point.x,point.y);
+  const double radius=std::hypot(cylindricalRadius,point.z);
+  if(!std::isfinite(radius)||radius<support.firstValidPlasmaRadiusM||
+      radius>support.coverageRadiusM||!std::isfinite(epoch)||epoch<support.startS||
+      epoch>support.endS||!(cylindricalRadius>0))
+    return Return::Failure(StatusCode::OutOfDomain,
+        "resolved wind needs an off-axis point in its declared radial and epoch guards");
+  const double theta=std::atan2(cylindricalRadius,point.z);
+  const auto& a=ambient_->Definition().ambient;
+  // For an exterior query theta is already the source label. Interior
+  // queries must follow B through the corona to determine band membership.
+  const auto inBand=[&](double sourceTheta) {
+    return sourceTheta>=input_.lowerSourceColatitudeRad&&sourceTheta<=input_.upperSourceColatitudeRad;
+  };
+  if(radius>=a.sourceSurfaceRadiusM&&!inBand(theta))return Return::Failure(
+      StatusCode::OutOfDomain,"resolved wind query is outside its source-surface band");
+  const auto tube=OpenTubeIsoPolyWind::PrepareThrough(ambient_,input_.population,radius,theta);
+  if(!tube.ok())return Return::Failure(tube.status.code,tube.status.message);
+  const auto& geometry=*tube.value.geometry_;
+  if(!inBand(geometry.sourceTheta)||(geometry.sourceBr>0?1:-1)!=sector_)
+    return Return::Failure(StatusCode::OutOfDomain,
+        "resolved wind query connects to a different source-surface band or magnetic sector");
+  return tube.value.Evaluate(radius,std::atan2(point.y,point.x),epoch);
+}
+
+Result<OpenTubeIsoPolySpatialSample> OpenTubeIsoPolyFamily::EvaluateWithDerivatives(
+    Vec3 point,double epoch,std::uint64_t generation) const {
+  using Return=Result<OpenTubeIsoPolySpatialSample>;
+  if(generation==0)return Return::Failure(StatusCode::InvalidState,
+      "resolved wind ambient generation zero is reserved");
+  auto center=Evaluate(point,epoch);
+  if(!center.ok())return Return::Failure(center.status.code,center.status.message);
+  AmbientState state;
+  state.primitive=std::move(center.value.primitive);
+  state.epochS=epoch;
+  state.generation=generation;
+  state.eventIdentity=identity_;
+  // A spatial derivative samples actual neighboring solutions, not nearby
+  // points on the center tube. The shared stencil keeps U, B, rho and p on
+  // the same signed branch, with one-sided derivatives at the PFSS handoff.
+  auto gradient=Detail::DifferentiateAmbient(point,std::move(state),
+      ambient_->Definition().ambient.gradientRelativeStep,[&](Vec3 displaced) {
+        auto sample=Evaluate(displaced,epoch);
+        using Primitive=Result<AmbientPrimitive>;
+        if(!sample.ok())return Primitive::Failure(sample.status.code,sample.status.message);
+        return Primitive::Success(std::move(sample.value.primitive));
+      },true);
+  if(!gradient.ok())return Return::Failure(gradient.status.code,gradient.status.message);
+  return Return::Success({std::move(gradient.value),std::move(center.value.balance.netHeatWPerM3)});
 }
 
 }  // namespace SEP::CoronaSwcme

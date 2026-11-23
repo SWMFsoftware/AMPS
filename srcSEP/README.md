@@ -9,9 +9,10 @@ radii to 5 AU. The [Stage 13 campaign guide](validation/STAGE13_SPHERICAL_VALIDA
 documents the core model, the detached adapter and the observational checks.
 The [Stage 13 data-source README](validation/cases/stage13/README.md) records
 each archive, product, time window, provenance manifest and coverage limit.
-The resolved thermal open-tube wind can feed the local spherical shock
-evaluator. The named cases still require a qualified spatial wind realization
-and the moving-line geometry, source and restart lifecycle for live transport.
+The resolved thermal wind supplies a continuous band of open tubes to the
+spherical shock evaluator and detached material adapter. The named cases
+still require an observationally qualified wind realization and the native
+moving-line geometry, source, escape and restart lifecycle for live transport.
 
 ## Existing backend admission and complete application validation
 

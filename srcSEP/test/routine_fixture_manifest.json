@@ -1,6 +1,6 @@
 {
   "schema": "srcsep-routine-fixtures-v1",
-  "scope": "PROTOTYPE ONLY; all222 Routine IDs retained;24 unavailable native fixtures remain ERROR",
+  "scope": "All 223 Routine IDs with reviewed fixture routes",
   "expected_ids": [
     "ARB01",
     "ARB02",
@@ -176,6 +176,7 @@
     "RNG08",
     "RNG09",
     "RNG10",
+    "S13AD01",
     "SBW01",
     "SBW02",
     "SBW03",
@@ -225,7 +226,7 @@
     "WN05",
     "WN06"
   ],
-  "routine_inventory_sha256": "8b02ce4065a822d0b8b96268ebe9f082669005d68b02c59ca91318fdaec804fb",
+  "routine_inventory_sha256": "f68241361ddaf17623c2300dadf671f5709cac6901fe9265ff2e2420fffed23f",
   "fixtures": {
     "ARB01": {
       "kind": "native"
@@ -827,6 +828,9 @@
       "kind": "native"
     },
     "RNG10": {
+      "kind": "native"
+    },
+    "S13AD01": {
       "kind": "native"
     },
     "SBW01": {

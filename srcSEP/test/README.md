@@ -5,7 +5,9 @@
 `make -C srcSEP test-stage13-cases SEP_EXECUTABLE=/absolute/build/amps`
 checks the canonical spherical core, native `.in` selection, boundary values
 and observation package integrity. `make -C srcSEP test` invokes it in the
-routine sequence and executes linked adapter case `S13AD01`. The [Stage 13
+routine sequence and executes linked adapter case `S13AD01`. `S13SC11` and
+`S13SC12` cover spatial gradients and the fixed-step material map. The linked
+case checks both profile identities and the actual local species states. The [Stage 13
 campaign guide](../validation/STAGE13_SPHERICAL_VALIDATION.md) gives the
 commands for a single observation or a full campaign.
 
@@ -2803,7 +2805,7 @@ and remains required on the declared MPI decompositions.
 maintained Python `--routine` entry use `routine_fixtures.py`. The native
 `amps --all-tests` CLI retains its existing selection and startup semantics.
 The maintained dispatcher reads the actual compiled catalog and requires all
-222 reviewed Routine IDs, including their initialization, seed/repeat,
+223 reviewed Routine IDs, including their initialization, seed/repeat,
 isolation and tag metadata. Each case receives its declared startup protocol;
 CV01–CV12 and IV01–IV06 execute their complete independent comparisons. No
 Routine ID is removed to avoid a prerequisite. Missing fixtures, changed

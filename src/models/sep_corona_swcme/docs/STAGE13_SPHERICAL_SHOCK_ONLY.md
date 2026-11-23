@@ -7,11 +7,11 @@ coverage is a separate explicit input: retained straddling material, derivatives
 and numerical stages may require actual guards beyond those physical spheres.
 No fixed 8-AU or 10-AU guard is installed as a production default.
 
-The kinematic material map and the resolved, thermal-only open-tube calculation
-are both implemented in the shared core. The kinematic map remains a
-manufactured verification provider. The resolved tube supplies a local wind
-and upstream shock state. Native SEP transport needs an observationally
-qualified wind realization and the corresponding moving-line lifecycle.
+The shared core provides the original kinematic material map and a resolved
+thermal-only wind over a spatial band of open tubes. Either can drive a
+spherical event's ambient evaluation, material map, and local shock state.
+Native SEP transport needs an observationally qualified wind realization and
+the corresponding moving-line lifecycle.
 
 ## Resolved thermal-only wind on an open tube
 
@@ -61,6 +61,47 @@ derivatives are required for the native material map. A nonaxisymmetric
 magnetogram requires a conservative longitude map when winding depends on
 the source tube. Radial turning points, unresolved magnetic sectors, and
 out-of-range epochs are outside the supported chart.
+
+## Spatial family and the spherical event
+
+Set `SphericalShockOnly::Definition::resolvedWind` to an
+`OpenTubeIsoPolyFamilyInput` with a source-surface colatitude band and one
+identified population. Supply the population's mass loading in kg/(s Wb),
+reference mass density, species thermal bands, and numerical trace/solve
+controls. The angle bounds are material surfaces measured at the PFSS source
+surface. Construction uses a nonpolar, axisymmetric, monotone open band of
+one magnetic polarity. The manufactured example is `ThermalFamily()` in
+`test/spherical_shock_only_fixture.h`.
+
+Inside the corona, each HCI point seeds the meridional trace in both radial
+directions. The outward branch locates its source label, and the inward branch
+completes the declared guard coverage. Outside the source surface the
+colatitude is already the source label because the meridional component is
+zero. The transonic solution uses that tube's area, rotation and thermal law.
+This implementation solves at each query. It makes the solution independent of
+an angular interpolation or cache and carries a measurable cost per query.
+The bounds and population affect the fingerprint used by the event and
+detached interval. A failed tube query leaves the field unavailable at that
+point. The manufactured population supplies software verification inputs.
+
+The Cartesian derivative stencil resolves neighboring tubes at a common epoch
+and uses the same branch for velocity, field, density and total pressure. A
+one-sided stencil handles the PFSS–Parker interface. A failed transonic solve
+at a derivative point propagates its status. The event reports the spatial
+continuity and induction residuals, the vector force/work needed to sustain
+the background, and total and per-species implied heat. The momentum solve is
+field-aligned. The transverse force diagnostic remains a qualification input.
+`Evaluate`, `Move`, `AdvanceFixed`, `Surface` and `Connect` all use the same
+resolved owner when configured. `SurfaceOnTube` remains a separate single-tube
+diagnostic for an event without a spatial family.
+
+`S13SC11` verifies neighboring tubes against an analytical dipole flux label,
+an independent Cartesian stencil, signed mass/field budgets, the sourced
+heat sum and one-sided branch behavior. `S13SC12` exercises full 300 s steps
+through the source surface and at 1 AU. It verifies the Cauchy magnetic update,
+mass Jacobian, inverse map, inertial longitude advance and oblique fast Mach
+number from the upstream state. The linked `S13AD01` also checks the spatial
+profile identity, local e/p/alpha temperatures and gradient translation.
 
 ```sh
 make -C src/models/sep_coronal_cme -j8 test-tube-isopoly
@@ -115,8 +156,12 @@ dF/dt = grad(U)(X,t) F,  F(begin) = I,  J = det(F).
 A controlled RK4/step-doubling controller subdivides the mathematical interval
 on an endpoint-preserving bisection mesh. Position and deformation tolerances,
 maximum numerical time/arc step and work count are explicit caller inputs.
-Each local error receives its duration-proportional share of the interval
-budget. Every stage and the accepted endpoint query real open-field/guard
+Each smooth panel receives a duration-proportional share of the interval
+budget. The resolved thermal flow reserves half the error budget for panels
+straddling the PFSS–Parker interface. Its continuous velocity has a jump in
+the one-sided gradient there. The solver refines those panels against an
+absolute increment estimated from stage rates, since the smooth RK4 error
+estimate loses its order at the interface. Every stage and endpoint query real open-field/guard
 support; missing support and exhausted numerical work reject. Reverse-time
 queries implement the inverse flow, not reverse particle stepping.
 
@@ -202,7 +247,7 @@ The explicitly manufactured, shared test fixture lives in
 `test/spherical_shock_only_fixture.h`. It inherits the Stage 14 dipole and
 isothermal control anchors and is labelled test input only. Its 8/10-AU guard
 controls do not change the physical 5-AU sphere and are not scientific defaults.
-The ten independent `S13SC01`--`S13SC10` core cases cover admission/identity,
+The original ten `S13SC01`--`S13SC10` core cases cover admission/identity,
 Parker/EOS invariants, full material deformation and inverse maps, nonradial
 mass/induction/momentum/heat, source-surface continuity, local shock physics,
 all sphere roots, unchanged fixed dt/guard semantics, existing front laws and

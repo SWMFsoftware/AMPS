@@ -26,6 +26,7 @@ struct AmbientPrimitive {
   CoronalCME::PlasmaState plasma;
   double protonTemperatureK = 0.0;
   double electronTemperatureK = 0.0;
+  double alphaTemperatureK = 0.0; // zero when alpha particles are absent
   double electronPressurePa = 0.0;
   AmbientRegion region = AmbientRegion::PfssClosed;
   int magneticSector = 0; // zero only for closed PFSS loops
