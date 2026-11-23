@@ -76,6 +76,11 @@ TESTS = [
     *[Test(identifier, 14, "research") for identifier in (
         "CPL3D10", "TUR3D08", "MFP3D08", "SLM3D01", "FTE3D10", "FTE3D11",
         "ELL3D11", "SRC3D20", "SRC3D21", "SRC3D22", "WND3D21", "EVT3D01", "XMD3D01")],
+    # The standalone roadmap's background assembly adds a software gate.
+    # The earlier research and campaign evidence rows retain their own scope.
+    *[Test(f"S14BG{number:02d}", 14) for number in range(1, 9)],
+    Test("S14BG09", 14, "background-ambient"),
+    Test("S14BG10", 14),
 ]
 
 # These are release-contract values, not counts inferred from TESTS.  Keeping
@@ -98,7 +103,7 @@ EXPECTED_CUMULATIVE_COUNTS = {
     11: 202,
     12: 206,
     13: 209,
-    14: 222,
+    14: 232,
 }
 
 # A terminal test ID makes the diagnostic more useful than a count alone.  It
@@ -118,7 +123,7 @@ EXPECTED_STAGE_TERMINALS = {
     11: "SHEATH3D03",
     12: "CAL3D01",
     13: "REL3D03",
-    14: "XMD3D01",
+    14: "S14BG10",
 }
 
 
@@ -162,6 +167,8 @@ def command_for(test: Test) -> list[str]:
         return [sys.executable, str(ROOT / "test" / "test_stage13.py"), "--test", test.identifier]
     if test.kind == "research":
         return [sys.executable, str(ROOT / "test" / "test_stage14.py"), "--test", test.identifier]
+    if test.kind == "background-ambient":
+        return [sys.executable, str(ROOT / "test" / "run_background_event_ambient_test.py")]
     if test.kind == "architecture":
         # Run adversarial source/artifact fixtures before the same production
         # archive/public-ABI audit. They belong to ARCHSCCM01, not DOCSCCM01.
@@ -276,7 +283,9 @@ def main(argv: list[str] | None = None) -> int:
 
     binary = ROOT / "build" / "sep_coronal_cme_tests"
     research_cpp = {"MFP3D08","FTE3D10","FTE3D11","ELL3D11","SRC3D20","SRC3D21","SRC3D22"}
-    if any(test.kind == "cpp" or test.identifier in research_cpp for test in selected) and not binary.exists():
+    if any(test.kind == "cpp" or test.identifier in research_cpp for test in selected):
+        # Delegate freshness to the build's dependency graph. An existing
+        # pre-assembly binary cannot supply newly registered core cases.
         build = subprocess.run(["make", str(binary.relative_to(ROOT))], cwd=ROOT)
         if build.returncode:
             return build.returncode

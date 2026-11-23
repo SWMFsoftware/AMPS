@@ -1,6 +1,8 @@
 #include "sep_material_background.h"
 #include "reduced_material_background_adapter.h"
 #include "swcme1d_adapter.h"
+#include "swcme1d_material_adapter.h"
+#include "swcme_material_upstream.hpp"
 #include "provider.h"
 #include <sep_coronal_cme/constants.h>
 #include <algorithm>
@@ -142,15 +144,17 @@ int main(int argc,char** argv) {
       "swcme3d-ellipsoid-shock-only-legacy-v1","swcme3d-sse-shock-only-legacy-v1",
       "swcme3d-sphere-full-icme-diagnostic-v1","swcme3d-ellipsoid-full-icme-diagnostic-v1",
       "swcme3d-sse-full-icme-diagnostic-v1","coronal-bundle-snapshot-v1",
-      "coronal-ellipsoid-live-planned-v1","full-corona-cross-ray-planned-v1"};
+      "coronal-ellipsoid-live-planned-v1","full-corona-cross-ray-planned-v1",
+      "swcme1d-adiabatic-outer-wind-v1"};
+    constexpr unsigned count=sizeof(expected)/sizeof(expected[0]);
     std::set<std::string> keys;unsigned admitted=0;
-    for(unsigned i=1;i<=12;++i) {
+    for(unsigned i=1;i<=count;++i) {
       const auto profile=static_cast<M::Profile>(i);const auto info=M::Lookup(profile);
       Require(info.ok()&&keys.insert(info.value.key).second,"missing/duplicate profile identity");
       Require(std::string(info.value.key)==expected[i-1],"frozen profile name/serialized ID changed");
       if(M::Require(profile,M::Use::MaterialTransport,M::Region::ParkerExterior).ok())++admitted;
     }
-    Require(keys.size()==12&&admitted==1,"profile family admission broadened");
+    Require(keys.size()==count&&admitted==1,"profile family admission broadened");
     Require(!M::Lookup(static_cast<M::Profile>(999)).ok(),"unknown profile defaulted");
   });
   run("MBC02",[] {
@@ -163,13 +167,91 @@ int main(int argc,char** argv) {
         {"shock.acceleration_mode","resolved_compression","MBC02",0}};
     Require(SEP::SW1DAdapter::Configure(request).ok(),"canonical diagnostic configure failed");
     Require(SEP::SW1DAdapter::MaterialProfile()==M::Profile::Swcme1dFullIcmeDiagnosticV1,"FULL_ICME profile mapping changed");
-    for(unsigned i=2;i<=12;++i) {
+    for(unsigned i=2;i<=13;++i) {
       Require(!M::Require(static_cast<M::Profile>(i),M::Use::MaterialTransport,M::Region::ParkerExterior).ok(),"legacy/planned profile admitted");
       Require(!M::Require(static_cast<M::Profile>(i),M::Use::PhysicalDownstream).ok(),"local diagnostic became volume support");
     }
     Require(!M::Require(M::Profile::ReducedParkerV1,M::Use::MaterialTransport,M::Region::CoronalOpen).ok(),"PFSS inherited Parker admission");
     Require(!M::Require(M::Profile::ReducedParkerV1,M::Use::SnapshotExchange,M::Region::Unspecified,2).ok(),"unknown revision admitted");
     Require(!M::Require(M::Profile::ReducedParkerV1,static_cast<M::Use>(99)).ok(),"unknown operation admitted");
+
+    // Exercise the real typed Stage 12 owner separately from both legacy
+    // modes. Numerical physics has an independent oracle in the SWCME core
+    // suite. Here exact comparisons detect changed units, swapped Cartesian
+    // derivatives, foreign lineage, and invented thermodynamic export.
+    namespace W=swcme::material1d;
+    const double au=swcme::constants::AU_M;
+    W::Config wind;
+    wind.inner_radius_m=.30*au;wind.outer_radius_m=1.20*au;wind.reference_radius_m=au;
+    wind.wind_m_s=400000;wind.reference_electron_density_m3=6e6;
+    wind.reference_electron_temperature_k=120000;wind.reference_proton_temperature_k=120000;
+    wind.reference_field_t=5e-9;wind.reference_sin_colatitude=1;wind.polarity=-1;
+    wind.rotation_axis={{0,0,1}};wind.rotation_rad_s=2.86533e-6;
+    wind.solar_gravity_m3_s2=C::kSolarGravitationalParameterM3PerS2;wind.gamma=5.0/3.0;
+    W::EventConfig config;
+    config.identity="MBC02 controlled SWCME1D material event";config.begin_s=0;config.end_s=600;
+    config.front.mode=swcme::kinematics::Mode::Ballistic;
+    config.front.r0_m=.9*au;config.front.V0_m_s=1100000;config.front.Vsw_m_s=wind.wind_m_s;
+    const auto event=std::make_shared<const W::Event>(wind,config);
+    auto foreign=config;foreign.identity.append("\0foreign",8);
+    Require(W::Event(wind,foreign).fingerprint()!=event->fingerprint(),"typed event fingerprint truncated its identity");
+    Require(!SEP::SW1DAdapter::CaptureUpstreamMaterial(nullptr,4,0).ok(),"missing canonical event captured");
+    Require(!SEP::SW1DAdapter::CaptureUpstreamMaterial(event,0,0).ok(),"unpublished background generation captured");
+    const auto captured=SEP::SW1DAdapter::CaptureUpstreamMaterial(event,4,0);
+    Require(captured.ok(),captured.status.message);
+    const auto& interval=*captured.value;
+    const auto& descriptor=interval.Identity();
+    Require(descriptor.profile==M::Profile::Swcme1dAdiabaticOuterWindV1&&
+        descriptor.eventIdentity==config.identity&&descriptor.backgroundGeneration==4&&
+        descriptor.geometryGenerationPresent&&descriptor.geometryGeneration==0&&
+        descriptor.beginS==config.begin_s&&descriptor.endS==config.end_s,
+        "controlled upstream owner lost its actual event or geometry lineage");
+    auto q=Query();q.positionM={{.6*au,.5*au,.4*au}};q.required=M::MaterialRequirements;
+    W::Sample direct;
+    Require(event->sample(q.positionM,q.epochS,direct).ok(),"control point left canonical coverage");
+    const auto sample=interval.Sample(q);Require(sample.ok(),sample.status.message);
+    const auto& s=sample.value;
+    Require(s.velocityMPerS==direct.velocity_m_s&&s.magneticFieldT==direct.magnetic_field_t&&
+        s.massDensityKgM3==direct.mass_density_kg_m3&&s.pressurePa==direct.pressure_pa&&
+        s.gammaAdiabatic==wind.gamma&&s.velocityGradientPerS->values==direct.velocity_gradient_s_inv&&
+        s.magneticGradientTPerM->values==direct.magnetic_gradient_t_m_inv,
+        "neutral Cartesian state differs from the canonical upstream state");
+    Require(s.species&&s.species->size()==3&&s.species->at(0).identity=="electron"&&
+        s.species->at(0).numberDensityM3==direct.electron_density_m3&&
+        s.species->at(0).temperatureK==direct.electron_temperature_k&&
+        s.species->at(1).identity=="proton"&&s.species->at(1).numberDensityM3==direct.proton_density_m3&&
+        s.species->at(1).temperatureK==direct.proton_temperature_k&&s.species->at(2).identity=="alpha"&&
+        s.species->at(2).numberDensityM3==0&&!s.species->at(2).temperatureK,
+        "upstream composition or absence of alpha temperature was lost");
+    W::Motion moved;
+    Require(event->advance_fixed(q.positionM,300,600,300,moved).ok(),"canonical fixed motion failed");
+    const auto neutralMotion=interval.Move(q.positionM,300,600);
+    Require(neutralMotion.ok()&&neutralMotion.value.positionM==moved.position_m&&
+        neutralMotion.value.velocityMPerS==moved.velocity_m_s&&!neutralMotion.value.deformation,
+        "neutral trajectory differs from canonical constant-step motion");
+    W::Shock shock;
+    Require(event->shock_at(q.positionM,q.epochS,shock).ok()&&shock.jump.has_shock,"fast control front failed");
+    const auto surface=interval.Shock(shock.position_m,q.epochS);Require(surface.ok(),surface.status.message);
+    Require(surface.value.upstream&&surface.value.downstream&&
+        surface.value.upstream->pressurePa==shock.ambient.pressure_pa&&
+        surface.value.downstream->pressurePa==shock.jump.downstream.pressure_Pa&&
+        surface.value.downstream->gammaAdiabatic==wind.gamma&&
+        !surface.value.downstream->species&&!surface.value.downstream->velocityGradientPerS,
+        "canonical RH limit lost bulk state or invented downstream species/gradient");
+    Require(!interval.Shock(q.positionM,q.epochS).ok(),"off-front ambient was labeled a shock");
+    q.region=M::Region::Sheath;
+    Require(!interval.Sample(q).ok(),"local RH state became sheath volume");
+    q.region=M::Region::ParkerExterior;q.epochS=std::nextafter(600.,1000.);
+    Require(!interval.Sample(q).ok(),"neutral export extrapolated the physical interval");
+    q.epochS=300;q.positionM={{.25*au,0,0}};
+    Require(!interval.Sample(q).ok()&&!interval.Move(q.positionM,300,600).ok(),"neutral export crossed radial coverage");
+    const auto native=interval.RequireStep(300,600,300,M::Region::ParkerExterior);
+    Require(!native.ok()&&native.code==StatusCode::UnsupportedCapability,"upstream-only build admitted native motion");
+    namespace B=SEP::Background;
+    const B::BackgroundSnapshot snapshot(B::Provider::ReducedShock,B::Ownership::ModelOwned,
+        0,0,600,4,"unrelated-native-owner","MBC02 admission control");
+    const auto binding=interval.BindSnapshot(snapshot);
+    Require(!binding.ok()&&binding.code==StatusCode::UnsupportedCapability,"upstream owner bound a native snapshot");
   });
   run("MBC03",[] {
     const auto d=SoftwareDescriptor();const auto bytes=M::Encode(d);Require(bytes.ok(),bytes.status.message);

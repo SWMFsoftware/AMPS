@@ -10,6 +10,13 @@ Neutral coronal-CME snapshot exchange remains compatible, while an explicit
 material-transport request rejects without publishing. These checks do not
 qualify propagation on rejected models or alter SWMF/3-D Eulerian routes.
 
+The shared SWCME core also provides a versioned adiabatic material upstream
+with a finite radial domain and a fixed-step parcel map. The detached SEP
+adapter exposes that exact state and local fast-shock limits to background
+consumers. Native transport continues to require its geometry, source and
+restart lifecycle. See [SWCME upstream equations and API](../src/models/swcme/README.md#prescribed-swcme1d-material-upstream)
+and [background ownership](BACKGROUND_STATE.md#neutral-material-identity-and-availability).
+
 The maintained launcher `test/run_standalone_application.py` now executes the
 original three-mover, 400-step application gate against a matching configured
 build. Its independent checker retains dt=300 s, complete segment exposure

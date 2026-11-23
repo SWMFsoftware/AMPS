@@ -1292,7 +1292,7 @@ The minimum roadmap-to-registry trace is:
 | 11B | `SHEATH3D01--03` |
 | 12 | `PROV3D01--03`, `CAL3D01` |
 | 13 | `REL3D01--03` plus every mandatory record from Stages 0--12 |
-| 14 (future/campaign; non-release) | `CPL3D10`, `TUR3D08`, `MFP3D08`, `SLM3D01`, `FTE3D10--11`, `ELL3D11`, `SRC3D20--22`, `WND3D21`, `EVT3D01`, `XMD3D01`; Stage 14A reuses `SRC3D19` |
+| 14 (future/campaign; non-release) | `CPL3D10`, `TUR3D08`, `MFP3D08`, `SLM3D01`, `FTE3D10--11`, `ELL3D11`, `SRC3D20--22`, `WND3D21`, `EVT3D01`, `XMD3D01`; Stage 14A reuses `SRC3D19`; background-only core assembly adds `S14BG01--10` |
 
 A stage gate may add narrower cases, but it cannot substitute an unregistered
 script for these records. Stage-11 selectors remain unavailable until their
@@ -2241,6 +2241,49 @@ own independent rows pass.
   bundle paths; neither application searches a sibling source tree.
 - `REL3D03`: the release archive excludes objects, generated test output, and
   duplicate local headers while reproducing all recorded checksums.
+
+#### Background-only shared-core event assembly tests
+
+The following records qualify the maintained assembly in Section 8.6. They
+are independent of the broader `CMLU` launch-roadmap gates and the historical
+Stage-14 research-extension gates. They do not qualify regional fluid closure,
+source activation history integration, native SEP transport or observational
+validation. All existing registered tests remain mandatory alongside them.
+
+- `S14BG01`: complete independent component-law materialization, equivalent
+  initial center/apex forms, explicit missing-history/competing-authority and
+  unsupported attitude negatives; verified geometry-asset admission rejects
+  checksum/frame/table authority failures.
+- `S14BG02`: independent triaxial gradient/normal-speed and solid-angle area
+  oracles; normal and off-midpoint tiny sphere caps pass the independently
+  derived area tolerance `1e-9` on three grids; exposed triaxial islands retain
+  positive areas and original cell identities even when all legacy midpoints
+  are buried.
+- `S14BG03`: analytic smooth/Hermite interior extrema, nonpositive axes hidden
+  between valid endpoints, no extrapolation, arbitrary smooth-law reference
+  epochs, and the exact linear range of the declared 100000-knot table limit.
+- `S14BG04`: distinct solar/plasma/source support; strict continuous radial
+  admission rejects unsupported strips/apices between quadrature points; an
+  explicit geometry-only diagnostic policy preserves missing-state flags.
+- `S14BG05`: complete immutable epochs, retained old ownership and generations,
+  late acquisition failure rollback, changed typed-physics identity sealing,
+  ambient descriptor mutation rejection and out-of-history nonpublication.
+- `S14BG06`: sub-fast-to-fast delayed background classification using the
+  unchanged canonical RH residual gate `1e-9`; no particle source is generated;
+  independently computed axis-parallel weak-jump compressions and an explicit
+  high-beta ill-conditioned rejection preserve fail-closed solver behavior.
+- `S14BG07`: exact EOS/frame/composition conventions and physical one-sided
+  trace admission; missing or mismatched authority rejects without a guess.
+- `S14BG08`: complete independent piston history and conservative all-history
+  nesting/separation certification; invalid or unresolved histories reject;
+  no piston/contact state is inferred from a front-only input.
+- `S14BG09`: production immutable canonical ambient binding, actual PFSS open
+  and closed fields, both signed Parker sectors, full SI tensors and EOS,
+  correct source-surface physical sides, wrong-side/time/identity and HCS/null
+  negatives, and complete background-event epochs without particle release.
+- `S14BG10`: the documented attached long-acceleration history, explicitly
+  detached short-acceleration history and independent solar-crossing time;
+  attachment-policy admission does not silently alter prescribed motion.
 
 ### 17.3 Required pre-run physics diagnostics
 

@@ -54,22 +54,81 @@ bool ValidBasis(const RadialPrincipalBasis& basis) {
 
 }  // namespace
 
+Core::Result<EllipsoidRadialExtent> EvaluateEllipsoidRadialExtent(
+    const EllipsoidKinematics& k,double solarRadiusM) {
+  using Return=Core::Result<EllipsoidRadialExtent>;
+  const double d=k.centerDistanceM.value,a=k.radialSemiAxisM.value;
+  const double b=k.firstLateralSemiAxisM.value,c=k.secondLateralSemiAxisM.value;
+  if(!(Finite(d)&&Finite(a)&&Finite(b)&&Finite(c)&&Finite(solarRadiusM)&&
+      d>0&&a>0&&b>0&&c>0&&solarRadiusM>0))
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,
+        "radial extent requires positive finite geometry and solar radius");
+  // At fixed radial parameter q=cos(theta), the lateral contribution is
+  // extremized by the smaller/larger squared lateral axis. The resulting
+  // radius squared is a quadratic on the CLOSED interval [-1,1]; include its
+  // internal stationary point as well as both ends. This is topology, not a
+  // finite angular sample whose answer can miss a small solar intersection.
+  const auto extreme=[&](double lateralSquared,bool minimum) {
+    double value=minimum?std::min((d-a)*(d-a),(d+a)*(d+a)):
+        std::max((d-a)*(d-a),(d+a)*(d+a));
+    if(a*a!=lateralSquared) {
+      const double q=-d*a/(a*a-lateralSquared);
+      if(q>=-1&&q<=1) {
+        const double candidate=d*d+lateralSquared+2*d*a*q+
+            (a*a-lateralSquared)*q*q;
+        value=minimum?std::min(value,candidate):std::max(value,candidate);
+      }
+    }
+    return std::sqrt(std::max(0.0,value));
+  };
+  EllipsoidRadialExtent out;
+  out.minimumRadiusM=extreme(std::min(b*b,c*c),true);
+  out.maximumRadiusM=extreme(std::max(b*b,c*c),false);
+  if(!Finite(out.minimumRadiusM)||!Finite(out.maximumRadiusM))
+    return Return::Failure(Core::StatusCode::NumericalFailure,
+        "ellipsoid radial extrema exceed finite SI storage");
+  out.intersectsSolarSurface=out.minimumRadiusM<=solarRadiusM&&
+      out.maximumRadiusM>=solarRadiusM;
+  return Return::Success(out);
+}
+
 Core::Result<KinematicValue> EvaluateSmoothKinematics(
     double timeS, double referenceTimeS, double qReference,
     double transitionStartS, double transitionDurationS,
     double initialRatePerS, double finalRatePerS) {
   if (!(Finite(timeS) && Finite(referenceTimeS) && Finite(qReference) &&
-        Finite(transitionStartS) && transitionDurationS > 0.0 &&
+        Finite(transitionStartS) && Finite(transitionDurationS) && transitionDurationS > 0.0 &&
         Finite(initialRatePerS) && Finite(finalRatePerS))) {
     return Core::Result<KinematicValue>::Failure(
         Core::StatusCode::InvalidConfiguration,
         "smooth kinematics requires finite values and transition duration>0");
   }
-  const double startValue = qReference + initialRatePerS *
+  double startValue = qReference + initialRatePerS *
       (transitionStartS - referenceTimeS);
+  if (referenceTimeS > transitionStartS) {
+    // qReference is the value AT its own declared reference epoch, including
+    // when that epoch lies within/after the rate transition. Subtract the
+    // analytic rate integral from the transition start to that epoch. The
+    // original pre-transition branch above retains its exact arithmetic for
+    // existing callers; only the previously incorrect reference placements
+    // require this additional term. This changes geometry, never a host dt.
+    const double referenceElapsed = referenceTimeS - transitionStartS;
+    const double rateChange = finalRatePerS - initialRatePerS;
+    const double integral = referenceElapsed <= transitionDurationS
+        ? initialRatePerS * referenceElapsed + rateChange *
+              transitionDurationS * SmoothIntegral(referenceElapsed / transitionDurationS)
+        : transitionDurationS * (initialRatePerS + finalRatePerS) / 2.0 +
+              finalRatePerS * (referenceElapsed - transitionDurationS);
+    startValue = qReference - integral;
+  }
+  if (!Finite(startValue) || !Finite(transitionStartS + transitionDurationS))
+    return Core::Result<KinematicValue>::Failure(Core::StatusCode::NumericalFailure,
+        "smooth geometry history cannot represent its reference/transition in finite SI storage");
   if (timeS < transitionStartS) {
     return Core::Result<KinematicValue>::Success(
-        {qReference + initialRatePerS * (timeS - referenceTimeS),
+        {referenceTimeS <= transitionStartS
+             ? qReference + initialRatePerS * (timeS - referenceTimeS)
+             : startValue + initialRatePerS * (timeS - transitionStartS),
          initialRatePerS, 0.0});
   }
   const double endTime = transitionStartS + transitionDurationS;

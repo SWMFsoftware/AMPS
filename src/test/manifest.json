@@ -1763,7 +1763,7 @@
       "level": "integration",
       "tiers": ["extended"],
       "runner": "tests/models/swcme/run_test.py",
-      "description": "Executable bounded R1 plus complete dormant extended and observational registries with typed blockers",
+      "description": "Bounded R1 and material-upstream verification plus dormant extended and observational registries with typed blockers",
       "requires": {
         "tools": ["python", "cxx", "make"],
         "paths": ["src/models/swcme/test/run_tests.py", "src/models/swcme/test/validation/campaign.json"],
@@ -1779,7 +1779,7 @@
       "level": "integration",
       "tiers": ["extended"],
       "runner": "tests/models/cme/sep_coronal_cme/run_test.py",
-      "description": "Authoritative 222-case staged coronal-CME software-verification registry",
+      "description": "Authoritative 232-case staged coronal-CME verification registry including ellipsoid and piston event assembly",
       "requires": {
         "tools": ["python", "cxx", "make"],
         "paths": ["src/models/sep_coronal_cme/test/run_tests.py"],

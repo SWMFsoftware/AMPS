@@ -95,7 +95,7 @@
       "component": "src/models/sep_coronal_cme",
       "status": "partial",
       "test_ids": ["CORE-MODEL-SEP-CORONAL-CME-001"],
-      "remaining": "T11 imports the authoritative 222-case staged registry as software verification. Three campaign-evidence cases remain SKIP and the local production_qualified=false and observational_campaign_qualified=false limits remain authoritative."
+      "remaining": "The 232-case software-verification registry includes ten Stage 14 background event assembly cases. Three campaign-evidence cases remain SKIP, and the local production_qualified=false and observational_campaign_qualified=false limits remain authoritative."
     },
     {
       "component": "src/models/sputtering",
@@ -113,7 +113,7 @@
       "component": "src/models/swcme",
       "status": "partial",
       "test_ids": ["CORE-MODEL-SWCME-001"],
-      "remaining": "T11 executes and imports the four bounded R1 cases, but preserves all 127 extended and 16 observational identities as typed SKIP/BLOCKED. Six extended translation units and the observational campaign runner are absent and must be restored before coverage."
+      "remaining": "Executes four bounded R1 and ten Stage 12 material-upstream cases. Preserves all 127 extended and 16 observational identities as typed SKIP/BLOCKED. Six extended translation units and the observational campaign runner are absent."
     },
     {
       "component": "src/pic",

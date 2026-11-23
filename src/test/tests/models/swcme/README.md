@@ -5,8 +5,8 @@ harness while keeping three different qualification scopes separate.
 
 ## Imported scopes
 
-1. The bounded Phase-R1 runner in
-   `src/models/swcme/test/run_tests.py` owns four executable cases. The adapter
+1. The bounded runner in `src/models/swcme/test/run_tests.py` owns four R1
+   cases and ten material-upstream verification cases. The adapter
    copies the complete `src/models/swcme` tree into its per-run work directory,
    omits prior build products, and executes that copied runner with `--all`.
    The local JSON report is checked for its exact schema, ordered membership,
@@ -26,8 +26,9 @@ harness while keeping three different qualification scopes separate.
    VP01's `case.json` also names an absent `run_vp01.py`; that additional
    limitation is retained in the audit and VP01 result message.
 
-The complete global inventory is 147 cases: 4 R1, 127 extended, and 16
-observational. Registry validation always precedes selected-case filtering.
+The complete global inventory has 157 cases, comprising four R1 cases, ten
+material-upstream cases, 127 extended cases, and 16 observational cases.
+Registry validation always precedes selected-case filtering.
 If a missing extended source or the observational runner is restored, the
 adapter intentionally returns `ERROR`; its old non-executable classification
 must then be replaced with an executable adapter rather than silently retained.
@@ -38,17 +39,18 @@ The adapter writes the normal schema-1 global result. Evidence includes:
 
 - `swcme-registry-audit.json`, containing source hashes, exact local IDs,
   counts, and current blockers;
-- `swcme-r1-transcript.txt` when any R1 case is selected;
-- the authoritative R1 JSON and JUnit reports when R1 reaches reporting.
+- `swcme-r1-transcript.txt` when any executable case is selected;
+- the authoritative bounded JSON and JUnit reports when the runner reaches reporting.
 
 Suite status precedence is `ERROR`, `FAIL`, `SKIP`, then `PASS`. Therefore a
-full 147-case selection is necessarily `SKIP` at the current source boundary,
-even when all four executable R1 cases pass. Selecting only passing R1 cases
+full 157-case selection is necessarily `SKIP` at the current source boundary,
+even when all 14 executable cases pass. Selecting only passing executable cases
 can return `PASS`, but still performs a complete registry-drift audit first.
 
 ## Global IDs
 
 - R1: `SWCME-R1CFG01`, `SWCME-R1D01`, `SWCME-R3D01`, `SWCME-R13D01`.
+- Material upstream: `SWCME-MAT1D01` through `SWCME-MAT1D10`.
 - Extended: `SWCME-EXT-<local-id>`. The legacy `1D_AMBIENT_01` spelling is
   normalized to `SWCME-EXT-1D-AMBIENT-01` to satisfy the global ID grammar.
 - Observational: `SWCME-VP01` through `SWCME-VP16`.

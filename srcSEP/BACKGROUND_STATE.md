@@ -431,8 +431,13 @@ Optional species temperatures and full branch-preserving grad(U)/grad(B)
 tensors have explicit absence; present invalid data reject. Surface-local
 upstream/downstream RH limits do not define a downstream material volume.
 The reduced physical interval supplies its actual canonical state and existing
-trajectory. Only its Parker exterior is admitted. SWCME/coronal/regional
-profiles retain their stage-10 blockers. A version-1 descriptor stores metadata
+trajectory. Its Parker exterior is the supported native material domain.
+The detached Stage 12 SWCME1D interval exports the canonical prescribed
+upstream primitives, e/p species temperatures, both Cartesian tensors, checked
+radial motion and local RH surface limits through `CaptureUpstreamMaterial`.
+The owner supplies the signed force/work and exact fixed-step deformation
+through its typed core API. Native publication still requires a qualified
+geometry, source and restart lifecycle. A version-1 descriptor stores metadata
 only; decoding cannot recreate a physical model or restore particles. Existing
 schema-1 bundles and schema-5 physical checkpoints keep their own meanings.
 
@@ -442,3 +447,20 @@ the original publication transaction. Restore reconstructs this derived state
 from the saved physical owner. A failed preparation leaves live state intact.
 MBC01–20 cover the interface and canonical adapter; native continuation remains
 a separate gate, as documented in the stage-11 qualification record.
+
+## Coronal background epochs
+
+The Stage 14 core resolves the triaxial front and independent piston histories
+into one event. At an explicit epoch the composite ambient factory retains
+the corresponding PFSS/open/closed/Parker authority. The coronal event checks
+that authority's frame, composition, coverage and epoch before assembling
+canonical normals, front speeds, signed ambient states, derivative tensors and
+local MHD jumps. Solar clipping integrates exposed cell area, and continuous
+plasma coverage is checked separately from the particle-source radius. Source
+rates stay disabled in this background-only assembly.
+
+Preparation publishes an owning immutable epoch after all its checks succeed.
+Rejected data or a failed local shock solve leave the prior epoch available.
+Native SEP still uses its existing geometry and snapshot ownership lifecycle.
+See [the coronal core assembly](../src/models/sep_coronal_cme/README.md) and
+[the standalone roadmap](INTEGRATION_ROADMAP_STANDALON.md#stage-14--complete-coronal-cme-ellipsoidpiston-event-assembly).

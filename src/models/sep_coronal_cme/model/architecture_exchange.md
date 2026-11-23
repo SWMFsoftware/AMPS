@@ -899,6 +899,40 @@ separate origin ledger rather than being folded into
 `NetFirstPassageRelease`. The future interfaces in Section 15.8 make these
 requirements explicit without advertising either capability as implemented.
 
+#### Maintained background-event assembly boundary
+
+`sep_coronal_cme/background_event.h` provides the concrete background-only
+`MaterializeBackgroundEvent`, `BackgroundEvent::Create` and
+`BackgroundEvent::Prepare` API. The materializer resolves normalized schema-5
+geometry fields and caller-acquired, checksum-bound geometry assets into a
+complete typed definition. It performs no file discovery or I/O. `Create`
+validates the complete requested history and derives the final physical event
+identity from every typed physical field and input provenance, rather than
+trusting a caller's stale `physicsIdentity`. Numerical surface resolution and
+certificate work limits do not redefine the event's physical identity.
+
+`Prepare(time, shared_ptr<const AmbientEpoch>)` binds actual ambient time,
+frame, epoch, identity, generation and EOS before constructing an unpublished
+candidate. It copies the ambient identity and rechecks it immediately before
+publication. Local shocks are prepared on a private copy of the canonical
+shock provider. The completed child and parent handles are installed only
+after every shape, ambient sample and jump passes, so a late failure cannot
+advance the visible child shock generation alone. Retained old handles remain
+valid. Backward publication time and regressed ambient generations reject.
+
+The core declares the ambient contract without depending on a composite or
+application. `sep_corona_swcme/coronal_event_ambient.h` implements the outward
+adapter `BindAmbientEpoch` around the actual immutable canonical `AmbientModel`.
+It requires the expected ambient identity, an explicitly covered time,
+nonzero generation and epoch, and maps existing PFSS/open/closed/Parker states,
+composition, topology, sector and full derivative tensors by named SI fields.
+It does not reimplement those equations or admit a new regional closure.
+Physical radial trace requests are verified against the actual radius and
+source-surface branch, while each Cartesian derivative's branch-fixed stencil
+has its own metadata. The binding currently supports the actual implemented
+`HCI-like-inertial` frame; an arbitrary caller frame string cannot relabel the
+same canonical vector data.
+
 ### 15.5 AMPS adapter integration
 
 AMPS-facing code remains in `srcSEP3D` or `srcSEP` adapters and performs only:

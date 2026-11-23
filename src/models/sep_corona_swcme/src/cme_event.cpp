@@ -505,32 +505,15 @@ const char* Name(EvolutionPhase phase) noexcept {
 
 Core::Result<RadialExtent> EvaluateRadialExtent(
     const EllipsoidKinematics& k,double solarRadiusM) {
-  using Return=Core::Result<RadialExtent>;
-  const double d=k.centerDistanceM.value,a=k.radialSemiAxisM.value;
-  const double b=k.firstLateralSemiAxisM.value,z=k.secondLateralSemiAxisM.value;
-  if(!(std::isfinite(d)&&std::isfinite(a)&&std::isfinite(b)&&std::isfinite(z)&&
-      std::isfinite(solarRadiusM)&&d>0&&a>0&&b>0&&z>0&&solarRadiusM>0))
-    return Return::Failure(Core::StatusCode::InvalidConfiguration,
-        "radial extent requires positive finite geometry and solar radius");
-  const auto extreme=[&](double lateralSquared,bool minimum) {
-    double value=minimum?std::min((d-a)*(d-a),(d+a)*(d+a)):
-        std::max((d-a)*(d-a),(d+a)*(d+a));
-    if(a*a!=lateralSquared) {
-      const double q=-d*a/(a*a-lateralSquared);
-      if(q>=-1&&q<=1) {
-        const double candidate=d*d+lateralSquared+2*d*a*q+
-            (a*a-lateralSquared)*q*q;
-        value=minimum?std::min(value,candidate):std::max(value,candidate);
-      }
-    }
-    return std::sqrt(std::max(0.0,value));
-  };
-  RadialExtent out;
-  out.minimumRadiusM=extreme(std::min(b*b,z*z),true);
-  out.maximumRadiusM=extreme(std::max(b*b,z*z),false);
-  out.intersectsSolarSurface=out.minimumRadiusM<=solarRadiusM&&
-      out.maximumRadiusM>=solarRadiusM;
-  return Return::Success(out);
+  // The fixed radial-axis extremum problem is owned by the canonical coronal
+  // geometry kernel. Keep this established composite API/record unchanged;
+  // launch histories and all consumers now share the same exact topology
+  // calculation instead of maintaining two subtly different formulas.
+  const auto extent=CoronalCME::EvaluateEllipsoidRadialExtent(k,solarRadiusM);
+  if(!extent.ok())return Core::Result<RadialExtent>::Failure(
+      extent.status.code,extent.status.message);
+  return Core::Result<RadialExtent>::Success({extent.value.minimumRadiusM,
+      extent.value.maximumRadiusM,extent.value.intersectsSolarSurface});
 }
 
 Core::Result<EventKinematics> EventConfiguration::At(double timeS) const {

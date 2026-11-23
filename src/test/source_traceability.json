@@ -375,9 +375,9 @@
       "path": "src/models/sep_coronal_cme",
       "status": "partial",
       "suite_ids": ["CORE-MODEL-SEP-CORONAL-CME-001"],
-      "case_ids": ["SCCM-DOCSCCM01", "SCCM-ARCHSCCM01", "SCCM-XMD3D01"],
+      "case_ids": ["SCCM-DOCSCCM01", "SCCM-ARCHSCCM01", "SCCM-XMD3D01", "SCCM-S14BG01", "SCCM-S14BG03", "SCCM-S14BG05", "SCCM-S14BG06", "SCCM-S14BG09", "SCCM-S14BG10"],
       "local_registries": ["src/models/sep_coronal_cme/test/run_tests.py"],
-      "reason": "T11 invokes the exact 222-case local registry and retains its JSON/JUnit software-verification evidence.",
+      "reason": "Invokes the exact 232-case registry, including the ten background-only event assembly cases, and retains JSON/JUnit evidence.",
       "gaps": ["three campaign-evidence SKIPs", "production and observational qualification remain false"]
     },
     {
@@ -408,9 +408,9 @@
       "path": "src/models/swcme",
       "status": "partial",
       "suite_ids": ["CORE-MODEL-SWCME-001"],
-      "case_ids": ["SWCME-R1CFG01", "SWCME-EXT-SAN01", "SWCME-VP01", "SWCME-VP16"],
+      "case_ids": ["SWCME-R1CFG01", "SWCME-MAT1D02", "SWCME-MAT1D04", "SWCME-MAT1D06", "SWCME-MAT1D08", "SWCME-MAT1D09", "SWCME-EXT-SAN01", "SWCME-VP01", "SWCME-VP16"],
       "local_registries": ["src/models/swcme/test/run_tests.py", "src/models/swcme/test/core/test_swcme.cpp", "src/models/swcme/test/validation/campaign.json"],
-      "reason": "T11 executes the four-case R1 authority and imports every dormant extended/observational identity with its typed blocker.",
+      "reason": "Executes four R1 and ten material-upstream verification cases and imports every dormant extended/observational identity with its typed blocker.",
       "gaps": ["six extended test sources absent", "observational campaign runner absent"]
     },
     {

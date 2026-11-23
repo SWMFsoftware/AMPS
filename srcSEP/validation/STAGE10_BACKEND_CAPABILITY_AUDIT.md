@@ -111,11 +111,84 @@ is wired, whereas the planned live coronal/full consumers are not wired.
 
 ## Decision records and frozen acceptance
 
-**D10-1 — SWCME conservation: OPEN.** The legacy diagnostic law remains intact.
-No choice has been made between a compatible production rho/U/B/thermal
-profile and a separately specified physical source model. Freeze all coupled
-equations and their mass/momentum/induction/energy terms before stage 12.
-Moving nodes or changing one density/wind component in an adapter is prohibited.
+**D10-1 — SWCME conservation: first controlled upstream case approved.** The
+baseline retained the Leblanc density and constant radial wind as a legacy
+diagnostic. The approved first material candidate is a distinct, prescribed
+outer-heliospheric `SHOCK_ONLY` profile. In HCI, the wind is purely radial at a
+constant speed `U0 > 0`. Its mass density is `rho_ref * (r_ref/r)^2`. The
+signed field is `Br = Br_ref * (r_ref/r)^2` and
+`Bphi = -Br * Omega_F * r * sin(theta) / U0`, where `theta` is colatitude
+about the declared rotation axis and `Omega_F` is the declared field-line
+rotation rate in rad/s. Use the declared reference field magnitude, polarity
+and latitude to set `Br_ref`. The finite-source-radius offset from legacy
+diagnostics does not enter the new ideal-induction expression. These laws
+make `r^2 * rho * U0`, `r^2 * Br` and `r * U0 * Bphi` constant along each
+smooth radial ray.
+
+For elapsed time `tau`, a parcel starting at radius `a` on that ray reaches
+`r = a + U0 * tau`. The radial deformation factor is one and both transverse
+factors are `r/a`, so `J = (r/a)^2`. The density and field above must agree
+with direct transport of mass and magnetic flux by that map. Check the whole
+trajectory against the declared profile coverage. The full Cartesian velocity
+gradient is `U0/r * (I - e_r e_r^T)`, with entries in inverse seconds. No change
+to the AMPS physical timestep follows from these background relations.
+
+The momentum equation includes the sustaining force density required by the
+prescribed flow, in N/m^3. Once pressure and gravity inputs are declared,
+account for the full vector balance against pressure, gravity and the Lorentz
+force. Record the associated work rate `U dot f_ext` in W/m^3 separately from
+thermal heating. Force and work are tested independently over the declared
+support. The legacy diagnostic remains a distinct profile.
+
+The user approved a closed provider interval of **0.30–1.20 AU** and a
+controlled reference state at **1 AU**. The case takes the radial speed,
+density normalization, proton temperature and field magnitude from the existing
+FAST preset as explicit inputs to the new material profile. The reference
+electron temperature and composition are also declared. This is a controlled
+verification case. Event decks own their physical inputs and coverage.
+
+| Quantity | Approved controlled value |
+| --- | --- |
+| `U0`, radial speed | `400000 m/s` |
+| Number density basis and value | Electron density `n_e,ref = 6.0e6 m^-3` |
+| Composition and EOS | Charge-neutral electrons and protons, zero alpha abundance, scalar multispecies ideal-gas pressure |
+| Reference temperature | `T_e,ref = T_p,ref = 120000 K` |
+| Thermal law | Adiabatic smooth expansion, `gamma = 5/3`, zero heat input |
+| Reference magnetic magnitude and latitude | `5.0e-9 T` at the equator. Test both radial polarities. |
+| Field-line rotation for the controlled case | SWCME's Carrington sidereal rate, `2.86533e-6 rad/s` |
+
+Charge neutrality gives `n_p = n_e` and the existing SWCME mass convention
+gives `rho = m_p * n_p`. The pressure is `k_B * (n_p * T_p + n_e * T_e)`.
+Advect material entropy with `p/rho^gamma` constant along each smooth
+trajectory. Both species temperatures scale as `(r_ref/r)^(4/3)` for this
+case, so the total pressure scales as `(r_ref/r)^(10/3)`. Mechanical force
+work is accounted for separately from the zero thermal source. The entropy
+invariant applies up to the shock, whose one-sided states use the canonical
+jump solver.
+
+The reference values calculated from the checked-in SWCME constants are
+`rho_ref = 1.003573156e-20 kg/m^3` and `p_ref = 1.988134560e-11 Pa`. For positive
+radial polarity at the equator, `Br_ref = +3.411269 nT` and
+`Bphi_ref = -3.655577 nT`. The opposite polarity reverses the two signed field
+components. The following rounded values make useful hand checks. Use the
+closed expressions and the declared constants for the actual test oracles.
+
+| Radius (AU) | Electron density (cm^-3) | Each species temperature (K) | Equatorial field magnitude (nT) | Sound speed (km/s) |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.30 | 66.667 | 597521 | 39.8135 | 128.221 |
+| 0.50 | 24.000 | 302381 | 15.4803 | 91.2136 |
+| 1.00 | 6.000 | 120000 | 5.0000 | 57.4609 |
+| 1.20 | 4.1667 | 94104 | 3.8590 | 50.8845 |
+
+Provider coverage and particle-domain boundaries are separate. The case must
+keep each required vertex, insertion, shock and release query covered for the
+whole fixed physical step. Check the endpoints, out-of-range requests and
+trajectories that would leave the interval. Independently verify mass flux,
+induction, signed field, entropy, all velocity-gradient components, sustaining
+force and mechanical work, and the local fast-shock states. Gate numerical
+acceptance before running the candidate. `FULL_ICME` still requires a separate
+regional material and contact closure. The controlled profile has approved
+inputs and awaits implementation and qualification.
 
 **D10-2 — Full regional evolution: OPEN.** The later selected scope retains the
 3-D ambient and analytical/semi-empirical cross-ray evolution without a global

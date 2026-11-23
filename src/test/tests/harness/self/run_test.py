@@ -343,9 +343,11 @@ def test_selection_contract(context: Dict) -> None:
     # Stage 8 adds five compatibility/admission and three native rejection
     # cases. Stage 9 adds the three complete 400-step application cases.
     # Stage 11 adds the twenty-case immutable material contract owner.
+    # Stage 12 adds ten upstream cases to SWCME, and Stage 14 adds ten
+    # background-assembly cases to the existing coronal-CME owner.
     assert [len(item["tests"]) for item in streams] == [62, 3, 2]
     assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1200, 62, 46]
+            for item in streams] == [1220, 62, 46]
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(

@@ -2796,7 +2796,9 @@ transition begin at `t_s,q`, last `T_q>0`, and change from `qdot_0` to
  \qquad \tau=\frac{t-t_{s,q}}{T_q}.
 \]
 
-Before the transition, `q=q_ref+qdot_0(t-t_ref)`. During
+When `t_ref <= t_s,q`, the pre-transition branch is
+`q=q_ref+qdot_0(t-t_ref)`. For a reference inside or after the transition,
+the antiderivative difference below supplies the correct offset. During
 `0 <= tau <= 1`,
 
 \[
@@ -2814,6 +2816,14 @@ to the species charge `q_s` defined in Section 2.4. Afterward, the default
 `qdot_1`. Acceleration is zero at both endpoints. Axis rates are expansion
 rates; only `d_c_dot` is a center-translation speed. Unequal start times and
 durations allow radial and lateral overexpansion without conflating them.
+
+The reference epoch need not precede the transition. For arbitrary
+`t_ref`, evaluate a single antiderivative of the declared piecewise rate and
+use `q(t)=q_ref+J(t)-J(t_ref)`. Here `J(t)` is `qdot_0(t-t_s)` before
+`t_s`, `qdot_0(t-t_s)+(qdot_1-qdot_0)T I(tau)` within the transition,
+and its continuous endpoint plus `qdot_1(t-t_s-T)` afterward. Thus
+`q(t_ref)=q_ref` even when the reference falls inside or after acceleration;
+adding a transition displacement to `q_ref` twice is incorrect.
 
 A separate `tabulated-snapshots` evolution may carry time, center distance,
 three semiaxes, covariance, and provenance while retaining the fixed direction
@@ -2848,6 +2858,63 @@ specified ellipsoid. A piston inferred inward from the shock is diagnostic
 only. A future `standoff-from-piston` shock authority must define its closure,
 coefficients, units, and range of validity and must reject a simultaneously
 independent shock geometry. No ambiguous derived-standoff mode is permitted.
+
+### 8.6 Immutable background-only event assembly
+
+The maintained `BackgroundEvent` assembly binds one complete fixed-orientation
+front history, an optional independent piston history, an explicit physical
+support record, and a retained immutable ambient epoch. It reuses the geometry,
+plasma EOS/topology and oblique MHD jump authorities defined in Sections 4--9.
+It has no particle release, source normalization, random stream, turbulence
+feedback or downstream regional-fluid closure. A successful background epoch
+is therefore not qualification of an SEP source or a moving material tube.
+
+Every component must remain positive throughout the requested run. Smooth-law
+and cubic-Hermite scalar ranges include analytic derivative roots inside each
+interval; checking only snapshots is insufficient. Table extrapolation and
+overshoot under the selected monotone-C1 contract are errors. Solar attachment
+is an explicit policy: `RequireSolarIntersection` certifies intersection over
+the full history using exact spatial radial extrema and bounded temporal
+intervals; `AllowDetachedFront` retains the prescribed detached geometry.
+Exhausting the declared certificate work bound rejects the definition instead
+of treating a finite sample as a proof. The independent piston must be strictly
+inside the front with its requested conservative separation certificate over
+the full history. The norm bound used by this certificate is sufficient, not a
+necessary test for every possible nested triaxial pair; unresolved pairs reject.
+No piston, contact or sheath state is inferred from a front-only history.
+
+The absorbing solar sphere, available plasma domain and qualified source radius
+are separate authorities. The exposed surface is integrated by cut parameter
+cells: solar-intersection cuts and azimuthal topology events determine the
+exposed cell area, including caps with no exposed original midpoint. A positive
+exposed representative retains the original parameter-cell identity. This is
+area quadrature, not spatial resolution of an HCS or a source interface.
+Strict plasma coverage requires the continuous exposed radial interval
+`[max(R_sun,r_min),r_max]` to lie within the declared ambient radial support;
+quadrature-center coverage alone cannot admit a physical front. An explicit
+`GeometryOnlyOutsideCoverage` diagnostic policy may instead retain geometry
+without inventing plasma or jumps outside that interval. Per-patch plasma
+status is the status at its quadrature point; a separate conservative
+parameter-cell radial enclosure reports inside, outside, or unresolved boundary
+crossing. An unresolved cell is never advertised as wholly supported.
+
+At supported exposed points, each epoch retains the actual signed magnetic
+sector, open/closed topology, ion composition, electron state, full SI velocity
+and magnetic-gradient tensors and EOS convention. Missing or contradictory
+state rejects the whole epoch. A physical radial PFSS/Parker trace is distinct
+from a forward/backward Cartesian derivative stencil within one valid branch:
+a request for the wrong physical branch rejects instead of being copied into
+unchanged data. The canonical source-surface equality policy selects the Parker
+branch; no opposite trace is synthesized at the identical point.
+
+A sub-fast point remains valid geometry with no jump. A super-fast point must
+pass the unchanged canonical oblique-RH admissibility, entropy and normalized
+residual gates. Failure or ill conditioning propagates as an error; there is
+no fallback gas shock or relaxed tolerance. The complete front, piston,
+ambient handle, support flags and local-shock generation publish together only
+after all preparation succeeds. A failure preserves every previous owning
+epoch. This assembly neither changes the AMPS sampling time step nor advances
+particles.
 
 ---
 

@@ -793,17 +793,31 @@ an unimplemented field cannot be initialized to a plausible default.
 
 ### Stage 12 — Complete SWCME1D material evolution and thermal export
 
-**Dependencies:** stages 10–11; explicit selection of a consistent production
-profile before changing the canonical physics.
+**Recorded decision:** the first `SHOCK_ONLY` material candidate uses a prescribed
+constant radial wind, inverse-square mass density, ideal-induction Parker winding
+and an explicit sustaining force and work term. Its controlled verification case
+uses provider coverage of 0.30–1.20 AU, adiabatic expansion with `gamma = 5/3`,
+and explicit electron/proton reference values at 1 AU. The approved parameters
+and analytical reference values are in [D10-1](validation/STAGE10_BACKEND_CAPABILITY_AUDIT.md#decision-records-and-frozen-acceptance).
+
+**Upstream implementation.** The canonical `swcme::material1d::Event` supplies
+the prescribed adiabatic profile, explicit sustaining force and work, full
+Cartesian gradients, fixed-step material map and local fast-shock limits.
+Its detached SEP adapter exposes the canonical fields and species. A distinct
+profile identity preserves both original diagnostic modes. Native source,
+geometry and restart ownership are still required before admission. The
+ten independent `MAT1D` cases and the neutral parity checks exercise this
+upstream scope. See [the SWCME API and equations](../src/models/swcme/README.md#prescribed-swcme1d-material-upstream).
+
+**Dependencies:** stages 10–11 and the complete upstream input and thermal
+contract for the selected profile. `FULL_ICME` additionally requires its own
+regional material and contact closure.
 
 **Work.** Preserve the legacy diagnostic law
 n = C2/r² + C4/r⁴ + C6/r⁶ with constant radial U. Its nonzero div(rho U)
-must remain visible. Present a concrete alternative consisting of a compatible
-density, velocity, magnetic field and thermal evolution, or an explicitly
-specified physical source model with all mass, momentum, induction and energy
-terms. Changing U alone also changes Parker winding and derivatives; moving
-vertices or reconstructing density in the adapter does not close the system.
-Do not choose among those physical alternatives in implementation.
+must remain visible. Use the approved alternative in a new versioned profile.
+The canonical core owns the coupled flow, density, induction, thermal state
+and sustaining force. Adapters export that same state and derivatives.
 
 Implement the approved versioned profile in the SWCME core. Complete the
 material trajectory, its temporal support, radial derivatives and composition
@@ -855,6 +869,16 @@ three geometries.
 
 **Dependencies:** stages 10–11 and the maintained coronal/composite contracts.
 This is shared-core background work; native srcSEP integration still awaits G1.
+
+**Core implementation.** The coronal library materializes independent front
+and piston histories and publishes immutable background epochs only after
+geometry, support, ambient, and shock checks succeed. Solar cut-cell
+quadrature integrates exposed area even when the original cell midpoint is
+buried. The composite library provides the retained PFSS/open/closed/Parker
+ambient owner, including signed sectors, physical source-surface side
+selection, composition, and branch-preserving derivatives. `S14BG01`–`10`
+exercise the assembly and its transactional failure paths. G1 regional and
+native SEP qualification remain separate. See [the coronal core](../src/models/sep_coronal_cme/README.md).
 
 **Work.** Assemble the existing fixed-orientation triaxial front and independently
 configured piston from the canonical input histories. Preserve center/apex

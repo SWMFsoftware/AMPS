@@ -3503,3 +3503,114 @@ The complete stress population remains 100,000 cases with the same seed and
 physical input ranges. See SEP3D `SSE3D08/09` for exact failed coordinates,
 actual-layer sampling, three-shape support checks and transactional rejection
 of genuinely unresolved in-CME queries.
+
+## D10-1 / Stage12 controlled upstream material verification
+
+The maintained `run_tests.py --routine` and `--all` selections now retain the
+four original R1 integration gates and additionally execute **MAT1D01–MAT1D10**.
+The new group is `MATERIAL1D`. Its standalone executable is built from
+`core/test_material_upstream.cpp` by `make material-upstream-test-build`; the
+historical extended monolith, its unavailable translation units, and every
+existing criterion remain unchanged. The top-level core `make test` invokes
+this same maintained routine. Results keep the existing
+`swcme-r1-tests.json`/`.xml` names and schema, with normalized material metrics,
+criteria and units appended to each new result.
+
+```sh
+python3 -B run_tests.py --routine --output-dir /absolute/fresh/routine
+python3 -B run_tests.py --group MATERIAL1D --output-dir /absolute/fresh/material
+python3 -B run_tests.py --test MAT1D08 --output-dir /absolute/fresh/coverage
+make material-upstream-test
+python3 -B run_material_upstream_mutations.py --output /absolute/fresh/mutations --jobs 2
+```
+
+These are analytical **verification** cases, with no observations, calibration,
+SEP injection or native particle transport. The profile is the approved
+prescribed upstream SHOCK_ONLY realization, not a downstream-volume or
+FULL_ICME closure. The reference electron and proton densities are both
+`6.0e6 m^-3`; electron inertia is neglected in fluid mass density as in the
+adopted SWCME convention. Both species have reference temperature `120000 K`
+and contribute to scalar pressure. The explicit inputs are `U=400000 m/s`,
+`gamma=5/3`, equatorial `|B|=5e-9 T` at `r_ref=149597870700 m`, both radial
+polarities, `Omega_F=2.86533e-6 rad/s`,
+`GM_sun=1.32712440018e20 m^3/s^2`, and closed radial support 0.30–1.20 AU.
+The reference origin is the Sun in HCI. Rotation-axis orientation is declared,
+including a rotated-axis case. No unspecified gravity, composition, source
+radius correction, frame, extrapolation or thermal-heating law is supplied by
+the test.
+
+`core/material_upstream_oracle.hpp` is test-only and imports no production
+material/force/map/derivative helper. It evaluates independent long-double
+closed expressions using the documented physical constants. With
+`A=Br_ref*r_ref^2`, `C=A*Omega_F/U`, `r=|x|`, and declared unit axis `k`,
+
+```text
+rho = rho_ref (r_ref/r)^2
+Te,Tp = Te_ref,Tp_ref (r_ref/r)^(4/3)
+p = kB (np Tp + ne Te),       cs^2 = gamma p/rho
+U_i = U x_i/r
+B_i = A x_i/r^3 - C (k cross x)_i/r^2
+dU_i/dx_j = U/r (delta_ij - e_i e_j)
+dB_i/dx_j = A (delta_ij/r^3 - 3 x_i x_j/r^5)
+             - C (K_ij/r^2 - 2 (k cross x)_i x_j/r^4)
+```
+
+`K` is the Cartesian cross-product matrix for `k`. The equatorial field
+normalization is established once at the declared reference latitude; query
+latitude does not renormalize the field. In particular Bphi vanishes on the
+rotation axis while its Cartesian derivatives remain finite and generally
+nonzero. A map from initial radius `a` over supplied duration `tau` has
+`r=a+U*tau`, `F=e e^T+(r/a)(I-e e^T)`, and `J=(r/a)^2`. Tests independently
+push signed magnetic flux with `B1=F B0/J` and mass with `rho1 J=rho0`.
+
+The independently derived curl is radial, but its cross product with the
+wound field produces a transverse Lorentz force off the equator. The force
+oracle uses that closed curl rather than its derivative matrix, so a wrong
+matrix cannot validate the same force mistake. The declared sustaining force
+and work are
+
+```text
+f_ext = grad(p) - rho*g - (curl(B) cross B)/mu0
+U dot f_ext = U [rho*GM_sun/r^2 - (10/3)*p/r]
+Q_thermal = 0
+```
+
+All three momentum components and the complete steady total-energy flux
+(kinetic, enthalpy and Poynting) are reconstructed independently. Composite
+Simpson integration uses a fixed8192-panel grid over 0.35–1.10 AU. The two work
+integrands have known powers r^-2 and r^-7/3, giving an a-priori fourth-order
+quadrature remainder below the frozen budget. Panel count and acceptance
+criteria are fixed before candidate residuals are examined.
+
+| ID | Production entry / independent oracle | Frozen acceptance |
+| --- | --- | --- |
+| MAT1D01 | `Profile::sample`; explicit primitive/composition/EOS/field anchors, both signs, axes, latitudes and closed endpoints | Scale-aware512 binary64 epsilons |
+| MAT1D02 | Public samples; independent shell inventory, radial mass flux and a full300-s material shell | Relative1e-10 budgets |
+| MAT1D03 | `Profile::move`, public departure/arrival samples; fullF,J,inverse and signed Cauchy/mass pushes | Exact map512eps; budgets1e-10 |
+| MAT1D04 | Exported full tensors; signed radial/winding flux, divB, ideal induction and polarity reversal | Closed values512eps; differential budgets1e-10 |
+| MAT1D05 | All9 Cartesian U/B entries plus pressure/density/temperature gradients, including both poles | Closed values512eps; inherited DIV03 strict1.90<order<2.10 at h/r=2^-8,2^-9,2^-10 |
+| MAT1D06 | Scalar pressure/temperatures/work; independent entropy and integrated gravity/external/total-energy flux | Relative1e-10; Q exactly0 |
+| MAT1D07 | Full force/work at off-equatorial and rotated-axis positions; independent Lorentz expression | Closed values512eps; vector balance1e-10 |
+| MAT1D08 | Immutable `Event` sample/move/require_step/advance_fixed/shock APIs; closed time/radius, all vertices, optional front/release coverage and epoch1e12 with explicitdt=.01 | Exact status/no partial output; map512eps; no shortened step |
+| MAT1D09 | `Event::shock_at`; ballistic, DBM and linearly declared data-driven fronts; independent one-sided shock-frame mass, Bn, tangentialE, vector momentum and total energy | Existing canonical RH limits:1e-9 mass,1e-10 Bn,1e-8 E/momentum/energy; genuinefast/entropy/branch required |
+| MAT1D10 | Invalid/missing/unsupported inputs, atomic rejected samples, unchanged legacy Model/diagnostic Leblanc values | Exact rejection/identity; legacy values512eps and visible mass-flux defect>1e-10 |
+
+Tiny SI fields and tensor zeros are scaled by the whole physical quantity
+(e.g. U/r or |B|/r), never by `max(1,abs(value))`. The original 1e-10
+application budgets and canonical shock/refinement tolerances are unchanged.
+The bounded material routine is measured against the existing180-second
+ceiling; no stochastic draws or external datasets are involved. A core PASS
+qualifies only this controlled upstream realization and its declared core
+queries. Native SEP transport, downstream species heating, regional contacts,
+FULL_ICME and source-rate mapping require their separate contracts/gates.
+
+`run_material_upstream_mutations.py` makes evidence-owned header copies for
+nine validly compiled regressions: r^-3 density, isothermal expansion, reversed
+Parker winding, transposed magnetic tensor, omitted transverse Lorentz force,
+discarded mechanical work, rounded endpoint duration, false ambient/no-shock
+success, and partial output publication. Each control succeeds only when its
+specified native gate returns **FAIL/exit1**. Compilation failure, a crash or
+missing output is not counted as successful detection. The actual production
+header/test sources are hash-checked unchanged. Mutation logs and process
+receipts live only in the explicitly requested fresh output directory; none
+of these altered headers is a production source or a reference solution.

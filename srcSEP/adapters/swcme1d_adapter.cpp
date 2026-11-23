@@ -9,6 +9,8 @@
 // consumes the canonical 1-D SWCME C++ interface.
 #include "swcme1d.hpp"
 #include "swcme1d_input.hpp"
+#include "swcme_material_upstream.hpp"
+#include "swcme1d_material_adapter.h"
 
 #include <algorithm>
 #include <atomic>
@@ -248,6 +250,164 @@ Background::Material::Profile MaterialProfile() {
     case swcme::regions::Mode::FullICME:return P::Swcme1dFullIcmeDiagnosticV1;
   }
   return static_cast<P>(0);
+}
+
+namespace {
+namespace Material=Background::Material;
+namespace Upstream=swcme::material1d;
+
+template<class T> Core::Result<T> MaterialFailure(const swcme::ModelStatus& status) {
+  using C=Core::StatusCode;
+  C code=C::InvalidState;
+  switch(status.code) {
+    case swcme::StatusCode::OutsideModelDomain: code=C::OutOfDomain;break;
+    case swcme::StatusCode::NonFiniteInput:
+    case swcme::StatusCode::DegenerateVector: code=C::InvalidConfiguration;break;
+    case swcme::StatusCode::ShockSolverFailure:
+    case swcme::StatusCode::NonFiniteResult: code=C::NumericalFailure;break;
+    default: break;
+  }
+  return Core::Result<T>::Failure(code,CanonicalDetail(status));
+}
+
+class UpstreamMaterialOwner final : public Material::Owner {
+ public:
+  UpstreamMaterialOwner(std::shared_ptr<const Upstream::Event> event,
+      std::uint64_t generation,std::uint64_t geometry)
+      :event_(std::move(event)),descriptor_(Describe(*event_,generation,geometry)) {}
+
+  const Material::Descriptor& Identity() const override {return descriptor_;}
+
+  Core::Result<Material::State> Sample(const Material::Query& q) const override {
+    using R=Core::Result<Material::State>;
+    // `ParkerExterior` here is the smooth prescribed ambient. The shock is
+    // a separately located surface and the core can furnish its RH limits.
+    // Claiming a particular downstream region is outside this profile.
+    if(q.region!=Material::Region::ParkerExterior||q.side!=Material::Side::Smooth||
+       !q.interfaceIdentity.empty())
+      return R::Failure(Core::StatusCode::UnsupportedCapability,"SWCME1D material sample requires smooth prescribed ambient");
+    Upstream::Sample value;
+    const auto status=event_->sample(q.positionM,q.epochS,value);
+    if(!status.ok())return MaterialFailure<Material::State>(status);
+    return R::Success(Ambient(value,q.positionM,q.epochS));
+  }
+
+  Core::Result<Material::Motion> Move(const Material::Vector& p,double begin,double end) const override {
+    Upstream::Motion value;
+    const auto status=event_->move(p,begin,end,value);
+    if(!status.ok())return MaterialFailure<Material::Motion>(status);
+    Material::Motion motion;
+    motion.positionM=value.position_m;
+    motion.velocityMPerS=value.velocity_m_s;
+    // Stage 11's shared interface does not yet admit a general deformation
+    // result. The exact Jacobian is available from the canonical upstream
+    // trajectory API; a neutral caller gets the checked position/velocity.
+    return Core::Result<Material::Motion>::Success(std::move(motion));
+  }
+
+  Core::Result<Material::Surface> Shock(const Material::Vector& p,double epoch) const override {
+    using R=Core::Result<Material::Surface>;
+    Upstream::Shock value;
+    const auto status=event_->shock_at(p,epoch,value);
+    if(!status.ok())return MaterialFailure<Material::Surface>(status);
+    const auto& x=value.position_m;
+    // Require the actual inertial front. Allow only roundoff from projecting
+    // the canonical radius onto the same Cartesian ray again. This bound
+    // represents point-coordinate precision, not a physical sheath width.
+    if(std::hypot(x[0]-p[0],x[1]-p[1],x[2]-p[2])>
+       32.0*std::numeric_limits<double>::epsilon()*std::hypot(x[0],x[1],x[2]))
+      return R::Failure(Core::StatusCode::OutOfDomain,"SWCME1D query is not on the prescribed spherical front");
+    Material::Surface surface;
+    surface.stableIdentity=descriptor_.eventIdentity+":swcme1d-leading-front";
+    surface.eventIdentity=descriptor_.eventIdentity;
+    surface.classification=swcme::shock::solve_status_name(value.jump.status);
+    surface.epochS=epoch;
+    surface.positionM=p;
+    surface.outwardNormal=value.outward_normal;
+    surface.normalSpeedMPerS=value.jump.shock_normal_speed_m_s;
+    surface.upstream=Ambient(value.ambient,p,epoch);
+    surface.upstream->side=Material::Side::UpstreamLimit;
+    surface.upstream->interfaceIdentity=surface.stableIdentity;
+    if(value.jump.has_shock) {
+      auto down=IdentityAt(p,epoch);
+      down.region=Material::Region::Sheath;
+      down.side=Material::Side::DownstreamLimit;
+      down.interfaceIdentity=surface.stableIdentity;
+      down.massDensityKgM3=value.jump.downstream.rho_kg_m3;
+      down.pressurePa=value.jump.downstream.pressure_Pa;
+      down.gammaAdiabatic=event_->profile().config().gamma;
+      down.velocityMPerS=value.jump.downstream.velocity_m_s;
+      down.magneticFieldT=value.jump.downstream.magnetic_T;
+      // Total downstream pressure does not fix species temperatures or an
+      // evolution law. Export only the real one-sided RH bulk state.
+      surface.downstream=std::move(down);
+    }
+    return R::Success(std::move(surface));
+  }
+
+ private:
+  static Material::Descriptor Describe(const Upstream::Event& event,
+      std::uint64_t generation,std::uint64_t geometry) {
+    Material::Descriptor result;
+    result.profile=Material::Profile::Swcme1dAdiabaticOuterWindV1;
+    result.revision=1;
+    result.capabilities=Material::MaterialRequirements|Material::Bit(Material::Capability::ShockSurface);
+    result.backgroundGeneration=generation;
+    result.geometryGeneration=geometry;
+    result.geometryGenerationPresent=true;
+    result.eventIdentity=event.config().identity;
+    result.physicalConfigurationIdentity=std::to_string(event.fingerprint());
+    result.materialIdentity=result.eventIdentity+":radial-reference";
+    result.compositionIdentity="charge-neutral-electrons-protons-no-alpha";
+    result.eosIdentity="scalar-multispecies-ideal-gas-adiabatic";
+    result.frame="HCI";
+    result.units="SI";
+    result.beginS=event.config().begin_s;
+    result.endS=event.config().end_s;
+    result.densityBasis=Material::DensityBasis::CoreNonrelativisticFluid;
+    return result;
+  }
+
+  Material::State IdentityAt(const Material::Vector& position,double epoch) const {
+    Material::State state;
+    state.eventIdentity=descriptor_.eventIdentity;
+    state.physicalConfigurationIdentity=descriptor_.physicalConfigurationIdentity;
+    state.backgroundGeneration=descriptor_.backgroundGeneration;
+    state.geometryGeneration=descriptor_.geometryGeneration;
+    state.positionM=position;
+    state.epochS=epoch;
+    return state;
+  }
+
+  Material::State Ambient(const Upstream::Sample& value,const Material::Vector& position,double epoch) const {
+    auto state=IdentityAt(position,epoch);
+    state.region=Material::Region::ParkerExterior;
+    state.velocityMPerS=value.velocity_m_s;
+    state.magneticFieldT=value.magnetic_field_t;
+    state.massDensityKgM3=value.mass_density_kg_m3;
+    state.pressurePa=value.pressure_pa;
+    state.gammaAdiabatic=event_->profile().config().gamma;
+    state.species=std::vector<Material::Species>{{"electron",value.electron_density_m3,value.electron_temperature_k},
+        {"proton",value.proton_density_m3,value.proton_temperature_k},{"alpha",0.0,std::nullopt}};
+    const std::string branch=Upstream::profile_key();
+    state.velocityGradientPerS=Material::Gradient{value.velocity_gradient_s_inv,branch,true};
+    state.magneticGradientTPerM=Material::Gradient{value.magnetic_gradient_t_m_inv,branch,true};
+    return state;
+  }
+
+  const std::shared_ptr<const Upstream::Event> event_;
+  const Material::Descriptor descriptor_;
+};
+} // namespace
+
+Core::Result<std::shared_ptr<const Background::Material::Interval>> CaptureUpstreamMaterial(
+    std::shared_ptr<const swcme::material1d::Event> event,
+    std::uint64_t background_generation,std::uint64_t geometry_generation) {
+  using R=Core::Result<std::shared_ptr<const Background::Material::Interval>>;
+  if(!event)
+    return R::Failure(Core::StatusCode::InvalidConfiguration,"SWCME1D material export requires a canonical event");
+  return Background::Material::Interval::Create(
+      std::make_shared<const UpstreamMaterialOwner>(std::move(event),background_generation,geometry_generation));
 }
 
 ConfigurationSummary GetConfigurationSummary() {

@@ -2897,7 +2897,9 @@ transition begin at `t_s,q`, last `T_q>0`, and change from `qdot_0` to
  \qquad \tau=\frac{t-t_{s,q}}{T_q}.
 \]
 
-Before the transition, `q=q_ref+qdot_0(t-t_ref)`. During
+When `t_ref <= t_s,q`, the pre-transition branch is
+`q=q_ref+qdot_0(t-t_ref)`. For a reference inside or after the transition,
+the antiderivative difference below supplies the correct offset. During
 `0 <= tau <= 1`,
 
 \[
@@ -2915,6 +2917,14 @@ to the species charge `q_s` defined in Section 2.4. Afterward, the default
 `qdot_1`. Acceleration is zero at both endpoints. Axis rates are expansion
 rates; only `d_c_dot` is a center-translation speed. Unequal start times and
 durations allow radial and lateral overexpansion without conflating them.
+
+The reference epoch need not precede the transition. For arbitrary
+`t_ref`, evaluate a single antiderivative of the declared piecewise rate and
+use `q(t)=q_ref+J(t)-J(t_ref)`. Here `J(t)` is `qdot_0(t-t_s)` before
+`t_s`, `qdot_0(t-t_s)+(qdot_1-qdot_0)T I(tau)` within the transition,
+and its continuous endpoint plus `qdot_1(t-t_s-T)` afterward. Thus
+`q(t_ref)=q_ref` even when the reference falls inside or after acceleration;
+adding a transition displacement to `q_ref` twice is incorrect.
 
 A separate `tabulated-snapshots` evolution may carry time, center distance,
 three semiaxes, covariance, and provenance while retaining the fixed direction
@@ -2949,6 +2959,63 @@ specified ellipsoid. A piston inferred inward from the shock is diagnostic
 only. A future `standoff-from-piston` shock authority must define its closure,
 coefficients, units, and range of validity and must reject a simultaneously
 independent shock geometry. No ambiguous derived-standoff mode is permitted.
+
+### 8.6 Immutable background-only event assembly
+
+The maintained `BackgroundEvent` assembly binds one complete fixed-orientation
+front history, an optional independent piston history, an explicit physical
+support record, and a retained immutable ambient epoch. It reuses the geometry,
+plasma EOS/topology and oblique MHD jump authorities defined in Sections 4--9.
+It has no particle release, source normalization, random stream, turbulence
+feedback or downstream regional-fluid closure. A successful background epoch
+is therefore not qualification of an SEP source or a moving material tube.
+
+Every component must remain positive throughout the requested run. Smooth-law
+and cubic-Hermite scalar ranges include analytic derivative roots inside each
+interval; checking only snapshots is insufficient. Table extrapolation and
+overshoot under the selected monotone-C1 contract are errors. Solar attachment
+is an explicit policy: `RequireSolarIntersection` certifies intersection over
+the full history using exact spatial radial extrema and bounded temporal
+intervals; `AllowDetachedFront` retains the prescribed detached geometry.
+Exhausting the declared certificate work bound rejects the definition instead
+of treating a finite sample as a proof. The independent piston must be strictly
+inside the front with its requested conservative separation certificate over
+the full history. The norm bound used by this certificate is sufficient, not a
+necessary test for every possible nested triaxial pair; unresolved pairs reject.
+No piston, contact or sheath state is inferred from a front-only history.
+
+The absorbing solar sphere, available plasma domain and qualified source radius
+are separate authorities. The exposed surface is integrated by cut parameter
+cells: solar-intersection cuts and azimuthal topology events determine the
+exposed cell area, including caps with no exposed original midpoint. A positive
+exposed representative retains the original parameter-cell identity. This is
+area quadrature, not spatial resolution of an HCS or a source interface.
+Strict plasma coverage requires the continuous exposed radial interval
+`[max(R_sun,r_min),r_max]` to lie within the declared ambient radial support;
+quadrature-center coverage alone cannot admit a physical front. An explicit
+`GeometryOnlyOutsideCoverage` diagnostic policy may instead retain geometry
+without inventing plasma or jumps outside that interval. Per-patch plasma
+status is the status at its quadrature point; a separate conservative
+parameter-cell radial enclosure reports inside, outside, or unresolved boundary
+crossing. An unresolved cell is never advertised as wholly supported.
+
+At supported exposed points, each epoch retains the actual signed magnetic
+sector, open/closed topology, ion composition, electron state, full SI velocity
+and magnetic-gradient tensors and EOS convention. Missing or contradictory
+state rejects the whole epoch. A physical radial PFSS/Parker trace is distinct
+from a forward/backward Cartesian derivative stencil within one valid branch:
+a request for the wrong physical branch rejects instead of being copied into
+unchanged data. The canonical source-surface equality policy selects the Parker
+branch; no opposite trace is synthesized at the identical point.
+
+A sub-fast point remains valid geometry with no jump. A super-fast point must
+pass the unchanged canonical oblique-RH admissibility, entropy and normalized
+residual gates. Failure or ill conditioning propagates as an error; there is
+no fallback gas shock or relaxed tolerance. The complete front, piston,
+ambient handle, support flags and local-shock generation publish together only
+after all preparation succeeds. A failure preserves every previous owning
+epoch. This assembly neither changes the AMPS sampling time step nor advances
+particles.
 
 ---
 
@@ -5765,13 +5832,31 @@ the section entirely.
       after_transition = constant-final-rate | none
     #end center_distance
     #begin radial_semiaxis
-      ! Same fields as shock_geometry.center_distance.
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
     #end radial_semiaxis
     #begin lateral_semiaxis_1
-      ! Same fields as shock_geometry.center_distance.
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
     #end lateral_semiaxis_1
     #begin lateral_semiaxis_2
-      ! Same fields as shock_geometry.center_distance.
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
     #end lateral_semiaxis_2
   #end shock_geometry
   #begin cme_piston
@@ -7211,6 +7296,43 @@ length, starting point, and total point count are explicit numerical choices
 without becoming a second authority for the physical field-line geometry.
 
 ---
+
+The maintained background-only event materializer additionally consumes the
+explicit typed `EventSupport` and `EventNumerics` records described in Section
+8.6; these are not new schema-5 input selectors. Run bounds, frame, UTC epoch,
+solar radius, source radius and EOS must exactly agree with the normalized
+configuration. Every independent component requires all seven listed fields;
+lateral histories are never inferred from the radial history. A selected apex
+initialization converts only the initial center value and cannot simultaneously
+supply a nonzero initial center. Inactive branches must be explicitly inactive.
+`source.enabled`, if present, must be false; an entirely absent source section
+is valid for background-only assembly and requires no spectrum or normalization.
+
+The version-1 geometry-only asset used by tabulated fronts and independent
+pistons begins with `SCCM_FIXED_ELLIPSOID 1`, followed in order by
+`frame "FRAME"`, `reference_time_s T`, `direction_rad LONGITUDE LATITUDE TILT`
+and `evolution "KIND"`. All numeric values are finite SI/radians. For
+`independent-component-laws`, exactly four ordered `component "NAME"`
+records follow for `center_distance`, `radial_semiaxis`, `lateral_semiaxis_1`
+and `lateral_semiaxis_2`, each carrying `q_ref qdot_0 qdot_1 t_start duration`.
+For `tabulated-snapshots`, `samples N` precedes 2--100000 rows containing
+`time center center_rate radial_axis radial_rate lateral_1 lateral_1_rate
+lateral_2 lateral_2_rate`. Times strictly increase; each value/rate pair defines
+the canonical cubic Hermite polynomial, whose monotonicity is checked inside
+every interval without clipping slopes. No orientation rows or trailing fields
+are accepted, and the requested time interval must be covered completely.
+The parent fixed frame/orientation/reference must match a front table. Its
+component-law controls are all inactive/zero and its declared interpolation is
+`monotone-cubic-c1`, with extrapolation `reject`.
+
+The asset acquisition callback supplies both exact bytes and an independently
+expected SHA-256 content checksum; a mismatch rejects before publication. An
+enabled piston uses `independent-record`, the explicit
+`triaxial-ellipsoid-versioned-file` record and its own complete verified asset,
+not a standoff inferred from the front. A disabled piston has `none` record
+controls and zero inactive separation. This geometry-only asset is not an
+observational covariance archive, source history, native checkpoint, or a
+replacement for the separately versioned field-line bundle.
 ## 15. Code architecture
 
 The physics implementation and its specification belong to
@@ -8070,6 +8192,40 @@ impulsive contribution must be produced by a separate provider and retain a
 separate origin ledger rather than being folded into
 `NetFirstPassageRelease`. The future interfaces in Section 15.8 make these
 requirements explicit without advertising either capability as implemented.
+
+#### Maintained background-event assembly boundary
+
+`sep_coronal_cme/background_event.h` provides the concrete background-only
+`MaterializeBackgroundEvent`, `BackgroundEvent::Create` and
+`BackgroundEvent::Prepare` API. The materializer resolves normalized schema-5
+geometry fields and caller-acquired, checksum-bound geometry assets into a
+complete typed definition. It performs no file discovery or I/O. `Create`
+validates the complete requested history and derives the final physical event
+identity from every typed physical field and input provenance, rather than
+trusting a caller's stale `physicsIdentity`. Numerical surface resolution and
+certificate work limits do not redefine the event's physical identity.
+
+`Prepare(time, shared_ptr<const AmbientEpoch>)` binds actual ambient time,
+frame, epoch, identity, generation and EOS before constructing an unpublished
+candidate. It copies the ambient identity and rechecks it immediately before
+publication. Local shocks are prepared on a private copy of the canonical
+shock provider. The completed child and parent handles are installed only
+after every shape, ambient sample and jump passes, so a late failure cannot
+advance the visible child shock generation alone. Retained old handles remain
+valid. Backward publication time and regressed ambient generations reject.
+
+The core declares the ambient contract without depending on a composite or
+application. `sep_corona_swcme/coronal_event_ambient.h` implements the outward
+adapter `BindAmbientEpoch` around the actual immutable canonical `AmbientModel`.
+It requires the expected ambient identity, an explicitly covered time,
+nonzero generation and epoch, and maps existing PFSS/open/closed/Parker states,
+composition, topology, sector and full derivative tensors by named SI fields.
+It does not reimplement those equations or admit a new regional closure.
+Physical radial trace requests are verified against the actual radius and
+source-surface branch, while each Cartesian derivative's branch-fixed stencil
+has its own metadata. The binding currently supports the actual implemented
+`HCI-like-inertial` frame; an arbitrary caller frame string cannot relabel the
+same canonical vector data.
 
 ### 15.5 AMPS adapter integration
 
@@ -10404,7 +10560,7 @@ The minimum roadmap-to-registry trace is:
 | 11B | `SHEATH3D01--03` |
 | 12 | `PROV3D01--03`, `CAL3D01` |
 | 13 | `REL3D01--03` plus every mandatory record from Stages 0--12 |
-| 14 (future/campaign; non-release) | `CPL3D10`, `TUR3D08`, `MFP3D08`, `SLM3D01`, `FTE3D10--11`, `ELL3D11`, `SRC3D20--22`, `WND3D21`, `EVT3D01`, `XMD3D01`; Stage 14A reuses `SRC3D19` |
+| 14 (future/campaign; non-release) | `CPL3D10`, `TUR3D08`, `MFP3D08`, `SLM3D01`, `FTE3D10--11`, `ELL3D11`, `SRC3D20--22`, `WND3D21`, `EVT3D01`, `XMD3D01`; Stage 14A reuses `SRC3D19`; background-only core assembly adds `S14BG01--10` |
 
 A stage gate may add narrower cases, but it cannot substitute an unregistered
 script for these records. Stage-11 selectors remain unavailable until their
@@ -11353,6 +11509,49 @@ own independent rows pass.
   bundle paths; neither application searches a sibling source tree.
 - `REL3D03`: the release archive excludes objects, generated test output, and
   duplicate local headers while reproducing all recorded checksums.
+
+#### Background-only shared-core event assembly tests
+
+The following records qualify the maintained assembly in Section 8.6. They
+are independent of the broader `CMLU` launch-roadmap gates and the historical
+Stage-14 research-extension gates. They do not qualify regional fluid closure,
+source activation history integration, native SEP transport or observational
+validation. All existing registered tests remain mandatory alongside them.
+
+- `S14BG01`: complete independent component-law materialization, equivalent
+  initial center/apex forms, explicit missing-history/competing-authority and
+  unsupported attitude negatives; verified geometry-asset admission rejects
+  checksum/frame/table authority failures.
+- `S14BG02`: independent triaxial gradient/normal-speed and solid-angle area
+  oracles; normal and off-midpoint tiny sphere caps pass the independently
+  derived area tolerance `1e-9` on three grids; exposed triaxial islands retain
+  positive areas and original cell identities even when all legacy midpoints
+  are buried.
+- `S14BG03`: analytic smooth/Hermite interior extrema, nonpositive axes hidden
+  between valid endpoints, no extrapolation, arbitrary smooth-law reference
+  epochs, and the exact linear range of the declared 100000-knot table limit.
+- `S14BG04`: distinct solar/plasma/source support; strict continuous radial
+  admission rejects unsupported strips/apices between quadrature points; an
+  explicit geometry-only diagnostic policy preserves missing-state flags.
+- `S14BG05`: complete immutable epochs, retained old ownership and generations,
+  late acquisition failure rollback, changed typed-physics identity sealing,
+  ambient descriptor mutation rejection and out-of-history nonpublication.
+- `S14BG06`: sub-fast-to-fast delayed background classification using the
+  unchanged canonical RH residual gate `1e-9`; no particle source is generated;
+  independently computed axis-parallel weak-jump compressions and an explicit
+  high-beta ill-conditioned rejection preserve fail-closed solver behavior.
+- `S14BG07`: exact EOS/frame/composition conventions and physical one-sided
+  trace admission; missing or mismatched authority rejects without a guess.
+- `S14BG08`: complete independent piston history and conservative all-history
+  nesting/separation certification; invalid or unresolved histories reject;
+  no piston/contact state is inferred from a front-only input.
+- `S14BG09`: production immutable canonical ambient binding, actual PFSS open
+  and closed fields, both signed Parker sectors, full SI tensors and EOS,
+  correct source-surface physical sides, wrong-side/time/identity and HCS/null
+  negatives, and complete background-event epochs without particle release.
+- `S14BG10`: the documented attached long-acceleration history, explicitly
+  detached short-acceleration history and independent solar-crossing time;
+  attachment-policy admission does not silently alter prescribed motion.
 
 ### 17.3 Required pre-run physics diagnostics
 

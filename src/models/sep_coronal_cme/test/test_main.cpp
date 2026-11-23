@@ -21,6 +21,7 @@ int main(int argc, char** argv) {
   SCCMTest::RegisterStage11(&tests);
   SCCMTest::RegisterStage14(&tests);
   SCCMTest::RegisterStage14Drift(&tests);
+  SCCMTest::RegisterBackgroundEvent(&tests);
 
   std::string selected;
   bool list = false;

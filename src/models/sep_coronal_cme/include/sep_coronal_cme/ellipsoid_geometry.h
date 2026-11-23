@@ -47,6 +47,18 @@ struct EllipsoidKinematics {
   KinematicValue secondLateralSemiAxisM;
 };
 
+// Exact radial support of a fixed radial-principal-axis ellipsoid. These are
+// extrema over the COMPLETE mathematical surface, independent of tessellation
+// resolution or magnetic/plasma/source coverage. In particular |d-a_r| is not
+// a general minimum when the ellipsoid encloses the origin and a lateral axis
+// is shorter. Intersection includes a tangential solar-sphere contact.
+struct EllipsoidRadialExtent {
+  double minimumRadiusM=0.0,maximumRadiusM=0.0;
+  bool intersectsSolarSurface=false;
+};
+Core::Result<EllipsoidRadialExtent> EvaluateEllipsoidRadialExtent(
+    const EllipsoidKinematics&,double solarRadiusM);
+
 struct SurfaceEvaluation {
   double implicitValue = 0.0;
   Vec3 outwardNormal;

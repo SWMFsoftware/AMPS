@@ -38,7 +38,8 @@ enum class Profile : std::uint32_t {
   Swcme3dSphereShockOnlyV1, Swcme3dEllipsoidShockOnlyV1, Swcme3dSseShockOnlyV1,
   Swcme3dSphereFullIcmeDiagnosticV1, Swcme3dEllipsoidFullIcmeDiagnosticV1,
   Swcme3dSseFullIcmeDiagnosticV1, CoronalBundleSnapshotV1,
-  CoronalEllipsoidLivePlannedV1, FullCoronaCrossRayPlannedV1
+  CoronalEllipsoidLivePlannedV1, FullCoronaCrossRayPlannedV1,
+  Swcme1dAdiabaticOuterWindV1
 };
 enum class Use { SnapshotExchange, MaterialTransport, PhysicalDownstream };
 enum class Region { Unspecified, ParkerExterior, CoronalOpen, CoronalClosed,
@@ -81,7 +82,13 @@ inline Core::Result<ProfileInfo> Lookup(Profile profile) {
     {Profile::Swcme3dSseFullIcmeDiagnosticV1,"swcme3d-sse-full-icme-diagnostic-v1",1|2|4|8|16|512,false,"SWCME3D regional material/thermal closure is unqualified"},
     {Profile::CoronalBundleSnapshotV1,"coronal-bundle-snapshot-v1",1|4,false,"Coronal-CME moving SEP transport is unsupported: schema-1 bundle has no material lineage, temporal primitives or full gradient"},
     {Profile::CoronalEllipsoidLivePlannedV1,"coronal-ellipsoid-live-planned-v1",0,false,"Coronal live material consumer awaits qualified G1/G2 background and architecture reconciliation"},
-    {Profile::FullCoronaCrossRayPlannedV1,"full-corona-cross-ray-planned-v1",0,false,"Full corona-SWCME moving SEP transport is unsupported: BG3D-4/5/6 closure and native lifecycle remain unqualified"}
+    {Profile::FullCoronaCrossRayPlannedV1,"full-corona-cross-ray-planned-v1",0,false,"Full corona-SWCME moving SEP transport is unsupported: BG3D-4/5/6 closure and native lifecycle remain unqualified"},
+    // Stage 12 verifies a checked upstream owner and one-sided RH limits.
+    // Native transport also requires an installed geometry/source lifecycle
+    // and restart identity. Core material trajectories do not supply those.
+    {Profile::Swcme1dAdiabaticOuterWindV1,"swcme1d-adiabatic-outer-wind-v1",
+        MaterialRequirements|Bit(Capability::ShockSurface),false,
+        "SWCME1D outer-wind native material transport requires a qualified geometry, source and restart lifecycle"}
   };
   for(const auto& item:profiles)if(item.profile==profile)
     return Core::Result<ProfileInfo>::Success(item);

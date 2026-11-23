@@ -495,13 +495,31 @@ the section entirely.
       after_transition = constant-final-rate | none
     #end center_distance
     #begin radial_semiaxis
-      ! Same fields as shock_geometry.center_distance.
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
     #end radial_semiaxis
     #begin lateral_semiaxis_1
-      ! Same fields as shock_geometry.center_distance.
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
     #end lateral_semiaxis_1
     #begin lateral_semiaxis_2
-      ! Same fields as shock_geometry.center_distance.
+      initial_value_m = REQUIRED_OR_ZERO
+      kinematics = smooth-rate-transition | inactive
+      initial_rate_m_per_s = REQUIRED_OR_ZERO
+      final_rate_m_per_s = REQUIRED_OR_ZERO
+      transition_start_time_s = REQUIRED_OR_ZERO
+      transition_duration_s = REQUIRED_OR_ZERO
+      after_transition = constant-final-rate | none
     #end lateral_semiaxis_2
   #end shock_geometry
   #begin cme_piston
@@ -1941,3 +1959,40 @@ length, starting point, and total point count are explicit numerical choices
 without becoming a second authority for the physical field-line geometry.
 
 ---
+
+The maintained background-only event materializer additionally consumes the
+explicit typed `EventSupport` and `EventNumerics` records described in Section
+8.6; these are not new schema-5 input selectors. Run bounds, frame, UTC epoch,
+solar radius, source radius and EOS must exactly agree with the normalized
+configuration. Every independent component requires all seven listed fields;
+lateral histories are never inferred from the radial history. A selected apex
+initialization converts only the initial center value and cannot simultaneously
+supply a nonzero initial center. Inactive branches must be explicitly inactive.
+`source.enabled`, if present, must be false; an entirely absent source section
+is valid for background-only assembly and requires no spectrum or normalization.
+
+The version-1 geometry-only asset used by tabulated fronts and independent
+pistons begins with `SCCM_FIXED_ELLIPSOID 1`, followed in order by
+`frame "FRAME"`, `reference_time_s T`, `direction_rad LONGITUDE LATITUDE TILT`
+and `evolution "KIND"`. All numeric values are finite SI/radians. For
+`independent-component-laws`, exactly four ordered `component "NAME"`
+records follow for `center_distance`, `radial_semiaxis`, `lateral_semiaxis_1`
+and `lateral_semiaxis_2`, each carrying `q_ref qdot_0 qdot_1 t_start duration`.
+For `tabulated-snapshots`, `samples N` precedes 2--100000 rows containing
+`time center center_rate radial_axis radial_rate lateral_1 lateral_1_rate
+lateral_2 lateral_2_rate`. Times strictly increase; each value/rate pair defines
+the canonical cubic Hermite polynomial, whose monotonicity is checked inside
+every interval without clipping slopes. No orientation rows or trailing fields
+are accepted, and the requested time interval must be covered completely.
+The parent fixed frame/orientation/reference must match a front table. Its
+component-law controls are all inactive/zero and its declared interpolation is
+`monotone-cubic-c1`, with extrapolation `reject`.
+
+The asset acquisition callback supplies both exact bytes and an independently
+expected SHA-256 content checksum; a mismatch rejects before publication. An
+enabled piston uses `independent-record`, the explicit
+`triaxial-ellipsoid-versioned-file` record and its own complete verified asset,
+not a standoff inferred from the front. A disabled piston has `none` record
+controls and zero inactive separation. This geometry-only asset is not an
+observational covariance archive, source history, native checkpoint, or a
+replacement for the separately versioned field-line bundle.

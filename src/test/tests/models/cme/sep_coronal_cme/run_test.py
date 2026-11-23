@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import all 222 authoritative staged coronal-CME software checks."""
+"""Import the authoritative staged coronal-CME software checks."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ sys.path.insert(0, str(HERE.parents[1]))
 from lib.runner_support import case, error_result, load_context, run_command, write_result  # noqa: E402
 from common import (exact_rows, global_id, load_json, prepare_model_repo,  # noqa: E402
                     selected_rows, suite_status)
+
+EXPECTED_COUNT = 232
 
 
 def main() -> int:
@@ -36,13 +38,20 @@ def main() -> int:
                 listing.returncode))
         local_ids = [line.split("\t", 1)[0] for line in listing.stdout.splitlines()
                      if "\tstage=" in line]
-        if len(local_ids) != 222 or len(set(local_ids)) != 222:
-            raise RuntimeError("coronal-CME registry is not the exact 222-case contract")
+        registered = context["test"]["expected_cases"]
+        listed = [global_id("SCCM", local_id) for local_id in local_ids]
+        if (len(local_ids) != EXPECTED_COUNT or len(set(listed)) != EXPECTED_COUNT or
+                len(registered) != EXPECTED_COUNT or set(listed) != set(registered)):
+            raise RuntimeError("coronal-CME local registry does not match the exact global case contract")
 
-        print("[CASE] RUN SCCM complete 222-case software-verification registry", flush=True)
+        print("[CASE] RUN SCCM complete {}-case software-verification registry".format(EXPECTED_COUNT), flush=True)
+        build_jobs = int(context["execution"].get("build_jobs", 1))
+        if build_jobs < 1:
+            raise RuntimeError("execution.build_jobs must be positive")
         completed = run_command(
-            [sys.executable, "test/run_tests.py", "--all", "--expect-count", "222",
-             "--output-dir", str(report_dir)], model, timeout=7200)
+            [sys.executable, "test/run_tests.py", "--all", "--expect-count", str(EXPECTED_COUNT),
+             "--output-dir", str(report_dir)], model, timeout=7200,
+            env={"MAKEFLAGS": "-j{}".format(build_jobs)})
         payload = load_json(report_dir / "results.json")
         if (payload.get("suite") != "sep_coronal_cme" or
                 payload.get("evidence_kind") != "software-verification" or
@@ -65,7 +74,7 @@ def main() -> int:
             "imported exact staged registry; this is software verification, not production or observational qualification",
             imported,
             evidence=[str(report_dir / "results.json"), str(report_dir / "junit.xml")],
-            metrics={"local_registry_cases": 222, "qualification": "software-verification"})
+            metrics={"local_registry_cases": EXPECTED_COUNT, "qualification": "software-verification"})
     except BaseException as error:
         return error_result(context, error)
 

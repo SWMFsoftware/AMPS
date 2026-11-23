@@ -125,14 +125,16 @@ shared physics layer.
 ## Implemented staged build
 
 The implementation follows the roadmap as cumulative hard gates. Run
-`make test-stage0` through `make test-stage12`; a later gate
+`make test-stage0` through `make test-stage14`; a later gate
 always includes every earlier test. Individual canonical launchers live under
 `test/individual/ID/`, and JSON/JUnit evidence is written under `build/` so it
 cannot leak into a source archive.
 
-`make test` (or `python3 test/run_tests.py --all`) is the single aggregate
-Stage 0--12 gate (206 canonical tests). Stage 11 first closes its independent
-202-test gate; Stage 12 adds the four canonical offline preprocessing gates.
+`make test` (or `python3 test/run_tests.py --all --expect-count 232`) runs
+the complete 232-record software gate. The cumulative Stage-12 gate retains
+its 206 records, and the original complete 222-record list is preserved before
+the ten shared-core background-event assembly records. Campaign and research
+records retain their separately documented qualification scope.
 
 ### Input syntax
 
@@ -185,6 +187,13 @@ cohort accounting as documented in
 Stage 10 provides the neutral 3-D-to-1-D field-line exchange, transactional
 bundle, reduction kernels, and thin application adapters described in
 [`docs/STAGE10_FIELD_LINE_EXCHANGE.md`](docs/STAGE10_FIELD_LINE_EXCHANGE.md).
+
+The shared-core background-only event assembly is described in
+[`docs/STAGE14_BACKGROUND_EVENT_ASSEMBLY.md`](docs/STAGE14_BACKGROUND_EVENT_ASSEMBLY.md).
+Its `S14BG01`--`S14BG10` tests are additional aggregate records; they are distinct
+from the earlier Stage-14 research-extension gates and the future CME launch
+roadmap. The current aggregate includes 232 records and retains the original
+222 in their existing order.
 
 ## Linked AMPS host qualification
 

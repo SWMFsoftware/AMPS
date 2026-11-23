@@ -36,6 +36,54 @@ header-only, so consumers do not add an application-owned 1-D translation
 unit. `make verify` recreates/audits the archive, rejects strong-symbol
 duplicates, and confirms that it has no PIC or MPI dependency.
 
+## Prescribed SWCME1D material upstream
+
+`swcme_material_upstream.hpp` provides the `swcme1d-adiabatic-outer-wind-v1`
+core profile for the undisturbed upstream. Construct `swcme::material1d::Event`
+from an explicit HCI/SI wind `Config` and an `EventConfig` with canonical
+ballistic, DBM, or data-driven front history. Both the radial and time intervals
+are closed. The event owns the input values and a fingerprint of their resolved
+physical identity. The existing SWCME1D diagnostic modes retain their original
+Leblanc density, winding and regional-state behavior.
+
+Use `sample(x,t,...)` for smooth ambient and `shock_at(ray,t,...)` for the
+actual spherical front on a ray. The latter uses the local canonical fast
+MHD jump calculation. A genuinely sub-fast patch has no downstream jump.
+For a fast shock, the returned downstream values are local bulk limits in
+HCI. A species temperature partition or a sheath solution requires a
+separate physical model.
+
+For `e = x/|x|`, the flow is `U e`, and both charge-neutral species densities
+scale as `r^-2`. The fluid mass is `m_p n_p`. Electron and proton temperatures
+scale as `r^(-2(gamma-1))`, so `p = n_p k_B (T_e+T_p)` scales as `r^(-2 gamma)`.
+With signed `B_r ∝ r^-2`, the Cartesian Parker field is
+`B = B_r [e - (Omega × x)/U]`. Both Cartesian vector gradients are analytic,
+including near the rotation axis. The field is compatible with steady ideal
+induction. Constant parcel speed requires external force density
+`f_ext = grad(p) - rho*g - (curl(B) × B)/mu0`, where `g` is inward solar
+gravity. The thermal closure is adiabatic. The separately reported mechanical
+power density is `U·f_ext` in W/m³. Heat deposition is zero.
+
+The exact material map increases each parcel radius by `U dt` along its
+initial ray. Its radial stretch is one and both tangential stretches are
+`r_new/r_initial`. The determinant and the signed magnetic Cauchy push-forward
+therefore use the same material deformation as the mass budget. Call
+`require_step(begin,end,dt,vertices,require_front)` to check the requested
+vertices and, when required, front coverage across an entire fixed physical
+step. Call `advance_fixed` with the original `dt` to advance a vertex. The
+represented difference of two large epoch values can differ from `dt` even
+when `end` is the correctly rounded `begin + dt`. The arbitrary-interval
+`move` API uses the represented epoch difference. A failed checked query
+leaves the caller's output unchanged.
+
+The controlled qualification case explicitly supplies 0.30–1.20 AU radial
+coverage and a 1 AU anchor of 400 km/s, 6 cm⁻³, 120,000 K for each populated
+species and 5 nT equatorial field with both polarities. It uses `gamma = 5/3`,
+the sidereal solar rotation rate, and an explicit solar gravitational
+parameter. These are test inputs and confer no observational qualification.
+The native SEP geometry, source and restart lifecycle requires its own
+qualification before this profile can be selected for particle transport.
+
 > **Validation scope.** Passing the bundled tests demonstrates consistency with
 > analytical limits, independent numerical references, conservation laws, API
 > contracts, and synthetic campaign fixtures. It does not by itself establish

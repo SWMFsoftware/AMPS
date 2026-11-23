@@ -2729,6 +2729,19 @@ legacy diagnostic mover and satisfies the unchanged independent flight-time
 oracle. The generic diagnostic `MoveVertex` API remains available under its
 existing broader core-query contract.
 
+MBC02 also exercises the detached Stage 12 SWCME1D interval against its actual
+core event. It checks the thermodynamic basis, Cartesian derivatives, parcel
+map, local fast-shock limits, radial/time coverage, identity, and rejection of
+native binding or a sheath-volume query. The independent physics oracle lives
+with the SWCME owner. Its ten cases are individually selectable as
+`MAT1D01`–`MAT1D10` and are included alongside the four R1 cases in the existing
+bounded SWCME routine. The global extended registry uses IDs
+`SWCME-MAT1D01`–`SWCME-MAT1D10`.
+
+```sh
+python3 src/models/swcme/test/run_tests.py --group MATERIAL1D --output-dir /tmp/sep-stage12-upstream
+```
+
 ```sh
 make -C srcSEP test-material-background-unit
 python3 -B srcSEP/test/run_tests.py --suite material-background --plot none --output-dir /tmp/sep-material-suite

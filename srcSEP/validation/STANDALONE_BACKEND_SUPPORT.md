@@ -9,8 +9,10 @@ inferred from this integration request.
 | --- | --- | --- | --- | --- | --- |
 | Reduced SSE front, prescribed Parker exterior, explicit finite upstream reference, net first-passage source, absorbing returns | Immutable core interval | Supported | Supported | Supported | Schema 5, same decomposition and keyed 1↔8 repartition |
 | SWCME1D `SHOCK_ONLY`, maintained Leblanc density/constant radial wind | Maintained canonical adapter | Rejected | Rejected | Rejected | Unsupported |
+| SWCME1D prescribed adiabatic material upstream, `swcme1d-adiabatic-outer-wind-v1` | Detached immutable core interval with full upstream gradients and local RH limits | Rejected | Rejected | Rejected | Native geometry, source and restart lifecycle pending |
 | SWCME1D `FULL_ICME` | Existing diagnostics; native regional thermodynamics unavailable | Rejected | Rejected | Rejected | Unsupported |
 | Coronal-CME neutral single-epoch bundle | Immutable snapshot exchange, bounded stable-ID interpolation | Rejected | Rejected | Rejected | Bundle identity alone is insufficient |
+| Coronal-CME Stage 14 live ellipsoid/piston core | Immutable PFSS/Parker ambient and local shock epochs | Rejected | Rejected | Rejected | G1 and native material lifecycle pending |
 | Full corona–SWCME regional volume | Completed core ambient/local shock queries only | Rejected | Rejected | Rejected | Pending qualified regional/material lifecycle |
 
 “Supported” describes the bounded reduced profile qualified in stages 6–7
@@ -40,6 +42,12 @@ model. Admission needs an explicit core evolution/source contract and
 independent continuity/induction qualification. `FULL_ICME` additionally needs
 actual regional pressure/heating export; upstream temperature cannot be
 extended throughout the sheath/ejecta.
+
+The separate adiabatic upstream satisfies that prescribed core continuity and
+induction contract. Its detached adapter exposes the controlled canonical
+background while the existing standalone selection still uses the legacy
+diagnostic modes. Native material admission also needs the installed moving-line
+owner, source and restart lifecycle for that profile.
 
 The neutral coronal-CME bundle has one geometry/primitive epoch. Connection
 and observer history do not serialize material vertex lineage, plasma states

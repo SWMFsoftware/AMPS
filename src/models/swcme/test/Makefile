@@ -10,6 +10,7 @@ CXXFLAGS += -std=c++17 -Wall -Wextra -Wpedantic
 TARGET := output/test_swcme
 R1_TARGET := output/test_swcme_r1
 R1_SOURCE := core/test_r1_shared_integration.cpp
+MATERIAL_TARGET := output/test_material_upstream
 SWCME_ARCHIVE := ../swcme.a
 PST08_TARGET := output/test_swcme_pst08_performance
 SAN01_TARGET := output/test_swcme_san01
@@ -633,7 +634,19 @@ test: all
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(R1_TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan $(PST08_TARGET) $(SAN01_TARGET) output/bench_tmp \
+	rm -f $(TARGET) $(R1_TARGET) $(MATERIAL_TARGET) $(SEP_REFERENCE_TARGET) $(DEMO_TARGETS) $(OBJECTS) output/test_swcme_pst05_asan $(PST08_TARGET) $(SAN01_TARGET) output/bench_tmp \
 		$(SAN01_DIR)/swcme3d.o $(SAN01_DIR)/demo1d $(SAN01_DIR)/demo3d_1 $(SAN01_DIR)/demo3d_2 \
 		$(OUT08_DEBUG_DIR)/swcme3d.o $(OUT08_DEBUG_DIR)/demo1d $(OUT08_DEBUG_DIR)/demo3d_1 $(OUT08_DEBUG_DIR)/demo3d_2 $(OUT08_DEBUG_DIR)/test_out08 \
 		$(OUT08_OPTIMIZED_DIR)/swcme3d.o $(OUT08_OPTIMIZED_DIR)/demo1d $(OUT08_OPTIMIZED_DIR)/demo3d_1 $(OUT08_OPTIMIZED_DIR)/demo3d_2 $(OUT08_OPTIMIZED_DIR)/test_out08
+
+# D10-1's new material profile has its own bounded executable. Do not add it
+# to the historical extended manifest: that manifest retains six unavailable
+# translation units and remains visibly distinct from executable routine gates.
+# Linking the canonical archive preserves the existing single-owner audit;
+# the test's new material API is header-only and imports no AMPS/MPI runtime.
+.PHONY: material-upstream-test-build material-upstream-test
+material-upstream-test-build: $(MATERIAL_TARGET)
+$(MATERIAL_TARGET): core/test_material_upstream.cpp core/material_upstream_oracle.hpp $(wildcard ../swcme*.hpp) $(SWCME_ARCHIVE) | output
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) core/test_material_upstream.cpp $(SWCME_ARCHIVE) -o $@
+material-upstream-test: $(MATERIAL_TARGET)
+	./$(MATERIAL_TARGET) --all

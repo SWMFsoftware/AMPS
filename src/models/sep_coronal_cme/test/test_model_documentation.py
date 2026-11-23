@@ -127,9 +127,12 @@ class DocumentationGenerationTests(unittest.TestCase):
         self.assertIn(
             "test/run_tests.py --stage 13 --expect-count 209", makefile)
         self.assertIn(
-            "test/run_tests.py --stage 14 --expect-count 222", makefile)
-        self.assertEqual(len(listed.stdout.splitlines()),222)
-        self.assertTrue(listed.stdout.splitlines()[-1].startswith("XMD3D01\tstage=14\t"))
+            "test/run_tests.py --stage 14 --expect-count 232", makefile)
+        entries = listed.stdout.splitlines()
+        self.assertEqual(len(entries), 232)
+        self.assertTrue(entries[221].startswith("XMD3D01\tstage=14\t"))
+        self.assertEqual([entry.split("\t", 1)[0] for entry in entries[222:]],
+                         [f"S14BG{number:02d}" for number in range(1, 11)])
 
     def test_dirty_canonical_document_is_rejected(self) -> None:
         """Direct edits to generated ``model.md`` must never become authority."""

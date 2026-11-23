@@ -14,6 +14,96 @@ the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
 
+## Stage 12 upstream physics decision, 2026-11-23
+
+The user approved the prescribed outer-wind candidate for the new SWCME1D
+`SHOCK_ONLY` material profile. It uses constant radial wind, inverse-square
+mass density, an induction-compatible Parker field and explicit sustaining
+force and work accounting. The approved equations and independent kinematic
+checks are in [D10-1](validation/STAGE10_BACKEND_CAPABILITY_AUDIT.md#decision-records-and-frozen-acceptance).
+The user also approved provider coverage of 0.30–1.20 AU and adiabatic expansion
+with `gamma = 5/3` for the first controlled case. The 1 AU anchor uses 400 km/s
+radial wind, 6 cm^-3 electron density, 120000 K electron and proton temperatures,
+zero alpha abundance and 5 nT equatorial field magnitude. Test both polarities.
+The independent reference values were calculated from the checked-in SWCME
+constants. This closes the physics inputs for the first controlled upstream
+case. `FULL_ICME` and the Stage 13
+downstream volume need their separate closure decisions. The Stage 14 shared-core
+background assembly can use its existing verification histories independently.
+
+## Stage 12 upstream and Stage 14 core assembly, 2026-11-23
+
+The authorized work covers the SWCME1D prescribed upstream and the shared
+coronal ellipsoid/piston background assembly. The SWCME1D core now supplies its
+analytic parcel deformation and Jacobian, charge-neutral e/p thermodynamics,
+signed magnetic field, both Cartesian gradient tensors, sustaining force and
+mechanical power. Its typed event uses the existing ballistic, DBM, and
+data-driven front histories and local fast-shock solver. A separate detached
+SEP adapter exports the actual canonical state and upstream/downstream surface
+limits. Native field-line/source/restart admission still rejects that owner.
+The legacy diagnostics and native AMPS timestep contract are retained.
+
+The first strict adapter run passed MBC01–20. The global SWCME owner executed
+all 14 bounded cases successfully, including ten independent upstream cases;
+the original 127 dormant and 16 observational cases remained typed SKIP. The
+same ten physics cases also passed strict warnings and ASan/UBSan. Nine
+deliberate, independently compiled physical regressions each returned the
+required FAIL. The Stage 12 AMPS build linked successfully, and the analytical
+Parker case passed on two MPI ranks. The core qualification and exact process
+receipts are in `/data/vtenishe/TEST/stage12-core-tests-20261123T172105Z`.
+
+Initial Stage 14 tests exposed a misplaced smooth-history reference value,
+an uncovered radial strip between quadrature centers, and caller-reusable
+event identity. All three regressions are covered. The canonical ambient
+binding passed separate PFSS/open/closed/Parker, EOS, signed sector, and
+physical source-surface side checks. The solar cut-cell helper recovered a
+cap whose cells were entirely removed by midpoint rejection and matched the
+independent area at the predeclared 1e-9 relative gate. The full coronal registry
+contains the original 222 cases plus ten background-assembly cases. Final
+core checks cover checksummed complete history and piston assets, disabled
+and enabled piston ownership, real expanding oblique shock patches in the
+canonical Parker ambient, and failed candidate rollback. The original RH
+relative bound is 1e-9. The controlled ill-conditioned high-beta case still
+rejects a candidate whose RH residual cannot be resolved. It cannot publish
+an epoch or serve as evidence of a physical fast shock.
+
+The final coronal orchestrator run executed the complete 232-case inventory
+with 229 PASS and three existing campaign-evidence SKIPs. All ten new cases
+passed. The separate reduced-model compatibility run recorded 62 PASS and
+35 existing native SKIPs. The final source-synchronized native build linked
+successfully. Two-rank native admission rejection passed for all three movers.
+The full maintained SEP Make target returned exit 0. It executed all 222 linked
+cases with PASS, then ran all 14 bounded SWCME cases with PASS.
+
+| Verification | Result | Retained evidence |
+| --- | --- | --- |
+| SWCME material upstream and original R1 | 14 PASS. All ten new cases passed strict warnings and ASan/UBSan. Nine deliberate physical regressions produced the required failures. | `/data/vtenishe/TEST/stage12-core-tests-20261123T172105Z/FINAL_QUALIFICATION.json` |
+| Shared material interface and Stage 12 adapter | 20 strict PASS and 20 ASan/UBSan PASS | `material-delivery/summary.json`, `material-asan-sealed/summary.json` |
+| Coronal assembly and canonical ambient binding | 10 strict PASS and 10 ASan/UBSan PASS | `stage14-final-owning/summary.json`, `stage14-sanitizer-final/owning-10/summary.json` |
+| Core orchestrator | SWCME 14 PASS and 143 existing SKIP. Coronal 229 PASS and three existing SKIP. No FAIL or ERROR. | `global-swcme-final`, `global-coronal-delivery` |
+| Native SEP Make target | Actual exit 0, 222 linked PASS, 14 embedded SWCME PASS | `bounded-final/process.json`, `bounded-final/native.json`, `bounded-final/native.xml` |
+| Catalog, source ownership and traceability | 67 suites and 1328 cases. Existing SWCME and field-line audits passed with all 15 projection rejection controls. | `traceability-final.json`, `current-source-audits.log` |
+
+The retained evidence root is `/data/vtenishe/TEST/sep-stage12-upstream-stage14-20261123T172952Z`.
+The final native binary SHA256 is
+`20a5f2782fd8130b0af1a5ff9aed0ca45a9f79cc859405fba52fb3f5fc8f6a21`.
+Rebuilding the final piston-input guard and the matching source tree yielded
+the byte-identical executable used by the full native regression. The exact
+Make arguments and elapsed time are in the process receipt. ASan and UBSan
+ran with leak detection disabled because this execution environment uses
+ptrace and the default leak probe aborted.
+
+The first bounded attempt retained an application-local forward declaration
+and stale source tests copied from the earlier configured build. Moving the
+declaration to the SWCME core and synchronizing the full tracked test/source
+closure resolved the ownership and source-audit failures. The current
+bounded run repeats the maintained checks. The first sanitizer attempts that
+overlapped documentation edits were rejected by the source hash check. The
+reported sanitizer results use the final frozen sources. A separate raw
+PARKER02 probe lacked its material fixture and returned the same error on the
+earlier and new executable. The maintained analytical PARKER01 probe passed
+on two ranks with its declared fixture.
+
 ## Stages 10–11 complete for the approved scope, 2026-11-23
 
 Stage 10's baseline and capability inventory are complete. Stage 11's common

@@ -3,13 +3,14 @@
 
 SWCME currently has three materially different local registries:
 
-* the four-case R1 runner is executable and produces JSON/JUnit evidence;
+* the bounded runner executes four R1 and ten material-upstream cases with
+  JSON/JUnit evidence;
 * a 127-case C++ registry is preserved in source, but six translation units
   named by its Makefile are absent; and
 * the VP01--VP16 observational registry is preserved in ``campaign.json``,
   but its authoritative campaign runner is absent.
 
-The global adapter therefore executes only R1.  It emits explicit SKIP records
+The global adapter executes the bounded registry. It emits explicit SKIP records
 for the dormant extended registry and SKIP/BLOCKED records for the
 observational registry.  In particular, a four-case R1 PASS can never be
 mistaken for full SWCME or observational qualification.
@@ -48,6 +49,19 @@ EXPECTED_R1: Tuple[Tuple[str, str, str], ...] = (
     ("R3D01", "3D", "Three-dimensional prepared-state smoke"),
     ("R13D01", "1D3D", "Common ambient-state identity"),
 )
+EXPECTED_MATERIAL1D: Tuple[Tuple[str, str, str], ...] = (
+    ("MAT1D01", "MATERIAL1D", "Approved primitive/composition/EOS anchors"),
+    ("MAT1D02", "MATERIAL1D", "Independent radial mass inventory and flux"),
+    ("MAT1D03", "MATERIAL1D", "Full material deformation and signed Cauchy transport"),
+    ("MAT1D04", "MATERIAL1D", "Signed magnetic flux and ideal induction"),
+    ("MAT1D05", "MATERIAL1D", "All Cartesian gradients and second-order differentiation"),
+    ("MAT1D06", "MATERIAL1D", "Adiabatic entropy and total-energy/work budget"),
+    ("MAT1D07", "MATERIAL1D", "Full off-equator vector force and mechanical work"),
+    ("MAT1D08", "MATERIAL1D", "Closed whole-step temporal/spatial coverage and large epoch"),
+    ("MAT1D09", "MATERIAL1D", "Genuine canonical shock with independent RH fluxes"),
+    ("MAT1D10", "MATERIAL1D", "Invalid/unsupported and preserved legacy diagnostics"),
+)
+EXPECTED_BOUNDED = EXPECTED_R1 + EXPECTED_MATERIAL1D
 
 
 # Declaration order is execution order in core/test_swcme.cpp.  The registry
@@ -105,8 +119,8 @@ EXPECTED_VP_DEPENDENCIES: Mapping[str, Tuple[str, ...]] = {
 EXPECTED_VP_IDS: Tuple[str, ...] = tuple(EXPECTED_VP_DEPENDENCIES)
 
 
-def r1_global(local_id: str) -> str:
-    """Keep the short established R1 spelling while adding model ownership."""
+def bounded_global(local_id: str) -> str:
+    """Add model ownership while preserving each executable local ID."""
 
     return "SWCME-" + local_id
 
@@ -121,12 +135,12 @@ def vp_global(local_id: str) -> str:
     return "SWCME-" + local_id
 
 
-R1_GLOBAL_IDS: Tuple[str, ...] = tuple(r1_global(item[0]) for item in EXPECTED_R1)
+BOUNDED_GLOBAL_IDS: Tuple[str, ...] = tuple(bounded_global(item[0]) for item in EXPECTED_BOUNDED)
 EXTENDED_GLOBAL_IDS: Tuple[str, ...] = tuple(
     extended_global(item) for item in EXPECTED_EXTENDED_IDS)
 VP_GLOBAL_IDS: Tuple[str, ...] = tuple(vp_global(item) for item in EXPECTED_VP_IDS)
 ALL_GLOBAL_CASES: Tuple[str, ...] = (
-    R1_GLOBAL_IDS + EXTENDED_GLOBAL_IDS + VP_GLOBAL_IDS)
+    BOUNDED_GLOBAL_IDS + EXTENDED_GLOBAL_IDS + VP_GLOBAL_IDS)
 
 
 def sha256(path: Path) -> str:
@@ -137,7 +151,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def parse_r1_registry(path: Path) -> Tuple[Tuple[str, str, str], ...]:
+def parse_bounded_registry(path: Path) -> Tuple[Tuple[str, str, str], ...]:
     """Read ``TESTS`` through Python's AST without importing executable code."""
 
     try:
@@ -273,10 +287,10 @@ def audit_registries(repo: Path, artifacts: Path) -> Tuple[
     validation_root = test_root / "validation"
     campaign_path = validation_root / "campaign.json"
 
-    r1 = parse_r1_registry(r1_path)
-    if r1 != EXPECTED_R1:
-        raise RunnerError("SWCME R1 registry drift: expected {} observed {}".format(
-            EXPECTED_R1, r1))
+    bounded = parse_bounded_registry(r1_path)
+    if bounded != EXPECTED_BOUNDED:
+        raise RunnerError("SWCME bounded registry drift: expected {} observed {}".format(
+            EXPECTED_BOUNDED, bounded))
     extended = parse_extended_registry(extended_path)
     observed_extended_ids = tuple(record[0] for record in extended)
     if observed_extended_ids != EXPECTED_EXTENDED_IDS:
@@ -300,8 +314,10 @@ def audit_registries(repo: Path, artifacts: Path) -> Tuple[
     audit_path = artifacts / "swcme-registry-audit.json"
     audit_path.write_text(json.dumps({
         "schema_version": 1,
-        "r1": {"count": len(r1), "source": str(r1_path),
-               "sha256": sha256(r1_path), "ids": [item[0] for item in r1]},
+        "r1": {"count": len(EXPECTED_R1), "source": str(r1_path),
+               "sha256": sha256(r1_path), "ids": [item[0] for item in EXPECTED_R1]},
+        "material1d": {"count": len(EXPECTED_MATERIAL1D),
+                       "ids": [item[0] for item in EXPECTED_MATERIAL1D]},
         "extended": {"count": len(extended), "source": str(extended_path),
                      "sha256": sha256(extended_path),
                      "ids": list(observed_extended_ids),
@@ -328,9 +344,9 @@ def copy_model_isolated(source: Path, destination: Path) -> None:
     shutil.copytree(str(source), str(destination), symlinks=True, ignore=ignore)
 
 
-def execute_r1(context: Mapping, repo: Path, work: Path, artifacts: Path,
-               timeout: int) -> Tuple[Dict[str, Dict], List[str]]:
-    """Run all four local cases once, then return globally namespaced records."""
+def execute_bounded(context: Mapping, repo: Path, work: Path, artifacts: Path,
+                    timeout: int) -> Tuple[Dict[str, Dict], List[str]]:
+    """Run all bounded local cases once, then namespace their actual results."""
 
     isolated_model = work / "swcme-isolated"
     copy_model_isolated(repo / "src" / "models" / "swcme", isolated_model)
@@ -349,10 +365,10 @@ def execute_r1(context: Mapping, repo: Path, work: Path, artifacts: Path,
     report = local_output / "swcme-r1-tests.json"
     evidence = [str(transcript)]
     if not report.is_file():
-        message = "authoritative R1 runner exited {} without its JSON report".format(
+        message = "authoritative bounded runner exited {} without its JSON report".format(
             completed.returncode)
-        return ({r1_global(local): case(r1_global(local), "ERROR", message)
-                 for local, _, _ in EXPECTED_R1}, evidence)
+        return ({bounded_global(local): case(bounded_global(local), "ERROR", message)
+                 for local, _, _ in EXPECTED_BOUNDED}, evidence)
 
     evidence.extend([str(report), str(local_output / "swcme-r1-tests.xml")])
     try:
@@ -365,7 +381,7 @@ def execute_r1(context: Mapping, repo: Path, work: Path, artifacts: Path,
     if not isinstance(results, list):
         raise RunnerError("SWCME R1 report results must be a list")
     observed = [item.get("test_id") for item in results if isinstance(item, dict)]
-    expected_local = [item[0] for item in EXPECTED_R1]
+    expected_local = [item[0] for item in EXPECTED_BOUNDED]
     if observed != expected_local or len(set(observed)) != len(observed):
         raise RunnerError("SWCME R1 report membership/order drift: {}".format(observed))
     allowed = {"PASS", "FAIL", "SKIP", "ERROR"}
@@ -380,7 +396,7 @@ def execute_r1(context: Mapping, repo: Path, work: Path, artifacts: Path,
             completed.returncode, expected_exit))
 
     by_global: Dict[str, Dict] = {}
-    definitions = {item[0]: item for item in EXPECTED_R1}
+    definitions = {item[0]: item for item in EXPECTED_BOUNDED}
     for item in results:
         local_id = item["test_id"]
         status = item.get("status")
@@ -389,7 +405,7 @@ def execute_r1(context: Mapping, repo: Path, work: Path, artifacts: Path,
         _, group, title = definitions[local_id]
         message = "local {} [{}] {}: {}".format(
             local_id, group, title, item.get("message", ""))
-        global_id = r1_global(local_id)
+        global_id = bounded_global(local_id)
         by_global[global_id] = case(global_id, status, message)
     return by_global, evidence
 
@@ -466,11 +482,11 @@ def main() -> int:
 
         all_results: Dict[str, Dict] = {}
         evidence = [str(audit_path)]
-        if any(identifier in R1_GLOBAL_IDS for identifier in requested):
-            r1_results, r1_evidence = execute_r1(
+        if any(identifier in BOUNDED_GLOBAL_IDS for identifier in requested):
+            bounded_results, bounded_evidence = execute_bounded(
                 context, repo, work, artifacts, timeout)
-            all_results.update(r1_results)
-            evidence.extend(r1_evidence)
+            all_results.update(bounded_results)
+            evidence.extend(bounded_evidence)
         all_results.update(skipped_extended(extended))
         all_results.update(skipped_vp(vp))
 
@@ -479,14 +495,15 @@ def main() -> int:
         counts = {value: sum(item["status"] == value for item in selected_results)
                   for value in ("PASS", "FAIL", "SKIP", "ERROR")}
         message = ("{} selected SWCME cases: PASS={} FAIL={} SKIP={} ERROR={}; "
-                   "registry inventory R1=4 extended=127 observational=16").format(
+                   "registry inventory R1=4 material1d=10 extended=127 observational=16").format(
                        len(selected_results), counts["PASS"], counts["FAIL"],
                        counts["SKIP"], counts["ERROR"])
         return write_result(
             context, status, message, cases=selected_results,
             evidence=evidence,
             metrics={"registered_cases": len(ALL_GLOBAL_CASES),
-                     "r1_cases": len(R1_GLOBAL_IDS),
+                     "r1_cases": len(EXPECTED_R1),
+                     "material1d_cases": len(EXPECTED_MATERIAL1D),
                      "extended_cases": len(EXTENDED_GLOBAL_IDS),
                      "observational_cases": len(VP_GLOBAL_IDS)})
     except Exception as error:

@@ -6,7 +6,8 @@ values. Every local registry is validated in full before a global `--case`
 selection is applied, so selecting one case cannot conceal local registry
 drift.
 
-The staged coronal-CME adapter imports 222 rows as **software verification**;
+The staged coronal-CME adapter imports 232 rows as **software verification**,
+including ten cases for the ellipsoid/piston background event assembly.
 its three campaign-evidence cases remain typed `SKIP`, and the local
 `production_qualified=false` and `observational_campaign_qualified=false`
 claims are retained. The full-volume Corona--SWCME adapter imports 46 bounded

@@ -117,10 +117,23 @@ test-stage13: $(BUILD)/sep_coronal_cme_tests check-adapters
 	$(PYTHON) test/run_tests.py --stage 13 --expect-count 209
 
 test-stage14: $(BUILD)/sep_coronal_cme_tests check-adapters
-	$(PYTHON) test/run_tests.py --stage 14 --expect-count 222
+	$(PYTHON) test/run_tests.py --stage 14 --expect-count 232
 
 test: $(BUILD)/sep_coronal_cme_tests check-adapters
-	$(PYTHON) test/run_tests.py --all --expect-count 222
+	$(PYTHON) test/run_tests.py --all --expect-count 232
 
 clean:
 	rm -rf $(BUILD)
+
+# Only this interoperability executable links the owning composite ambient
+# implementation. The public coronal archive remains independently linkable;
+# no production model source acquires an upward/composite dependency.
+.PHONY: composite-background-archive
+composite-background-archive:
+	$(MAKE) -C ../sep_corona_swcme -j8 lib
+
+$(BUILD)/background_event_ambient_tests: test/integration/background_event_ambient.cpp \
+		$(BUILD)/libsep_coronal_cme.a composite-background-archive
+	$(CXX) $(CPPFLAGS) -I../sep_corona_swcme/include $(CXXFLAGS) $< \
+		../sep_corona_swcme/build/libsep_corona_swcme.a \
+		$(BUILD)/libsep_coronal_cme.a -o $@
