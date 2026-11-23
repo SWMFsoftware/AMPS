@@ -170,6 +170,43 @@ support, and the 1998 published proton outflow inference shares the outer
 mass-flux data. The [data-source README](validation/cases/stage13/README.md)
 records all seven maintained cases and the new candidate datasets, coverage,
 roles and exact archive audit path.
+
+The follow-up archive audit retrieved two 1997 May 27 SOHO/CDS spectra
+near the quadrature's east-limb target. The prominence rasters have
+unresolved foreground and open-stream attribution and do not carry the
+complete published density line pair. The March–April 2024 eclipse
+campaign provides a separately tracked acceleration-region comparison
+from around 1.05 solar radii to Solar Orbiter at 0.335 AU, with available
+PSP proton, alpha, electron and field records and Solar Orbiter proton,
+field and EAS products. The coronal electron diagnostic cannot specify
+basal proton pressure. The 2024 wave-energy estimates and MAS fields
+support an energy and geometry comparison, with the transverse stress
+closure still open. No verified connection from that stream to 5 AU was
+found. The source identifiers, dates and screened files are in the
+[follow-up archive audit](validation/cases/stage13/README.md#follow-up-archive-audit-2026-11-23).
+
+The implemented [1997 connectivity screen](validation/cases/stage13/soho-ulysses-1997/README.md)
+reuses the canonical PFSS field with the CR 1923 Kitt Peak boundary and
+maps the two native rasters at their per-column exposure times. For the
+legacy pointing and 1.05-solar-radius shell, each of three runs (two step
+sizes and two harmonic truncations) classifies all 6,824 intersections
+as closed. SolarSoft calibration and corrected pointing passed checks on
+the two radiance arrays and all 8,580 corrected coordinates. Every corrected
+run classified all 6,744 shell intersections as closed. Independent dipole,
+ray-geometry and calibration provenance controls pass. The Ulysses
+ballistic screen contains 31 hourly candidates with both field polarities.
+The corrected and preliminary runs use the same arrival search based on
+the full observing interval. This is a geometry result for one magnetic
+reconstruction. Stage 13 wind qualification remains SKIPPED for these inputs.
+The raw calibration logs, checked data arrays and report are in
+`/data/vtenishe/TEST/stage13-cds1997.D2PjlV`. The bounded verification used
+the case's `test_mapping.py`, `make -C src/models/sep_coronal_cme -j8
+test-tube-isopoly test-stage14`, and `make -C src/models/sep_corona_swcme
+-j8 test-spherical-shock-only`. The three mapping controls, seven wind
+checks, 229 coronal core cases and 12 spherical cases passed. The core
+suite reported three existing SKIPs. The five source-mode backend checks
+and 22 checkpoint and routine-runner tests also passed.
+
 The observational replay with the regenerated executable returned one FAIL
 and six SKIPs. The original OV01 continuity comparison retained coverage
 `0.816901408`, log-intensity RMSE `0.789030561` dex and median absolute

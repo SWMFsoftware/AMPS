@@ -224,6 +224,10 @@ Core::Result<Sample> Event::Evaluate(Vec3 x, double t) const {
   result.ambient = state.value;
   const double r = Norm(x);
   result.support = SupportAtRadius(definition_, r);
+  // The spherical front is positioned in HCI at the requested epoch.
+  // A smooth ambient sample behind it remains a reference state. Only the
+  // surface query exports the one-sided RH states, so callers cannot use
+  // this branch to infer a post-shock volume or a sheath evolution law.
   result.side = r > front.radius_m    ? FrontSide::Upstream
                 : r == front.radius_m ? FrontSide::OnFront
                                       : FrontSide::BehindFrontReferenceOnly;
@@ -252,6 +256,10 @@ Core::Result<Sample> Event::Evaluate(Vec3 x, double t) const {
       Cross(curl, p.magneticFieldT) / CoronalCME::Constants::kVacuumPermeabilityHPerM;
   const Vec3 gravity =
       -CoronalCME::Constants::kSolarGravitationalParameterM3PerS2 / (r * r * r) * x;
+  // This is the SI momentum residual a sustaining model would have to
+  // provide, with pressure and Lorentz forces removed from rho*(a-g).
+  // Project along the signed B and dot with U for the work diagnostic.
+  // Neither diagnostic applies a force or changes the trajectory.
   result.requiredExternalForceNPerM3 =
       p.plasma.massDensityKgM3 * (acceleration - gravity) + a.gradientPressurePaPerM -
       lorentz;
@@ -460,6 +468,9 @@ Core::Result<Motion> Event::Integrate(Vec3 initial, double begin, double duratio
     for (unsigned j = 0; j < 3; ++j)
       result.deformation[3*i+j] = deformation(final,i,j);
   const auto& f = result.deformation;
+  // A positive volume ratio J=det(F) is required by the mass and Cauchy
+  // magnetic updates. Compute its cancellation-prone products in extended
+  // precision before checking the value exposed at the material boundary.
   const long double determinant =
       static_cast<long double>(f[0]) * (static_cast<long double>(f[4]) * f[8] -
                                         static_cast<long double>(f[5]) * f[7]) -

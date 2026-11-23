@@ -1,0 +1,45 @@
+{
+  "schema": "srcsep-stage13-1997-archive-inputs-v1",
+  "products": {
+    "s7997r00.fits": {
+      "url": "https://soho.nascom.nasa.gov/data/Deprecated/deprecatedCDS/cds/cdsfits11/s7997r00.fits",
+      "sha256": "99976e3066bd2c0268611c86cd57c9af5952c5879a8ab34418376213c3e439ea",
+      "role": "Legacy raw NIS detector samples and preliminary pointing"
+    },
+    "s7997r01.fits": {
+      "url": "https://soho.nascom.nasa.gov/data/Deprecated/deprecatedCDS/cds/cdsfits11/s7997r01.fits",
+      "sha256": "09edaee4a9d64e6259efcc490fcf6699c681a94d354a53479fce699c3fb5eb6f",
+      "role": "Legacy raw NIS detector samples and preliminary pointing"
+    },
+    "m1923f.fits": {
+      "url": "https://nispdata.nso.edu/ftp/kpvt/synoptic/mag/m1923f.fits",
+      "sha256": "115432e4003409cfb0d66620417e7eb09d8a78c40f266358edbf932186bde358",
+      "role": "Corrected signed photospheric radial field in gauss, Carrington rotation 1923"
+    },
+    "kpREADME": {
+      "url": "https://nispdata.nso.edu/ftp/kpvt/synoptic/README",
+      "sha256": "3274ceb0dd743be4840972e0ca95c77e0e499ffebe1d0dca630dc10993ab7018",
+      "role": "KPVT map instrument, correction, grid, scaling and acknowledgement metadata"
+    },
+    "soho_pos.csv": {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=SOHO_HELIO1HR_POSITION&parameters=RAD_AU,HG_LAT,HG_LON,HGI_LAT,HGI_LON&time.min=1997-05-23T00:00:00Z&time.max=1997-06-02T00:00:00Z&format=csv",
+      "sha256": "b91e1f9be2d47e5cafd9fd73a3bc9f7539b8e6c29929d310e60b3a2b55f6f966",
+      "role": "SOHO position and HGI to Carrington reference over the source interval"
+    },
+    "soho_pos_info.json": {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOHO_HELIO1HR_POSITION",
+      "sha256": "332d2796a0f40a033cfc24d7871abeeb86d405d125485b83e98e084829f349e8",
+      "role": "Native SOHO rotating and inertial frame definitions, units and fill"
+    },
+    "uy_ctx.csv": {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/data?id=UY_COHO1HR_MERGED_MAG_PLASMA&parameters=heliocentricDistance,heliographicLatitude,heliographicLongitude,BR,plasmaFlowSpeed,elevAngle,azimuthAngle&time.min=1997-06-14T00:00:00Z&time.max=1997-06-30T00:00:00Z&format=csv",
+      "sha256": "1d2c5ee606092756118cef3255559dc87ca1cf53bc7336d3d09558152e6d8891",
+      "role": "Ulysses hourly HGI position, signed radial field and RTN moments"
+    },
+    "uy_ctx_info.json": {
+      "url": "https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_COHO1HR_MERGED_MAG_PLASMA",
+      "sha256": "74acd0cbf51fc2eae1865814055a38e8a2356e72b0aa9034d92d504de83a71f6",
+      "role": "Native Ulysses position and RTN moment definitions, units and fill"
+    }
+  }
+}

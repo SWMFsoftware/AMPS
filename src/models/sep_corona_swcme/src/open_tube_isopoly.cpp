@@ -163,6 +163,10 @@ Result<OpenTubeIsoPolyWind> OpenTubeIsoPolyWind::PrepareThrough(
       !Positive(request.angularTraceToleranceRad)||request.angularTraceToleranceRad>=1)
     return Return::Failure(StatusCode::InvalidConfiguration,
         "open-tube iso-poly preparation requires a source angle, thermal/mass anchors and trace accuracy");
+  // Axisymmetry makes colatitude a conserved exterior tube label. With
+  // longitude-dependent speeds, winding would stretch or compress the map
+  // between adjacent longitudes. Applying this family without that map's
+  // Jacobian would violate both flux and mass conservation.
   for(const auto& coefficient:ambient->pfss_.Coefficients())
     if(coefficient.order!=0&&(coefficient.cosineT!=0||coefficient.sineT!=0))
       return Return::Failure(StatusCode::UnsupportedCapability,
@@ -198,6 +202,9 @@ Result<OpenTubeIsoPolyWind> OpenTubeIsoPolyWind::PrepareThrough(
   g->nodes=std::move(inward.value);
   std::reverse(g->nodes.begin(),g->nodes.end());
   g->nodes.insert(g->nodes.end(),outward.value.begin()+1,outward.value.end());
+  // At the source surface v_phi = Omega*R_source*sin(theta_source).
+  // The radial exterior conserves r*v_phi along this fixed-theta tube.
+  // The stored coefficient has units m^2/s and gives continuous v_phi.
   g->angularMomentum=g->ambient.ambient.rotationRateRadPerS*source*source*
       std::sin(g->sourceTheta);
 
@@ -266,6 +273,10 @@ Result<OpenTubeIsoPolySample> OpenTubeIsoPolyWind::Evaluate(double r,double phi,
     const double radialProjection=p.magneticSector*field.value.brT/C::Norm(p.magneticFieldT);
     for(double& rate:balance.value.netHeatWPerM3)rate*=radialProjection;
   } else {
+    // Exterior magnetic flux fixes Br*r^2, including the sector sign.
+    // Differential rotation between the inertial plasma and the source
+    // produces B_phi = Br*(U_phi - Omega*r*sin(theta))/U_r. Both U_phi
+    // and Br have their source-surface limits at the handoff.
     const double br=g.sourceBr*std::pow(source/r,2);
     const double uPhi=g.angularMomentum/r;
     p.magneticFieldT=br*(eR+((uPhi-corotation)/speed)*ePhi);
@@ -291,6 +302,9 @@ Result<OpenTubeIsoPolySample> OpenTubeIsoPolyWind::Evaluate(double r,double phi,
       unit.value.massDensityKgM3,p.electronTemperatureK,ions,c.includeElectronMass,
       c.gammaAdiabatic,fieldMagnitude);
   if(!plasma.ok())return Return::Failure(plasma.status.code,plasma.status.message);
+  // Rebuild the mixture and wave speeds from the solved mass density and
+  // each species' local temperature. A reference EOS state normalized to
+  // n_e = 1 m^-3 is only the conversion factor used above.
   p.plasma=plasma.value;
   out.balance=std::move(balance.value);
   return Return::Success(std::move(out));

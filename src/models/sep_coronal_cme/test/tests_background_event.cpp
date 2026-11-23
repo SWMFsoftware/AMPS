@@ -163,6 +163,8 @@ GeometryAsset Asset(const GeometryHistory& history, bool table,
   asset.expectedSha256 = ComputeContentChecksum(asset.bytes);
   return asset;
 }
+// Equivalent apex and center inputs must materialize the same ellipsoid.
+// Malformed or competing assets must be rejected before geometry is bound.
 void S14BG01() {
   const auto config = Configuration();
   const auto d = Attached();
@@ -260,6 +262,9 @@ void S14BG01() {
                .ok(),
           "table silently overrode a second component-law authority");
 }
+// Differentiate the ellipsoid parameterization analytically to supply the
+// normal and velocity oracle. Thin exposed regions challenge midpoint
+// coverage, where a grid can miss an entire patch between its centers.
 void S14BG02() {
   const auto d = Attached();
   const auto k = d.front.At(600);
@@ -363,6 +368,8 @@ void S14BG02() {
   Require((!midpoint.ok() || midpoint.value.empty()) && !exposed.value.empty(),
           "triaxial exposed islands between all legacy midpoints were dropped");
 }
+// Deliberately put a negative axis inside a time interval with positive
+// endpoints. A history validator based on the endpoints would admit it.
 void S14BG03() {
   const auto inside = EvaluateSmoothKinematics(2, 2, 10, 0, 4, 0, 2);
   const auto after = EvaluateSmoothKinematics(6, 6, 10, 0, 4, 0, 2);
@@ -397,6 +404,9 @@ void S14BG03() {
   Require(large.ok() && large.value.first == 10 && large.value.second == 100009,
           "maximum-size Hermite history lost its exact linear range");
 }
+// Distinguish geometrically exposed area from plasma-supported area. The
+// clipped sphere has an independent cap-area oracle and cases immediately
+// on either side of the supported radial bounds.
 void S14BG04() {
   auto d = Attached();
   d.support.plasmaMinimumRadiusM = 1.02 * Rs;
@@ -447,6 +457,9 @@ void S14BG04() {
             "solar clipped area exceeds independent midpoint-cell error bound");
   }
 }
+// Failure late in assembly and an owner that mutates identity both exercise
+// transactional publication. Retaining the prior pointer also checks that
+// consumers can finish reading an older epoch after a successful update.
 void S14BG05() {
   const auto d = Attached();
   const auto event = BackgroundEvent::Create(d);
@@ -483,6 +496,9 @@ void S14BG05() {
           event.value->Current() == next.value,
       "out-of-history epoch changed prior publication");
 }
+// Geometry precedes shock onset. The manufactured upstream state permits
+// an independent weak-jump compression check without using the same
+// solver to generate the expected values.
 void S14BG06() {
   auto d = Attached();
   const auto event = BackgroundEvent::Create(d);
@@ -543,6 +559,8 @@ void S14BG06() {
             "compression/RH oracle");
   }
 }
+// Perturb the composition, EOS and frame separately. Test that a genuine
+// one-sided ambient derivative can only be requested with the stated side.
 void S14BG07() {
   const auto d = Attached();
   const auto event = BackgroundEvent::Create(d);

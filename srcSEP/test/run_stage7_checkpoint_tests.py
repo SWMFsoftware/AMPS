@@ -194,6 +194,9 @@ def expected_job_keys(fixtures_only=False):
 
 
 def collect(plan,output):
+    # Refuse borrowed build artifacts or incomplete role sets before
+    # assessing numerical output. A successful writer cannot substitute
+    # for the separately launched restore/continuation process.
     for path,expected in plan['hashes'].items():demand(digest(path)==expected,'source/build identity changed: '+path)
     keys=[(j.get('id'),j.get('role'),j.get('threads'),j.get('ranks')) for j in plan['jobs']]
     expected=expected_job_keys(plan.get('fixtures_only',False))

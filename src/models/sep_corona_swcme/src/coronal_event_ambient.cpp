@@ -56,6 +56,11 @@ class CanonicalAmbientEpoch final : public CoronalCME::AmbientEpoch {
 
     const auto& primitive = state.primitive;
     const auto& composition = ambient_->Definition().composition;
+    // The ambient owns the charge-neutral population. Preserve its species
+    // temperature inputs and signed magnetic sector when adapting
+    // mass density, total pressure and inertial vectors to the core event.
+    // Region and derivative stencil carry independent information for a
+    // consumer at the PFSS/Parker handoff.
     CoronalCME::EventAmbientSample result;
     result.primitive = {primitive.plasma.massDensityKgM3, primitive.plasma.pressurePa,
                         primitive.velocityMPerS, primitive.magneticFieldT};
@@ -120,6 +125,9 @@ Core::Result<std::shared_ptr<const CoronalCME::AmbientEpoch>> BindAmbientEpoch(
     return Return::Failure(
         Core::StatusCode::OutOfDomain,
         "canonical ambient binding time lies outside the complete event history");
+  // This object is a single immutable time slice. Its valid range has
+  // zero width by design. The provider history may cover other times,
+  // but those require a separately bound epoch and generation.
   CoronalCME::AmbientEpochIdentity identity = {
       expectedAmbientIdentity,
       definition.coordinateFrame,

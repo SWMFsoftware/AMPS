@@ -117,6 +117,10 @@ Geometry::Status cFieldLine::PrepareGeometryStep(const Geometry::Context& contex
   const auto prepared=Geometry::Prepare(old,context,motion,trace,&candidate.positions);
   if(!prepared.ok())return prepared;
   const std::size_t prefix=candidate.positions.insertedPositions.size();
+  // Material labels follow the original segments even when their array
+  // indices shift after prepending. Check both index and signed-label
+  // ranges before allocating the candidate, along with the next published
+  // generation. A failed check leaves the current line and samples intact.
   if(prefix>static_cast<std::size_t>(std::numeric_limits<int>::max()-nSegment)||
       prefix>(static_cast<std::uint64_t>(FirstMaterialLabel)-
           static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::min()))||
@@ -153,6 +157,10 @@ Geometry::Status cFieldLine::PrepareGeometryStep(const Geometry::Context& contex
     if(edgeBytes>0&&!initializeSegment)
       return Status::Error("material geometry requires an explicit initializer for stored segment physics");
     candidate.storedSegmentData.resize(keptVertices-1);
+    // The candidate order is inner inserted segments followed by the
+    // surviving old segments. Stored segment physics follows that order.
+    // Sampled integrals and exposure belong to the old segment object and
+    // are not synthesized by the initializer for any new segment.
     for(std::size_t i=0;i+1<keptVertices;++i) {
       if(!initializeSegment)continue; // no stored edge physics is allocated
       const auto point=[&](std::size_t index)->const Geometry::Point& {

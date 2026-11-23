@@ -278,6 +278,10 @@ Result<IsoPolyTubeWind> IsoPolyTubeWind::Solve(const IsoPolyTubeInput& input) {
   if(!first.ok())return Return::Failure(first.status.code,first.status.message);
   const double span=input.endM-input.beginM;
   const double scale=first.value.radiusM;
+  // Solve in a normalized logarithmic coordinate. This gives the inner
+  // acceleration region resolution without requiring a separate spatial
+  // integrator for the long outer tail. The geometry and reported gradients
+  // still use metres and include the coordinate Jacobian.
   const double extent=std::log1p(span/scale);
   if(!Positive(scale)||!Positive(extent))return Return::Failure(StatusCode::InvalidConfiguration,
       "tube-isopoly coordinate scale is invalid");
@@ -286,6 +290,11 @@ Result<IsoPolyTubeWind> IsoPolyTubeWind::Solve(const IsoPolyTubeInput& input) {
   if(!previous.ok())return Return::Failure(previous.status.code,previous.status.message);
   double previousX=0;
   std::vector<double> candidates;
+  // A regular critical point must make both the momentum denominator and
+  // numerator vanish. Sonic(x) enforces the first constraint and returns
+  // the remaining residual for this bracket search. Scanning and bisection
+  // only propose critical points. Full-support two-sided shooting below
+  // decides whether a candidate is a physical wind solution.
   for(unsigned i=0;i<input.criticalScanIntervals;++i) {
     const double x=static_cast<double>(i+1)/input.criticalScanIntervals;
     const auto value=p.Sonic(x);
@@ -355,6 +364,10 @@ Result<IsoPolyTubeWind> IsoPolyTubeWind::Solve(const IsoPolyTubeInput& input) {
     if(!slope.ok()&&slope.status.code==StatusCode::NoPhysicalSolution)continue;
     if(!slope.ok())return Return::Failure(slope.status.code,slope.status.message);
     const ShotNode sonic{x,value.value.first,slope.value};
+    // Follow the same sonic slope in both directions. Reject candidates
+    // that cannot stay on the subsonic inner and supersonic outer branches
+    // over the complete guard domain. No radial extension from a partial
+    // solution can provide valid thermodynamic or shock inputs.
     const auto inner=Shoot(p,sonic,-1);
     if(!inner.ok()&&inner.status.code==StatusCode::NoPhysicalSolution)continue;
     if(!inner.ok())return Return::Failure(inner.status.code,inner.status.message);

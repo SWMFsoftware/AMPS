@@ -219,6 +219,8 @@ void MatchedParallelShock() {
   std::cout << std::setprecision(17) << "matched1D3D_max_parallel_jump_relative="
             << static_cast<double>(maximumError) << '\n';
 }
+// Mutate one typed input at a time. Invalid coverage, frame and density
+// authority must fail admission, while a valid change must change the digest.
 void S13SC01() {
   const auto d = Fixture();
   const auto e = Event(d);
@@ -245,6 +247,9 @@ void S13SC01() {
   Require(Event(changed)->Identity() != e->Identity(),
           "typed front mutation reused stale event identity");
 }
+// Use the analytic spherical-limit primitives and the steady radial mass
+// flux invariant across both physical boundaries. Test charge neutrality
+// with the independently specified proton-to-alpha ratio.
 void S13SC02() {
   MatchedSphericalPrimitives();
   const auto e = Event(Fixture());
@@ -273,6 +278,9 @@ void S13SC02() {
          "independent transonic Parker relation");
   }
 }
+// A forward/reverse trajectory pair checks the actual Lagrangian map in
+// both regions. The endpoint mass and Cauchy invariants require the full F
+// and J, detecting a position-only map or incorrect magnetic stretching.
 void S13SC03() {
   MatchedSphericalFlow();
   const auto e = Event(Fixture());
@@ -306,6 +314,9 @@ void S13SC03() {
             "inverse deformation is not actual inverse flow");
   }
 }
+// Independently difference the rotating bulk state to test the continuity,
+// induction and force ledgers. Include the finite nonradial nozzle residual
+// in the prescribed kinematic control and the solved tube's momentum gate.
 void S13SC04() {
   const auto e = Event(Fixture());
   const C::Vec3 x = 1.1 * Rs * C::Unit({.2, .1, 1});
@@ -449,6 +460,9 @@ void S13SC04() {
   Require(maximumForceResidual<3e-5,"resolved tube requires an unaccounted field-aligned force");
   std::cout << "isopoly_differenced_momentum_max_scaled=" << maximumForceResidual << '\n';
 }
+// Straddle the PFSS/Parker interface by spatial probes and actual advection.
+// This catches a density or electromagnetic discontinuity that separate
+// standalone inner and outer trajectories would miss.
 void S13SC05() {
   const auto d = Fixture();
   const auto e = Event(d);
@@ -480,6 +494,9 @@ void S13SC05() {
               2e-6 * C::Norm(transported),
           "source-surface full-vector Cauchy flux continuity");
 }
+// Set the inertial front speed below and above the upstream fast threshold.
+// The independent normal-relative Mach ratio distinguishes a real shock
+// from merely reaching the prescribed spherical surface.
 void S13SC06() {
   MatchedParallelShock();
   auto d = Fixture();
@@ -515,6 +532,9 @@ void S13SC06() {
   Near(fast.value.fastMach, normal / jump.upstreamCharacteristics.fastSpeedMPerS, 1e-13,
        "shock used observer speed instead of local normal inflow");
 }
+// A chord through a known sphere supplies closed-form roots. A grazing
+// chord and a just-outside chord distinguish a true tangent from a missed
+// intersection. Shared vertices must belong to only one native segment.
 void S13SC07() {
   const auto e = Event(Fixture());
   const double r = 4 * Rs;
@@ -538,6 +558,9 @@ void S13SC07() {
               shared.value[0].fraction == 0,
           "shared endpoint native ownership duplicated/lost");
 }
+// The 5-AU escape surface is a particle rule. Extra wind support lets
+// trajectory guards work without changing that radius or the physical dt.
+// The additional rejection probes prevent silent extrapolation or clamping.
 void S13SC08() {
   auto d = Fixture();
   const auto e = Event(d);
@@ -577,6 +600,8 @@ void S13SC08() {
           outerSurface.value.ambient.support == S::PhysicalSupport::ParticleDomain,
       "canonical5AU surface was misclassified as outer guard by projection rounding");
 }
+// The closed-form drag trajectory and a linear tabulated history give
+// independent position and speed values at times between the input knots.
 void S13SC09() {
   auto d = Fixture();
   d.front.mode = swcme::kinematics::Mode::DBM;
@@ -603,6 +628,9 @@ void S13SC09() {
   Near(middle.value.normalSpeedMPerS, 100000, 2e-13,
        "independent exact linear PCHIP derivative");
 }
+// Reverse the signed dipole while holding scalar plasma inputs fixed.
+// B and sector must reverse. U and mass loading describe the outward wind
+// and must remain independent of the field polarity.
 void S13SC10() {
   const auto plus = Event(Fixture(1)), minus = Event(Fixture(-1));
   for (C::Vec3 x : {1.1 * Rs * C::Unit({.1, .1, 1}), Au * C::Unit({.2, .3, 1}),
@@ -634,6 +662,9 @@ C::Vec3 DipolePosition(double r,double source,double label,double phi) {
   return r*C::Vec3{std::sin(theta)*std::cos(phi),std::sin(theta)*std::sin(phi),std::cos(theta)};
 }
 
+// The analytic dipole labels select independent spatial probes. Finite
+// differences of neighboring solutions test signed mass and induction,
+// parallel momentum, summed species heating and Cartesian gradients.
 void S13SC11() {
   double maxMass=0,maxInduction=0,maxParallel=0,maxHeat=0,maxDerivative=0;
   for(int polarity:{1,-1}) {

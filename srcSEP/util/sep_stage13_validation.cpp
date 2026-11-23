@@ -67,6 +67,9 @@ Input::Status CheckSelected(const Input::Block& block) {
   double inner = 0.0, outer = 0.0;
   const auto& innerItem = *block.Find("domain.inner_radius_solar");
   const auto& outerItem = *block.Find("domain.outer_radius_au");
+  // These are the physical particle escape surfaces. A larger provider
+  // support radius or a larger-domain comparison belongs to an explicit
+  // control and must not silently override the scored particle domain.
   if (!ReadNumber(innerItem, inner) || inner != InnerRadiusSolar)
     return Input::ErrorAt(innerItem.where, "Stage 13 inner particle boundary must be 1.05 solar radii");
   if (!ReadNumber(outerItem, outer) || outer != OuterRadiusAu)

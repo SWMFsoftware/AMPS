@@ -118,12 +118,12 @@ qualified Stage 13 input.
   June 1 coronal coverage includes UVCS O VI and H I measurements around
   3.5 and 4.5 solar radii and LASCO imagery. Figure 6 covers Ulysses DOY
   165–180 near 5.1 AU, about 10 degrees north of the solar equator. The
-  wind speed over the campaign was approximately (375pm25) km/s. It is
+  wind speed over the campaign was approximately 375 ± 25 km/s. It is
   a promising quiet slow-wind control after excluding the published
   transient windows. The contemporaneous SUMER catalogue lists a May 24
   off-limb Lyα program, May 25 and 27 off-limb Lyβ/O VI programs and a
-  May 29 Mg IX program. Their slit footprints, line diagnostics and
-  applicability to the east-limb streamer have yet to be established.
+  May 29 Mg IX program. The pointing check below places those particular
+  scans away from the east-limb stream.
   [Suess et al. 2000](https://doi.org/10.1029/2000JA000044) · [NASA full text](https://ntrs.nasa.gov/citations/20000032969) · [SUMER chronological catalogue](https://www2.mps.mpg.de/projects/soho/sumer/text/chronolist.html)
 - **1998 November–December SOHO–Ulysses quadrature.** The SOHO observing
   program is #5490, with UVCS H I Lyα and O VI at 3.5 and 4.5 solar radii
@@ -221,6 +221,200 @@ recorded in `audit.json` and `README.md` under
   establish the outer slow-wind law without a separate population match.
   [Dakeyo et al.](https://arxiv.org/abs/2207.03898) · [Cranmer et al. 2009](https://arxiv.org/abs/0907.2650)
 
+## Follow-up archive audit, 2026-11-23
+
+The best historical connection reaches Ulysses at 5.1 AU. The best modern
+low-corona energy-budget candidate follows a different stream and reaches
+Solar Orbiter at 0.335 AU. Their plasma parameters belong to different
+epochs and sources. Each comparison keeps its own field mapping and
+measurement uncertainties.
+
+### SOHO–Ulysses quadratures
+
+- The MSSL CDS catalogue contains 28,892 entries for 1997 and 13,779 for
+  1998. A preliminary footprint screen retained 41 of 439 entries in
+  1997 May 21–June 1 UTC and 34 of 787 in 1998 November 29–December 7 UTC,
+  inclusive. The screen intersects unrotated footprints with helioprojective
+  boxes in arcseconds. In 1997 the box is `x = [-1250, -800]`,
+  `y = [-150, 500]`. In 1998 it is `x = [800, 1250]`, `y = [-650, 50]`.
+  The 1998 hits are all from campaign 5485, with 27 catalogued for the
+  gravitational focusing cone and seven for the full-Sun mosaic. Those
+  windows still need pointing, line and plasma-connectivity analysis before
+  use as a thermal constraint for the separate UVCS quadrature campaign 5490.
+  [MSSL CDS catalogue](https://www.mssl.ucl.ac.uk/www_solar/gis/data_archive.html) · [1997 catalogue bytes](https://www.mssl.ucl.ac.uk/www_solar/gis/cat97.save.gz) · [1998 catalogue bytes](https://www.mssl.ucl.ac.uk/www_solar/gis/cat98.save.gz)
+- Two *retrieved* 1997 May 27 NIS rasters are the closest spectral leads.
+  Their FITS headers confirm the preliminary center `(-980.6, +113.0)`
+  arcsec and size `121.9 × 240.2` arcsec. `s7997r00.fits` spans
+  `08:08:39.132–09:02:40.096 UTC` and `s7997r01.fits` spans
+  `09:02:50.785–09:56:52.810 UTC`. Both are CDS study 44, campaign 1500,
+  `POBS1_2/v18`, a prominence program. The line windows include Mg IX
+  368.07 Å, Mg X 624.94 Å, Si IX 345.13 Å and He I/II. The legacy window
+  named `SI_12_320_66` has a FITS wavelength range near 320 Å. There is
+  no recorded window at the 520.66 Å Si XII wavelength used in commonly
+  published CDS line lists. The complete published Si IX 350/342 Å
+  density diagnostic is also absent. The retained lines' value depends on
+  finding calibrated off-limb pixels that trace to the open stream and
+  quantifying prominence and foreground contamination. Retain calibrated
+  line intensities and their covariance for an emissivity-based electron
+  temperature fit. An ion line
+  width needs its own thermal and nonthermal inversion, and an observed
+  helium intensity needs an abundance and ionization model before it can
+  constrain alpha density.
+  [First FITS](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedCDS/cds/cdsfits11/s7997r00.fits) · [Second FITS](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedCDS/cds/cdsfits11/s7997r01.fits) · [CDS calibration guide](https://solar.bnsc.rl.ac.uk/software/uguide/uguide.shtml) · [CDS line list with Si XII](https://discovery.ucl.ac.uk/9749/1/9749.pdf) · [Gibson et al. diagnostic analysis](https://doi.org/10.1029/98JA02681)
+- The specific May 24, 25, 27 and 29 SUMER scans cited above start at
+  `(+639, +840)`, `(+639, +999)`, `(+639, +900)` and `(+600, +1020)`
+  arcsec in the respective day catalogues, on the northern/western side.
+  This excludes those pointings from the targeted low-latitude east-limb
+  thermal comparison. The instrument chronology records closing on 1998
+  November 12 and reopening on 1999 February 23, with no December observing
+  entries. The catalogue does not establish an alternate SUMER spectrum
+  for either target close to 1.05 solar radii.
+  [Coordinate conventions](https://www2.mps.mpg.de/projects/soho/sumer/text/sff_cat1.html) · [May 24](https://www2.mps.mpg.de/projects/soho/sumer/text/an24May97.lst) · [May 25](https://www2.mps.mpg.de/projects/soho/sumer/text/an25May97.lst) · [May 27](https://www2.mps.mpg.de/projects/soho/sumer/text/an27May97.lst) · [May 29](https://www2.mps.mpg.de/projects/soho/sumer/text/an29May97.lst) · [November 1998 chronology](https://www2.mps.mpg.de/projects/soho/sumer/text/sfNov98.html) · [December 1998 chronology](https://www2.mps.mpg.de/projects/soho/sumer/text/sfDec98.html) · [February 1999 chronology](https://www2.mps.mpg.de/projects/soho/sumer/text/sfFeb99.html)
+
+### 2024 March–April eclipse campaign
+
+Rivera et al. track a small, negative-polarity coronal hole with remote
+sensing from March 29 to April 9. Current-sheet crossings, electron strahl
+and PFSS footpoints identify its wind at Parker Solar Probe on March 31
+at 11.60 solar radii (0.054 AU) and at Solar Orbiter at 72.06 solar radii
+(0.335 AU) in the April 7–14 context. Table 2 uses spacecraft Carrington
+longitude ranges 85–121° and 70–105°, respectively. The event can test the
+acceleration region with observed densities, plasma moments and magnetic
+fields. The connection and expansion carry uncertainty from ballistic
+mapping and the coronal field model. The archive copy is the manuscript
+identified by the authors as accepted in *The Astrophysical Journal*.
+[Rivera et al., Sections 2–4, Tables 1–3 and Appendix A](https://arxiv.org/abs/2610.04669)
+
+- **Coronal density and temperature.** The reported electron-density
+  scale near 1.05 solar radii is `(2.29 ± 0.71) × 10^8 cm^-3`. This is
+  a remote electron diagnostic, even where the preprint uses it as an
+  estimate of proton density. On-disk AIA/SPICE differential emission
+  measure estimates give about `1.10–1.23 MK` for electrons, with a
+  reported basal `T_e = 1.23 ± 0.04 MK`. Table 2 repeats that value for
+  low-corona protons and alphas as a proxy. Independent basal ion
+  temperatures and composition are required to obtain the ion contribution
+  to pressure. The April 9 NSO Cryo-NIRSP query returned 25 public
+  metadata records. Three sequential pairs covering the study region in
+  the southwestern limb are `TFPUCV/NDTDBO` (17:39/17:42 UTC),
+  `KYLOTD/HPRKOY` (17:54/17:57) and `SMTRNK/WRAEVA` (18:09/18:12),
+  ordered as Fe XIII 1079.8/1074.7 nm. Their paired archive bounding
+  boxes agree to roughly 0.1 arcsec at each pointing. Use the L1 spectra
+  and exact WCS to build exposure-matched line ratios and carry along the
+  line-of-sight contribution of nearby structures. Only the NSO metadata
+  were retrieved in this audit. MLSO UCoMP line ratios and K-Cor
+  polarized brightness provide separate coronal observables.
+  [Exact NSO metadata request](https://api.dkistdc.nso.edu/datasets/v1?startTimeMin=2024-04-09T00%3A00%3A00Z&startTimeMax=2024-04-10T00%3A00%3A00Z&instrumentNames=CRYO-NIRSP&pageSize=100) · [MLSO archive](https://www2.hao.ucar.edu/mlso/mlso-data-and-movies) · [Rivera et al., Appendix A.2–A.3](https://arxiv.org/abs/2610.04669)
+- **Wind speed, composition and mass loading.** The EIS Fe XII Doppler
+  speed reported near the base is `8.09 ± 3.36 km/s`. This is a projected
+  ion-line diagnostic. The March 29 `05:15:01 UTC` Metis polarized
+  brightness and H I Lyα provide density and Doppler-dimming speed
+  constraints at 2–4 solar radii. The ESA catalogue lists the corresponding
+  Level 2 neighborhood as `solo_L2_metis-vl-pb_20240329T051456` and
+  `solo_L2_metis-uv-image_20240329T051503`. The catalogue start times are
+  `05:14:56.291` and `05:15:03.289 UTC`, respectively. The speed depends
+  on the assumed neutral-hydrogen kinetic temperature (`1.2 MK`) and
+  electron profile.
+  The LASCO speed inversion uses the PSP flux and modeled expansion, so
+  it shares the information used for the mass-loading anchor. At PSP,
+  proton and alpha radial speeds are about `266 ± 28` and `378 ± 49 km/s`.
+  The mass-loading observation should use their separate radial fluxes,
+  `(m_p n_p U_p,r + m_alpha n_alpha U_alpha,r) / |B_r|`, with time, frame,
+  fill, instrument quality and signed sector preserved. The preprint's
+  4% helium assumption at the base and at Solar Orbiter does not establish
+  composition at either location.
+  [ESA Solar Orbiter Archive](https://soar.esac.esa.int/soar/) · [Rivera et al., Table 2 and Appendix A.7](https://arxiv.org/abs/2610.04669)
+- **Transverse momentum and work.** UCoMP phase speeds and
+  emissivity-weighted plane-of-sky magnetic field estimates constrain
+  expansion and curvature with the density and projection uncertainties
+  carried through the comparison. In Table 3 the inferred basal
+  Alfvénic contribution is about `12 W/m²` and the alternative slow or
+  fast compressive contributions are about `7` or `23 W/m²`, all scaled to
+  the common reference area used in the paper. The fast-mode interpretation
+  gives the closest agreement between the coronal and in-situ energy
+  budgets. These fluxes bound the work ledger conditionally on mode and
+  expansion. A transverse force requires the divergence of a stress
+  tensor or a self-consistent field and pressure balance across neighboring
+  tubes. The light-of-sight diagnostics and the scalar energy fluxes leave
+  that force underdetermined. The dated Downs et al. MAS realization can
+  supply a distinct model comparison for geometry and stress, with the
+  observable synthesized using the instrument's viewing direction and
+  emissivity. Treat its shared inputs and modeled expansion as correlated
+  with the sections of the preprint that use MAS.
+  [Rivera et al., Section 3 and Appendix A.4](https://arxiv.org/abs/2610.04669) · [Downs et al. model data and boundary inputs](https://zenodo.org/records/14889337) · [MAS download catalogue](https://www.predsci.com/corona/apr2024eclipse/download_data.php)
+
+The CDAWeb HAPI coverage probes below preserve the instrument units and
+timestamps. UTC ranges are inclusive at the start and exclusive at the
+end. Counts precede quality filtering, synchronization, strahl and sector
+selection, and application of the study's stream-mapping masks.
+
+| Product and metadata | UTC date range | Rows returned | Fields requested |
+| --- | --- | ---: | --- |
+| [PSP SWEAP proton moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=PSP_SWP_SPI_SF00_L3_MOM) | March 29–April 2 | 125,178 | `QUALITY_FLAG,DENS,VEL_RTN_SUN,TEMP` |
+| [PSP SWEAP alpha moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=PSP_SWP_SPI_SF0A_L3_MOM) | March 29–April 2 | 125,174 | `QUALITY_FLAG,DENS,VEL_RTN_SUN,TEMP` |
+| [PSP FIELDS quasi-thermal noise](https://cdaweb.gsfc.nasa.gov/hapi/info?id=PSP_FLD_L3_SQTN_RFS_V1V2) | March 29–April 2 | 89,472 | `electron_density,density_quality_flag,electron_core_temperature` |
+| [PSP FIELDS RTN](https://cdaweb.gsfc.nasa.gov/hapi/info?id=PSP_FLD_L2_MAG_RTN_1MIN) | March 29–April 2 | 5,760 | `psp_fld_l2_mag_RTN_1min` |
+| [Solar Orbiter SWA-PAS moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOLO_L2_SWA-PAS-GRND-MOM) | April 8–15 | 265,643 | `quality_factor,N,V_RTN,T` |
+| [Solar Orbiter MAG RTN](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOLO_L2_MAG-RTN-NORMAL-1-MINUTE) | April 8–15 | 10,080 | `B_RTN` |
+| [Solar Orbiter SWA-EAS pitch-angle product](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOLO_L3_SWA-EAS-NMPAD-PSD) | April 7–15 | 63,616 | `QUALITY_FLAG,QUALITY_BITMASK` |
+
+The CDAWeb SWA-HIS Level 3 composition probe returned no data in the
+April 7–15 window. The ESA science catalogue query for overlapping SWA
+products also returned zero `swa-his` entries. The CDAWeb RPW 10-second
+density probe returned a fill-only record outside the window, which was
+rejected. ESA catalogue hits include EAS velocity distributions and RPW
+spacecraft-potential files in the same window. The HAPI EAS probe assessed
+flags only. A derived electron pressure at Solar Orbiter would require a
+reviewed electron-moment inversion using the distributions, spacecraft
+potential and separation of core, halo, strahl and spacecraft populations.
+[HIS catalogue coverage](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOLO_L3_SWA-HIS-COMP-10MIN) · [RPW metadata](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOLO_L3_RPW-BIA-DENSITY-10-SECONDS) · [ESA Solar Orbiter Archive](https://soar.esac.esa.int/soar/) · [SWA product descriptions](https://esdcdoi.esac.esa.int/doi/html/data/heliophysics/SolarOrbiter/SWA.html) · [EAS correction method](https://doi.org/10.1051/0004-6361/202658881)
+
+### Published constraints for the remaining gaps
+
+- **Low-corona proton and electron pressure.** Landi and Testa's
+  streamer survey and Gibson et al.'s multi-instrument streamer analysis
+  supply electron diagnostic methods and population comparisons. The
+  May 8, 1997 SUMER spectrum in Landi and Testa is at 1.04 solar radii
+  with a different pointing and epoch from the May 27 east-limb rasters.
+  Cranmer's UVCS polar-hole hydrogen analysis demonstrates how neutral
+  hydrogen line profiles can constrain proton temperature and its
+  anisotropy, with uncertainties and numerical tables. It describes polar
+  fast wind at larger radii. Use these sources to check the diagnostic and
+  physical plausibility, with plasma population and observation geometry
+  explicit in any prior. The dated basal ion pressure for either candidate
+  stream is still missing. [Landi and Testa](https://doi.org/10.1088/0004-637X/787/1/33) · [Gibson et al.](https://doi.org/10.1029/98JA02681) · [Cranmer 2020](https://arxiv.org/abs/2007.13180) · [Cranmer numerical tables](https://zenodo.org/records/3908519)
+- **Basal composition and helium.** The 2009 September 14 HERSCHEL
+  sounding rocket measured paired He II 30.4 nm and H I 121.6 nm coronal
+  emission. Moses et al. derive an abundance map out to 2.2 solar radii
+  and find significant variation across magnetic structures. This is a
+  method and population comparison for composition. For the 2024 eclipse,
+  Molnar et al. detected He I 1083 nm on the occulting lunar disk as well
+  as above its limb, implicating terrestrial scattered light. Those line
+  intensities cannot establish basal alpha abundance in the tracked 2024
+  wind. [Moses et al. HERSCHEL analysis](https://www.nature.com/articles/s41550-020-1156-6) · [Full text](https://flore.unifi.it/retrieve/7d895e14-eff8-4ac3-a708-abf171bc2bd9/2020_Nature_Moses_Herschel.pdf) · [Molnar et al. eclipse spectroscopy](https://arxiv.org/abs/2501.01009)
+- **Outer wind near 5 AU.** The Ulysses quadratures remain the dated
+  observations near the upper boundary. Ebert et al. provide slow-wind
+  radial proton trends from Ulysses for a population-level check. Wilson
+  et al. demonstrate near-5-AU proton and alpha moments from Juno during
+  the 2016 Jupiter approach. The public PDS JADE calibrated archive
+  includes the 2024 epoch in its mission coverage. An upstream plasma
+  interval, polarity, travel time and magnetic connection to the
+  2024 eclipse stream have yet to be established.
+  [Ebert et al. Ulysses analysis](https://doi.org/10.1029/2008JA013631) · [Wilson et al. Juno approach](https://doi.org/10.1002/2017JA024860) · [NASA PDS JADE catalogue](https://pds.nasa.gov/ds-view/pds/viewProfile.jsp?dsid=JNO-J%2FSW-JAD-3-CALIBRATED-V1.0)
+
+The raw legacy FITS, archive metadata, screened catalogue rows and HAPI
+responses are retained beside their query and checksum receipt in
+`/data/vtenishe/TEST/stage13-archive-followup-20261123.sP1RzB/audit.json`.
+The current Stage 13 case decks contain the previously pinned datasets.
+
+The 1997 follow-up now has a reproducible geometry screen. It uses the
+actual CR 1923 Kitt Peak magnetic map, the CDS exposure times and the
+archived SOHO and Ulysses ephemerides and plasma moments. The initial
+archive-pointing run classified all 6,824 near- and far-side intersections
+at 1.05 solar radii as closed for all three trace settings. SolarSoft
+processed both rasters and the corrected Mg IX pointing replay classified
+all 6,744 intersections as closed. Suess et al. also identify May 27 as
+part of the variable streamer interval I2. [Calibration, geometry and fit requirements](soho-ulysses-1997/README.md)
+
 ## Use in wind qualification
 
 Freeze the source region, population, epoch, field and flow frames, sector and
@@ -233,6 +427,13 @@ electron-core or ion freeze-in temperature is a different observable from
 the scalar thermal pressure used in the model. Keep independent forward
 observables for qualification, including signed vector field and thermal
 channels. A missing required channel or an unresolved mapping stays visible
-in the manifest. The available data leave the low-corona proton/electron
-thermal profile for either historical quadrature and the spherical material
-transport validation open.
+in the manifest. The calibrated 1997 case has no open target pixels in
+these rasters at the inner particle boundary in the tested reconstruction.
+A foreground and emission-location analysis would still be needed to use
+the measured intensities. For the 2024
+candidate, the recovered archive products support a narrower coronal and
+inner-heliosphere comparison with one declared mass-loading anchor, an
+independent set of thermal and field observables, and a comparison of
+transverse force budgets. Separate basal ion pressure, a constrained
+transverse force closure, and independent same-stream support to 5 AU
+remain open for the live wind qualification.

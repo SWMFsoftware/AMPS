@@ -121,6 +121,11 @@ class SphericalOwner final : public M::Owner {
     result.massDensityKgM3 = p.plasma.massDensityKgM3;
     result.pressurePa = p.plasma.pressurePa;
     result.gammaAdiabatic = c.gammaAdiabatic;
+    // Species densities are number per cubic metre. Charge neutrality
+    // determines the electron density and the configured alpha abundance
+    // is relative to protons. Use the local solved alpha temperature when
+    // alpha particles are present, since their pressure law can differ
+    // from both the electron and proton laws after the thermal transition.
     result.species = std::vector<M::Species>{
         {"electron", p.plasma.electronNumberDensityM3, p.electronTemperatureK},
         {"proton", p.plasma.protonNumberDensityM3, p.protonTemperatureK}};

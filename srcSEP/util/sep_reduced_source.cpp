@@ -30,6 +30,10 @@ Core::Result<double> NetProtonRate(const ReducedShock::FrontSample& front,
     return R::Failure(Core::StatusCode::DataIntegrityFailure,"source front and proton state belong to different core realizations");
   if(!(b>0)||!(bn>0))return R::Failure(Core::StatusCode::UnsupportedCapability,
       "tangent/zero-field tube has no finite shock source patch; no obliquity floor is permitted");
+  // The tube's conserved flux [Wb] divided by |B dot n| [T] gives the
+  // intercepted area on the shock [m^2]. Use upstream proton number
+  // density and the shock-frame normal inflow so the product has units
+  // protons/s. The configured fraction is an already accelerated yield.
   const double rate=fraction*up.protonNumberDensityM3*front.inflowMPerS*flux/bn;
   if(!std::isfinite(rate))return R::Failure(Core::StatusCode::InvalidState,"net proton source rate is not representable");
   return R::Success(rate);

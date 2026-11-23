@@ -113,6 +113,9 @@ def compare_output(reference, actual, repartition):
 
 
 def prepare(native, output):
+    # Reuse the actual native executable and its frozen build hashes. The
+    # continuous and restarted jobs must differ only in the checkpoint
+    # handoff and, for the explicit repartition control, the MPI layout.
     frozen = json.loads(native.read_text())
     hashes = dict(frozen["hashes"])
     hashes[str(Path(__file__).resolve())] = digest(__file__)

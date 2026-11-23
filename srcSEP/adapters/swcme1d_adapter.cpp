@@ -348,6 +348,11 @@ class UpstreamMaterialOwner final : public Material::Owner {
  private:
   static Material::Descriptor Describe(const Upstream::Event& event,
       std::uint64_t generation,std::uint64_t geometry) {
+    // Freeze identity, composition, frame and validity bounds while the
+    // event is captured. The event and geometry generations distinguish
+    // physical records with identical coordinates at different host steps.
+    // Only smooth upstream fluid and the one-sided shock surface belong
+    // to this descriptor, so no volume capability is advertised behind it.
     Material::Descriptor result;
     result.profile=Material::Profile::Swcme1dAdiabaticOuterWindV1;
     result.revision=1;

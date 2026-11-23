@@ -72,6 +72,9 @@ void Add(Measure& a,const Measure& b){a.number+=b.number;a.birthJ+=b.birthJ;a.ev
 }
 bool Enabled(){return ReducedShock::Enabled()&&Run::Active().get().reducedParticles.enabled;}
 T::Status ValidateLedger(const LedgerState& state) {
+  // Each of the six cohort buckets is a nonnegative represented particle
+  // count and two energies in joules. The final entries are the signed
+  // background and wave work, so cooling is valid in those slots only.
   for(std::size_t i=0;i<state.size();++i)
     if(!std::isfinite(state[i])||(i<18&&state[i]<0))
       return Error("checkpoint source ledger has an invalid represented measure or signed SI work");

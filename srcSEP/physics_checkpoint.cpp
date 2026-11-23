@@ -920,6 +920,9 @@ T::Status Validate(const Image& image,bool replacing=false) {
 }
 
 T::Status Agreed(const T::Status& local) {
+  // The first failing rank supplies one status and diagnostic. Every rank
+  // follows the same collectives and sees the same decision, so a rank with
+  // a valid local image cannot publish its restart while a peer rejects it.
   const int candidate=local.ok()?INT_MAX:PIC::ThisThread;int first=0;
   MPI_Allreduce(&candidate,&first,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
   if(first==INT_MAX)return T::Status::Ok();
@@ -957,6 +960,10 @@ T::Status AgreeLayout() {
   return Agreed(local==expected?T::Status::Ok():Error("MPI owners have different native checkpoint layouts"));
 }
 T::Status UniqueIdentities(const Image& image) {
+  // Stable particle IDs seed source and transport random streams. The same
+  // ID on two ranks would replay both physical histories with identical
+  // keys, even if both local segment lists are structurally valid. Check
+  // global uniqueness before ownership or checkpoint state is committed.
   std::vector<std::uint64_t> local;T::Status allocated;
   try {
     for(const auto& line:image.lines)for(const auto& segment:line.segments)

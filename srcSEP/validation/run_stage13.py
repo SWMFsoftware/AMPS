@@ -73,6 +73,9 @@ def verify_reference(path, name, continuity):
 
 
 def run_selected(executable, deck, name, work, timeout, input_only):
+    # The native executable owns deck resolution and reports its deliberate
+    # observational skip. A valid input deck can pass preflight without
+    # an admitted observing operator or a completed physics comparison.
     start = time.monotonic()
     result = {"id": name, "status": "ERROR", "metrics": [], "artifacts": []}
     try:

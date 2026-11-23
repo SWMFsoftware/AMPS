@@ -97,6 +97,16 @@ Run PCLI01-PCLI12 from the plan before and after each parser, mover-selection, i
 
 A failed prerequisite gate blocks dependent work. Diagnose the failure; do not proceed by weakening assertions, tolerances, conservation limits, or statistical acceptance criteria.
 
+The detailed-comment requirement applies to every new or changed SEP code
+path, including adapters, shared core and field-line changes made for SEP,
+validation scripts and tests. Document each physical or numerical block at
+its implementation. State the governing relation, units and frame where
+they affect interpretation, the preserved invariant and any validity limit
+or failure behavior. For tests, explain the independent reference and the
+regression the acceptance check can detect. Give special attention to MPI
+publication, checkpoint ownership, floating-point boundary handling and
+observational provenance.
+
 ## Testing interface and expectations
 
 Preserve or implement these routine targets in the native AMPS tree:

@@ -796,6 +796,10 @@ Core::Result<std::shared_ptr<const BackgroundEventEpoch>> BackgroundEvent::Prepa
       return Return::Failure(
           StatusCode::InvalidState,
           "background event requires an owning immutable ambient epoch");
+    // All geometry, upstream states and derived jump data in a published
+    // event snapshot must refer to the same epoch, frame and thermal law.
+    // Comparing physical identities and support here prevents an otherwise
+    // valid ambient snapshot from being relabeled as part of this event.
     const auto id = ambient->Identity();
     if (id.generation == 0 || id.physicsIdentity != d.ambientIdentity ||
         id.frame != d.support.frame || id.epochUtc != d.support.epochUtc ||
