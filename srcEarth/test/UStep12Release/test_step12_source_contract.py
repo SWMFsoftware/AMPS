@@ -31,7 +31,14 @@ HERE = Path(__file__).resolve().parent
 SRC_EARTH = HERE.parents[1]
 # 2026-11-19: C10 DIRECT_ACCESS changed from P to F (never passed; open +2.7 deg
 # POES/MEPED boundary bias), with an explanatory comment block in the list.
-APPROVED_NORMALIZED_LIST_SHA256 = "a9e91131596f520d984d0e0a38bd847900552e3d2eb22ec12ab43dcc4e2460c8"
+# 2026-11-23 (user-approved): C4 list lines 69 and 71 changed from F to P, in place
+# (no line added or removed).  Line 69: fixed steps 1e-3/5e-4/2.5e-4 s that resolve
+# the gyration, plus --min-paxis-convergence-order 1.9 (the corrected second-order
+# BORIS gives 2.000; the pre-2026-11-23 first-order BORIS gave 0.98-1.01 and fails).
+# Line 71: the same --fail-on-paxis --paxis-tol=1e-5 check with --movers HC4.  The
+# blank line 66 became a one-line pointer comment to srcEarth/test/C4/README.md.
+# Previous digest: a9e91131596f520d984d0e0a38bd847900552e3d2eb22ec12ab43dcc4e2460c8
+APPROVED_NORMALIZED_LIST_SHA256 = "5795557cc3a56376ed4e1e4d5d826db9625b372350a5bc6c9b197ff9c1076589"
 STEP12_COMMAND = "P srcEarth/test/UStep12Release/run_test.sh"
 COMMIT_RE = r"[0-9a-f]{40}"
 # Looped list entries are rewritten by test_runner.py as a brace-delimited

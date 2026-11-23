@@ -200,6 +200,15 @@ backtracing domain, not to refine cells deep inside the inner loss sphere.  The
 AMR callback therefore keeps the legacy coarse resolution for `r < 0.98 Re` and
 applies the requested radial profile only outside that interior region.
 
+If every case, including the analytic baseline, reports the `CUTOFF_EMIN` floor
+and the field-interpolation diagnostic says `Number of field samples: 0`, check
+the `Domain [m]` and `Inner sphere r` lines that AMPS prints.  The parser reads a
+length without a unit as km.  Until 2026-11-23 `AMPS_PARAM_C5_mode3d.in` gave
+`DOMAIN_*` and `R_INNER` without units, so AMPS used a +-35 km box and a 1 km
+inner sphere.  Every 9000-km shell point then started outside the box and
+escaped at every rigidity, and C5 had never passed.  The template now states
+`! RE` on these lines, as the C1-C4 templates do.
+
 For a fast smoke test before a full convergence sweep, run a single coarse mesh
 case:
 

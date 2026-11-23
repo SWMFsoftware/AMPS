@@ -76,6 +76,13 @@ The script normalizes that command before calling `argparse` so `-60,-30,...` is
 --dR-tol           hard tolerance on |rel_dR|, default 1e-6
 --fail-on-paxis    make |rel_dP_axis| a hard pass/fail quantity
 --paxis-tol        tolerance used with --fail-on-paxis, default 1e-5
+--min-paxis-convergence-order P
+                   hard check (requires --adaptive-dt F and two or more distinct
+                   --dt-sweep values): on every above-cutoff trajectory and for each
+                   consecutive pair of steps, the observed order
+                   ln(e_coarse/e_fine)/ln(dt_coarse/dt_fine) of e = |rel_dP_axis|
+                   must be >= P; both runs must end on OUTER_BOX.  Writes
+                   C4_convergence_order.csv.  Default: off
 ```
 
 
@@ -126,9 +133,68 @@ C4_result.json       machine-readable test result
 
 - `expected not OUTER_BOX but got OUTER_BOX`: the low-rigidity trajectory was classified as allowed.  This may indicate a true penumbral allowed island, but for the default factor `0.5` it is usually a useful warning that the chosen case is not a clean below-cutoff trajectory.  Try a smaller factor such as `--factors=0.25,2.0` if this occurs systematically.
 
-- `|rel_dR| > tolerance`: the trajectory is gaining or losing rigidity in a static magnetic field.  Try `--adaptive-dt F --dt-sweep=1.0,0.5,0.25,0.125` to separate fixed-step pusher convergence from classifier effects.
+- `|rel_dR| > tolerance`: the trajectory is gaining or losing rigidity in a static magnetic field.  Try a fixed-step sweep such as `--adaptive-dt F --dt-sweep=1e-3,5e-4,2.5e-4` to separate fixed-step pusher convergence from classifier effects.  The steps must resolve the gyration: fixed steps of 0.25-1 s are longer than the gyroperiods of the default cases and give misclassifications with every mover.
+
+- `observed order ... < P` (with `--min-paxis-convergence-order`): the invariant drift does not fall as dt^P on an escaping orbit.  A value near 1 for BORIS means a first-order step, such as a field sampled at the wrong point of the step.
 
 - large `rel_dP_axis`: the dipole-axis canonical invariant is drifting.  This is not a hard failure unless `--fail-on-paxis` is set, but it is useful for comparing movers and timestep settings.
+
+## List entries
+
+The five C4 entries of `srcEarth/test/list` (lines 67-77) are all expected to
+pass (`P`).
+
+| Line | Command options | Checks |
+|---|---|---|
+| 67 | `--factors=0.5,2.0 --lats=-60,-30,0,30,60` | BORIS, adaptive steps: classification, `\|rel_dR\| <= 1e-6` |
+| 69 | `--adaptive-dt F --dt-sweep=1e-3,5e-4,2.5e-4 --min-paxis-convergence-order 1.9` | BORIS, fixed steps that resolve the gyration: classification, `rel_dR`, and observed second-order convergence of the dipole-axis invariant |
+| 71 | `--fail-on-paxis --paxis-tol=1e-5 --movers HC4` | HC4, adaptive steps: classification, `rel_dR`, `\|rel_dP_axis\| <= 1e-5` |
+| 74 | `--adaptive-dt T --movers HC4` | HC4, adaptive steps: classification, `rel_dR` |
+| 76 | `--adaptive-dt T --movers BORIS` | BORIS, adaptive steps: classification, `rel_dR` |
+
+**Revision of 2026-11-23** (user-approved).  Lines 69 and 71 were expected
+failures (`F`), and a runner `F` entry is satisfied by any nonzero exit, so they
+enforced nothing:
+
+* Old line 69, `--adaptive-dt F --dt-sweep=1.0,0.5,0.25` (BORIS).  These
+  fixed steps are longer than the gyroperiods of the C4 orbits, so no mover can
+  resolve them.  The gyroperiods are estimated from the dipole field at the
+  start points: about 0.017 s at ±60°, f=0.5, to 0.17 s at 0°, f=2.  In AMPS
+  BORIS misclassified 3-5 of 10 orbits.  A standalone reproduction of the
+  production formulas also gave 3 of 10 for HC4
+  (`test_output/srcEarth/investigation_2026-11-23/c4_fixed_dt.out`).
+* Old line 71, `--fail-on-paxis --paxis-tol=1e-5` (BORIS, adaptive steps of
+  0.15 rad).  A second-order mover cannot reach 1e-5 there; the corrected BORIS
+  gives 5.2e-3.
+
+The replacements keep every tolerance.
+
+The convergence check on line 69 exists because the classification and `rel_dR`
+checks did not detect a real defect.  Until 2026-11-23, `BorisStep()` sampled B
+at the start of the step instead of its midpoint
+(`srcEarth/gridless/GridlessParticleMovers.cpp`).  That scheme is first order: in
+AMPS its invariant drift halved when dt halved, and reached 136% on a
+below-cutoff orbit, yet it passed lines 67 and 76 and the resolved fixed-step
+sweep without the order check.
+
+On the escaping orbits of line 69 (AMPS, fixed steps 1e-3 -> 5e-4 -> 2.5e-4 s):
+
+| Build | `\|rel_dP_axis\|`, worst orbit | observed order |
+|---|---|---|
+| before the fix | 1.35e-2 -> 6.71e-3 -> 3.35e-3 | 0.98-1.01 (FAIL) |
+| corrected BORIS | 8.47e-5 -> 2.12e-5 -> 5.30e-6 | 2.000 on every orbit and pair (PASS) |
+
+The required order 1.9 is the method's order 2 with a 5% margin (chosen by the
+user).  Below-cutoff orbits are excluded from this check: they end on
+inner-sphere, distance or step limits whose integration span changes with dt.
+At 2.5e-4 s the quasi-trapped orbits reach the 300000-step limit, so their
+drifts are not comparable between steps.
+
+Line 71 keeps the strict 1e-5 invariant tolerance for the fourth-order HC4
+(6.4e-7).  The BORIS invariant is guarded by the convergence order on line 69.
+
+Records: `test_output/srcEarth/investigation_2026-11-23/` and
+`test_output/srcEarth/fix_verification_2026-11-23/` (not committed).
 
 ## What C4 does not test
 

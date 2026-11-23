@@ -45,14 +45,18 @@
 //
 // ---- BORIS pusher (default, recommended) ------------------------------------------
 //
-// The Boris algorithm decouples the magnetic rotation from the position update:
+// The Boris algorithm decouples the magnetic rotation from the position update.
+// BorisStep() uses the synchronized drift-kick-drift form, with B sampled at the
+// middle of the step (since 2026-11-23; before, B was sampled at x_n, which is not
+// symmetric and only first order in a non-uniform field):
 //
+//   x_mid     = x_n + (dt/2) * p_n / (gamma_n * m0)
 //   p_minus   = p_n  (half-acceleration; zero here since E=0)
-//   t         = q * B(x_n) * dt / (2 * gamma_n * m0)   [rotation half-angle vector]
+//   t         = q * B(x_mid) * dt / (2 * gamma_n * m0)   [rotation half-angle vector]
 //   s         = 2*t / (1 + |t|^2)
 //   p_plus    = p_minus + (p_minus + p_minus x t) x s   [exact rotation in Boris form]
 //   p_{n+1}   = p_plus
-//   x_{n+1}   = x_n + dt * p_{n+1} / (gamma_{n+1} * m0)
+//   x_{n+1}   = x_mid + (dt/2) * p_{n+1} / (gamma_{n+1} * m0)
 //
 // Advantages for cosmic-ray / SEP backtracing:
 //
@@ -88,8 +92,8 @@
 // tracing when RK4 accuracy is desired but long-time magnetic invariants must remain
 // well controlled.  In the gridless/backward 3-D tracer the electric field is zero,
 // so the relativistic Higuera-Cary pusher reduces to an energy-conserving magnetic
-// rotation with the same Boris/Cayley rotation structure.  The important improvement
-// over the historical BORIS step is how the second-order building block is used:
+// rotation with the same Boris/Cayley rotation structure.  Its second-order building
+// block is the same midpoint map that BORIS uses (since 2026-11-23):
 //
 //   H2(dt) = half drift -> evaluate B at the midpoint -> magnetic rotation
 //            -> half drift

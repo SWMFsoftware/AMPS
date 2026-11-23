@@ -63,12 +63,12 @@ last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 P srcEarth/test/C3/run_C3.py --algorithms UPPER_SCAN --cutoff-scan-n 200
 last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
 
-
+# C4 lines 69/71 revised 2026-11-23 (were F): see srcEarth/test/C4/README.md, section 'List entries'.
 P srcEarth/test/C4/run_C4.py --factors=0.5,2.0 --lats=-60,-30,0,30,60
 last pass: 431f4fe4645093d47cd48867a60b6df41e80a296
-F srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1.0,0.5,0.25 
+P srcEarth/test/C4/run_C4.py --adaptive-dt F --dt-sweep=1e-3,5e-4,2.5e-4 --min-paxis-convergence-order 1.9
 last pass:
-F srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5
+P srcEarth/test/C4/run_C4.py --fail-on-paxis --paxis-tol=1e-5 --movers HC4
 last pass:
 
 P srcEarth/test/C4/run_C4.py --adaptive-dt T --movers HC4

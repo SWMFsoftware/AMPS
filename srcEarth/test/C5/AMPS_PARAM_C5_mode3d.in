@@ -37,13 +37,18 @@ DIPOLE_MOMENT          1.00
 DIPOLE_TILT            0.0
 
 #DOMAIN_BOUNDARY
-DOMAIN_X_MAX           35.0
-DOMAIN_X_MIN           -35.0
-DOMAIN_Y_MAX           35.0
-DOMAIN_Y_MIN           -35.0
-DOMAIN_Z_MAX           35.0
-DOMAIN_Z_MIN           -35.0
-R_INNER                1.0
+! Lengths without a unit are read as km (amps_param_parser.cpp).  Until
+! 2026-11-23 these lines had no unit, so the box was +-35 km and the inner
+! sphere 1 km: every 9000-km shell point started outside the box and C5
+! reported the CUTOFF_EMIN floor for all runs.  The intended values are
+! Earth radii, as in C1-C4 and the 35-RE mesh boundary set by run_C5.py.
+DOMAIN_X_MAX           35.0         ! RE dayside
+DOMAIN_X_MIN           -35.0        ! RE nightside
+DOMAIN_Y_MAX           35.0         ! RE dusk
+DOMAIN_Y_MIN           -35.0        ! RE dawn
+DOMAIN_Z_MAX           35.0         ! RE north
+DOMAIN_Z_MIN           -35.0        ! RE south
+R_INNER                1.0          ! RE inner loss sphere
 
 #ELECTRIC_FIELD
 

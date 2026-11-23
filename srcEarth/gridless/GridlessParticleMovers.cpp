@@ -707,11 +707,12 @@ static bool RKStepGeneric(const std::array<double,N>& c,
 // volume-preserving Boris-family formulation that should be extended if/when an
 // electric-field term is added to this shared gridless pusher.
 //
-// Why not simply reuse BorisStep() as the composition kernel?
-//   The historical BorisStep() above evaluates B at the input position and then drifts
-//   by half a step.  That is robust, but for a spatially varying field it is not the
-//   clean symmetric midpoint map needed as a fourth-order composition kernel.  The HC4
-//   mover therefore uses the canonical symmetric sequence:
+// Relation to BorisStep():
+//   Until 2026-11-23 BorisStep() evaluated B at the input position and then drifted by
+//   half a step on either side of the rotation.  For a spatially varying field that is
+//   not a symmetric map (and only first order), so it could not serve as the
+//   fourth-order composition kernel.  BorisStep() now calls this midpoint map
+//   directly.  The HC4 mover composes the canonical symmetric sequence:
 //
 //       x_mid = x_n + (dt/2) v(p_n)
 //       B_mid = B(x_mid)
@@ -732,8 +733,8 @@ static void HigueraCaryMagneticMidpointStep(V3& x_m, V3& p_SI,
   const V3 x_mid = add(x_m, mul(0.5*dt, v0));
 
   // Magnetic field for the rotation is sampled at the midpoint.  This is the key
-  // difference from the historical one-field-evaluation BORIS branch and is what makes
-  // the H2 map symmetric in a non-uniform field.
+  // difference from the pre-2026-11-23 BORIS branch (B at the input position) and is
+  // what makes the H2 map symmetric in a non-uniform field.
   V3 B_T;
   field.GetB_T(x_mid, B_T);
 
@@ -782,24 +783,24 @@ static void HC4StepUnchecked(V3& x_m, V3& p_SI,
 
 void BorisStep(V3& x_m, V3& p_SI, double q_C, double m0_kg, double dt,
                const IGridlessFieldEvaluator& field) {
-  V3 B_T; field.GetB_T(x_m,B_T);
-
-  const double gam = GammaFromMomentum(p_SI, m0_kg);
-  const V3 v = mul(1.0/(gam*m0_kg), p_SI);
-  x_m = add(x_m, mul(0.5*dt, v));
-
-  const V3 t = mul((q_C*dt)/(2.0*gam*m0_kg), B_T);
-  const double t2 = dot(t,t);
-  const V3 s = mul(2.0/(1.0+t2), t);
-
-  const V3 p_minus = p_SI;
-  const V3 p_prime = add(p_minus, cross(p_minus, t));
-  const V3 p_plus  = add(p_minus, cross(p_prime, s));
-  p_SI = p_plus;
-
-  const double gam2 = GammaFromMomentum(p_SI, m0_kg);
-  const V3 v2 = mul(1.0/(gam2*m0_kg), p_SI);
-  x_m = add(x_m, mul(0.5*dt, v2));
+  // Second-order, time-reversible Boris step for E=0 (drift-kick-drift):
+  //
+  //     x_mid   = x_n + (dt/2) v(p_n)
+  //     p_{n+1} = magnetic_rotation(p_n, B(x_mid), dt)
+  //     x_{n+1} = x_mid + (dt/2) v(p_{n+1})
+  //
+  // The field must be sampled at x_mid, the position at the middle of the step.
+  // Until 2026-11-23 this routine sampled B at the input position x_n but still drifted
+  // around the rotation.  The force was then evaluated (dt/2)|v| away from the point
+  // where it acts, which makes the map neither symmetric nor second order in a
+  // non-uniform field, although |p| stayed exact.  In the srcEarth C4 centered-dipole
+  // diagnostic (analytic dipole, 0.15-rad adaptive steps) the canonical angular momentum
+  // about the dipole axis, an exact invariant, then changed by up to 136%; sampling at
+  // the midpoint reduces that to ~5e-3 with the same steps (investigation record:
+  // test_output/srcEarth/investigation_2026-11-23/).  In E=0 the Boris and
+  // Higuera-Cary rotations coincide, so BORIS uses the same second-order kernel H2 that
+  // HC4 composes; there is one implementation of the formula.
+  HigueraCaryMagneticMidpointStep(x_m, p_SI, q_C, m0_kg, dt, field);
 }
 
 

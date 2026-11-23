@@ -699,6 +699,18 @@ class RunState:
     plans: List[TestPlan] = field(default_factory=list)
     started: dict[int, float] = field(default_factory=dict)   # test index -> time.monotonic() at launch
     results: List[TestResult] = field(default_factory=list)
+    # The asyncio tasks of the entries that are running now.  An interrupt cancels
+    # and awaits each of them, so every running command is stopped and its log gets
+    # the "# Interrupted" record (see run_all_tests_interruptibly).
+    running_tasks: set = field(default_factory=set)
+
+
+class RunnerInterrupted(Exception):
+    """SIGINT or SIGTERM stopped the run (UTR-F08); ``signum`` is the signal."""
+
+    def __init__(self, signum: int):
+        super().__init__(f"runner interrupted by signal {signum}")
+        self.signum = signum
 
 
 # Environment provenance used by validation wrappers that must not run unless
@@ -2038,6 +2050,7 @@ async def run_all_tests(
                 )
             )
             running[task] = plan
+            state.running_tasks.add(task)
 
         if not running:
             # Defensive fallback, not expected in normal operation: try_gate()
@@ -2067,6 +2080,7 @@ async def run_all_tests(
 
         for task in done:
             plan = running.pop(task)
+            state.running_tasks.discard(task)
             result = await task
             results.append(result)
             status = "OK" if result.matched_reference else "MISMATCH"
@@ -2089,6 +2103,62 @@ async def run_all_tests(
 
     results.sort(key=lambda r: r.index)
     return results
+
+
+async def run_all_tests_interruptibly(*, state: RunState, **kwargs) -> List[TestResult]:
+    """Run ``run_all_tests``; SIGINT and SIGTERM stop it cleanly (UTR-F08).
+
+    The signals are delivered by the event loop (``loop.add_signal_handler``), so
+    the handler runs between event-loop steps, never inside a coroutine.  It cancels
+    the scheduler; every entry that is still running is then cancelled and awaited,
+    so each one takes the ``CancelledError`` path of ``run_one_test``: its process
+    group is stopped and the "# Interrupted" record is written to its log.  Then
+    ``RunnerInterrupted`` is raised, and ``main`` writes the reports.
+
+    Until 2026-11-23 the SIGTERM handler raised KeyboardInterrupt from whatever
+    Python frame was executing (Python's default SIGINT handler does the same).  A
+    running entry's coroutine wakes every 0.25 s (``wait_for_process_completion``);
+    when the signal arrived in that frame, KeyboardInterrupt bypassed the
+    ``CancelledError`` handler.  The log then had no "# Interrupted" record and the
+    command's process group was not stopped, so the command outlived the runner
+    (UTestRunner, nightly 2026-11-22).
+
+    A signal that arrives after the scheduler has finished does not discard the
+    finished results.  Further signals during the shutdown are ignored; the
+    nightly follows its SIGINT with SIGKILL after 60 s.
+    """
+    loop = asyncio.get_running_loop()
+    scheduler = asyncio.ensure_future(run_all_tests(state=state, **kwargs))
+    received: List[int] = []
+
+    def on_signal(signum: int) -> None:
+        if not received:
+            received.append(signum)
+            scheduler.cancel()
+
+    installed = []
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, on_signal, sig)
+            installed.append(sig)
+        except (NotImplementedError, RuntimeError, ValueError):
+            # No loop signal handling here (e.g. not the main thread); main()
+            # keeps its KeyboardInterrupt path for this case.
+            pass
+    try:
+        try:
+            return await scheduler
+        except asyncio.CancelledError:
+            if not received:
+                raise
+        running = list(state.running_tasks)
+        for task in running:
+            task.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
+        raise RunnerInterrupted(received[0])
+    finally:
+        for sig in installed:
+            loop.remove_signal_handler(sig)
 
 
 def write_reports(results: List[TestResult], report_prefix: Path) -> tuple[Path, Path, Path, Path, Path, Path, Path, Path, Path, Path]:
@@ -3131,7 +3201,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     # SIGINT (Ctrl-C, or the AMPS nightly at the runner's time limit) and
     # SIGTERM stop the run, and the reports are still written: the finished
     # entries as they finished, the running ones as stopped, and the rest as
-    # not started.  Exit status 130.
+    # not started.  Exit status 130.  While the event loop runs, the signals are
+    # handled by run_all_tests_interruptibly; the KeyboardInterrupt handler below
+    # only covers a signal that arrives before the loop installs its handlers.
     state = RunState()
     interrupted = False
 
@@ -3141,8 +3213,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     previous_sigterm = signal.signal(signal.SIGTERM, interrupt_on_sigterm)
     try:
         results = asyncio.run(
-            run_all_tests(
-                tests,
+            run_all_tests_interruptibly(
+                tests=tests,
                 jobs=jobs,
                 workdir=workdir,
                 log_dir=log_dir,
@@ -3159,7 +3231,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 state=state,
             )
         )
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, RunnerInterrupted):
         interrupted = True
         results = interrupted_results(state, log_dir)
         for r in results:

@@ -285,6 +285,73 @@ def evaluate_rows(rows, dR_tol, paxis_tol, fail_on_paxis):
     return summary, passed, messages
 
 
+def evaluate_paxis_convergence_order(summary, min_order):
+    """Observed convergence order of the canonical P_axis drift under fixed steps.
+
+    For every mover and every above-cutoff trajectory (expected_allowed), the runs
+    of consecutive DT_TRACE values (coarse -> fine) give the observed order
+
+        p = ln(e_coarse / e_fine) / ln(dt_coarse / dt_fine),   e = |rel_dP_axis|.
+
+    The drift of a consistent order-q integrator falls as dt^q once the orbit is
+    resolved, so p must reach ``min_order``.  Only above-cutoff orbits are used:
+    both runs must end on OUTER_BOX, so the two errors belong to the same physical
+    trajectory segment (an escaping orbit).  Below-cutoff orbits end on inner-sphere,
+    distance, step or time limits whose integration span changes with dt, so their
+    errors are not comparable.  A pair that is not comparable (non-OUTER_BOX end) or
+    not measurable (zero or non-finite drift) fails: the order cannot then be shown.
+
+    Background (2026-11-23): BORIS sampled B at the start of the step instead of the
+    midpoint.  That scheme is first order; in AMPS it gave p = 1.00-1.01 on these
+    orbits while still passing every classification and |rel_dR| check.  The
+    corrected midpoint Boris gives p = 1.995-2.006.
+    """
+    rows = []
+    messages = []
+    passed = True
+    groups = {}
+    for r in summary:
+        if r["expected_allowed"]:
+            groups.setdefault((r["mover"], r["label"]), []).append(r)
+    if not groups:
+        return rows, False, ["convergence order: no above-cutoff trajectory to evaluate"]
+    for (mover, label), runs in sorted(groups.items()):
+        runs = sorted(runs, key=lambda r: -r["dt_trace"])
+        if len(runs) < 2:
+            passed = False
+            messages.append("%s %s: convergence order needs at least two DT_TRACE values" % (mover, label))
+            continue
+        for coarse, fine in zip(runs, runs[1:]):
+            e_c = coarse["rel_dP_axis_abs"]
+            e_f = fine["rel_dP_axis_abs"]
+            comparable = coarse["reason"] == "OUTER_BOX" and fine["reason"] == "OUTER_BOX"
+            measurable = comparable and all(math.isfinite(e) and e > 0.0 for e in (e_c, e_f))
+            order = (math.log(e_c / e_f) / math.log(coarse["dt_trace"] / fine["dt_trace"])
+                     if measurable else float("nan"))
+            ok = measurable and order >= min_order
+            rows.append({
+                "mover": mover,
+                "label": label,
+                "dt_coarse": coarse["dt_trace"],
+                "dt_fine": fine["dt_trace"],
+                "rel_dP_axis_coarse": e_c,
+                "rel_dP_axis_fine": e_f,
+                "reason_coarse": coarse["reason"],
+                "reason_fine": fine["reason"],
+                "observed_order": order,
+                "min_order": min_order,
+                "passed": ok,
+            })
+            if not ok:
+                passed = False
+                what = ("observed order %.3f < %.3g" % (order, min_order) if measurable else
+                        "order not measurable (terminal reasons %s/%s, |rel_dP_axis| %.3e/%.3e)"
+                        % (coarse["reason"], fine["reason"], e_c, e_f))
+                messages.append("%s %s: dt %g -> %g, |rel_dP_axis| %.3e -> %.3e: %s"
+                                % (mover, label, coarse["dt_trace"], fine["dt_trace"], e_c, e_f, what))
+    return rows, passed, messages
+
+
 def normalize_negative_list_args(argv):
     # argparse treats '-60,-30,...' as another option when supplied as
     # '--lats -60,-30,...'.  Convert the common list options to '--lats=...' before
@@ -341,6 +408,10 @@ def parse_args(argv=None):
     parser.add_argument("--dR-tol", type=float, default=1.0e-6, help="maximum allowed |rel_dR|; default: 1e-6")
     parser.add_argument("--paxis-tol", type=float, default=1.0e-5, help="maximum allowed |rel_dP_axis| when --fail-on-paxis is set; default: 1e-5")
     parser.add_argument("--fail-on-paxis", action="store_true", help="make canonical P_axis drift a hard failure instead of a recorded diagnostic")
+    parser.add_argument("--min-paxis-convergence-order", type=float, default=None,
+                        help="hard check: with ADAPTIVE_DT F and two or more distinct --dt-sweep values, the observed "
+                             "convergence order of |rel_dP_axis| on every above-cutoff (escaping) trajectory must be at "
+                             "least this value for each consecutive pair of steps; default: off")
     parser.add_argument("--amps", default="./amps", help="AMPS executable path, relative to launch directory; default: ./amps")
     parser.add_argument("--mpirun", default="mpirun", help="MPI launcher executable; default: mpirun")
     parser.add_argument("--workdir", default=None, help="directory where the test is run and outputs are written; default: test_output/C4_exit, or test_output/C4_exit_<hash of the options> when options are given, so parallel list entries do not share it")
@@ -377,6 +448,14 @@ def main():
     for factor in factors:
         if factor <= 0.0:
             raise SystemExit("all --factors values must be > 0")
+    if args.min_paxis_convergence_order is not None:
+        # The order is defined only for a fixed step that is changed between runs.
+        if not (args.min_paxis_convergence_order > 0.0):
+            raise SystemExit("--min-paxis-convergence-order must be > 0")
+        if adaptive_dt:
+            raise SystemExit("--min-paxis-convergence-order requires --adaptive-dt F")
+        if len(set(dt_values)) < 2 or len(set(dt_values)) != len(dt_values):
+            raise SystemExit("--min-paxis-convergence-order requires two or more distinct --dt-sweep values")
 
     launch_dir = Path.cwd().resolve()
     script_dir = Path(__file__).resolve().parent
@@ -496,8 +575,18 @@ def main():
     summary_csv = root_workdir / "C4_summary.csv"
     metrics_csv = root_workdir / "C4_case_metrics.csv"
     result_json = root_workdir / "C4_result.json"
+    order_csv = root_workdir / "C4_convergence_order.csv"
     write_csv(all_summary, summary_csv)
     write_csv(case_metrics, metrics_csv)
+
+    order_rows = []
+    if args.min_paxis_convergence_order is not None:
+        order_rows, order_passed, order_messages = evaluate_paxis_convergence_order(
+            all_summary, args.min_paxis_convergence_order)
+        write_csv(order_rows, order_csv)
+        if not order_passed:
+            passed = False
+            messages.extend(order_messages)
 
     result = {
         "test_id": TEST_ID,
@@ -522,6 +611,8 @@ def main():
         "dR_tol": args.dR_tol,
         "paxis_tol": args.paxis_tol,
         "fail_on_paxis": args.fail_on_paxis,
+        "min_paxis_convergence_order": args.min_paxis_convergence_order,
+        "paxis_convergence_order": order_rows,
         "workdir": str(root_workdir),
         "summary_csv": str(summary_csv),
         "metrics_csv": str(metrics_csv),
@@ -539,12 +630,22 @@ def main():
             "mover=%-6s  DT_TRACE=%8.4g  n=%3d  failed=%3d  max|rel_dR|=%9.3e  max|rel_dP|=%9.3e  %s" %
             (row.get("mover", ""), row["dt_trace"], row["n_trajectories"], row["n_failed"], row["max_abs_rel_dR"], row["max_abs_rel_dP_axis"], "PASS" if row["passed"] else "FAIL")
         )
+    if order_rows:
+        print("\nP_axis convergence order on above-cutoff trajectories (required >= %g)"
+              % args.min_paxis_convergence_order)
+        for row in order_rows:
+            print("mover=%-6s  %-18s dt %8.3g -> %8.3g  |rel_dP| %9.3e -> %9.3e  order=%7.3f  %s" %
+                  (row["mover"], row["label"], row["dt_coarse"], row["dt_fine"],
+                   row["rel_dP_axis_coarse"], row["rel_dP_axis_fine"], row["observed_order"],
+                   "PASS" if row["passed"] else "FAIL"))
     if messages:
         print("\nMessages:")
         for m in messages:
             print("  - " + m)
     print("\nWrote: %s" % summary_csv)
     print("Wrote: %s" % metrics_csv)
+    if order_rows:
+        print("Wrote: %s" % order_csv)
     print("Wrote: %s" % result_json)
     print("\nRESULT: %s" % ("PASS" if passed else "FAIL"))
     return 0 if passed else 1

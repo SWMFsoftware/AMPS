@@ -115,6 +115,20 @@ command, which runs in its own session, must be gone), and the third as actual
 F with `not_started`. Before this, the runner printed "Interrupted by user"
 and wrote no report, and the nightly lost every Earth result of the night.
 
+Two more cases (2026-11-23) deliver the signal from inside the running entry's
+coroutine. A thin launcher loads the unchanged production runner and wraps
+`wait_for_process_completion()`; once the second entry's command has started,
+the wrapper signals its own process. Before 2026-11-23 the runner's SIGTERM
+handler (and Python's default SIGINT handler) raised `KeyboardInterrupt` in
+whatever Python frame was executing. When that frame was the running entry's,
+the exception skipped its cancellation handler: the log had only its header (no
+"# Interrupted" record, no footer), and the command was not stopped and outlived
+the runner. That was the nightly UTestRunner failure of 2026-11-22. The signals
+are now delivered by the event loop (`run_all_tests_interruptibly`), which
+cancels every running entry and awaits its cleanup. Against the old runner both
+new cases fail under Python 3.8 (SIGTERM also under 3.14, where `asyncio.run`
+already handles SIGINT); against the current runner all four pass.
+
 ### UTR-F09 — a failed entry says why it failed
 
 A report line such as `exit=139` alone does not identify a failure. For every
