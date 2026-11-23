@@ -664,3 +664,40 @@ metadata-only correction from pinned old/new evidence. Previous snapshots and
 every retained native/CSV value remain unchanged. New source-specific readers
 and exact packet recipes/dependencies are archived for offline reproduction.
 Neither publication nor these queries activates physics or changes M3 status.
+
+## 11. Targeted remaining-input sources: r5 selection
+
+The new independent snapshot is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261120-r5`.
+It adds the NIST H/O evaluation's exact table-cell views, Laffon's native
+sticking deposit and primary/model-source metadata from the targeted follow-up.
+The previous root/r2/r3/r4 selections remain unchanged. Read
+`PHYSICAL_INPUT_STATUS_20261120.md` and `NATIVE_NIST_HXOY_SOURCES.md` before
+interpreting the new entries: access to a source is not a state/Q profile,
+physical reaction model or formal M3 qualification.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261120-r5
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" verify
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" describe nist-hxoy-2016-t13-cells
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$CHEM_DB_ROOT/database-lock.json" source-path laffon-sticking-13274840-v1-native
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$CHEM_DB_ROOT/database-lock.json" <<'PY'
+import sys
+from amps_chemical_database import Database
+db = Database.from_lock(sys.argv[1])
+table = db.table("nist-hxoy-2016-t13-cells")
+print(table.columns)
+print(table.rows[:3])
+raw = db.source_path("laffon-sticking-13274840-v1-native").read_bytes()
+print("Original sticking table bytes:", len(raw))
+PY
+```
+
+Table3 concerns OH formation enthalpies at298.15K and mixed historical methods;
+Table13 mixes ion-energy quantities. Both preserve native cells, spans, units,
+footnotes and source conventions without selecting a physical value or assuming
+a zero-K isotope state. The sticking file retains its undeclared eight-bit
+encoding and original layout. Its XPS-derived values use a gold S=1 calibration,
+20K surface and300K gas; it supplies no energy-accommodation law or broad
+lunar-temperature extrapolation. The normal C++ Catalogue reads the same two
+CSV views; opaque originals use the ordinary source-access path.

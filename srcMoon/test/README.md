@@ -1156,6 +1156,33 @@ administrative versus actual-source scopes. The shared test README documents
 explicit native-file selectors and the new lock. No permanent lunar ID,
 scientific criterion, profile default or formal I21–I24 predecessor is changed.
 
+The [targeted physical-input assessment](M3_PHYSICAL_INPUT_FOLLOWUP_20261120.md)
+records available source primitives, eleven-channel molecular threshold
+derivations and the remaining explicit model choices. New NIST source-view
+checks belong to the automatically discovering shared database runner, with
+native selectors documented in its README. The optional Na fit-source audit
+retains104PASS/2FAIL printed-coefficient comparisons; it is separate from
+source-reader software tests and the frozen Voronov production-rate choice.
+
+### Nightly coverage audit — 2026-11-23
+
+The nightly `moon` entry in `utility/nightly/runners.json` invokes
+`srcMoon/test/run_tests.py --all`, whose scope is exactly **U01–U26**. Its
+26 report rows do not count every supporting method inside each owner. The
+shared chemical-database tests run independently through the nightly `core`
+entry and `CORE-CHEMICAL-DATABASE-001`; see their
+[nightly command and scope](../../test/chemical_database/README.md).
+
+The local `run_all_test.py --list` instead lists **40 cases**: U01–U26 plus
+I11–I24. I01–I10 have a separate M0 multi-build runner. The nightly Moon entry
+does not invoke that aggregate or its linked I11–I24 cases. A further registry
+gap remains: the global `APPLICATION-MOON-REGRESSION-001` adapter in `src/test`
+still exposes only 36 cases, U01–U26/I11–I20, in the extended/application-smoke
+campaigns. I21–I24 are present locally but absent from that adapter. These
+findings do not grant any linked qualification or change the nightly selection;
+STATUS.md section 5.42 records the archive evidence, fresh CORE execution and
+remaining source/release/linked coverage gaps.
+
 ## Source-bound M3 profiles, trajectories and conditional cohorts
 
 The U15 supporting namespace also runs source-state profiles, moving-parent

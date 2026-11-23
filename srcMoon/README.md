@@ -1454,3 +1454,13 @@ Use r4's own explicit lock; existing Moon input/profile selections are unchanged
 These are reusable source inputs, not activated chemistry or a new M3 PASS.
 The detailed limitations and actual verification/install results are recorded
 in STATUS.md section5.39 and the shared database/test READMEs.
+
+The [targeted remaining-input follow-up](test/M3_PHYSICAL_INPUT_FOLLOWUP_20261120.md)
+separates available atomic/molecular energy primitives and named reduced
+surface/collision laws from actual missing evidence or model choices. The
+shared r5 source snapshot adds NIST H/O table-cell views, the native Laffon
+sticking deposit and primary/model metadata. It does not activate chemistry.
+Reference-state/spin, missing printed molecular-threshold conventions and
+charged three-body partitions remain explicit before their dependent channels
+can run. Neither a full outgoing-electron PDF nor a universal ion-regolith
+law is added as a blanket requirement for the approved reference scopes.

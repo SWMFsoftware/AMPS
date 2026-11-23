@@ -61,6 +61,16 @@ SPRINGER_CC_BY = _policy('allowed', 'allowed', 'allowed-with-attribution',
 NTRS_19700032941 = _policy('allowed', 'allowed', 'source-specific-public-use',
     dict(url='https://ntrs.nasa.gov/citations/19700032941', note='The exact official citation record states GOV_PUBLIC_USE_PERMITTED, public distribution, no third-party material/ownership marker; native cover authorizes public release and sale.'),
     conditions='Only original PDF/record metadata for NASA-CR114270, NTRS19700032941. Retain actual notice/metadata; no blanket NASA public-domain or CEA licence assertion. No OCR-derived numerical table is admitted.')
+FIGSHARE_STICKING = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://api.figshare.com/v2/articles/13274840',
+         note='Exact native version1 article record explicitly grants CC BY4.0 to its listed Table1 file25563521.'),
+    conditions='Only Figshare13274840.v1/Table1. Preserve DOI, author attribution, conditions and native MD5/SHA. This grant does not cover another deposit or establish a universal lunar sticking law.')
+NIST_JRES_121005 = _policy('allowed', 'allowed', 'source-specific-technical-publication-reuse',
+    dict(url='https://www.nist.gov/open/license',
+         note='The Technical Series notice explicitly includes the Journal of Research and permits reprints/derivative works of NIST-employee work, with citation and the requested attribution.'),
+    dict(url='https://nvlpubs.nist.gov/nistpubs/jres/121/jres.121.005.pdf',
+         note='Inspected unmarked NIST-employee H/O thermochemical evaluation, DOI10.6028/jres.121.005; not the separately copyrighted WebBook/ASD product.'),
+    conditions='Only JRes121.005 official PDF/native PMC7339710 rendition and pinned notice. Cite the article and include: Republished courtesy of the National Institute of Standards and Technology. Preserve native table/uncertainty/state conventions; no grant for unrelated SRD or paper payloads.')
 NIST_UNMARKED = _policy('allowed', 'allowed', 'allowed-with-source-credit',
     dict(url='https://www.nist.gov/copyrights-disclaimers',
          note='Use of NIST information permits copying of information not marked copyrighted.'),
@@ -574,7 +584,9 @@ def inventory(amps_root: Path, validation_root: Path, source_packets=()) -> list
                     'tuwien-regolith-cc-by-4.0': TUWIEN_REGOLITH,
                     'chianti-use-attribution': CHIANTI,
                     'springer-cc-by-4.0': SPRINGER_CC_BY,
-                    'ntrs-19700032941-public-use': NTRS_19700032941}
+                    'ntrs-19700032941-public-use': NTRS_19700032941,
+                    'figshare-13274840-cc-by-4.0': FIGSHARE_STICKING,
+                    'nist-jres-121005-public-use': NIST_JRES_121005}
         for item in module.load_packets(source_packets, policies):
             if item['id'] in datasets or any(row['id'] in file_ids for row in item['files']):
                 raise ValueError('new source packet collides with historical dataset/source IDs')

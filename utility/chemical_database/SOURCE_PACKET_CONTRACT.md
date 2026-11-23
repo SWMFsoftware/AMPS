@@ -92,3 +92,11 @@ native/derived/rights source by resolved path or identical byte hash, including
 another selected packet. Renaming a held payload to `.py` does not clear its
 managed-storage restriction. This check protects provenance archives as well
 as the ordinary source-object store.
+
+The targeted physical-input extension also adds two narrowly reviewed policies.
+Figshare13274840.v1 requires its exact native article/version/CC-BY4 grant and
+listed file25563521; a different record/file/licence fails. NIST JRes121.005
+requires its technical-publication notice and only the reviewed article's
+official PDF/native PMC rendition. Original source-specific SRD/other-provider
+holds remain unchanged. Administrative controls test these boundaries without
+representing their fixture metadata as downloaded measurements.

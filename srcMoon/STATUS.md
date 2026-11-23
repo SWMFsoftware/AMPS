@@ -4561,3 +4561,232 @@ working/index bytes and preservation of excluded paths are checked after
 staging. The operation makes no commit or push and changes no external database
 selection. Its detailed before/after selection and hashes are retained in a
 unique `/tmp/amps-chemdb-stage-*` review directory.
+
+
+## 5.41 — Targeted remaining-physics search and r5 source integration
+
+**Research/source-access package COMPLETE; formal M3 remains NOT QUALIFIED.**
+The user requested online databases first and relevant primary publications
+for inputs still missing from M3. Work began2026-11-19T23:54:59Z at revision
+`ef73fd281f279e7538a7ead67620c02a629f0270`. Three agents independently covered
+molecular energies/states, EI/CEX and surface/relaxation; the root covered
+atomic sufficiency, common source policies, publication and verification.
+Artifacts are in
+`test_output/chemical_database/m3-targeted-inputs-20261119T235459Z/`.
+
+### Findings that change the implementation plan
+
+The [shared assessment](../utility/chemical_database/PHYSICAL_INPUT_STATUS_20261120.md)
+and [M3 follow-up](test/M3_PHYSICAL_INPUT_FOLLOWUP_20261120.md) separate available
+data, derivation/admission, a new model choice and genuinely unresolved
+evidence. Detailed per-lane reports and source ledgers preserve actual native
+HTTP/UTC/hash/rights/state/unit records. No original source, reaction rate,
+acceptance criterion or model input is silently changed.
+
+- Existing isotope-specific He/Ne/Ar ionization primitives are available;
+  three retained-primary/hash/SI-conversion checks PASS. Profiles and energy
+  crosswalks need implementation. Compatible ion masses are derivable, so
+  separately measured ion masses are not a necessary missing input.
+- Molecular binding/ionization/appearance energies have primary anchors.
+  The report derives all eleven frozen H2O/OH reference thresholds symbolically
+  using one energy zero and explicit states. H2+ is not a product of this
+  network. Existing OH/OH+/H2 and O data are reusable rather than new-data gaps.
+  Product/reference/spin selection, missing printed molecular-threshold
+  convention and H2O04–06 dissociative-ionization partition remain explicit
+  model choices. The approved neutral microcanonical law does not automatically
+  authorize a charged/electron three-body partition.
+- Bulk inherited-heavy-velocity electron-reservoir bookkeeping can proceed
+  from selected scalar rates, states/Q and signed exchanges without a full
+  outgoing joint PDF. Source-fit conditional moments are derivable but not
+  measured moments or automatically justified microscopic samplers. The
+  rounded Voronov Na I=5.1eV is below the physical threshold; no silent cutoff,
+  renormalization or altered rate is authorized.
+- Igenbergs2008's actual2007 preprint recovers source equations/domain/state
+  interpretations for previously held Na EI/composite fits. Elow is distinct
+  from physical ionization I. The coefficient audit has **104PASS/2FAIL**:
+  two halfway printed-rounding differences remain unresolved and unchanged.
+  An extra native composite A7 and exact keV versus eV/u bindings still require
+  care. These optional source comparisons are separate from software QA and
+  the unchanged selected Voronov production coefficients.
+- Reference CEX Q and all-angle bounds are derivable. D119990's original
+  experiment/preparation/uncertainty and prompt-versus-eventual H1s ambiguity
+  remain unresolved; no small forward-angle accuracy bound was obtained.
+- Source-defined OH first-order and heterogeneous-site water-release models
+  exist. KIDA and the final Minissale review agree on the paired OH model;
+  the older manuscript pair is not mixed with it. OH diffusion/recombination
+  barriers are not desorption energies or impact sticking. The new water
+  sticking observations retain their gold-relative calibration and20K domain.
+  Matching OH impact/accommodation and extensions beyond measured conditions
+  still need evidence or reviewed model scope. Explicit collisionless
+  reference conditions have zero collisional quenching; nonzero baths require
+  applicable state/rate/density bounds.
+
+### New shared source release and preservation
+
+Installed snapshot:
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261120-r5`.
+The original default/r2/r3/r4 locks remain unchanged. This release adds29source
+records, including7allowed payloads and22metadata-only records, plus two CSV
+views. Totals are52datasets,914sources,274admitted payloads,640metadata-only
+records,145table descriptors,117available tables (114CSV), and the same12inert
+model definitions. All885previous source records and143table payloads retain
+their identities/bytes.
+
+The NIST H/O evaluation's official PDF, native PMC HTML and notice are admitted
+under a narrowly reviewed technical-publication policy. Its Table3 preserves
+208cells of OH formation-enthalpy material at298.15K with historical methods;
+Table13 preserves375cells of mixed ion-energy quantities. No source value,
+confidence convention, isotope or zero-K state is selected by the reader.
+The new maintained `native_nist_hxoy.py` and its automatically discovered test
+retain spans, original HTML/text and footnotes. All five actual selected
+source/parser controls PASS.
+
+Figshare13274840.v1/file25563521 is a separate narrow CC BY4.0 source. Its
+2136native bytes are preserved with producer MD5/SHA. It is XPS-derived
+sticking relative to gold assigned S=1, with20±1K surface/300K gas. The
+undeclared eight-bit encoding is not forced into UTF8/CSV; ordinary source
+access is available. New policies check exact article/file/grant identity;
+unrelated Figshare or NIST/SRD objects are not cleared by them. NIST requested
+attribution, source notices and existing holds remain attached.
+
+### Actual verification and retained failures
+
+| Scope | Final result | Artifact |
+|---|---|---|
+| Source publication | PASS,13.990s | `build-v4-result.json`, `staged-r5-v4/publication.json` |
+| Full shared software/source suite | 355PASS,0FAIL/ERROR/SKIPPED;68.945s | `software-qa-v4/result.json` |
+| CORE protocol subset | 306PASS,0FAIL/ERROR/SKIPPED | `core-protocol-qa/result.json` |
+| All selected packets/recipes/CSV Python–C++ audit | 30PASS,0FAIL/ERROR/SKIPPED;114.882s | `release-qa-v4/result.json` |
+| Installed source/CLI integrity | PASS;752objects checked | `installation-r5.json` |
+| Previous releases and installed equality | 906protected previous members unchanged;432installed files equal verified staging | `installed-verification-r5.json` |
+| Optional Na source-coefficient correspondence | 104PASS,2FAIL retained | `collisions/coefficient_crosswalk.json` |
+
+Software scopes overlap and are not independent physical tests. The release
+audit compares all114available CSV tables and2658349exact cells through the
+actual Python/C++ APIs, authenticates all24selected packets/17recipe members
+and preserves held-source refusals. Actual installed Python/CLI queries also
+verify both new table shapes and the original sticking-file producer checksum.
+
+The first table-registration packet reused T13's ID for T3; publication
+correctly ERRORed before writing a completed lock. Its next candidate used
+a documentary `notes` field that conflicted with authenticated runtime notes;
+the actual API correctly refused it (354PASS/1ERROR in that retained suite).
+New packet versions correct identifiers/field names only; all source/CSV
+values and recipe bytes are unchanged. Old manifests/staging/logs remain
+preserved. The selected final packet is `molecular/source_packet_tables_v4.json`,
+SHA`52d3f7055deb3a4636ac287f18c2a3ec016fb518d66c1afb5c0aee75ee6a1e03`.
+These corrected infrastructure errors do not erase the separate two unresolved
+source-coefficient FAIL comparisons. Acquisition403/404/API-error responses
+also remain in their original manifests, never successful scientific sources.
+
+`publication-plan-v4.json` records the complete24packet publication command;
+`software-command-v4.json` records exact CLI/native source selectors;
+`release-qa-command-v4.json` records the actual C++ probe/audit invocation.
+Normal shared C++17/Python source tests were used. No AMPS application build,
+MPI cohort or formal U/I execution was performed for this source package.
+The existing application configuration, core files and local Makefile remain
+as found. No git staging, commit or push is performed by this package.
+
+```text
+release: amps-chemistry-20261120-r5
+release SHA256: 484268dc6f13cbdaeae519bdfc021dc166339474e619ffd8b0972b23c3abdcce
+profile SHA256: eee2d54134db7b3fc1b6eb6a772d16e9ae3d61ca4355cbc69dc845bd9a39dc73
+export SHA256: cd9cf3675b3ea0e2fba2541451f9e43e931fbc5e3166b2ba5d357c80a5ebe242
+lock SHA256: 7b588795ba3dcbd17491d5afbb9a417f62824970afa94b10645e8eda835799a2
+```
+
+Formal M3 still requires actual production integration, frozen numerical/
+statistical/budget qualification and applicable same-campaign M1/M2 gates.
+The approved P01–P09 and numerical/statistical choices remain in force; no
+renewed blanket approval or missing full-joint distribution is introduced.
+Roadmaps remain different and unchanged: sourceSHA
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`,
+canonical dataSHA
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+Source development/resource amendments govern work order; canonical scientific/
+data/predecessor rules govern qualification.
+
+## 5.42 Nightly chemical-database and Moon registration audit — 2026-11-23
+
+**Audit complete; coverage limits remain explicit.** Source revision
+`ef73fd281f279e7538a7ead67620c02a629f0270` plus the existing working changes.
+No production/test runner, registry, application configuration or reference
+was modified. Only the shared-test README, lunar-test README and this status
+record were updated. Artifacts and exact commands/source hashes are under
+`test_output/srcMoon/nightly-registration-audit-20261123T233024Z/`.
+
+The source trace is `utility/nightly/runners.json`'s `core` entry
+→ `src/test/run_tests.py --campaign nightly`
+→ manifest owner `CORE-CHEMICAL-DATABASE-001`
+→ `src/test/tests/models/chemical_database/run_test.py`
+→ `test/chemical_database/run_all_tests.py --protocol-only`.
+The owner is registered in smoke/nightly/extended, requires Python/C++17, and
+uses the configured compiler. It reports one CORE case and preserves its
+individual method results/counts in the nested shared-protocol artifact.
+
+The read-only server SQLite query and original archived suite log confirm
+actual scheduled execution, not registration alone. Latest observed run
+`20261123T0201Z-passion-gnu` tested committed master
+`b4980503e35c498d42a689188e0f6fc2e4913d94` and finished
+2026-11-23T13:11:43Z. Its chemical owner PASS contains **293 PASS, 0 FAIL,
+0 ERROR, 0 SKIPPED** in 22.821 seconds. Original log:
+`/data/vtenishe/AMPSTEST/www/archive/2026/11/22/passion-gnu/logs/core/files/run/logs/CORE-CHEMICAL-DATABASE-001.log`.
+The original bytes/hash are retained in this audit. The three preceding
+archived chemical-owner entries also PASS.
+
+A fresh execution of the same nightly adapter against this working tree used:
+
+```bash
+AMPS_TEST_TEMP_ROOT="$PWD/test_output/srcMoon/nightly-registration-audit-20261123T233024Z/work" \
+/usr/bin/python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --campaign nightly --test CORE-CHEMICAL-DATABASE-001 \
+  --jobs 1 --streams 1 \
+  --output-dir "$PWD/test_output/srcMoon/nightly-registration-audit-20261123T233024Z/core-nightly" \
+  --json "$PWD/test_output/srcMoon/nightly-registration-audit-20261123T233024Z/core-report.json"
+```
+
+It reports **1 CORE suite/case PASS**, containing **306 PASS, 0 FAIL,
+0 ERROR, 0 SKIPPED**; child scope 25.133 seconds, outer command 25.436 seconds.
+The 13 additional local methods (nine source-policy and four NIST parser
+controls) all PASS. They remain uncommitted and therefore are not yet included
+in the scheduled committed-master checkout. This is software/native/API scope,
+not physical chemistry qualification. No AMPS build, MPI simulation, lunar U/I
+execution, new chemical-data acquisition or observation processing was needed.
+
+| Entry point | Actual selected/registered scope |
+|---|---|
+| Nightly `moon` → `srcMoon/test/run_tests.py --all` | 26 U cases, U01–U26 |
+| Local `srcMoon/test/run_all_test.py --list` | 40 cases, U01–U26 plus I11–I24; registry validation finds no error |
+| Global `APPLICATION-MOON-REGRESSION-001` | 36 cases, U01–U26 plus I11–I20; extended/application-smoke, not nightly |
+| Global/local M0 owner | Separate I01–I10; not substituted by the U runner |
+
+The latest archived `app-moon` family has exactly **26 records: 15 PASS,
+11 SKIPPED, 0 FAILED**. The separate legacy `planets` entries Moon,
+Moon-restart and Moon-tetra-cut-cells all PASS; they are additional legacy
+regressions, not additional U IDs. Linked I11–I24 are not selected by the
+nightly Moon entry, and I21–I24 are also missing from the global extended
+adapter's case registry. These are documented coverage limits, not new tests
+or silently expanded nightly work.
+
+The current CORE protocol selection explicitly excludes **45 authoritative-
+source methods**, recording their IDs in `outside_selected_scope`, and does
+not select the **four real-release PythonProduction methods**. The independent
+full acquired-release/source-packet audit is likewise not invoked nightly.
+Those scopes require explicit pinned locks/original-file selectors and retain
+their separate scientific/source-admission limitations. A CORE PASS does not
+claim that the installed r5 release, all source bytes or linked chemistry were
+qualified in the scheduled nightly.
+
+The audit's own seven registration/history/execution checks PASS; they are
+not permanent U/I identities or scientific acceptance tests. Full child
+results are in `core-nightly/artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json`;
+`historical-nightly-results.json` records the read-only archive query;
+`result.json` records coverage, excluded method IDs and the missing global
+I21–I24 registration. No data/reference hash, acceptance criterion, hold-out
+membership or roadmap was changed. Source/data roadmap hashes remain
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17` and
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+Their scoped development/resource amendments control execution order; the
+scientific/data/predecessor contracts control qualification. Formal M1/M2/M3
+status is unchanged. Nothing was staged, committed or pushed.

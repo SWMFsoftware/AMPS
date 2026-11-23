@@ -121,3 +121,13 @@ their exact helper dependencies ship with release provenance and the installed
 software. `amend_exomol_metadata.py` reproduces the version-bound metadata
 correction without changing science payloads. No provider or reaction is
 automatically selected, and no source-access PASS closes M3.
+
+The [targeted follow-up](PHYSICAL_INPUT_STATUS_20261120.md) distinguishes
+available physical primitives and derivable reference models from unresolved
+source metadata or new model choices. Its separate r5 snapshot adds NIST H/O
+evaluation cell views and the original Figshare sticking file, with exact
+source-specific permission binding; additional literature/model originals with
+uncleared payload rights remain metadata-only. Earlier releases and application
+selections remain unchanged. Installed README section11 gives source/table
+queries. The new `native_nist_hxoy.py` reader performs lossless cell extraction,
+not thermochemical state selection or unit/uncertainty conversion.

@@ -29,6 +29,36 @@ The CORE adapter explicitly passes `--protocol-only` for the site-independent
 software selection. It preserves its configured compiler argv through
 `--cxx-json`; there is no site-data prerequisite hidden in that CORE case.
 
+Nightly execution is owned by `CORE-CHEMICAL-DATABASE-001` in
+[`src/test/manifest.json`](../../src/test/manifest.json), which belongs to the
+`nightly` campaign. The `core` entry in
+[`utility/nightly/runners.json`](../../utility/nightly/runners.json) selects
+that campaign. The report shows one CORE suite/case; its nested
+`artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json` and suite log
+retain every child method and its counts. These checks are separate from the
+26 lunar U-series rows displayed by the nightly `moon` runner.
+
+To repeat the actual nightly adapter without running other CORE suites:
+
+```bash
+/usr/bin/python3 -B src/test/run_tests.py \
+  --config test/qualification-machine/passion.json \
+  --campaign nightly --test CORE-CHEMICAL-DATABASE-001 \
+  --output-dir test_output/chemical_database/NEW_NIGHTLY_ADAPTER_RUN
+```
+
+`--protocol-only` deliberately excludes classes marked
+`requires_authoritative_source=True` and the four `PythonProduction` methods.
+It therefore does **not** run the explicit real-source, pinned-release,
+installed/relocated SDK, or full acquired-release audits described below.
+Excluded source-method IDs appear in `outside_selected_scope`, rather than
+being reported as executed or passed. Supply the documented original-file
+selectors and lock to the full runner for that separate scope. The scheduled
+nightly tests a committed `master` checkout; uncommitted tests in another
+working tree are not included until published. The November 23 audit and
+actual historical/current counts are recorded in `srcMoon/STATUS.md` section
+5.42; those counts are dated evidence, not a fixed test-count contract.
+
 The native controls compile the actual maintained `Runtime.cpp` and `DataIO.cpp`
 and call them through a thin read-only adapter. Administrative fixtures contain
 only labelled parser strings, never observations or numerical chemistry data.
@@ -141,3 +171,21 @@ including complete packet/recipe/dependency archives and held-source refusals.
 Source-parser QA independently compares new author files with lexical views;
 release QA compares published views with those originals. These are separate
 layers, and neither substitutes for linked physical verification/validation.
+
+The targeted2026-11-20 follow-up adds source-specific admission controls to
+`test_source_packets.py`. The Figshare controls require the exact reviewed
+deposit/version/licence/listed file and refuse unrelated or missing grants.
+The NIST controls confine reuse to JRes121.005 and its native technical-series
+notice. Their small administrative records exercise permission/identity
+software only; actual native-source QA is recorded separately. The normal
+automatic discovery includes these tests in full and CORE protocol scopes.
+
+`test_native_nist_hxoy.py` also joins automatic discovery. Four administrative
+parser controls test exact cell/spans/footnotes, malformed/truncated markup,
+hash/article identity and preservation of existing outputs. The separate
+authoritative-source class compares the actual article/CSV cells and declares
+`requires_authoritative_source=True`. Select it explicitly with
+`AMPS_NIST_HXOY_SOURCE=/path/to/PMC7339710.html` and
+`AMPS_NIST_HXOY_SHA256=EXPECTED_SHA256`; otherwise it is SKIPPED in the full
+suite and outside CORE's protocol-only scope. It preserves source units and
+uncertainty strings and performs no thermochemical state/energy selection.

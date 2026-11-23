@@ -32,6 +32,8 @@ _HOSTS = {
     "chianti-use-attribution": {"sohoftp.nascom.nasa.gov", "db.chiantidatabase.org", "www.chiantidatabase.org"},
     "springer-cc-by-4.0": {"static-content.springer.com", "www.ebi.ac.uk"},
     "ntrs-19700032941-public-use": {"ntrs.nasa.gov"},
+    "figshare-13274840-cc-by-4.0": {"api.figshare.com", "ndownloader.figshare.com"},
+    "nist-jres-121005-public-use": {"nvlpubs.nist.gov", "pmc.ncbi.nlm.nih.gov", "www.nist.gov"},
 }
 
 
@@ -104,6 +106,35 @@ def _rights(root, evidence):
     return checked
 
 
+def _figshare_sticking_grant(evidence, uri):
+    """Bind one reviewed deposit's grant to its actual article/file identity.
+
+    Figshare does not apply one data licence to every deposit. The exact native
+    version1 record for13274840 grants CC BY4.0 to Table1 (file25563521).
+    Its provider metadata, rather than a caller permission flag or a grant for
+    another article, controls this narrow source-access policy. No physical
+    sticking law, text encoding or normalization follows from that grant.
+    """
+    article_paths = {"/v2/articles/13274840", "/v2/articles/13274840/versions/1"}
+    notices = [row for row in evidence if urlsplit(row["source_uri"]).hostname == "api.figshare.com"
+               and urlsplit(row["source_uri"]).path in article_paths]
+    if len(notices) != 1:
+        raise ValueError("Figshare13274840 requires its exact pinned native API grant")
+    grant = _json(notices[0]["original_path"])
+    licence = grant.get("license", {})
+    if (type(grant.get("id")) is not int or grant["id"] != 13274840 or
+            type(grant.get("version")) is not int or grant["version"] != 1 or
+            not isinstance(licence, dict) or
+            licence.get("url", "").rstrip("/") != "https://creativecommons.org/licenses/by/4.0"):
+        raise ValueError("Figshare article/version/CC-BY4 grant does not match reviewed source")
+    downloads = {row.get("download_url") for row in grant.get("files", [])
+                 if isinstance(row, dict) and row.get("id") == 25563521}
+    if uri.hostname == "api.figshare.com" and uri.path in article_paths and not uri.query:
+        return
+    if uri.geturl() not in downloads or uri.geturl() != "https://ndownloader.figshare.com/files/25563521":
+        raise ValueError("Figshare payload is not the reviewed deposit's listed Table1 file")
+
+
 def load_packets(packet_paths, policies):
     """Produce ordinary inventory datasets without changing the default release.
 
@@ -161,6 +192,22 @@ def load_packets(packet_paths, policies):
                 if policy_id == "ntrs-19700032941-public-use" and "19700032941" not in uri.path.split("/") and not any(
                         part.startswith("19700032941.") for part in uri.path.split("/")):
                     raise ValueError("NTRS public-use determination is specific to record 19700032941")
+                if policy_id == "figshare-13274840-cc-by-4.0":
+                    _figshare_sticking_grant(evidence, uri)
+                if policy_id == "nist-jres-121005-public-use":
+                    # The inspected NIST-employee article and its native notice
+                    # have their own technical-publication permission. This
+                    # does not clear WebBook/ASD or another SRD compilation.
+                    covered = {
+                        ("nvlpubs.nist.gov", "/nistpubs/jres/121/jres.121.005.pdf"),
+                        ("pmc.ncbi.nlm.nih.gov", "/articles/PMC7339710/"),
+                        ("www.nist.gov", "/open/license"),
+                    }
+                    if (uri.hostname, uri.path) not in covered or uri.query:
+                        raise ValueError("NIST public-use review is specific to JRes121.005 and its notice")
+                    if not any(urlsplit(row["source_uri"]).hostname == "www.nist.gov" and
+                               urlsplit(row["source_uri"]).path == "/open/license" for row in evidence):
+                        raise ValueError("JRes121.005 requires its pinned NIST technical-publication notice")
             role = row.get("role")
             if role not in ("source-native", "source-metadata", "rights-evidence", "derived-table"):
                 raise ValueError("explicit source/metadata/derived role is required")

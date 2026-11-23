@@ -262,6 +262,74 @@ class SourcePackets(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'explicit Python'):
             self.load()
 
+    def figshare(self):
+        # Administrative licence/file-binding fixture, never a downloaded
+        # measurement or evidence that a generic Figshare file is cleared.
+        policy = 'figshare-13274840-cc-by-4.0'
+        self.policies[policy] = self.policy
+        path = self.root/'administrative-figshare-record.json'
+        grant = {'id': 13274840, 'version': 1,
+            'license': {'url': 'https://creativecommons.org/licenses/by/4.0/'},
+            'files': [{'id': 25563521, 'download_url': 'https://ndownloader.figshare.com/files/25563521'}]}
+        path.write_text(json.dumps(grant))
+        self.row.update(policy=policy, source_uri='https://ndownloader.figshare.com/files/25563521',
+            rights_evidence=[{'path': path.name, 'sha256': digest(path),
+                'source_uri': 'https://api.figshare.com/v2/articles/13274840'}])
+        return path, grant
+
+    def test_figshare_grant_binds_reviewed_file(self):
+        self.figshare()
+        self.assertEqual(self.load()[0]['files'][0]['storage_permission'], 'allowed')
+
+    def test_figshare_unlisted_file_is_not_covered(self):
+        self.figshare();self.row['source_uri'] = 'https://ndownloader.figshare.com/files/25563522'
+        with self.assertRaisesRegex(ValueError, 'listed Table1'):
+            self.load()
+
+    def test_figshare_other_record_cannot_supply_grant(self):
+        path, value = self.figshare();value['id'] = 13274841
+        path.write_text(json.dumps(value));self.row['rights_evidence'][0]['sha256'] = digest(path)
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            self.load()
+
+    def test_figshare_other_version_cannot_supply_grant(self):
+        path, value = self.figshare();value['version'] = 2
+        path.write_text(json.dumps(value));self.row['rights_evidence'][0]['sha256'] = digest(path)
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            self.load()
+
+    def test_figshare_different_licence_cannot_supply_grant(self):
+        path, value = self.figshare();value['license']['url'] = 'https://creativecommons.org/licenses/by-nc/4.0/'
+        path.write_text(json.dumps(value));self.row['rights_evidence'][0]['sha256'] = digest(path)
+        with self.assertRaisesRegex(ValueError, 'CC-BY4'):
+            self.load()
+
+    def test_figshare_record_must_list_actual_payload(self):
+        path, value = self.figshare();value['files'] = []
+        path.write_text(json.dumps(value));self.row['rights_evidence'][0]['sha256'] = digest(path)
+        with self.assertRaisesRegex(ValueError, 'listed Table1'):
+            self.load()
+
+    def nist_jres(self):
+        self.policies['nist-jres-121005-public-use'] = self.policy
+        self.row.update(policy='nist-jres-121005-public-use',
+            source_uri='https://nvlpubs.nist.gov/nistpubs/jres/121/jres.121.005.pdf')
+        self.row['rights_evidence'][0]['source_uri'] = 'https://www.nist.gov/open/license'
+
+    def test_nist_jres_exact_article_and_notice(self):
+        self.nist_jres()
+        self.assertEqual(self.load()[0]['files'][0]['storage_permission'], 'allowed')
+
+    def test_nist_jres_does_not_cover_another_article(self):
+        self.nist_jres();self.row['source_uri'] = 'https://nvlpubs.nist.gov/nistpubs/jres/121/jres.121.006.pdf'
+        with self.assertRaisesRegex(ValueError, 'specific to JRes121.005'):
+            self.load()
+
+    def test_nist_jres_requires_technical_publication_notice(self):
+        self.nist_jres();self.row['rights_evidence'][0]['source_uri'] = 'https://www.nist.gov/unrelated'
+        with self.assertRaisesRegex(ValueError, 'technical-publication notice'):
+            self.load()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

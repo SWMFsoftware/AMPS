@@ -97,3 +97,23 @@ daughter laws remain missing. Existing source-integrity PASS results are
 not promoted to model verification or validation. No licence request,
 author contact, production build or scientific comparison is performed by
 this inventory.
+
+## Targeted remaining-input additions, 2026-11-20
+
+`figshare-13274840-cc-by-4.0` covers only Laffon's sticking Table1 deposit
+13274840.v1/file25563521. The exact native API record declares CC BY4.0 and
+lists the payload download URL. Admission checks the article ID, version,
+licence URL and actual file membership. This does not clear another Figshare
+deposit. Retain the source DOI/attribution, gold-relative XPS normalization,
+20K substrate/300K gas conditions, native uncertainties and substrate distinctions.
+The undeclared native eight-bit text encoding is not silently converted.
+
+`nist-jres-121005-public-use` is specific to the inspected Burgess H/O
+thermochemical evaluation, DOI10.6028/jres.121.005, its official PDF/PMC7339710
+rendition and the pinned NIST technical-publication notice. That notice
+explicitly includes the Journal of Research and specifies reuse/attribution
+for NIST-employee work. Retain the requested NIST acknowledgement and article
+citation with derived views. This is not a grant for the separately copyrighted
+WebBook/ASD compilations, another NIST paper or a source published elsewhere.
+Table cells preserve their native state, zero-K, reference and uncertainty
+semantics; permission is not a physical source-to-reaction mapping.
