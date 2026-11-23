@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import builtins
 import csv
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -22,6 +24,46 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+# Two valid float summation algorithms.  The built-in sum() of Python <= 3.11
+# adds left to right; Python >= 3.12 uses compensated summation.  Integer
+# sums are exact in both and are returned unchanged, so only float rounding
+# differs.
+def _left_to_right_sum(values, start=0):
+    total = start
+    for value in values:
+        total = total + value
+    return total
+
+
+def _compensated_sum(values, start=0):
+    values = list(values)
+    if isinstance(start, int) and all(isinstance(value, int) for value in values):
+        return builtins.sum(values, start)
+    total = float(start)
+    compensation = 0.0
+    for value in values:
+        value = float(value)
+        step = total + value
+        if abs(total) >= abs(value):
+            compensation += (total - step) + value
+        else:
+            compensation += (value - step) + total
+        total = step
+    return total + compensation
+
+
+def _fresh_generator(name: str, summation=None):
+    """Load an independent copy of the generator; optionally bind ``sum``."""
+    spec = importlib.util.spec_from_file_location(
+        name, MODULE / "tools/generate_reference_tables.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if summation is not None:
+        module.sum = summation
+    return module
 
 
 class ReferenceDataTest(unittest.TestCase):
@@ -119,6 +161,23 @@ class ReferenceDataTest(unittest.TestCase):
             [sys.executable, str(MODULE / "tools/generate_reference_tables.py"), "--check"],
             check=True,
         )
+
+    def test_generated_include_is_independent_of_float_summation(self) -> None:
+        # --check compares text exactly, so the generated bits must not depend
+        # on the interpreter.  A float sum() inside the generator would make
+        # the two renders below differ (1-3 ulp in the O I tables, found on
+        # 2026-11-23 between Python 3.8 and 3.14), on any interpreter.
+        reference = _fresh_generator("_gen_reference").render()
+        for name, summation in (
+            ("left-to-right", _left_to_right_sum),
+            ("compensated", _compensated_sum),
+        ):
+            rendered = _fresh_generator("_gen_" + name.replace("-", "_"), summation).render()
+            self.assertTrue(
+                rendered == reference,
+                f"generated include changes with {name} float summation; "
+                "use math.fsum for every float sum in generate_reference_tables.py",
+            )
 
 
 if __name__ == "__main__":

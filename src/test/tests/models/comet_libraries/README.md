@@ -27,7 +27,7 @@ separate Hartley2 campaigns. New registered cases must also be added to
 | `COMET-COLLISION-DATABASE-001` | `src/models/cometary_physics/test_collision_database.cpp`: known constant/temperature-power laws, symmetric unordered lookup, validity range, missing pair and duplicate rejection. Prevents an absent/out-of-range record being silently accepted as physical zero collision. |
 | `COMET-RADIATIVE-COOLING-001` | `src/models/cometary_physics/test_radiative_cooling.cpp`: independently evaluated temperature branches, cgs-to-SI energy conversion, known optical attenuation and disabled/zero limits. Protects units and branch selection. |
 | `COMET-FLUORESCENCE-001` | `src/models/resonance_fluorescence/resonance_fluorescence.cpp` with `tests/test_resonance_fluorescence.cpp`: maintained independent line-profile/normalization and metadata checks. Protects reusable spectroscopy without invoking a comet transport model. |
-| `COMET-REFERENCE-DATA-001` | Read-only `tools/generate_reference_tables.py --check` plus `tests/test_reference_data.py`: reviewed data hashes and generated-include agreement. Does not download, regenerate or replace authoritative scientific tables. |
+| `COMET-REFERENCE-DATA-001` | Read-only `tools/generate_reference_tables.py --check` plus `tests/test_reference_data.py`: reviewed data hashes, generated-include agreement, and independence of the generated bits from the interpreter's float summation (left-to-right vs compensated), so the exact check holds on every Python. Does not download, regenerate or replace authoritative scientific tables. |
 
 The adapter consumes `tools.cxx` and `tools.python` from the required machine
 profile. C++ builds use C++17, -O2, -Wall, -Wextra and -Wpedantic and write only

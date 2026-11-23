@@ -82,6 +82,14 @@ To intentionally regenerate after reviewing a reference-data update:
 python3 tools/generate_reference_tables.py
 ```
 
+`--check` compares the include text exactly, so the generator must give the
+same bits under every supported Python. All float sums use `math.fsum`,
+which is correctly rounded in every version. Do not use the built-in
+`sum()`: since Python 3.12 it uses compensated summation for floats, which
+made the O I tables differ by 1-3 units in the last place between Python 3.8
+and 3.14. That broke `COMET-REFERENCE-DATA-001` on the Python 3.8 test
+profile until 2026-11-23.
+
 An upstream refresh is intentionally guarded against accidental replacement:
 
 ```sh

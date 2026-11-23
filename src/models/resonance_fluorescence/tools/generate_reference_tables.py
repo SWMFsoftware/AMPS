@@ -86,6 +86,15 @@ UPPER_3S = ("2s2.2p3.(4S*).3s", "3S*", "1")
 UPPER_3D = ("2s2.2p3.(4S*).3d", "3D*")
 MIDDLE_3P = ("2s2.2p3.(4S*).3p", "3P")
 
+# Every float summation below uses math.fsum, the correctly rounded sum.
+# Python 3.12 changed the built-in sum() of floats from left-to-right
+# addition to compensated summation.  With sum(), the emitted %.17g values
+# (and so the --check comparison) depended on the interpreter: the O I
+# tables differed by 1-3 units in the last place between Python 3.8 and
+# 3.14.  math.fsum gives the same bits in every Python version; on
+# 2026-11-23 it reproduced the checked-in include byte for byte under
+# Python 3.8.10 and 3.14.10.
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -147,7 +156,7 @@ def integrate_linear(xs: list[float], ys: list[float], left: float, right: float
     """Exact integral of the piecewise-linear interpolant on [left, right]."""
     knots = [left] + [x for x in xs if left < x < right] + [right]
     values = [interpolate(xs, ys, x) for x in knots]
-    return sum(
+    return math.fsum(
         0.5 * (values[i] + values[i + 1]) * (knots[i + 1] - knots[i])
         for i in range(len(knots) - 1)
     )
@@ -246,7 +255,7 @@ def oxygen_atomic_data() -> dict[str, object]:
         ]
         if not direct or not cascade:
             raise RuntimeError(f"incomplete NIST decay data for 3d 3D J={upper_j}")
-        branching = sum(cascade) / (sum(cascade) + sum(direct))
+        branching = math.fsum(cascade) / (math.fsum(cascade) + math.fsum(direct))
         bowen.append(
             (upper_j, nist_ritz_vacuum_a(pump), float(pump["fik"]), branching)
         )
@@ -301,7 +310,7 @@ def oxygen_tables() -> dict[str, object]:
             * dlambda_dv
             * KVB_DISTANCE_AU**2
         )
-    reference_flux_cm2 = sum(line_flux.values())
+    reference_flux_cm2 = math.fsum(line_flux.values())
     fraction_1302 = line_flux["1302"] / reference_flux_cm2
     kvb_grid = velocity_grid(KVB_LIMIT_KM_S)
     kvb_rate = [
@@ -367,8 +376,8 @@ def oxygen_tables() -> dict[str, object]:
 
     # Mean energy of an emitted triplet photon: the 3s 3S1 level decays to
     # 3P2, 3P1, 3P0 in proportion to the three Einstein A values.
-    total_a = sum(row[3] for row in triplet)
-    mean_energy = sum(
+    total_a = math.fsum(row[3] for row in triplet)
+    mean_energy = math.fsum(
         row[3] / total_a * PLANCK_J_S * LIGHT_SPEED_M_S / (row[1] * 1.0e-10)
         for row in triplet
     )
