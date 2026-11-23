@@ -44,6 +44,7 @@
 #include "util/sep_initialization.h"
 #include "util/sep_native_startup_input.h"
 #include "util/sep_checkpoint_native_validation.h"
+#include "util/sep_birth_native_validation.h"
 #include "util/sep_run_configuration.h"
 #include "debug/sep_debug_fieldline_datum.h"
 
@@ -235,10 +236,14 @@ int main(int argc,char **argv) {
                 SEP::Testing::NativeStartupInput::DescriptorTag()) !=
           selectedComponentTests.front()->tags.end();
   SEP::Testing::MaterialCheckpointRequest materialCheckpointRequest;
+  SEP::Testing::BirthNativeRequest birthNativeRequest;
   try {
-    if(componentTestMode&&selectedComponentTests.size()==1)
+    if(componentTestMode&&selectedComponentTests.size()==1) {
       materialCheckpointRequest=SEP::Testing::ReadMaterialCheckpointRequest(
           selectedComponentTests.front()->id,cli_options.testInputPath);
+      birthNativeRequest=SEP::Testing::ReadBirthNativeRequest(
+          selectedComponentTests.front()->id,cli_options.testInputPath);
+    }
   }catch(const std::exception& error) {
     if(PIC::ThisThread==0)std::cerr<<"ERROR: material checkpoint startup: "<<error.what()<<'\n';
     return 2;
@@ -255,8 +260,23 @@ int main(int argc,char **argv) {
       result.message="material checkpoint case requires --test-input protocol2 with explicit startup_input and event";return result;};
     return RunSelectedComponentTests({&unavailable},std::cout,cli_options.testJsonPath,cli_options.testJunitPath);
   }
+  if(componentTestMode&&selectedComponentTests.size()==1&&!birthNativeRequest.selected&&
+      std::find(selectedComponentTests.front()->tags.begin(),selectedComponentTests.front()->tags.end(),
+          "birth-operator-startup-v1")!=selectedComponentTests.front()->tags.end()) {
+    // A required source-window fixture cannot borrow the driver's default dt,
+    // model or epoch. Preserve its ID as ERROR if its fixed-startup role is
+    // missing; no native callback, partial timestep, or sampling is performed.
+    auto unavailable=*selectedComponentTests.front();
+    unavailable.initialization=SEP::Testing::InitializationLevel::None;
+    unavailable.callback=[](){SEP::Testing::Result result;result.status=SEP::Testing::Status::Error;
+      result.message="birth native case requires its reviewed fixed-startup operator-stage protocol";return result;};
+    return RunSelectedComponentTests({&unavailable},std::cout,cli_options.testJsonPath,cli_options.testJunitPath);
+  }
+  const bool reducedMaterialFixture=materialCheckpointRequest.selected||
+      (birthNativeRequest.selected&&birthNativeRequest.material);
   const std::string effectiveInitializationPath = materialCheckpointRequest.selected?
-      materialCheckpointRequest.inputPath:nativeStartupInput?cli_options.testInputPath:cli_options.inputPath;
+      materialCheckpointRequest.inputPath:birthNativeRequest.selected?birthNativeRequest.inputPath:
+      nativeStartupInput?cli_options.testInputPath:cli_options.inputPath;
 
   // Unsupported return/normalization choices must take the AMPS host trap at
   // startup, even if the first physical shock encounter would occur much
@@ -420,14 +440,15 @@ int main(int argc,char **argv) {
   }
 
 
-  if(materialCheckpointRequest.selected) {
+  if(reducedMaterialFixture) {
     // Explicit verification fixture, read through --test-input rather than a
     // second production CLI. These are the already qualified material/source
     // values: SI release distance 1e9 m, 16 computational proposals, prescribed
     // scattering, and an epoch at which this event actually intersects the
     // line. No physical dt is set here; the reviewed startup deck owns it.
     PIC::SimulationTime::SetInitialValue(12000.0);
-    cli_options.reducedShockEventPath=materialCheckpointRequest.eventPath;
+    cli_options.reducedShockEventPath=materialCheckpointRequest.selected?
+        materialCheckpointRequest.eventPath:birthNativeRequest.eventPath;
     cli_options.reducedParticles.enabled=true;
     cli_options.reducedParticles.releaseDistanceM=1e9;
     cli_options.injectionParticlesPerIteration=16;
@@ -831,7 +852,7 @@ int main(int argc,char **argv) {
   if(!componentTestMode&&!cli_options.initializationOnly&&
       SEP::Background::ConfiguredProvider()==SEP::Background::Provider::Swcme) {
     const auto admission=SEP::Background::Admission::RequireMovingTransport(
-        SEP::Background::Admission::Backend::Swcme1D);
+        SEP::SW1DAdapter::MaterialProfile());
     if(!admission.ok()) {
       if(PIC::ThisThread==0)std::cerr<<"ERROR: "<<admission.message<<'\n';
       return 1;
@@ -865,7 +886,26 @@ int main(int argc,char **argv) {
   // that mass and signed charge. A mixed-species campaign requires the existing
   // explicit SpeciesSource table and is deliberately not inferred from one
   // SWCME source record.
-  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d) {
+  // Only the explicit PNW snapshot/export fixture consumes no energetic
+  // SWCME particle source. It uses actual exported plasma primitives and the
+  // actual provider composition/mass density in its native wave-storage
+  // oracles. Background inertia is not the energetic SEP source's particle
+  // mass/charge, so that unrelated charge cannot establish wave ownership.
+  // NativeStorage alone grants no exception: SOURCE02 can allocate a genuine
+  // thermal population under its own source contract, and other callbacks may
+  // install a manufactured particle fixture before their real preflight.
+  // Require every selected descriptor to carry the reviewed snapshot-only
+  // capability. Production, mixed selections, and FieldLineModel source hosts
+  // retain the EXACT original species checks/tolerances below, including the
+  // CP05/BIRTHN06 source/checkpoint startup. No physical constants are changed.
+  const bool pnwSnapshotOnlyStartup=componentTestMode&&
+      RequiredInitializationLevel(selectedComponentTests)==SEP::Testing::InitializationLevel::NativeStorage&&
+      std::all_of(selectedComponentTests.begin(),selectedComponentTests.end(),
+          [](const SEP::Testing::Descriptor* descriptor) {
+            return std::find(descriptor->tags.begin(),descriptor->tags.end(),
+                "native-wave-storage-snapshot-v1")!=descriptor->tags.end();
+          });
+  if (SEP::ShockModelType==SEP::cShockModelType::SwCme1d&&!pnwSnapshotOnlyStartup) {
     const double elementaryChargeC=1.602176634e-19;
     for (int spec=0;spec<PIC::nTotalSpecies;++spec) {
       const double actualMass=PIC::MolecularData::GetMass(spec);
@@ -927,6 +967,25 @@ int main(int argc,char **argv) {
   // timestep loop can execute after a --test/--test-group/--all-tests request.
   if (componentTestMode) {
     std::string prerequisiteError;
+    const bool nativeWaveStorageSnapshot=std::any_of(selectedComponentTests.begin(),
+        selectedComponentTests.end(),[](const SEP::Testing::Descriptor* descriptor) {
+          return std::find(descriptor->tags.begin(),descriptor->tags.end(),
+              "native-wave-storage-snapshot-v1")!=descriptor->tags.end();
+        });
+    if(nativeWaveStorageSnapshot) {
+      try {
+        // PNW validates actual native four-wave storage and its staged restore,
+        // with the already configured SWCME primitive profile as diagnostic
+        // input. This publishes that real profile through its existing owner;
+        // it does not register material geometry or authorize a particle move.
+        // Other NativeStorage callbacks publish their own declared fixture (or
+        // need no snapshot at all), so allocation alone cannot fabricate one.
+        if(SEP::Background::ConfiguredProvider()!=SEP::Background::Provider::Swcme)
+          throw std::logic_error("native PNW storage fixture requires its declared SWCME diagnostic profile");
+        publish_sw1d_for_particle_step(SEP::Background::SimulationTimeSeconds(),
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0],0);
+      }catch(const std::exception& error){prerequisiteError=error.what();}
+    }
     if (RequiredInitializationLevel(selectedComponentTests) ==
         SEP::Testing::InitializationLevel::FieldLineModel) {
       // Native mover fixtures call the same production coefficient adapters as
@@ -942,7 +1001,7 @@ int main(int argc,char **argv) {
             epochS, PIC::ParticleWeightTimeStep::GlobalTimeStep[0], 0);
       }
       else {
-        if(materialCheckpointRequest.selected)
+        if(reducedMaterialFixture)
           install_reduced_background_on_field_lines(epochS);
         SEP::Background::PrepareSnapshotForParticleStep();
       }

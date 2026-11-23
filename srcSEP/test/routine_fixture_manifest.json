@@ -1,0 +1,981 @@
+{
+  "schema": "srcsep-routine-fixtures-v1",
+  "scope": "PROTOTYPE ONLY; all222 Routine IDs retained;24 unavailable native fixtures remain ERROR",
+  "expected_ids": [
+    "ARB01",
+    "ARB02",
+    "ARB03",
+    "ARB04",
+    "ARB05",
+    "ARB06",
+    "ARBN01",
+    "ARBN02",
+    "ARBN03",
+    "ARBN04",
+    "ASE01",
+    "ASE02",
+    "ASE03",
+    "ASE04",
+    "ASE05",
+    "BG01",
+    "BG02",
+    "BIRTH01",
+    "BIRTH02",
+    "BIRTH03",
+    "BIRTH04",
+    "BIRTH05",
+    "BIRTH06",
+    "BIRTH07",
+    "BIRTH08",
+    "BIRTH09",
+    "BIRTH10",
+    "BIRTH11",
+    "BIRTHN01",
+    "BIRTHN02",
+    "BIRTHN03",
+    "BIRTHN04",
+    "BIRTHN05",
+    "BIRTHN06",
+    "CLIEX01",
+    "CP03G01",
+    "CP03G02",
+    "CP03G03",
+    "CP03G04",
+    "CP03G05",
+    "CP03G06",
+    "CP03G07",
+    "CP03G08",
+    "CP03G09",
+    "CP03G10",
+    "CP05C01",
+    "CP05C02",
+    "CP05C03",
+    "CP05C04",
+    "CP05C05",
+    "CROSS01",
+    "CROSS02",
+    "CRS01",
+    "CRS02",
+    "CRS03",
+    "CRS04",
+    "CRS05",
+    "CRS06",
+    "CRS07",
+    "CRS08",
+    "CRS09",
+    "CRS10",
+    "CRS11",
+    "CV01",
+    "CV02",
+    "CV03",
+    "CV04",
+    "CV05",
+    "CV06",
+    "CV07",
+    "CV08",
+    "CV09",
+    "CV10",
+    "CV11",
+    "CV12",
+    "DXX01",
+    "FCT01",
+    "FCT02",
+    "FCT03",
+    "FCT04",
+    "FCT05",
+    "FCT06",
+    "FCT07",
+    "FCT08",
+    "FCT09",
+    "FLCP01",
+    "FLCP02",
+    "FLCP03",
+    "FLCP04",
+    "FTE01",
+    "FTED02",
+    "FTED03",
+    "FTED04",
+    "FTED05",
+    "FTED06",
+    "FTED07",
+    "FTEM03",
+    "FTEM04",
+    "FTEM05",
+    "FTEM06",
+    "FTEM07",
+    "INIT01",
+    "INIT02",
+    "INIT03",
+    "IV01",
+    "IV02",
+    "IV03",
+    "IV04",
+    "IV05",
+    "IV06",
+    "MJ01",
+    "MJ02",
+    "MJ03",
+    "MJ04",
+    "MJ05",
+    "MJ06",
+    "MJV01",
+    "MJV02",
+    "MJV03",
+    "MTG01",
+    "MTG02",
+    "MTG03",
+    "MTG04",
+    "MTG05",
+    "MTG06",
+    "PARK01",
+    "PARK03",
+    "PARK04",
+    "PARK05",
+    "PARK06",
+    "PARKER01",
+    "PCLI01",
+    "PCLI02",
+    "PCLI03",
+    "PCLI04",
+    "PCLI05",
+    "PCLI06",
+    "PCLI07",
+    "PCLI08",
+    "PCLI09",
+    "PCLI10",
+    "PCLI11",
+    "PCLI12",
+    "PNW01",
+    "PNW02",
+    "PNW03",
+    "PNW04",
+    "POPN01",
+    "POPN02",
+    "POPN03",
+    "PWS01",
+    "PWS02",
+    "PWS03",
+    "PWS04",
+    "PWS05",
+    "PWS06",
+    "PWS07",
+    "PWS08",
+    "RC01",
+    "RC02",
+    "RC03",
+    "RC04",
+    "RC05",
+    "RC06",
+    "RNG01",
+    "RNG02",
+    "RNG03",
+    "RNG04",
+    "RNG05",
+    "RNG06",
+    "RNG07",
+    "RNG08",
+    "RNG09",
+    "RNG10",
+    "SBW01",
+    "SBW02",
+    "SBW03",
+    "SBW04",
+    "SBW05",
+    "SBWN01",
+    "SBWN02",
+    "SOURCE01",
+    "SOURCE02",
+    "TURB01",
+    "TURB02",
+    "TURB03",
+    "TURB04",
+    "TURB05",
+    "TURB06",
+    "TURB07",
+    "TURB08",
+    "TURB09",
+    "TURB10",
+    "TURB11",
+    "TURB12",
+    "TURB13",
+    "TURB14",
+    "TURB15",
+    "TURB16",
+    "TURB17",
+    "TURB18",
+    "TURB19",
+    "TURB20",
+    "TURB21",
+    "TURB22",
+    "TURB23",
+    "TURBOWN01",
+    "VAL01",
+    "WKB01",
+    "WKB02",
+    "WKB03",
+    "WKB04",
+    "WKB05",
+    "WKB06",
+    "WKB07",
+    "WKB08",
+    "WN01",
+    "WN02",
+    "WN03",
+    "WN04",
+    "WN05",
+    "WN06"
+  ],
+  "routine_inventory_sha256": "8b02ce4065a822d0b8b96268ebe9f082669005d68b02c59ca91318fdaec804fb",
+  "fixtures": {
+    "ARB01": {
+      "kind": "native"
+    },
+    "ARB02": {
+      "kind": "native"
+    },
+    "ARB03": {
+      "kind": "native"
+    },
+    "ARB04": {
+      "kind": "native"
+    },
+    "ARB05": {
+      "kind": "native"
+    },
+    "ARB06": {
+      "kind": "native"
+    },
+    "ARBN01": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "ARBN02": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "ARBN03": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "ARBN04": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "ASE01": {
+      "kind": "native"
+    },
+    "ASE02": {
+      "kind": "native"
+    },
+    "ASE03": {
+      "kind": "native"
+    },
+    "ASE04": {
+      "kind": "native"
+    },
+    "ASE05": {
+      "kind": "native"
+    },
+    "BG01": {
+      "kind": "native"
+    },
+    "BG02": {
+      "kind": "native"
+    },
+    "BIRTH01": {
+      "kind": "native"
+    },
+    "BIRTH02": {
+      "kind": "native"
+    },
+    "BIRTH03": {
+      "kind": "native"
+    },
+    "BIRTH04": {
+      "kind": "native"
+    },
+    "BIRTH05": {
+      "kind": "native"
+    },
+    "BIRTH06": {
+      "kind": "native"
+    },
+    "BIRTH07": {
+      "kind": "native"
+    },
+    "BIRTH08": {
+      "kind": "native"
+    },
+    "BIRTH09": {
+      "kind": "native"
+    },
+    "BIRTH10": {
+      "kind": "native"
+    },
+    "BIRTH11": {
+      "kind": "native"
+    },
+    "BIRTHN01": {
+      "kind": "birth-operator"
+    },
+    "BIRTHN02": {
+      "kind": "birth-operator"
+    },
+    "BIRTHN03": {
+      "kind": "birth-operator"
+    },
+    "BIRTHN04": {
+      "kind": "birth-operator"
+    },
+    "BIRTHN05": {
+      "kind": "birth-operator"
+    },
+    "BIRTHN06": {
+      "kind": "birth-operator"
+    },
+    "CLIEX01": {
+      "kind": "native"
+    },
+    "CP03G01": {
+      "kind": "native"
+    },
+    "CP03G02": {
+      "kind": "native"
+    },
+    "CP03G03": {
+      "kind": "native"
+    },
+    "CP03G04": {
+      "kind": "native"
+    },
+    "CP03G05": {
+      "kind": "native"
+    },
+    "CP03G06": {
+      "kind": "native"
+    },
+    "CP03G07": {
+      "kind": "native"
+    },
+    "CP03G08": {
+      "kind": "native"
+    },
+    "CP03G09": {
+      "kind": "native"
+    },
+    "CP03G10": {
+      "kind": "native"
+    },
+    "CP05C01": {
+      "kind": "material-checkpoint-v2",
+      "startup_input": {
+        "path": "examples/reduced-shock/field_line.in",
+        "sha256": "88d6f63e51255f44af4c8ee7322f6b9332ff30d0effaf8a80bb7345d50dcb976"
+      },
+      "event": {
+        "path": "examples/reduced-shock/positive_1au.event",
+        "sha256": "31112fa31b0daa304c87c21c0ed3da54882beed29a230a4d0c4c3ff0a518a4ce"
+      }
+    },
+    "CP05C02": {
+      "kind": "material-checkpoint-v2",
+      "startup_input": {
+        "path": "examples/reduced-shock/field_line.in",
+        "sha256": "88d6f63e51255f44af4c8ee7322f6b9332ff30d0effaf8a80bb7345d50dcb976"
+      },
+      "event": {
+        "path": "examples/reduced-shock/positive_1au.event",
+        "sha256": "31112fa31b0daa304c87c21c0ed3da54882beed29a230a4d0c4c3ff0a518a4ce"
+      }
+    },
+    "CP05C03": {
+      "kind": "material-checkpoint-v2",
+      "startup_input": {
+        "path": "examples/reduced-shock/field_line.in",
+        "sha256": "88d6f63e51255f44af4c8ee7322f6b9332ff30d0effaf8a80bb7345d50dcb976"
+      },
+      "event": {
+        "path": "examples/reduced-shock/positive_1au.event",
+        "sha256": "31112fa31b0daa304c87c21c0ed3da54882beed29a230a4d0c4c3ff0a518a4ce"
+      }
+    },
+    "CP05C04": {
+      "kind": "material-checkpoint-v2",
+      "startup_input": {
+        "path": "examples/reduced-shock/field_line.in",
+        "sha256": "88d6f63e51255f44af4c8ee7322f6b9332ff30d0effaf8a80bb7345d50dcb976"
+      },
+      "event": {
+        "path": "examples/reduced-shock/positive_1au.event",
+        "sha256": "31112fa31b0daa304c87c21c0ed3da54882beed29a230a4d0c4c3ff0a518a4ce"
+      }
+    },
+    "CP05C05": {
+      "kind": "material-checkpoint-v2",
+      "startup_input": {
+        "path": "examples/reduced-shock/field_line.in",
+        "sha256": "88d6f63e51255f44af4c8ee7322f6b9332ff30d0effaf8a80bb7345d50dcb976"
+      },
+      "event": {
+        "path": "examples/reduced-shock/positive_1au.event",
+        "sha256": "31112fa31b0daa304c87c21c0ed3da54882beed29a230a4d0c4c3ff0a518a4ce"
+      }
+    },
+    "CROSS01": {
+      "kind": "native"
+    },
+    "CROSS02": {
+      "kind": "native"
+    },
+    "CRS01": {
+      "kind": "native"
+    },
+    "CRS02": {
+      "kind": "native"
+    },
+    "CRS03": {
+      "kind": "native"
+    },
+    "CRS04": {
+      "kind": "native"
+    },
+    "CRS05": {
+      "kind": "native"
+    },
+    "CRS06": {
+      "kind": "native"
+    },
+    "CRS07": {
+      "kind": "native"
+    },
+    "CRS08": {
+      "kind": "native"
+    },
+    "CRS09": {
+      "kind": "native"
+    },
+    "CRS10": {
+      "kind": "native"
+    },
+    "CRS11": {
+      "kind": "native"
+    },
+    "CV01": {
+      "kind": "validation"
+    },
+    "CV02": {
+      "kind": "validation"
+    },
+    "CV03": {
+      "kind": "validation"
+    },
+    "CV04": {
+      "kind": "validation"
+    },
+    "CV05": {
+      "kind": "validation"
+    },
+    "CV06": {
+      "kind": "validation"
+    },
+    "CV07": {
+      "kind": "validation"
+    },
+    "CV08": {
+      "kind": "validation"
+    },
+    "CV09": {
+      "kind": "validation"
+    },
+    "CV10": {
+      "kind": "validation"
+    },
+    "CV11": {
+      "kind": "validation"
+    },
+    "CV12": {
+      "kind": "validation"
+    },
+    "DXX01": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "FCT01": {
+      "kind": "native"
+    },
+    "FCT02": {
+      "kind": "native"
+    },
+    "FCT03": {
+      "kind": "native"
+    },
+    "FCT04": {
+      "kind": "native"
+    },
+    "FCT05": {
+      "kind": "native"
+    },
+    "FCT06": {
+      "kind": "native"
+    },
+    "FCT07": {
+      "kind": "native"
+    },
+    "FCT08": {
+      "kind": "native"
+    },
+    "FCT09": {
+      "kind": "native"
+    },
+    "FLCP01": {
+      "kind": "native"
+    },
+    "FLCP02": {
+      "kind": "native"
+    },
+    "FLCP03": {
+      "kind": "native"
+    },
+    "FLCP04": {
+      "kind": "native"
+    },
+    "FTE01": {
+      "kind": "native-storage",
+      "startup_args": [
+        "--shock-model",
+        "analytical"
+      ]
+    },
+    "FTED02": {
+      "kind": "native"
+    },
+    "FTED03": {
+      "kind": "native"
+    },
+    "FTED04": {
+      "kind": "native"
+    },
+    "FTED05": {
+      "kind": "native"
+    },
+    "FTED06": {
+      "kind": "native"
+    },
+    "FTED07": {
+      "kind": "native"
+    },
+    "FTEM03": {
+      "kind": "native"
+    },
+    "FTEM04": {
+      "kind": "native"
+    },
+    "FTEM05": {
+      "kind": "native"
+    },
+    "FTEM06": {
+      "kind": "native"
+    },
+    "FTEM07": {
+      "kind": "native"
+    },
+    "INIT01": {
+      "kind": "native"
+    },
+    "INIT02": {
+      "kind": "native"
+    },
+    "INIT03": {
+      "kind": "native"
+    },
+    "IV01": {
+      "kind": "validation"
+    },
+    "IV02": {
+      "kind": "validation"
+    },
+    "IV03": {
+      "kind": "validation"
+    },
+    "IV04": {
+      "kind": "validation"
+    },
+    "IV05": {
+      "kind": "validation"
+    },
+    "IV06": {
+      "kind": "validation"
+    },
+    "MJ01": {
+      "kind": "native"
+    },
+    "MJ02": {
+      "kind": "native"
+    },
+    "MJ03": {
+      "kind": "native"
+    },
+    "MJ04": {
+      "kind": "native"
+    },
+    "MJ05": {
+      "kind": "native"
+    },
+    "MJ06": {
+      "kind": "native"
+    },
+    "MJV01": {
+      "kind": "native"
+    },
+    "MJV02": {
+      "kind": "native"
+    },
+    "MJV03": {
+      "kind": "native"
+    },
+    "MTG01": {
+      "kind": "native"
+    },
+    "MTG02": {
+      "kind": "native"
+    },
+    "MTG03": {
+      "kind": "native"
+    },
+    "MTG04": {
+      "kind": "native"
+    },
+    "MTG05": {
+      "kind": "native"
+    },
+    "MTG06": {
+      "kind": "native"
+    },
+    "PARK01": {
+      "kind": "native"
+    },
+    "PARK03": {
+      "kind": "native"
+    },
+    "PARK04": {
+      "kind": "native"
+    },
+    "PARK05": {
+      "kind": "native"
+    },
+    "PARK06": {
+      "kind": "native"
+    },
+    "PARKER01": {
+      "kind": "native-storage",
+      "startup_args": [
+        "--shock-model",
+        "analytical"
+      ]
+    },
+    "PCLI01": {
+      "kind": "native"
+    },
+    "PCLI02": {
+      "kind": "native"
+    },
+    "PCLI03": {
+      "kind": "native"
+    },
+    "PCLI04": {
+      "kind": "native"
+    },
+    "PCLI05": {
+      "kind": "native"
+    },
+    "PCLI06": {
+      "kind": "native"
+    },
+    "PCLI07": {
+      "kind": "native"
+    },
+    "PCLI08": {
+      "kind": "native"
+    },
+    "PCLI09": {
+      "kind": "native"
+    },
+    "PCLI10": {
+      "kind": "native"
+    },
+    "PCLI11": {
+      "kind": "native"
+    },
+    "PCLI12": {
+      "kind": "native"
+    },
+    "PNW01": {
+      "kind": "native-storage",
+      "startup_args": [
+        "--shock-model",
+        "swcme1d",
+        "--turbulence-model",
+        "wave-number-resolved"
+      ]
+    },
+    "PNW02": {
+      "kind": "native-storage",
+      "startup_args": [
+        "--shock-model",
+        "swcme1d",
+        "--turbulence-model",
+        "wave-number-resolved"
+      ]
+    },
+    "PNW03": {
+      "kind": "native-storage",
+      "startup_args": [
+        "--shock-model",
+        "swcme1d",
+        "--turbulence-model",
+        "wave-number-resolved"
+      ]
+    },
+    "PNW04": {
+      "kind": "native-storage",
+      "startup_args": [
+        "--shock-model",
+        "swcme1d",
+        "--turbulence-model",
+        "wave-number-resolved"
+      ]
+    },
+    "POPN01": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "POPN02": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "POPN03": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "PWS01": {
+      "kind": "native"
+    },
+    "PWS02": {
+      "kind": "native"
+    },
+    "PWS03": {
+      "kind": "native"
+    },
+    "PWS04": {
+      "kind": "native"
+    },
+    "PWS05": {
+      "kind": "native"
+    },
+    "PWS06": {
+      "kind": "native"
+    },
+    "PWS07": {
+      "kind": "native"
+    },
+    "PWS08": {
+      "kind": "native"
+    },
+    "RC01": {
+      "kind": "native"
+    },
+    "RC02": {
+      "kind": "native"
+    },
+    "RC03": {
+      "kind": "native"
+    },
+    "RC04": {
+      "kind": "native"
+    },
+    "RC05": {
+      "kind": "native"
+    },
+    "RC06": {
+      "kind": "native"
+    },
+    "RNG01": {
+      "kind": "native"
+    },
+    "RNG02": {
+      "kind": "native"
+    },
+    "RNG03": {
+      "kind": "native"
+    },
+    "RNG04": {
+      "kind": "native"
+    },
+    "RNG05": {
+      "kind": "native"
+    },
+    "RNG06": {
+      "kind": "native"
+    },
+    "RNG07": {
+      "kind": "native"
+    },
+    "RNG08": {
+      "kind": "native"
+    },
+    "RNG09": {
+      "kind": "native"
+    },
+    "RNG10": {
+      "kind": "native"
+    },
+    "SBW01": {
+      "kind": "native"
+    },
+    "SBW02": {
+      "kind": "native"
+    },
+    "SBW03": {
+      "kind": "native"
+    },
+    "SBW04": {
+      "kind": "native"
+    },
+    "SBW05": {
+      "kind": "native"
+    },
+    "SBWN01": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "SBWN02": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "SOURCE01": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "SOURCE02": {
+      "kind": "native-storage",
+      "startup_args": []
+    },
+    "TURB01": {
+      "kind": "native"
+    },
+    "TURB02": {
+      "kind": "native"
+    },
+    "TURB03": {
+      "kind": "native"
+    },
+    "TURB04": {
+      "kind": "native"
+    },
+    "TURB05": {
+      "kind": "native"
+    },
+    "TURB06": {
+      "kind": "native"
+    },
+    "TURB07": {
+      "kind": "native"
+    },
+    "TURB08": {
+      "kind": "native"
+    },
+    "TURB09": {
+      "kind": "native"
+    },
+    "TURB10": {
+      "kind": "native"
+    },
+    "TURB11": {
+      "kind": "native"
+    },
+    "TURB12": {
+      "kind": "native"
+    },
+    "TURB13": {
+      "kind": "native"
+    },
+    "TURB14": {
+      "kind": "native"
+    },
+    "TURB15": {
+      "kind": "native"
+    },
+    "TURB16": {
+      "kind": "native"
+    },
+    "TURB17": {
+      "kind": "native"
+    },
+    "TURB18": {
+      "kind": "native"
+    },
+    "TURB19": {
+      "kind": "native"
+    },
+    "TURB20": {
+      "kind": "native"
+    },
+    "TURB21": {
+      "kind": "native"
+    },
+    "TURB22": {
+      "kind": "native"
+    },
+    "TURB23": {
+      "kind": "native"
+    },
+    "TURBOWN01": {
+      "kind": "native"
+    },
+    "VAL01": {
+      "kind": "native"
+    },
+    "WKB01": {
+      "kind": "native"
+    },
+    "WKB02": {
+      "kind": "native"
+    },
+    "WKB03": {
+      "kind": "native"
+    },
+    "WKB04": {
+      "kind": "native"
+    },
+    "WKB05": {
+      "kind": "native"
+    },
+    "WKB06": {
+      "kind": "native"
+    },
+    "WKB07": {
+      "kind": "native"
+    },
+    "WKB08": {
+      "kind": "native"
+    },
+    "WN01": {
+      "kind": "native"
+    },
+    "WN02": {
+      "kind": "native"
+    },
+    "WN03": {
+      "kind": "native"
+    },
+    "WN04": {
+      "kind": "native"
+    },
+    "WN05": {
+      "kind": "native"
+    },
+    "WN06": {
+      "kind": "native"
+    }
+  }
+}

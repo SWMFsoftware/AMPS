@@ -3,6 +3,7 @@
 
 #include "sep_common_header_path.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_status.h)
+#include SRCSEP_SEP_COMMON_HEADER(sep_material_background.h)
 
 namespace SEP { namespace Background { namespace Admission {
 
@@ -10,6 +11,14 @@ namespace SEP { namespace Background { namespace Admission {
 // It is intentionally independent of mover choice: selecting another solver
 // cannot manufacture material identities, temporal coverage or a source law.
 enum class Backend { ReducedSseParker, Swcme1D, CoronalBundle, FullCoronaSwcme };
+
+// New production callers bind the exact canonical profile and physical region.
+// Keep the original backend overload below as its source-compatible inventory
+// API; neither overload admits an unqualified family by capability assertion.
+inline Core::Status RequireMovingTransport(Material::Profile profile,
+    Material::Region region=Material::Region::ParkerExterior) {
+  return Material::Require(profile,Material::Use::MaterialTransport,region);
+}
 
 inline Core::Status RequireMovingTransport(Backend backend) {
   // Success here is only the backend-level prerequisite. The reduced adapter

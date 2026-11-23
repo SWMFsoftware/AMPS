@@ -1722,6 +1722,15 @@
       "exclusive": true
     },
     {
+      "id": "CORE-SEP-MATERIAL-BACKGROUND-001",
+      "component": "src/models/sep_common", "level": "integration", "tiers": ["extended"],
+      "runner": "tests/models/cme/sep_standalone/run_test.py",
+      "description": "Immutable material interface, exact profile admission, canonical species/derivatives/motion/front, metadata codec and rollback",
+      "requires": {"tools": ["python", "cxx", "make"], "paths": ["srcSEP/test/run_material_background_tests.py"], "capabilities": []},
+      "expected_cases": ["MBC01", "MBC02", "MBC03", "MBC04", "MBC05", "MBC06", "MBC07", "MBC08", "MBC09", "MBC10", "MBC11", "MBC12", "MBC13", "MBC14", "MBC15", "MBC16", "MBC17", "MBC18", "MBC19", "MBC20"],
+      "timeout_seconds": 600, "exclusive": true
+    },
+    {
       "id": "CORE-SEP-BACKEND-ADMISSION-001",
       "component": "src/models/sep_common", "level": "integration", "tiers": ["extended"],
       "runner": "tests/models/cme/sep_standalone/run_test.py",

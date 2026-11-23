@@ -762,6 +762,25 @@ def reader_standalone_integration(output_dir: Path, native: bool = False) -> Rea
     return read
 
 
+def reader_material_background(output_dir: Path) -> Reader:
+    """Import the complete contract catalog; an unrelated PASS hides no error.
+
+    These software/canonical-adapter checks qualify availability and rejection,
+    independently of the full native propagation and sampling gates.
+    """
+    def read(ctx: StepContext) -> List[TestRecord]:
+        payload=read_json(output_dir/'summary.json')
+        rows=payload.get('results',[])
+        expected=[f'MBC{i:02d}' for i in range(1,21)]
+        if payload.get('schema')!='srcsep-material-background-v1' or [r.get('test_id') for r in rows]!=expected:
+            raise ResultsUnavailable('material background report has missing/foreign/duplicate cases')
+        if any(r.get('status') not in {'PASS','FAIL','ERROR','SKIP'} for r in rows):
+            raise ResultsUnavailable('material background report has unknown status')
+        return [ctx.record(r['test_id'],r['status'],r.get('message',''),
+                log=r.get('log',''),evidence=[str(output_dir/'summary.json')]) for r in rows]
+    return read
+
+
 def reader_backend_admission(output_dir: Path, native: bool = False) -> Reader:
     """Keep rejection evidence distinct from successful backend propagation."""
     def read(ctx: StepContext) -> List[TestRecord]:
@@ -1192,6 +1211,10 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
     pd_json = out / "pd-mover.json"
     return [
         build_step("test/sep_reduced_front__field_line"),
+        Step("material-background",
+             "immutable material capabilities, explicit units/species/full derivatives, canonical reduced owner and rejection/rollback controls",
+             [["python3","srcSEP/test/run_material_background_tests.py","--output-dir",str(out/'material-background')]],
+             reader=reader_material_background(out/'material-background'), runner="srcSEP/test/run_material_background_tests.py"),
         Step("backend-admission",
              "existing core diagnostic equivalence and explicit unsupported material-backend rejection; no propagation claim",
              [["python3","srcSEP/test/run_backend_admission_tests.py","--output-dir",str(out/'backend-admission')]],
@@ -1379,6 +1402,7 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
              [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
                "--group", "polarized-wave-native", "--mpi-np", "2",
                "--output-dir", str(out / "polarized-wave-native"), "--plot", "none", "--",
+               "--shock-model", "swcme1d",
                "--turbulence-model", "wave-number-resolved",
                "--turbulence-source", "self-consistent-spectral",
                "--coupling", "off", "--cascade", "off", "--reflection", "off"]],
@@ -1393,13 +1417,13 @@ def srcsep_steps(out: Path, args: argparse.Namespace) -> List[Step]:
              runner="srcSEP/test/run_birth_window_tests.sh",
              namespace="srcsep-registry"),
         Step("birth-window-native",
-             "actual two-rank native mover birth remainder, rejection, clone/split/migration and pending-birth checkpoint refusal",
+             "actual two-rank fixed-startup Birth operator/control groups, source-window migration, genuine reduced checkpoint refusal and exact seed provenance",
              [["python3", "-B", "srcSEP/test/run_tests.py", "--amps", "./amps",
                "--group", "birth-window-native", "--mpi-np", "2",
                "--output-dir", str(out / "birth-window-native"), "--plot", "none"]],
              reader=reader_required_native_json(out / "birth-window-native" / "srcsep-tests.json",
                                                ["BIRTHN01", "BIRTHN02", "BIRTHN03", "BIRTHN04", "BIRTHN05", "BIRTHN06"]),
-             runner="srcSEP/test/run_tests.py --group birth-window-native (isolated native cwd)",
+             runner="srcSEP/test/run_tests.py --group birth-window-native (complete fixed-step role groups; all six native IDs required)",
              namespace="srcsep-registry"),
         Step("warm-parallel-study",
              "independent validation-only parallel Maxwellian dispersion: Landau contour, cold/MHD limits, uncertainty and winding negative controls",

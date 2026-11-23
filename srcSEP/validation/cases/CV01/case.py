@@ -672,8 +672,14 @@ def run_case(*, source_root: Path, input_path: Path, output_dir: Path,
         "model_driver": {"path": str(driver_source), "sha256": _hash(driver_source),
                          "execution": "compiled-into-linked-srcsep-amps"},
         "production_sources": [
-            {"path": str(source_root / "util" / "sep_transport_common.cpp"),
-             "sha256": _hash(source_root / "util" / "sep_transport_common.cpp")},
+            # Transport primitives were relocated to the canonical shared
+            # library. Hash that actual owner at the declared AMPS root; do
+            # not silently omit a missing source, search for an old copy, or
+            # hash the application adapter in place of the shared kernel.
+            # This changes provenance only: the native model, independent
+            # characteristic solution and every acceptance metric are intact.
+            {"path": str(source_root.parent / "src" / "models" / "sep_common" / "sep_transport_common.cpp"),
+             "sha256": _hash(source_root.parent / "src" / "models" / "sep_common" / "sep_transport_common.cpp")},
             {"path": str(source_root / "util" / "sep_focused_transport_core.cpp"),
              "sha256": _hash(source_root / "util" / "sep_focused_transport_core.cpp")},
         ],

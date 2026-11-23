@@ -414,3 +414,31 @@ queried at explicit birth epochs, and their remaining first movement is stored
 as a duration. Neither absolute timestamp rounding nor the provider's cache
 cadence changes AMPS dt, output cadence or exposure. After all workers join,
 geometry retirement and number/birth-energy/event-energy ledgers are audited.
+
+
+## Neutral material identity and availability
+
+`sep_common/sep_material_background.h` adds an immutable owner/interval contract
+without changing `BackgroundSnapshot` or creating another mutable cache.
+Descriptors distinguish physical event/configuration, optional native run
+identity, core cache generation, material geometry generation and native
+snapshot generation. These counters have different owners and must not be
+interchanged. All coordinates and bulk velocities are inertial HCI, all units
+SI; density basis and composition/EOS are explicit. No proper-density
+conversion is inferred from a fluid scalar.
+
+Optional species temperatures and full branch-preserving grad(U)/grad(B)
+tensors have explicit absence; present invalid data reject. Surface-local
+upstream/downstream RH limits do not define a downstream material volume.
+The reduced physical interval supplies its actual canonical state and existing
+trajectory. Only its Parker exterior is admitted. SWCME/coronal/regional
+profiles retain their stage-10 blockers. A version-1 descriptor stores metadata
+only; decoding cannot recreate a physical model or restore particles. Existing
+schema-1 bundles and schema-5 physical checkpoints keep their own meanings.
+
+A native material view carries the derived immutable interval. Preparation
+checks its run identity, explicit snapshot generation and full coverage before
+the original publication transaction. Restore reconstructs this derived state
+from the saved physical owner. A failed preparation leaves live state intact.
+MBC01–20 cover the interface and canonical adapter; native continuation remains
+a separate gate, as documented in the stage-11 qualification record.

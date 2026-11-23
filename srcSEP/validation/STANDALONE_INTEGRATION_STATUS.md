@@ -1,5 +1,45 @@
 # Standalone core integration: implementation and qualification status
 
+## Stages 10–11 update, 2026-11-23
+
+Stage 10's exact baseline, twelve-profile inventory and unresolved physics are
+recorded in [the capability audit](STAGE10_BACKEND_CAPABILITY_AUDIT.md). The
+full-regional original 180-s timeout remains ERROR; its profile is unsupported.
+
+Stage 11 implements the immutable SI/HCI/species/EOS, derivative/coverage,
+separate-generation, versioned-metadata and fixed-step contract for the existing
+reduced SSE/Parker exterior. Invalid unpopulated vectors reject, initial
+registered geometry generation zero has explicit presence, and actual geometry
+ownership is checked before publication. Concurrent review also reproduced and
+corrected the new trajectory API accepting PFSS points outside its qualified
+region: owner identity and actual Parker-exterior membership now validate at
+all RK evaluations, including zero-duration and reverse-time queries. Legacy
+MoveVertex, RK controls and AMPS physical dt are unchanged.
+
+**Stages 10–11 complete for the approved scope.** The integrated builds pass
+20 strict and 20 ASan/UBSan material cases, 20 shared-registry cases, repeated
+PCLI01–12 on two ranks, all 48 native integration jobs at ranks 1/2/4/8, three
+two-rank backend admission checks, all 18 CV/IV linked comparisons, all 58
+material restart roles, all 44 checkpoint/thread roles, and all three 400-step
+applications plus eleven audit controls. The initial bounded Make run exited 2
+because one default material geometry could not supply the 222 heterogeneous
+case prerequisites. The preserved ERROR report documents the failure. The
+integrated runner now selects the declared fixture for each case. The prototype
+passes all 222 cases. The maintained `make test` exits 0 with the same 222 SEP
+cases, all source prerequisites, and the four embedded SWCME cases passing.
+The controlled analytical Make target exits 0. The two-rank orchestrator and
+repeated Birth checks also pass. Current evidence
+uses the `integrated` campaign names under
+`/data/vtenishe/TEST/sep-stages10-11-20261123T030052Z`; exact commands and results
+are in [the contract record](STAGE11_MATERIAL_BACKGROUND_CONTRACT.md).
+
+Direct MPI works; the earlier blanket MPI-blocker diagnosis was incorrect.
+Earlier `*-gen0` complete campaigns and stage-8/9 coupling runs are retained
+historical executions, not substitutes for the corrected source's qualification.
+The pre-existing packaging self-test CLI mismatch remains separately recorded.
+No unsupported model, weaker tolerance, partial physical step or regenerated
+reference is admitted by this work.
+
 ## Stages 8–9 COMPLETE for the approved scope, 2026-11-22
 
 Stage 8 is complete and its eight admission/compatibility gates pass for

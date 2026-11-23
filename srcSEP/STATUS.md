@@ -1,6 +1,6 @@
 # srcSEP development status
 
-Last updated: **2026-11-17**. This file tracks the active implementation of
+Last updated: **2026-11-23**. This file tracks the active implementation of
 both DOCX plans and their corrective proposal. **The full development and
 validation program is not complete.** A passing software or isolated-physics
 test does not qualify an unimplemented production path.
@@ -13,6 +13,246 @@ primary requirement inventory is
 the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
+
+## Stages 10–11 complete for the approved scope, 2026-11-23
+
+Stage 10's baseline and capability inventory are complete. Stage 11's common
+contract, supported reduced-model physical campaigns and maintained regression
+all pass. The reviewed fixtures and test entry points are integrated. Four
+matching application builds pass their validation campaigns. The prototype
+receipts preserve the before/after fixture evidence.
+Earlier dated sections below are historical records, not current build receipts.
+
+The repository is `/data/vtenishe/TEST/AMPS`; the recorded starting HEAD is
+`80466e68e37fd776bae10436e66c04cbbc88c4a7`. The durable evidence directory is
+`/data/vtenishe/TEST/sep-stages10-11-20261123T030052Z`, also recorded in
+`/data/vtenishe/TEST/sep-stages10-11-current.txt`. Its `RESUME_STATE.md` contains
+the detailed implementation handoff. Its baseline manifests, patch and
+`baseline-repo/` preserve the original dirty checkout. No files have been staged
+or committed in this batch. The pre-existing root `Makefile` edits and unrelated
+untracked application assets must be preserved.
+
+### Physics and implementation boundaries
+
+- AMPS physical timesteps remain constant. Do not shorten a host step, change
+  sampling assumptions, weaken numerical/statistical gates or regenerate
+  reference solutions to obtain a PASS.
+- The new common material-background interface declares SI/HCI conventions,
+  composition, density basis, complete velocity/magnetic gradients, immutable
+  owner/interval identity, geometry generation and coverage. Missing mandatory
+  values are invalid, rather than invented physical zeros.
+- The twelve explicit backend profiles distinguish snapshot exchange, material
+  transport and physical downstream support. Only the already supported reduced
+  SSE/Parker exterior is qualified for material transport. SWCME1D, SWCME3D,
+  coronal-CME and full regional material transport remain explicitly rejected
+  where their required physics is not implemented.
+- A real defect in the reduced material adapter was fixed: its neutral `Move`
+  interface accepted points outside the declared Parker region even though
+  sampling rejected those points. It now checks descriptor/region validity at
+  entry, every existing RK evaluation and the endpoint. The legacy trajectory,
+  equations and integration controls are unchanged. The focused test first
+  reported 19 PASS / 1 FAIL, then 20 PASS after the fix.
+- Registered native geometry generation zero is valid when explicitly present;
+  an absent generation or unregistered owner remains invalid. Public snapshot
+  ABI/schema 5 and the canonical seven-member core archive are preserved. The
+  new schema-1 codec carries material metadata only and is not a restart image.
+
+### Verified application results before prototype integration
+
+Matching builds are retained as `native-region`, `native-checkpoint-region`,
+`native-thread2-region` and `native-thread4-region` under the evidence directory.
+Each build completed successfully after recompiling the affected PIC consumers;
+copied dependency files were not rewritten to impersonate a rebuild. Maintained
+source audits pass. The ordinary executable SHA256 is
+`1230472e7037b676e31942f4f17c1b03be1815c09677913513940a1b020b888b`.
+
+| Gate | Actual result | Evidence directory |
+| --- | --- | --- |
+| Material contract, strict warnings | 20 PASS | `contract-region-strict` |
+| Material contract, ASan/UBSan | 20 PASS; leak detection disabled, no leak-coverage claim | `contract-region-sanitizers` |
+| Shared material registry | 20 PASS | `shared-material-region` |
+| PCLI01–12, two ranks and repeated execution | 12 PASS | `pcli-region` |
+| Native integration, 1/2/4/8 ranks | 48 successful jobs covering all 15 required IDs | `native-region-tests` |
+| Unsupported backend rejection | 3 PASS with required native rejection exits | `backend-native-region` |
+| Material transport campaign | 58 PASS; maximum budget residual 1.071e-15 | `material-region` |
+| Checkpoint/threaded campaign | 44 PASS; maximum budget residual 1.467e-15; byte-exact images up to 21,425,968 bytes | `checkpoint-region` |
+| Controlled CV01–12 / IV01–06 | 18 PASS | `controlled-region/results` |
+| Full 400-step applications, three movers | All three MPI runs exit 0; three original verification gates and eleven corruption controls PASS | `application400-region` |
+| Orchestrator / Python harness | 51 / 27 PASS; catalog 67 suites / 1308 cases and traceability PASS | `region-harness-compatibility.json` |
+
+Each full application retains 400 physical steps of 300 s, 357 segments and
+sample exposures from 5 through 400. The largest relative budget residual is
+2.203e-15 against the unchanged 1e-10 limit. These are actual completed runs,
+not extrapolation from a shorter campaign.
+
+MPI is available. The earlier blanket statement that MPI initialization was
+blocked was incorrect: a direct `mpiexec -n ... --bind-to none
+--output-filename ...` invocation succeeds. Some outer wrappers selected a
+restricted execution path and failed before MPI initialization. The retained
+SWMF compatibility evidence also contains nine successful MPI phases and nine
+successful numerical comparisons. Those historical results establish launcher
+availability, not qualification of later source changes. Sequential Python
+campaigns use the documented evidence-only `independent_runner.py` to remove
+inherited finalized-rank environment state before independent native children.
+
+### Original complete-regression failure and fixture repair
+
+The initial `make -j1 -k test test-controlled-analytical` run exited 2. Source
+prerequisites and the controlled comparisons pass, but bare native
+`--all-tests` chooses one maximum initialization level for 222 heterogeneous
+Routine cases. Its legacy field-line bootstrap reaches the required material
+owner guard before callbacks, so the authoritative report records 222 ERROR.
+These are not 222 independently evaluated numerical failures. The failed run
+and diagnosis are retained in `bounded-region`; no ERROR has been waived.
+
+The roster is 193 cases without that native initialization requirement plus
+29 needing specific fixtures: sixteen storage/accessor cases, five existing
+reduced CP05 cases, two zero-centerline FTE/Parker cases and six birth-lifecycle
+cases. A diagnostic selection of the 193 gives 175 PASS and eighteen explicit
+manifest-dependent SKIP; those eighteen separately pass the full controlled
+CV/IV campaign. All 222 cases remain required in the proposed isolated driver.
+
+Prototype source is `routine-prototype/AMPS`; its separate build is
+`native-routine-prototype`. The seven reviewed C++ files now match the
+application checkout and the four new configured builds. The maintained
+Python, Make and orchestrator entry points now use the same reviewed fixtures.
+The isolated driver preserves exact test IDs, thresholds,
+seed derivation and repeat semantics, routes cases to their actual required
+fixtures and rejects missing roles, missing cases and native failures.
+Storage initialization does not grant production transport capability.
+
+- The first complete prototype run reports **216 PASS / 6 ERROR**, actual exit
+  2. The remaining errors are BIRTHN01–06. Results are retained in
+  `routine-prototype/full222`.
+- Focused prototype FTE/Parker, their seed/repeat checks, twelve storage cases
+  and four PNW snapshot-only cases pass. PNW uses its actual SWCME snapshot
+  diagnostic and does not admit unsupported moving transport.
+- The matching v5 birth campaign completes successfully: **all six stable IDs
+  PASS, all 24 native role jobs PASS**, two fresh repetitions on two MPI ranks,
+  campaign seed 123. Every assertion count and Cartesian residual is zero.
+  BIRTHN01–03 retain the exact 0.0025-s remaining-duration comparison and full
+  parent-step negative; BIRTHN04 retains a positive late duration of
+  1.1102230246251566e-18 s; BIRTHN05 retains actual interrank transfer and six
+  representatives after the exact split. Evidence is
+  `routine-prototype/birth-focused-v5-all6`.
+- BIRTHN06's v4 ledger and foreign-list failures were caused by the fixture
+  omitting the production post-mover `ExchangeFieldLineParticles` phase. With
+  that actual migration phase restored in v5, both repetitions pass: sixteen
+  genuine source survivors, exactly zero number/birth-energy/energy residuals,
+  a successful completed checkpoint, and the intended active-window/pending
+  negatives without mutation of particles or the existing destination. No
+  production mover, source law, boundary policy or timestep changed.
+- Independent review subsequently found a real reporting defect in v5:
+  external replicate 1 used the correct distinct random streams, but its
+  `test_case_seed` metadata was stamped after restoring replicate-0 context.
+  The v6 correction extends the context lifetime through the complete registry
+  call; random-stream laws and values are unchanged. Role-specific clock and
+  duration wording and aggregate multi-seed reporting are also corrected.
+  The v6 campaign now closes these focused provenance gates as well as the
+  numerical assertions; the earlier defective reports remain archived.
+- The matching v6 all-six/two-repetition/two-rank campaign completes with
+  **all six IDs PASS, all 24 native roles PASS, actual launcher exit 0**, with
+  strict seed-metadata checks. Its immutable executable SHA256 is
+  `df20103f7ec60304422cae3b7d1d7eb706cbe76057d31c3cc0bd3ac42960d35f`;
+  evidence is `routine-prototype/birth-focused-v6-all6`. Actual two-rank
+  missing-reference and raw-repeat negatives also reject for the intended
+  reasons. The same v6 executable then passes **all 222 routine cases** in
+  the prototype with launcher exit 0 and no FAIL, SKIP or ERROR. Evidence is
+  `routine-prototype/full222-v6`. The final maintained checkout qualification
+  is recorded below.
+- All five v4 admission controls now pass with actual launcher exit 0. The
+  initial multiselection check expected the wrong exit status; the existing CLI
+  correctly rejects earlier with exit 1 and its exact singleton-input reason.
+  The corrected harness checks that precise exit/reason. Its first failed
+  receipt is retained separately; native admission behavior was not weakened.
+- Thirteen isolated-driver protocol controls pass, including manifest startup
+  override and midrun-mutation rejection. Actual reduced input/event provenance
+  and runner identity are explicitly bound; no arbitrary manifest argument may
+  override the selected checkpoint fixture.
+
+Birth-lifecycle comparisons use the documented operator splitting: the particle
+operator consumes frozen departure geometry/fields, then the material map is
+published after readers close. All comparison roles keep the physical parent
+step at 0.01 s. The existing controlled diagnostic mover API supplies a 0.0025 s
+suboperator reference; this does not change a physical AMPS host timestep or
+introduce dense-time production evolution. Repeat role groups require fresh
+processes with the existing derived seeds. Checkpoint negatives must fail for
+their intended reason after actual geometry/source lifecycle updates.
+
+Independent historical nonpasses are also preserved: the unsupported full
+regional MASS-TIME campaign reaches its original 180 s ceiling, and a separate
+packaging helper has an existing CLI mismatch. Neither is silently reclassified
+as supported physics or a passing gate.
+
+### Final checkout qualification and reboot recovery
+
+The new `native-integrated`, `native-checkpoint-integrated`,
+`native-thread2-integrated` and `native-thread4-integrated` builds all exit 0.
+Each build recompiles 70 PIC consumers to regenerate dependencies for its own
+configured tree. `v6-reviewed-cpp-applied.patch` and the four build receipts
+bind the exact matching C++ bytes. Fresh MPI evidence is stored in
+`native-integrated-tests`, `material-integrated`, `checkpoint-integrated`,
+`backend-native-integrated`, `pcli-integrated` and `application400-integrated`.
+The 48 native jobs, 12 CLI cases and three unsupported-backend negatives have
+passed. The material contract passes all 20 cases in the strict warning,
+ASan/UBSan and shared registry runs. The complete controlled analytical Make
+target passes in `controlled-integrated` and the selected real orchestrator
+steps pass in `orchestrator-integrated`. The standard bounded Make suite passes
+in `bounded-integrated`. `maintained-wiring-applied-files.json` binds the
+reviewed Python, Make and orchestrator patch. The current checkpoint collector
+passes all 44 roles. An external logging command overflowed the process
+argument limit after two threaded roles. Both raw logs are archived and the
+matching roles were rerun successfully with bounded process receipts.
+
+The matching requalification results are in the following directories.
+
+| Evidence | Result |
+| --- | --- |
+| `material-integrated` | 58 PASS with maximum relative budget residual 1.071e-15 |
+| `checkpoint-integrated` | 44 PASS with maximum relative budget residual 1.467e-15 and up to 21,425,968 exactly matched checkpoint bytes |
+| `application400-integrated` | All three application exits and independent verifications pass. Each run completes 400 steps at 300 s, 357 sampling segments and exposures from 5 through 400. The largest budget residual is 2.203e-15 against 1e-10. All eleven corruption controls pass. |
+| `orchestrator-integrated` | Ten PASS at two ranks, comprising all four PNW and six BIRTH native cases |
+| `birth-repeat-integrated` | Six BIRTH cases and all 24 two-rank role jobs PASS with exact campaign-123 seed metadata across two fresh repetitions |
+| `selected-cp05-integrated` | `make test-case CASE=CP05C01` passes and exports the actual JSON/JUnit records |
+| `controlled-integrated` | `make test-controlled-analytical` exits 0. Every CV01–12 and IV01–06 comparison passes. |
+| `bounded-integrated` | `make test` exits 0. All source prerequisites, exactly 222 SEP Routine cases, and all four embedded SWCME Routine cases pass. The SEP and SWCME reports each contain zero FAIL, SKIP or ERROR. |
+
+No additional physical-model decision is needed to complete this bounded
+stage-10/11 batch. Stage 10's exact audit, twelve-profile matrix and open
+decision records are established. The final evidence audit in
+`stage10-11-qualification.json` verifies all 222 maintained process receipts,
+the full source and fixture identities, and the four configured executable
+hashes. The full-regional backend remains unsupported and its original 180 s
+timeout remains recorded. Physics development for the additional SWCME,
+coronal and full regional profiles belongs to the later stages.
+
+The completed agent handoffs are `field_line_scope_gate` (isolated driver and native
+initialization), `material_contract_review` (birth fixtures), and
+`threaded_checkpoint_gate` (independent review). Agent/tool process handles are
+ephemeral. Their handoff files are
+`routine-prototype/FIELD_AGENT_RESUME.md` and
+`routine-prototype/BIRTH_AGENT_RESUME.md` in the evidence directory.
+
+The installed Codex CLI supports resuming this exact session after reboot:
+
+```sh
+cd /data/vtenishe/TEST
+codex resume 01a1fa84-5ac6-74c3-8297-995ef2a4c6db
+```
+
+After resuming, request: "Read `AMPS/srcSEP/STATUS.md` and
+`sep-stages10-11-20261123T030052Z/RESUME_STATE.md` and inspect the current
+checkout and completed stage 10–11 receipts. Preserve the fixed physical
+timestep and all validation gates when continuing SEP work."
+
+The session transcript is retained under
+`/home/vtenishe/.codex/sessions/2026/11/20/` with this session UUID. Preserve that
+home-directory session store as well as `/data/vtenishe/TEST`. A reboot stops
+running MPI tests and agents; it does not turn partial output into a completed
+PASS. Inspect existing receipts, verify source/binary provenance, and restart
+unfinished runs in fresh evidence directories. If the CLI session record is
+unavailable, start `codex` in `/data/vtenishe/TEST` and give the same handoff
+instruction. Do not discard the dirty checkout or treat old process IDs as live.
 
 ## Rebase conflict resolution, 2026-11-17
 

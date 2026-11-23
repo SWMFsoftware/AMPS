@@ -19,8 +19,13 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
   -o "$build_dir/wp01_wp10"
 "$build_dir/wp01_wp10"
 
-grep -q 'Turbulence::PICAdapter::Advance' main.cpp
-grep -q 'Turbulence::PICAdapter::Advance' main_lib.cpp
+# Both standalone and coupled callers reach the same fixed physical-step
+# owner in main_lib.cpp. Requiring a second driver call would reintroduce a
+# double wave update. Reuse the stricter common audit: one executable library
+# call inside amps_time_step(), none in main.cpp, plus duplicate/missing-owner
+# negative controls. The numerical groups above and remaining source-record
+# checks below are still required and propagate failures unchanged.
+python3 -B test/check_stage1_stage2_contracts.py
 grep -q 'if (false && SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag)' main.cpp
 grep -q 'QueueWaveContribution' parker_mover.cpp
 grep -q 'QueueWaveContribution' focused_transport_dmumu.cpp

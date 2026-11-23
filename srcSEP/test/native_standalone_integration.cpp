@@ -116,7 +116,16 @@ int main(int argc,char** argv) {
   std::list<SEP::cFieldLine> points;
   auto built=R::Native::BuildInitialLine(&points);if(!built.ok())fatal(built.message);
   SEP::Mesh::InitFieldLineAMPS(&points);
+  // An allocated line is not yet a declared material owner. Exercise the real
+  // collective preflight before registration and prove that failure publishes
+  // nothing. Initial generation zero must remain unchanged through genuine
+  // registration; changing the counter would alter physical restart history.
+  const auto unregisteredSnapshot=SEP::Background::SnapshotStore::Instance().Current();
+  const auto unregistered=R::Native::InstallBackground(epoch);
+  if(unregistered.ok()||SEP::Background::SnapshotStore::Instance().Current()!=unregisteredSnapshot||
+      FL::FieldLinesAll[0].GeometryGeneration!=0)fatal("unregistered material publication mutated initial state");
   built=R::Native::RegisterLines(epoch);if(!built.ok())fatal(built.message);
+  if(FL::FieldLinesAll[0].GeometryGeneration!=0)fatal("initial material geometry generation was renumbered");
   // Output must name the same reduced authority that actually moves the
   // particles, despite the legacy selector/radius remaining initialized.
   // A non-cadence epoch detects accidental use of the prepared-front cache.

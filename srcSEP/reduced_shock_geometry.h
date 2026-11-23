@@ -10,6 +10,10 @@ namespace ReducedShock {namespace Native {
 // time-dependent physical position must advect both bounding vertices.
 struct MaterialView {
   IntervalView interval;
+  // Derived immutable contract, reconstructed from the real core interval
+  // during ordinary preparation and checkpoint restore. It adds no physical
+  // checkpoint bytes or alternate mutable publication/cache authority.
+  std::shared_ptr<const Background::Material::Interval> material;
   std::vector<Position> vertices;
   std::vector<double> arc;
   std::vector<Connection> departureConnections;

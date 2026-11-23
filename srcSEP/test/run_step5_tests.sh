@@ -48,15 +48,19 @@ echo "PASS SCOPE01: transferred mover and sample3d symbols are absent"
 
 # Production movers may convert field-line coordinates to Cartesian vectors in
 # order to evaluate a three-dimensional background.  They must not advance a
-# particle by writing Cartesian position, invoke a Boris pusher, diffuse it
-# across field lines, or attach it to an AMR mesh-cell particle list.
+# particle independently in Cartesian position, invoke a Boris pusher, diffuse
+# it across field lines, or attach it to an AMR mesh-cell particle list. PIC's
+# Cartesian cache must still be refreshed from the exact committed field-line
+# coordinate; the dedicated audit below checks that narrow data-flow contract
+# and rejects extra writes/position modifications using negative controls.
 advance_files="$src_root/sep.h $src_root/mover_state.cpp $src_root/focused_transport_dmumu.cpp $src_root/focused_transport_mfp.cpp $src_root/parker_mover.cpp $src_root/transport_common.cpp $src_root/production_mover_runtime.cpp"
-cartesian_advance='ParticleBuffer::SetX|PB::SetX|Relativistic::Boris|calculatePerpendicularDiffusion|_PIC_PARTICLE_LIST_ATTACHING_NODE_'
+cartesian_advance='Relativistic::Boris|calculatePerpendicularDiffusion|_PIC_PARTICLE_LIST_ATTACHING_NODE_'
 if grep -En "$cartesian_advance" $advance_files >/dev/null; then
   echo "FAIL SCOPE02: Cartesian particle-advance mechanism remains" >&2
   grep -En "$cartesian_advance" $advance_files >&2 || true
   exit 1
 fi
+python3 -B "$src_root/test/check_field_line_position_contract.py" $advance_files
 grep -q '_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_' "$src_root/production_mover_runtime.cpp" || {
   echo "FAIL SCOPE02: production adapter does not enforce field-line attachment" >&2
   exit 1

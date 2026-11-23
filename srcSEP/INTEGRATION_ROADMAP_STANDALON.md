@@ -614,3 +614,529 @@ explicit prerequisite outside this integration task.
 - [Material geometry design](../src/pic/MOVING_FIELD_LINE_GEOMETRY_DESIGN.md)
 - [Transport numerics](TRANSPORT_NUMERICS.md)
 - [Application development requirements](AGENTS.md)
+
+
+## Extension: complete and integrate the remaining shock/CME backends
+
+**Added 2026-11-22, after commit 80466e6. Status: PLANNED.** This extension
+defines the remaining development and integration work for SWCME1D, SWCME3D,
+the Coronal-CME ellipsoidal front/piston and the full corona–SWCME regional
+model. It does not change the completed, bounded stages 0–9 or mark any
+additional backend as implemented or qualified. A later implementation request
+must name its stage or bounded work package.
+
+The intended deliverable is a separately identified, physically complete
+background profile for each requested backend, connected to the three existing
+field-line movers and their source, sampling, ownership and restart lifecycle.
+A diagnostic API, linked archive, geometrical shock surface or passing rejection
+test is insufficient. Completion is declared per profile and supported region,
+rather than for every option in a model family at once.
+
+### Existing ownership and mandatory dependencies
+
+| Authority | Reuse and remaining work |
+| --- | --- |
+| [SWCME core](../src/models/swcme/README.md) | Preserve canonical 1-D/3-D kinematics, geometry, MHD jump and checked evaluators. Complete a conservative material background and its thermodynamics; retain the historical empirical/phenomenological modes as explicitly identified diagnostics. |
+| [Coronal-CME core](../src/models/sep_coronal_cme/README.md) | Reuse fixed-orientation ellipsoid/piston geometry, smooth/tabulated histories, PFSS/open/closed plasma, local shocks and source kernels. Complete event assembly and the selected live consumer contract. |
+| [Corona–SWCME composite](../src/models/sep_corona_swcme/README.md) | Own the common regional sheath/ejecta/contact state, compatible material evolution, continuous handoff and event lineage. A surface-local RH solution cannot replace a volume closure. |
+| [Neutral SEP contracts](../src/models/sep_common/README.sep_coronal_cme.md) | Own provider-independent exchange, status, identity and units. Extend records only for actual required capabilities, with versioned compatibility and transactional import. |
+| Native consumers | Keep PIC/MPI storage, clocks, geometry publication, particles and sampling in thin application adapters. Three-dimensional shock geometry does not require three-dimensional particle motion in srcSEP. |
+
+The existing
+[background-first launch roadmap](../src/models/sep_coronal_cme/docs/CME_SURFACE_LAUNCH_ROADMAP.md)
+controls the coronal/composite order:
+
+1. **G1:** complete spatial background in srcSEP3D; actual zero-particle
+   native launch, handoff and 1-AU evolution.
+2. **G2:** the same qualified background in srcSEP; actual evolving
+   field-line publication, still zero particles.
+3. **G3:** nonzero-particle source/transport qualification in srcSEP3D.
+4. **G4:** nonzero-particle source/transport qualification in srcSEP, with
+   comparisons restricted to common physical limits.
+
+G1 precedes G2, G2 precedes G3, and G3 precedes G4 for these routes. Existing
+qualified reduced-SSE tests remain active throughout. Independent SWCME-only
+profiles may progress through their own background and srcSEP gates without
+claiming completion of coronal G1–G4. Work on srcSEP3D here is an explicit
+cross-application prerequisite, not permission to add Cartesian particle movers
+to srcSEP.
+
+The old bundle-only architecture and the later launch roadmap's live-provider
+target must be reconciled in the maintained architecture contract and its
+tests before changing linkage. Preserve snapshot replay as a separate,
+explicit capability. Do not bypass an architecture assertion or relabel an old
+single-epoch bundle to make live evolution appear available.
+
+### Contracts preserved throughout stages 10–21
+
+- AMPS physical dt is fixed at initialization and remains unchanged throughout
+  stepping and sampling. Retain the existing 300-s/400-step campaign and its
+  output cadence. Background ODE refinement, event roots and internal numerical
+  subdivisions must not shorten an AMPS step or add sampling opportunities.
+  Any proposed different fixed-dt particle campaign requires an explicit
+  decision before use; it is not an automatic response to a failed test.
+- Every particle step consumes an immutable owning realization of the complete
+  physical interval. Dense-time geometry, background and source queries share
+  its configuration, frame, identities and coverage; they do not mutate a live
+  provider or mix endpoint fields with departure-time geometry.
+- Particle displacement along every srcSEP field line is relative to the
+  plasma-comoving geometry and contains no extra solar-wind advection term.
+  Physical U and all nine Cartesian components of grad(U) remain inputs to
+  line motion, shock inflow, compression, strain and work.
+- Move both endpoint vertices. Trace inserted inner vertices along the actual
+  magnetic field, not minus U. New segments start empty with zero exposure;
+  existing source rules populate them. Remove an outer segment only when
+  completely outside the declared radial domain, account for attached
+  particles once, and retain segment-specific sampling exposure.
+- Use one authoritative event/background and one declared shock authority per
+  profile. Composition, species density basis, EOS, thermal law, signed B,
+  physical frames, source interpretation and region classification are shared
+  by geometry, shock, source and movers.
+- Retain the approved accelerated-population source contract where applicable:
+  local-compression DSA momentum spectrum, parent isotropy in the upstream
+  plasma frame, equation-appropriate angular/flux projection, an explicit
+  finite upstream release reference, net upstream escape and absorbing returns.
+  Shock-frame flux calculations require the declared transformation; they do
+  not make the parent distribution shock-frame isotropic.
+- The default shock-return policy remains deletion. The pass option continues
+  to terminate through the existing native error handler until separately
+  specified downstream particle physics and its tests are implemented.
+  Completing a downstream background volume does not by itself enable passage
+  or authorize an additional acceleration mechanism.
+- Prescribed read-only turbulence remains the first integration target.
+  Local wave evolution, feedback, gross-emission conversion, additional shock
+  families and observational qualification require their own completed
+  contracts; none is supplied by a new backend adapter.
+- Keep existing references, physical bounds, acceptance criteria and test IDs.
+  Distinguish a physical no-shock/no-connection result from numerical failure.
+  No density/pressure/B floor, hidden ambient fallback, lost support area or
+  changed runtime ceiling may turn an incomplete model into an admitted one.
+
+### Stage 10 — Rebaseline every backend and freeze the capability matrix
+
+**Recorded status:** baseline audit complete; the exact baseline and open decisions are
+in [STAGE10_BACKEND_CAPABILITY_AUDIT.md](validation/STAGE10_BACKEND_CAPABILITY_AUDIT.md).
+The retained full-regional timeout is not a passing closure gate.
+
+**Dependencies:** completed stage 9; no new model admission.
+
+**Work.** Inventory actual production APIs, parsers, compiled objects, model
+tests, native entry points and current failures at the new starting revision.
+Classify each item as implemented, tested in isolation, wired natively or
+qualified in production. Preserve failed fixtures and source/build/input
+identities. Reconcile historical documentation with executable code, including
+the neutral bundle schema-1/schema-3 discrepancy and the revised regional
+closure selection. Historical Mars1/Mars2 paths and old test totals are
+provenance, not assumptions about the active checkout.
+
+Define individual rows for SWCME1D SHOCK_ONLY/FULL_ICME, SWCME3D
+sphere/ellipsoid/finite-SSE, the coronal ellipsoid/piston, and each intended
+composite region/profile. Record geometry, evolution law, regions, density
+basis, thermodynamics, derivatives, source, return boundary and restart support.
+A diagnostic FULL_ICME mode must not acquire a production label by aliasing it.
+
+**Tests and exit gate.** Run the exact existing core catalogs and bounded
+application baselines; record PASS/FAIL/SKIP/ERROR separately. Retain
+CSWC-FULL-CSWC0628-MASS-TIME and the original CSWC0628 physical refinement
+failures until their actual causes and independent gates are resolved. Freeze
+new quantitative acceptance and performance criteria before examining new
+candidate residuals. Publish the matrix and a concrete decision record for
+every unresolved closure. Stage 10 cannot close by counting dormant tests as
+executions.
+
+### Stage 11 — Complete the common material-background interface
+
+**Recorded status:** complete for the supported reduced SSE/Parker profile.
+The interface and reduced native binding are implemented,
+including explicit initial geometry-generation presence and qualified-region
+validation at every new trajectory API evaluation. The positive legacy
+trajectory, physical timestep and RK controls are unchanged. Final matching
+strict/sanitizer, shared-registry, 48 native MPI and repeated two-rank CLI
+checks pass, as do all 58 material restart, 44 checkpoint/threaded and three
+400-step application gates. The legacy heterogeneous native startup failed its
+material-owner prerequisite. The integrated routine driver selects each case's
+reviewed fixture and retains every original gate. The maintained `make test`
+passes all 222 SEP Routine cases, all source prerequisites and all four embedded
+SWCME Routine cases. The controlled analytical target passes all 18 comparisons.
+Focused results and current execution evidence are recorded in
+[STAGE11_MATERIAL_BACKGROUND_CONTRACT.md](validation/STAGE11_MATERIAL_BACKGROUND_CONTRACT.md).
+No later model profile is admitted by this work.
+
+**Dependencies:** stage 10 and the relevant approved core physics contracts.
+
+**Work.** Define the smallest shared capability record required by the
+consumers: profile/revision identity, immutable physical interval and dense-time
+coverage, material map/trajectory and inverse where needed, region/side,
+rho, species number densities, pressure/temperatures, U, B, grad(U), required
+magnetic derivatives, EOS, shock/contact records and status. State SI units
+and the coordinate/velocity frames in each public field.
+
+Separate a snapshot-exchange capability from material evolution and from
+physical downstream-volume support. A stored divergence alone is insufficient
+for field-aligned strain; density history is not a substitute for grad(U).
+Smooth derivatives must stay on their physical branch. Discontinuity crossings
+need one-sided states and an explicit interface contract.
+
+Extend admission from the current coarse backend inventory to exact qualified
+profile capabilities. Preserve existing rejected empirical/diagnostic profiles
+and unknown-profile rejection. Do not change RequireMovingTransport for an
+entire backend family to unconditional success. Reuse the existing CLI,
+configuration fingerprint and publication transaction; do not add a competing
+parser, clock or mutable model cache.
+
+**Tests and exit gate.** Independent species/EOS/frame/derivative checks,
+canonical identical-point comparisons, missing capability/coverage/side
+negatives, foreign fingerprints and stale generations, failed candidate
+rollback, public-header/ABI checks and versioned serialization rejection.
+Every required quantity must have an identified owner and tested availability;
+an unimplemented field cannot be initialized to a plausible default.
+
+### Stage 12 — Complete SWCME1D material evolution and thermal export
+
+**Dependencies:** stages 10–11; explicit selection of a consistent production
+profile before changing the canonical physics.
+
+**Work.** Preserve the legacy diagnostic law
+n = C2/r² + C4/r⁴ + C6/r⁶ with constant radial U. Its nonzero div(rho U)
+must remain visible. Present a concrete alternative consisting of a compatible
+density, velocity, magnetic field and thermal evolution, or an explicitly
+specified physical source model with all mass, momentum, induction and energy
+terms. Changing U alone also changes Parker winding and derivatives; moving
+vertices or reconstructing density in the adapter does not close the system.
+Do not choose among those physical alternatives in implementation.
+
+Implement the approved versioned profile in the SWCME core. Complete the
+material trajectory, its temporal support, radial derivatives and composition
+mapping. For FULL_ICME, qualify the intended sheath/ejecta/transition state
+rather than exporting an upstream temperature throughout the disturbed volume.
+Extend the 1-D adapter to export the actual regional state and derivatives.
+Maintain the existing ballistic/DBM/data-driven kinematics and checked status
+semantics; each admitted combination needs explicit coverage.
+
+**Tests and exit gate.** Independent radial mass inventory/flux and material
+continuity, magnetic flux/induction, thermal/work and regional boundary tests;
+direct-core versus adapter agreement for density basis, signed B, U,
+pressure/temperatures and grad(U); ordered-time and no-extrapolation checks.
+Exercise SHOCK_ONLY and FULL_ICME separately. A corrected upstream profile
+does not qualify FULL_ICME. Admit only the exact profile whose complete
+background contract passes.
+
+### Stage 13 — Complete SWCME3D geometry and conservative material state
+
+**Dependencies:** stages 10–11 and stage 12's shared laws wherever reused;
+the 3-D case retains its own independent qualification.
+
+**Work.** Reuse canonical sphere, self-similar ellipsoid and finite-SSE geometry,
+apex histories and local ideal-MHD shock evaluation. Complete three-component
+material motion, all required spatial derivatives, composition and thermal
+export for each selected profile. Shared 1-D/3-D laws must share their core
+implementation rather than evolve independently.
+
+A radial density/velocity correction does not establish 3-D induction,
+latitudinal consistency or oblique downstream evolution. Qualify those
+explicitly. Remove a consumer's sphere-only restriction only after its actual
+nonspherical support, interpolation, side handling and derivatives pass.
+Keep a finite shock cap distinct from a closed ejecta body.
+
+Build a thin native field-line consumer of the 3-D core state. Keep native
+geometry, tube metrics and particle coordinates in the existing field-line
+machinery. A linked swcme3d object or a Cartesian mesh provider is useful reuse,
+not evidence that this material-line consumer already exists.
+
+**Tests and exit gate.** Exact spherical and matched 1-D limits; independently
+reconstructed ellipsoid/SSE normals, local normal speeds and surface areas;
+tilted axes, both magnetic polarities, finite-support misses, multiple roots,
+tangencies and weak/sub-fast classification. Check Cartesian derivative
+convergence and mass/flux/thermal budgets on independently deformed material
+volumes. Record shape/profile-specific support; a sphere PASS cannot admit all
+three geometries.
+
+### Stage 14 — Complete Coronal-CME ellipsoid/piston event assembly
+
+**Dependencies:** stages 10–11 and the maintained coronal/composite contracts.
+This is shared-core background work; native srcSEP integration still awaits G1.
+
+**Work.** Assemble the existing fixed-orientation triaxial front and independently
+configured piston from the canonical input histories. Preserve center/apex
+equivalence, independent semiaxis rates, analytic normal velocities, stable
+patch identities and solar clipping. Qualify attachment/detachment, field/plasma
+support and source-eligible radial support as separate concepts.
+
+Bind the actual PFSS/open/closed/Parker ambient, composition/EOS, local oblique
+MHD jump and complete histories to one event. Preserve delayed shock formation:
+a geometric sub-fast patch carries no invented compression or particle source.
+Keep dynamic attitude/deflection and research-only histories unavailable unless
+their own maintained production contracts and tests are completed.
+
+Deliver coherent background-only core epochs without requiring source plans,
+particle records, RNG state or wave feedback. Complete source-surface and
+one-sided topology handling using canonical physics. Integrate regional state
+only through stages 15–16; an ambient-plus-front result remains intermediate.
+
+**Tests and exit gate.** Independent triaxial normal/speed/area and clipping
+references, smooth/Hermite history extrema between knots, launch support,
+patch identity, delayed activation and weak-shock RH checks. Check signed
+PFSS sectors, closed/open boundaries, EOS and one-sided derivatives.
+Transactional failure must preserve the prior complete epoch. This stage
+qualifies the assembled components, not the missing regional volume or G1.
+
+### Stage 15 — Complete the full regional sheath and material closure
+
+**Dependencies:** stages 10–11 and 14; the actual selected regional closure.
+
+**Work.** Follow the later
+[conservative cross-ray scope](../src/models/sep_corona_swcme/docs/CONSERVATIVE_CROSS_RAY_TRANSPORT.md)
+and
+[analytical material-map design](../src/models/sep_corona_swcme/docs/ANALYTICAL_LATERAL_TRANSPORT_DESIGN.md).
+Retain the three-dimensional ambient and analytical/semi-empirical evolution
+requirement; do not revive fixed-ray radial dynamics as a complete 3-D closure
+or introduce a global MHD runtime. Existing HLL, static CT, Cauchy and piston
+kernels remain reusable references, not an already selected production solver.
+
+First qualify the actual ambient reference flow, inverse and variational
+derivatives on supported branches. Then test whether a proposed deformation
+can represent the required oblique RH downstream velocity, field and contact
+motion. A scalar deformation that fails representability must reject; do not
+drop transverse components, discard required rays or fit a mass source.
+A richer vector map/force/heating law requires a concrete physics decision.
+
+Complete one common curved geometry, compatible material labels, shock
+admission times, initial inventory and inverse map. For ideal source-free
+cohorts, enforce rho = rho0/J and B = F B0/J using the same F = dX/da,
+positive J and U = dX/dt. Thermal evolution must follow the selected EOS and
+heat/work law. These identities alone do not prove momentum balance, correct
+shock entropy or a qualified analytical plasma solution.
+
+Record one physical shock authority per profile and retain the computed-shock
+requirement wherever the selected contact-driven closure specifies it. A
+prescribed-front alternative requires a distinct approved profile; it cannot
+close a computed-shock gate. Do not independently impose incompatible front,
+contact and downstream states. Preserve a specified zero-added-heat material
+law where applicable, while accounting separately for any sustaining heat/work
+required by an isothermal ambient. Account for all physical influx, contact/lateral/
+solar/outer losses and sustaining force/heating/work. Use local absolute
+contact leakage as well as signed totals so cancellation cannot hide penetration.
+
+**Tests and exit gate.** Independent planar and spherical limits, oblique and
+quasi-perpendicular shocks, startup inventory and admission accounting,
+positive/invertible maps, signed magnetic flux, induction, entropy and
+force/work residuals. Require mass/time/angular refinement and the original
+minimum-J, leakage and coverage gates. Fix the existing refinement timeout
+through a measured algorithmic correction while preserving its physical
+assertions and original ceiling. No local kernel PASS closes BG3D-4.
+
+### Stage 16 — Complete ejecta, regional joins and continuous handoff
+
+**Dependencies:** stages 14–15 and the existing BG3D-5/6 contracts.
+
+**Work.** Supply the separate ejecta reference state, material map, composition,
+thermal state and magnetic topology required by the selected full profile.
+Use the actual checksummed reference/vector-potential assets where specified.
+Do not infer a spheromak, an empty initial body or quiet ambient behind a shock.
+Reconcile any older contact-fraction geometry with the selected common material
+contact; independent interface definitions cannot coexist as one physical body.
+
+Qualify normal velocity, normal magnetic field, normal traction and permitted
+tangential discontinuities at the sheath/ejecta contact. Declare every covered
+wake, transition and post-event state. A smoothing layer needs a compatible
+mass/flux/energy construction; component-wise B blending is not sufficient.
+
+Transfer the complete surface, velocity and regional material state into the
+outer SWCME continuation. Match the full geometry and required derivatives,
+not just apex radius/speed. Differentiate a single transition construction,
+including time-dependent weight derivatives. Preserve event identity,
+inventory, magnetic flux and work across the handoff without resetting clocks,
+source history or material labels.
+
+**Tests and exit gate.** Independent ejecta mass/flux/EOS checks, contact
+traction/slip and topology tests, matched direct-handoff limits and deliberately
+incompatible equal-apex histories. Refine the transition and check positive
+maps and bounded temporal/spatial derivatives throughout it. Missing regions,
+foreign assets, unsupported topology and out-of-coverage queries must reject.
+BG3D-5/6 close only with complete qualified regional coverage.
+
+### Stage 17 — Qualify native three-dimensional background evolution: G1
+
+**Dependencies:** completed shared coronal/full-regional stages 14–16.
+SWCME-only backgrounds retain their separately declared scope.
+
+**Work.** Install the complete shared provider in an independently configured
+srcSEP3D background-only application. Stage actual current/previous native
+fields, derivative/category data, owner values and received ghost values.
+Publish one common epoch only after collective readiness. Add background
+restart for material state, handoff and integrated evolution as required.
+Retain zero physical particle allocation and zero source counts.
+
+Deliver a short pre/inside/post-handoff test and a separate low-corona-to-1-AU
+case covering the actual event duration and every declared region. A sampled
+trajectory reaching 1 AU is not a native propagation receipt. Do not reduce the
+new full background gate to the existing outer-only 400-step particle fixture.
+
+**Tests and exit gate.** Actual one-/four-rank evolving native runs, independent
+spatial probes in ambient/sheath/ejecta/transition regions, owner/received-ghost
+agreement, stale-slot and rank-local failure controls, background restart and
+mesh/time/surface/material convergence. Quantify physical residuals separately
+from discretization error. G1 passes only when all required regions and the
+actual launch/handoff/1-AU sequence pass without particles.
+
+### Stage 18 — Integrate and qualify native moving field-line backgrounds: G2
+
+**Dependencies:** stages 11–13 for a selected SWCME-only profile; G1 for the
+coronal/composite routes. No source or particle milestone is inferred.
+
+**Work.** Add thin profile-specific adapters using the already-qualified core
+state. For the coronal/composite live route, update the authoritative linkage
+and architecture tests together and retain versioned bundle replay explicitly.
+A replay capable of material motion needs actual temporal primitives,
+trajectories/lineage and derivative coverage; old bundles remain snapshots.
+
+Connect native vertex trajectories, B tracing, flux-tube metrics, inner insertion
+and outer trimming to the same immutable interval. Preserve one-sided region/
+sector information, both polarities and all physical derivatives. Certify
+coverage for inserted vertices and all numerical stencils, including a complete
+tracing increment below the nominal inner sampling bound. Topology-changing
+events require their own physical mapping; otherwise reject rather than join
+unrelated field lines.
+
+**Tests and exit gate.** Independently built srcSEP, real one-/four-rank
+multi-epoch zero-particle runs, identical-point canonical comparisons with G1,
+B/tangent and flux-tube-area convergence, material continuity, empty insertion,
+segment exposure and retired-segment accounting. Exercise temporal coverage,
+late-rank rollback/retry, restart and an actual background-only 1-AU case for
+the coronal/composite profiles. The moving-line representation itself must
+pass before any corresponding particle motion is enabled.
+
+### Stage 19 — Close the required three-dimensional particle prerequisite: G3
+
+**Dependencies:** G1 and G2 for coronal/composite profiles.
+
+**Work.** Complete the existing srcSEP3D source/allocation/transport milestone
+through that application's maintained interfaces. Freeze the source's physical
+meaning, units, finite release support, spectrum, scattering prescription,
+supported regions and boundaries against the qualified background. Preserve
+the single acceleration mechanism: an already accelerated injected population
+must not silently acquire a second resolved shock-acceleration model.
+
+**Tests and exit gate.** Actual nonzero births and transport, independent
+number/energy/source/return oracles, domain and shock contact checks,
+time/space/statistical convergence under the approved fixed-step campaign
+contract, real MPI/repartition and fresh restart. A wave-feedback claim requires
+its separate physical gate. Only a complete G3 receipt unlocks new srcSEP
+particle work for these routes. This stage introduces no Cartesian mover into
+srcSEP and makes no claim that general 3-D transport equals field-line transport.
+
+### Stage 20 — Complete standalone sources, all three movers and restart: G4
+
+**Dependencies:** stage 18 for each SWCME-only profile; G3 additionally for
+coronal/composite profiles. Physical source mapping must be explicit.
+
+**Work.** Reuse the approved DSA/finite-release/net-escape/absorbing-return
+contract through a neutral source interface. Determine physical source rates
+and finite tube/front overlap from the selected backend's actual units and
+geometry. SWCME's relative-only source weight is dimensionless; it cannot be
+treated as an absolute injection rate or silently converted to the finite-
+reference net source. Freeze that conversion and its physical input before
+native allocation.
+
+Find every supported moving front/line contact at its actual event time.
+Retain partial footprints, multiple roots and tangencies with explicit
+ownership/support decisions. New particles attach to the birth-time material
+coordinate and use only their physical birth remainder within the unchanged
+host step. Do not apply additional wind displacement or additional sampling.
+Use consistent shock/source histories across Parker, FTE-D_mumu and FTE-MFP;
+the equation-specific angular projection must preserve physical normalization.
+
+Complete geometry/particle migration, source clocks, immutable birth history,
+keyed RNG, exposure and sampling-buffer phase in a versioned checkpoint.
+Preserve old valid reduced-profile restart behavior and reject older images
+which cannot represent a new profile's required state.
+
+**Tests and exit gate.** Independent dimensional source and finite-tube flux
+checks, delayed activation, first-return absorption, causal births and correct
+frames. Exercise ballistic/focusing/compression and the common diffusion limit
+with independent oracles for all three movers. Run actual MPI 1/2/4/8,
+two-/four-worker continuation, combined eight-rank/four-worker cases, 1↔8
+repartition and late-rank failure/retry. Compare complete promised-deterministic
+images exactly and stochastic observables using frozen independent criteria.
+
+Each admitted backend/profile must also execute the complete 400-step,
+300-s application output gate and the event-specific launch/handoff duration
+required by its declared scope. Independently reconstruct every surviving
+segment's exposure and signed number/birth/current-energy ledgers. Keep the
+existing 1e-10 application budget limit. A short run, an empty population or a
+matching source-only fixture does not close G4.
+
+### Stage 21 — Make every admitted profile an automatic regression gate
+
+**Dependencies:** the exact profile's completed core and native gates above.
+
+**Work.** Register new stable positive tests in the core manifest, catalogs,
+traceability, source/Make entry points and the complete SEP orchestrator with
+individual readers. Preserve existing SBACK rejection IDs for the legacy
+unsupported configurations; add distinct positive cases for new qualified
+profiles. New stage numbers in this document are work packages, not registered
+test IDs or evidence of implementation.
+
+Supply profile-specific physical decks and independent output verifiers while
+retaining the original reduced SAPP gate unchanged. A new verifier must check
+its own backend/region identities and physical source/sampling expectations;
+changing a label on reduced-model output cannot qualify another backend.
+
+The scheduled nightly SEP runner must select every required new profile without
+manual --only flags. Provision and audit the native profile and two-/four-worker
+build prerequisites through the routine; a configured test with a missing build
+is ERROR, not PASS. Keep long campaigns explicit and automatically selected by
+the full nightly path; --quick or a core smoke/extended selection alone cannot
+claim complete nightly coverage. Require a selection/reader control which
+fails if a profile, mover, role, process result or output window disappears.
+
+Measure aggregate build/run cost and provision sufficient scheduled capacity.
+If the expanded campaign cannot fit the current nightly runner, add an explicit
+scheduled full-campaign runner and a coverage guard. Do not shorten the physical
+window, hide an omitted profile or relax a per-test runtime ceiling to fit it.
+
+**Tests and exit gate.** Strict warnings, ASan/UBSan and relevant thread checks;
+all retained reduced-SSE numerical/native/application gates; each new backend's
+complete positive and negative catalogs; CLI PCLI01–12 before/after runtime
+changes; catalog/traceability and source-distribution audits. Rebuild and run
+AMPS-BATSRUS-Europa, PS-BATSRUS-OH, MPS-BATSRUS-PIC-coupling and
+AMPS-BATSRUS_dynamic_fluxrope with their original inputs/references/limits.
+
+Publish per-profile JSON/JUnit, commands, seeds, MPI/workers, physical dt,
+compiler/dependency/object/archive/executable hashes, physical input provenance,
+independent metrics, runtime and retained failures. Demonstrate one complete
+scheduled-orchestrator execution on the final committed source. Passing
+individual manual campaigns alone does not prove automatic nightly coverage.
+Update the support matrix and release notes only for exact combinations whose
+required gates pass; unrelated FAIL/ERROR/SKIP results remain explicit.
+
+### Decisions and completion checklist for this extension
+
+Already selected: three srcSEP field-line movers, fixed physical stepping,
+material-relative displacement, the approved accelerated-population source
+contract and default absorbing shock return, prescribed initial turbulence,
+three-dimensional ambient, analytical/semi-empirical regional evolution without
+an MHD runtime, and coronal G1 → G2 → G3 → G4 order. Do not reopen those
+decisions merely because an adapter is inconvenient.
+
+| Decision to complete before dependent coding | Required concrete record |
+| --- | --- |
+| SWCME conservative production profile | Compatible rho/U/B/thermal equations, region support, source terms if any, SI/frame/composition definitions and independent conservation/induction/thermal gates. Preserve the old diagnostic profile. |
+| Full regional lateral/map closure | Actual ambient-flow consistency and RH/contact representability evidence; then the selected vector/map evolution, initialization, inverse, force/heating/work and interface laws. The current candidate investigation is not a selected physical closure. |
+| Source normalization for each new profile | Physical meaning and dimensions of the backend rate and release-reference conversion, tube/front measure, explicit inputs and zero/inapplicable support rules; no dimensionless-to-absolute assumption. |
+| Profile-dependent missing initial/boundary data | Actual ejecta assets, initial sheath inventory, support/topology and thermal/flux boundary definitions wherever the maintained contract does not already supply them. No invented prehistory or default empty region. |
+| Optional downstream particle transport | Separate specification of crossing/scattering/energy exchange and acceleration accounting, followed by native qualification. Until then preserve deletion by default and rejection of pass. |
+
+A missing decision blocks only its dependent work. Continue independent audits,
+contract design and tests whose expected results are established; ask a focused
+physics question with the measured conflict and candidate consequences before
+implementing an unresolved closure.
+
+For each backend, completion requires: **approved core closure → independent
+physics/numerical gates → actual native background → actual nonzero-particle
+source and all three movers → MPI/thread/restart/sampling → automatic regression
+evidence**. The coronal/composite path additionally retains G1–G4 ordering.
+A fully covered background may be complete while an optional downstream
+particle capability remains explicitly unavailable. Observation-based
+validation is a separate later claim requiring independent data, frozen
+calibration/hold-out roles and response metrics.

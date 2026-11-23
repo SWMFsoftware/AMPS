@@ -14,8 +14,8 @@ python3 src/test/generate_test_catalog.py
 python3 src/test/generate_test_catalog.py --check
 ```
 
-Registry summary: **66 suites / 1288 cases**. Registry SHA-256: `6782ddd5ee6bb404d7a5ee67eb58fafd3cdb334e50029b5f339d606feda4eac7`.
-Description provenance: **790 maintained source descriptions / 498 stable-ID fallbacks**.
+Registry summary: **67 suites / 1308 cases**. Registry SHA-256: `99909678e98ffe83a71772794a1a812b1c4a411031e92e1065c905534d31c34e`.
+Description provenance: **790 maintained source descriptions / 518 stable-ID fallbacks**.
 
 ## Suite index
 
@@ -73,6 +73,7 @@ Description provenance: **790 maintained source descriptions / 498 stable-ID fal
 | `CORE-SEP-STANDALONE-NATIVE-001` | `src/models/sep_corona_swcme` | integration | extended | 15 | exclusive | Actual native reduced core material geometry, SSE connectivity, net source, absorbing returns, signed ledgers and all three movers; real MPI 1 and 4 ranks | [runner](tests/models/cme/sep_standalone/run_test.py) |
 | `CORE-SEP-MATERIAL-CHECKPOINT-001` | `src/models/sep_corona_swcme` | integration | extended | 11 | exclusive | Three-mover moving material topology/sampling continuation on real MPI 1/2/4/8; exact histories across 1<->8 repartition and atomic corrupt-checkpoint rejection | [runner](tests/models/cme/sep_standalone/run_test.py) |
 | `CORE-SEP-STAGE7-CHECKPOINT-001` | `src/models/sep_corona_swcme` | integration | extended | 20 | exclusive | Repaired moving-host checkpoint fixtures, isolated wave/codec assertions and combined two-/four-thread fresh production continuation, including real MPI eight ranks | [runner](tests/models/cme/sep_standalone/run_test.py) |
+| `CORE-SEP-MATERIAL-BACKGROUND-001` | `src/models/sep_common` | integration | extended | 20 | exclusive | Immutable material interface, exact profile admission, canonical species/derivatives/motion/front, metadata codec and rollback | [runner](tests/models/cme/sep_standalone/run_test.py) |
 | `CORE-SEP-BACKEND-ADMISSION-001` | `src/models/sep_common` | integration | extended | 5 | exclusive | Canonical SWCME diagnostic equivalence and neutral exchange compatibility; explicit rejection of unsupported moving material backends | [runner](tests/models/cme/sep_standalone/run_test.py) |
 | `CORE-SEP-BACKEND-NATIVE-001` | `src/models/sep_common` | integration | extended | 3 | exclusive | Three standalone movers reject unsupported SWCME material transport before native allocation on real MPI two ranks | [runner](tests/models/cme/sep_standalone/run_test.py) |
 | `CORE-SEP-FULL-APPLICATION-001` | `src/models/sep_common` | integration | extended | 3 | exclusive | Three-mover full reduced SSE/Parker application: 400 unchanged 300-s physical steps, complete material sampling output and independent number/energy ledgers | [runner](tests/models/cme/sep_standalone/run_test.py) |
@@ -1082,7 +1083,34 @@ Repaired moving-host checkpoint fixtures, isolated wave/codec assertions and com
 | `TCR03` | Tcr03 | integration; serialized configuration owner; tools python, mpi_cxx, make, mpiexec | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 | `MCP13` | Mcp13 | integration; serialized configuration owner; tools python, mpi_cxx, make, mpiexec | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 
-### 53. `CORE-SEP-BACKEND-ADMISSION-001`
+### 53. `CORE-SEP-MATERIAL-BACKGROUND-001`
+
+Immutable material interface, exact profile admission, canonical species/derivatives/motion/front, metadata codec and rollback **20 cases.** Runs behind an exclusive checkout barrier.
+
+| Case | What | How | Why | Where |
+| --- | --- | --- | --- | --- |
+| `MBC01` | Mbc01 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC02` | Mbc02 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC03` | Mbc03 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC04` | Mbc04 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC05` | Mbc05 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC06` | Mbc06 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC07` | Mbc07 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC08` | Mbc08 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC09` | Mbc09 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC10` | Mbc10 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC11` | Mbc11 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC12` | Mbc12 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC13` | Mbc13 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC14` | Mbc14 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC15` | Mbc15 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC16` | Mbc16 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC17` | Mbc17 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC18` | Mbc18 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC19` | Mbc19 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+| `MBC20` | Mbc20 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
+
+### 54. `CORE-SEP-BACKEND-ADMISSION-001`
 
 Canonical SWCME diagnostic equivalence and neutral exchange compatibility; explicit rejection of unsupported moving material backends **5 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1094,7 +1122,7 @@ Canonical SWCME diagnostic equivalence and neutral exchange compatibility; expli
 | `SBACK04` | Sback04 | integration; serialized configuration owner; tools python, cxx | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 | `SBACK05` | Sback05 | integration; serialized configuration owner; tools python, cxx | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 
-### 54. `CORE-SEP-BACKEND-NATIVE-001`
+### 55. `CORE-SEP-BACKEND-NATIVE-001`
 
 Three standalone movers reject unsupported SWCME material transport before native allocation on real MPI two ranks **3 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1104,7 +1132,7 @@ Three standalone movers reject unsupported SWCME material transport before nativ
 | `SBACK07` | Sback07 | integration; serialized configuration owner; tools python, mpiexec | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 | `SBACK08` | Sback08 | integration; serialized configuration owner; tools python, mpiexec | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 
-### 55. `CORE-SEP-FULL-APPLICATION-001`
+### 56. `CORE-SEP-FULL-APPLICATION-001`
 
 Three-mover full reduced SSE/Parker application: 400 unchanged 300-s physical steps, complete material sampling output and independent number/energy ledgers **3 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1114,7 +1142,7 @@ Three-mover full reduced SSE/Parker application: 400 unchanged 300-s physical st
 | `SAPP02` | Sapp02 | integration; serialized configuration owner; tools python, make, mpi_cxx, mpiexec | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 | `SAPP03` | Sapp03 | integration; serialized configuration owner; tools python, make, mpi_cxx, mpiexec | partial coverage evidence for `src/models/sep_common`; preserves this contract as an exact global result | [src/models/sep_common](../models/sep_common); [adapter](tests/models/cme/sep_standalone/run_test.py) |
 
-### 56. `CORE-MODEL-SWCME-001`
+### 57. `CORE-MODEL-SWCME-001`
 
 Executable bounded R1 plus complete dormant extended and observational registries with typed blockers **147 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1268,7 +1296,7 @@ Executable bounded R1 plus complete dormant extended and observational registrie
 | `SWCME-VP15` | SEP time profile spectrum peak and fluence | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/swcme`; preserves this contract as an exact global result | [src/models/swcme](../models/swcme); [adapter](tests/models/swcme/run_test.py); [case source](../models/swcme/test/validation/campaign.json) |
 | `SWCME-VP16` | Held-out multi-event and cross-model skill assessment | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/swcme`; preserves this contract as an exact global result | [src/models/swcme](../models/swcme); [adapter](tests/models/swcme/run_test.py); [case source](../models/swcme/test/validation/campaign.json) |
 
-### 57. `CORE-MODEL-SEP-CORONAL-CME-001`
+### 58. `CORE-MODEL-SEP-CORONAL-CME-001`
 
 Authoritative 222-case staged coronal-CME software-verification registry **222 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1497,7 +1525,7 @@ Authoritative 222-case staged coronal-CME software-verification registry **222 c
 | `SCCM-EVT3D01` | reserved campaign gate, not a generic Stage-13 software-release test. An independent-event transfer manifest freezes all equations, inference procedures, and only those numerical source, spectrum, scattering, reference-surface, return-po... | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_coronal_cme`; preserves this contract as an exact global result | [src/models/sep_coronal_cme](../models/sep_coronal_cme); [adapter](tests/models/cme/sep_coronal_cme/run_test.py); [case source](../models/sep_coronal_cme/test/individual/EVT3D01/README.md) |
 | `SCCM-XMD3D01` | reserved campaign gate, not a runtime imported-provider or generic Stage-13 software-release test. An immutable offline sample manifest evaluates analytic and thermodynamic-MHD backgrounds at matched epoch, inner-boundary magnetogram and... | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_coronal_cme`; preserves this contract as an exact global result | [src/models/sep_coronal_cme](../models/sep_coronal_cme); [adapter](tests/models/cme/sep_coronal_cme/run_test.py); [case source](../models/sep_coronal_cme/test/individual/XMD3D01/README.md) |
 
-### 58. `CORE-MODEL-SEP-CORONA-SWCME-FULL-001`
+### 59. `CORE-MODEL-SEP-CORONA-SWCME-FULL-001`
 
 Forty-six full-volume software/reference checks covering contact/slip, stable geometry, shared mesh/CT/energy and analytical material transport; BG3D-4/G1 remain unqualified **46 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1550,7 +1578,7 @@ Forty-six full-volume software/reference checks covering contact/slip, stable ge
 | `CSWC-FULL-CSWC0628-XRAY-MATERIAL-REJECTION` | Rejects folds, unresolved rank, unrepresentable Jacobian and nonfinite map rates; distinguishes resolved small-J kernel behavior from the separate frozen physical minimum-J gate. Same source. | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_full/run_test.py); [case source](tests/models/cme/README.md) |
 | `CSWC-FULL-ARCHCSWC01` | Cswc full archcswc01 | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_full/run_test.py) |
 
-### 59. `CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001`
+### 60. `CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001`
 
 Complete 97-row reduced-front plus ambient registry with 35 explicit routine native SKIPs **97 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1654,7 +1682,7 @@ Complete 97-row reduced-front plus ambient registry with 35 explicit routine nat
 | `CSWC-REDUCED-NATIVE-RESTART-REPARTITION-4-RSH27` | Particle exclusion | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_reduced/run_test.py); [case source](../models/sep_corona_swcme/docs/shock-front/model.md) |
 | `CSWC-REDUCED-NATIVE-RESTART-REPARTITION-4-RSH29` | background-only restart reproduces later geometry/jumps/exports byte-for-byte and rejects a changed physics identity transactionally | integration; serialized configuration owner; tools python, cxx, make | partial coverage evidence for `src/models/sep_corona_swcme`; preserves this contract as an exact global result | [src/models/sep_corona_swcme](../models/sep_corona_swcme); [adapter](tests/models/cme/sep_corona_swcme_reduced/run_test.py); [case source](../models/sep_corona_swcme/test/shock_front/test_reduced.cpp) |
 
-### 60. `CORE-LEGACY-REGISTRY-AUDIT-001`
+### 61. `CORE-LEGACY-REGISTRY-AUDIT-001`
 
 Explicit governance/disposition audit for every roadmap legacy application without behavioral migration qualification **13 cases.** Eligible for suite-level concurrency.
 
@@ -1674,7 +1702,7 @@ Explicit governance/disposition audit for every roadmap legacy application witho
 | `LEGACY-MODEL-COLLISION-TEST-001` | srcModelCollisionTest | module; isolated suite adapter; tools python | partial coverage evidence for `src/test`; preserves this contract as an exact global result | [src/test](.); [adapter](tests/legacy/registry/run_test.py) |
 | `LEGACY-MODEL-DUST-TEST-001` | srcModelDustTest | module; isolated suite adapter; tools python | partial coverage evidence for `src/test`; preserves this contract as an exact global result | [src/test](.); [adapter](tests/legacy/registry/run_test.py) |
 
-### 61. `CORE-T12-PORTABILITY-001`
+### 62. `CORE-T12-PORTABILITY-001`
 
 Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performance matrix plus the truthful strict-coverage gate **16 cases.** Eligible for suite-level concurrency.
 
@@ -1697,7 +1725,7 @@ Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performanc
 | `T12-PERFORMANCE-IO-001` | performance-io | integration; isolated suite adapter; tools python, cxx, mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/portability/matrix/run_test.py) |
 | `T12-COVERAGE-STRICT-001` | Runs `--coverage --require-complete-coverage` and reports its real exit status. The current incomplete inventory is therefore `FAIL`, keeping T12 open. | integration; isolated suite adapter; tools python, cxx, mpi_cxx | partial coverage evidence for `src/general`; preserves this contract as an exact global result | [src/general](../general); [adapter](tests/portability/matrix/run_test.py); [case source](tests/portability/matrix/README.md) |
 
-### 62. `APPLICATION-ENCELADUS-FORWARD-001`
+### 63. `APPLICATION-ENCELADUS-FORWARD-001`
 
 Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign **43 cases.** Eligible for suite-level concurrency.
 
@@ -1747,7 +1775,7 @@ Complete dependency-light Enceladus forward-model parser, source, chemistry, num
 | `ENCELADUS-REF-PARSED-NONUNIFORM-SPLIT-POSITION-SHIFT` | Ref parsed nonuniform split position shift | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-REF-NEGATIVE-VALIDATION-CHECKS` | Ref negative validation checks | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 
-### 63. `APPLICATION-ENCELADUS-NATIVE-STARTUP-001`
+### 64. `APPLICATION-ENCELADUS-NATIVE-STARTUP-001`
 
 Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates **6 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1760,7 +1788,7 @@ Clean Enceladus build and exact import of all six pre-MPI native startup/configu
 | `ENCELADUS-N04-POINTER-MOVER-GENERATED` | N04 pointer mover generated | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
 | `ENCELADUS-N05-CHEMISTRY-PROCESSING-GENERATED` | N05 chemistry processing generated | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
 
-### 64. `APPLICATION-ENCELADUS-E3-001`
+### 65. `APPLICATION-ENCELADUS-E3-001`
 
 Capability-gated clean build and 10,000-step E3 process, transport-ledger, and flyby-product campaign **13 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1780,7 +1808,7 @@ Capability-gated clean build and 10,000-step E3 process, transport-ledger, and f
 | `ENCELADUS-E3R11-FLYBY-MESH-RESOLUTION` | E3r11 flyby mesh resolution | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_e3/run_test.py) |
 | `ENCELADUS-E3R12-FLYBY-PNG` | E3r12 flyby png | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_e3/run_test.py) |
 
-### 65. `APPLICATION-MOON-REGRESSION-001`
+### 66. `APPLICATION-MOON-REGRESSION-001`
 
 Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips **36 cases.** Runs behind an exclusive checkout barrier.
 
@@ -1823,7 +1851,7 @@ Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression ou
 | `MOON-I19` | Moon i19 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 | `MOON-I20` | Moon i20 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 
-### 66. `APPLICATION-MOON-M0-001`
+### 67. `APPLICATION-MOON-M0-001`
 
 Complete Moon I01-I10 M0 registry with explicit non-execution until its multi-build workflow satisfies the mandatory native preflight **10 cases.** Eligible for suite-level concurrency.
 

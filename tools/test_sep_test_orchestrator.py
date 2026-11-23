@@ -67,6 +67,88 @@ class Fixture(unittest.TestCase):
         return path
 
 
+class SharedInitializerAudit(Fixture):
+    """The source guard follows actual shared ownership and rejects corruption."""
+    def test_analytic_history_guard_and_early_return_are_required(self):
+        root=_HERE.parent
+        spec=importlib.util.spec_from_file_location('sep_source_contract_audit',
+            root/'srcSEP/test/check_stage1_stage2_contracts.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        source=(root/'srcSEP/main_lib.cpp').read_text()
+        signature='SEP::Background::AnalyticRadial::InitializeFixedNativeHistory()'
+        body=module.function_body(module.code_without_comments(source),signature)
+        module.check_analytic_history_owner(signature+body)
+        # Corrupt the real guarded function independently. A wrong provider or
+        # lost no-op must fail, even though other files still contain Analytic.
+        wrong=body.replace('ConfiguredProvider()==BG::Provider::Analytic?1:0',
+                           'ConfiguredProvider()==BG::Provider::Swmf?1:0')
+        self.assertNotEqual(wrong,body)
+        with self.assertRaises(AssertionError):module.check_analytic_history_owner(signature+wrong)
+        wrong=body.replace('if(!maximumEnabled)return T::Status::Ok();','')
+        self.assertNotEqual(wrong,body)
+        with self.assertRaises(AssertionError):module.check_analytic_history_owner(signature+wrong)
+
+
+class MaterialBackgroundReports(Fixture):
+    """Software report controls; these fixtures make no physical claim."""
+    def payload(self):
+        return dict(schema='srcsep-material-background-v1',results=[
+            dict(test_id=f'MBC{i:02d}',status='PASS') for i in range(1,21)])
+
+    def test_complete_catalog_and_preserved_failures(self):
+        payload=self.payload()
+        payload['results'][3].update(status='FAIL',message='invalid supplied derivative')
+        payload['results'][7].update(status='ERROR',message='compiler unavailable')
+        self.write_json('summary.json',payload)
+        rows=orch.reader_material_background(self.out)(self.ctx(exit_code=1))
+        self.assertEqual(len(rows),20)
+        self.assertEqual((rows[3].status,rows[7].status),('FAIL','ERROR'))
+
+    def test_missing_foreign_duplicate_and_schema_are_errors(self):
+        for change in ('missing','foreign','duplicate','schema','status'):
+            payload=self.payload()
+            if change=='missing':payload['results'].pop()
+            elif change=='foreign':payload['results'][0]['test_id']='SBACK01'
+            elif change=='duplicate':payload['results'][1]['test_id']='MBC01'
+            elif change=='schema':payload['schema']='legacy-snapshot'
+            else:payload['results'][0]['status']='SUCCESS'
+            self.write_json('summary.json',payload)
+            with self.assertRaises(orch.ResultsUnavailable):
+                orch.reader_material_background(self.out)(self.ctx())
+
+    def test_runner_build_error_keeps_every_case_and_actual_receipt(self):
+        # A missing compiler fails the real maintained build immediately. The
+        # structured report must retain every contract ID as ERROR and the
+        # attempted make command/actual nonzero exit, never reuse old PASSes.
+        root=_HERE.parent;out=self.out/'missing-compiler'
+        result=subprocess.run([sys.executable,'-B',str(root/'srcSEP/test/run_material_background_tests.py'),
+            '--output-dir',str(out)],cwd=root,env=dict(os.environ,CXX='/nonexistent/material-contract-compiler'),
+            stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30)
+        self.assertEqual(result.returncode,1)
+        payload=json.loads((out/'summary.json').read_text())
+        self.assertEqual([r['test_id'] for r in payload['results']],[f'MBC{i:02d}' for i in range(1,21)])
+        self.assertTrue(all(r['status']=='ERROR' for r in payload['results']))
+        self.assertEqual(payload['commands'][0]['argv'],['make','-j16','lib'])
+        self.assertNotEqual(payload['commands'][0]['exit_code'],0)
+
+    def test_existing_evidence_is_immutable(self):
+        # Reusing an output directory is an invocation error. It must not
+        # erase either successful or failed prior scientific evidence.
+        root=_HERE.parent;out=self.out/'retained';out.mkdir()
+        witness=out/'summary.json';witness.write_text('retained previous evidence')
+        result=subprocess.run([sys.executable,'-B',str(root/'srcSEP/test/run_material_background_tests.py'),
+            '--output-dir',str(out)],cwd=root,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30)
+        self.assertEqual(result.returncode,1)
+        self.assertEqual(witness.read_text(),'retained previous evidence')
+
+    def test_both_registries_include_material_owner(self):
+        root=_HERE.parent
+        manifest=json.loads((root/'src/test/manifest.json').read_text())
+        entry=next(t for t in manifest['tests'] if t['id']=='CORE-SEP-MATERIAL-BACKGROUND-001')
+        self.assertEqual(entry['expected_cases'],[f'MBC{i:02d}' for i in range(1,21)])
+        self.assertIn('material-background',[s.name for s in orch.srcsep_steps(self.out,argparse.Namespace())])
+
+
 class BackendAndApplicationReports(Fixture):
     def application(self):
         return {'schema':'srcsep-stage6-application-v1','results':[
@@ -826,6 +908,7 @@ class RngLifecycleRegistration(Fixture):
         self.assertEqual(command[:4], ["python3", "-B", "srcSEP/test/run_tests.py", "--amps"])
         self.assertEqual(command[command.index("--mpi-np")+1], "2")
         self.assertEqual(command[command.index("--group")+1], "polarized-wave-native")
+        self.assertEqual(command[command.index("--shock-model")+1], "swcme1d")
         self.assertEqual(command[command.index("--turbulence-model")+1], "wave-number-resolved")
         self.assertEqual(command[command.index("--turbulence-source")+1], "self-consistent-spectral")
         self.assertEqual(command[command.index("--coupling")+1], "off")

@@ -7,6 +7,8 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <memory>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -35,6 +37,124 @@ using namespace std;
 namespace {
 
 FteConvectionMetrics gFteConvectionMetrics;
+
+// The two legacy manufactured convection tests prescribe U=0 at EVERY native
+// vertex. Their exact material map is therefore the identity on the centerline,
+// although PARKER01 has nonzero transverse grad(U) and physical compression.
+// A provider name or a scalar U.b=0 would not establish this: verify all three
+// components of the actual installed data before creating a test-owned map.
+//
+// Ownership has no unregister setter by design. Retain the entire incoming
+// native owner in a detached cFieldLine and swap an explicitly copied empty
+// fixture into its slot. Swapping back restores the exact original identity,
+// generation, vertex/segment pointers, associated data, and sampling vectors;
+// no string/vector is memcpy'd and no preexisting fixed-grid history is relabeled.
+class ZeroCenterlineMaterialFixture {
+ public:
+  explicit ZeroCenterlineMaterialFixture(const std::string& fixture,long int trialParticle)
+      :count_(PIC::FieldLine::nFieldLine),saved_(new PIC::FieldLine::cFieldLine[count_]),
+       previous_(SEP::Background::SnapshotStore::Instance().Current()),trialParticle_(trialParticle) {
+    if(SEP::Background::ConfiguredProvider()!=SEP::Background::Provider::Analytic)
+      throw std::runtime_error("zero-centerline fixture requires its explicit analytical startup route");
+    if(count_<1)throw std::runtime_error("zero-centerline fixture requires actual native geometry");
+    for(int line=0;line<count_;++line)Validate(PIC::FieldLine::FieldLinesAll[line]);
+    NegativeControls();
+    try {
+      for(int line=0;line<count_;++line) {
+        auto& live=PIC::FieldLine::FieldLinesAll[line];auto& copy=saved_[line];
+        for(auto* vertex=live.GetFirstVertex();vertex;vertex=vertex->GetNext()) {
+          double x[3];vertex->GetX(x);auto* target=copy.Add(x);
+          std::memcpy(target->GetAssociatedDataBufferPointer(),
+              vertex->GetAssociatedDataBufferPointer(),vertex->AssociatedDataLength());
+        }
+        for(int edge=0;edge<live.GetTotalSegmentNumber();++edge) {
+          auto* from=live.GetSegment(edge);auto* to=copy.GetSegment(edge);
+          std::memcpy(to->GetAssociatedDataBufferPointer(),from->GetAssociatedDataBufferPointer(),from->AssociatedDataLength());
+          to->Thread=from->Thread;to->ActiveFlag=from->ActiveFlag;to->Temp_ID=from->Temp_ID;
+          to->SamplingExposure=from->SamplingExposure;
+          to->MaterialCollecting=from->MaterialCollecting;to->MaterialCompleted=from->MaterialCompleted;
+        }
+        const auto registered=copy.RegisterGeometryOwner("manufactured-zero-centerline/"+fixture+"/"+std::to_string(line),
+            SEP::Background::SimulationTimeSeconds());
+        if(!registered.ok())throw std::runtime_error(registered.message);
+        live.SwapCheckpointOwner(copy);++installed_;
+      }
+      // This is the actual production preflight, reached only after the
+      // declared data, full gradient fixture and real geometry owner exist.
+      // Global dt and sampling clocks are never modified by this scope.
+      SEP::Background::PrepareSnapshotForParticleStep();
+    }catch(...) {Restore();throw;}
+  }
+  ~ZeroCenterlineMaterialFixture(){Restore();}
+ private:
+  int count_=0,installed_=0;
+  std::unique_ptr<PIC::FieldLine::cFieldLine[]> saved_;
+  std::shared_ptr<const SEP::Background::BackgroundSnapshot> previous_;
+  long int trialParticle_=-1;
+  static void Validate(PIC::FieldLine::cFieldLine& line) {
+    if(line.ExternallyManagedGeometry||!line.GetGeometryOwnerIdentity().empty()||
+        line.GetTotalSegmentNumber()<1||line.is_loop())
+      throw std::runtime_error("zero-centerline fixture cannot replace another material owner or invalid line");
+    for(auto* vertex=line.GetFirstVertex();vertex;vertex=vertex->GetNext()) {
+      double u[3];vertex->GetPlasmaVelocity(u);
+      for(double value:u)if(value!=0.0||!std::isfinite(value))
+        throw std::runtime_error("identity material map requires actual U=(0,0,0) at every centerline vertex");
+    }
+    for(auto* edge=line.GetFirstSegment();edge;edge=edge->GetNext())
+      if(edge->FirstParticleIndex!=-1||edge->tempFirstParticleIndex.load()!=-1||
+          edge->SamplingExposure.collecting||edge->SamplingExposure.completed||
+          !edge->MaterialCollecting.empty()||!edge->MaterialCompleted.empty())
+        throw std::runtime_error("zero-centerline fixture requires empty lists and no existing material sample history");
+  }
+  static void NegativeControls() {
+    // Qualify the admission check against the two tempting but physically
+    // invalid shortcuts before publication: an unregistered nonzero-U line
+    // cannot use an identity map, and a different owner's line cannot be
+    // relabeled as this manufactured material fixture. These controls mutate
+    // only quiescent fixture data and restore it before any mover/read phase.
+    auto& line=PIC::FieldLine::FieldLinesAll[0];
+    auto* vertex=line.GetFirstVertex();double original[3];vertex->GetPlasmaVelocity(original);
+    double moving[3]={1.0,0.0,0.0};vertex->SetPlasmaVelocity(moving);
+    bool nonzeroRejected=false;
+    try{Validate(line);}catch(const std::runtime_error&){nonzeroRejected=true;}
+    vertex->SetPlasmaVelocity(original);
+    if(!nonzeroRejected)throw std::runtime_error("identity fixture accepted a nonzero centerline velocity negative control");
+    PIC::FieldLine::cFieldLine foreign;
+    for(int i=0;i<2;++i){double x[3];line.GetVertex(i)->GetX(x);foreign.Add(x);}
+    const auto owned=foreign.RegisterGeometryOwner("manufactured-foreign-owner-negative-control",
+        SEP::Background::SimulationTimeSeconds());
+    if(!owned.ok()){foreign.Delete();throw std::runtime_error(owned.message);}
+    bool ownerRejected=false;
+    try{Validate(foreign);}catch(const std::runtime_error&){ownerRejected=true;}
+    foreign.Delete();
+    if(!ownerRejected)throw std::runtime_error("identity fixture relabeled a foreign material owner negative control");
+  }
+  void Restore() noexcept {
+    // The enclosing ParticleReadPhase has already ended before destruction.
+    // NativeArtifactScope/registry report any exception independently; here
+    // the inverse owner swap is allocation-free and cannot leave a fake owner.
+    for(int line=installed_-1;line>=0;--line)
+      PIC::FieldLine::FieldLinesAll[line].SwapCheckpointOwner(saved_[line]);
+    installed_=0;
+    for(int line=0;line<count_;++line)if(saved_[line].GetFirstVertex()) {
+      // The callback owns its single reusable trial particle and deletes that
+      // buffer record after the fixture scope. The production mover attaches
+      // it to the temporary line, so detach precisely that known trial before
+      // retiring the copied geometry. An unexpected population is an invariant
+      // failure, never a silently deleted physical particle population.
+      for(auto* edge=saved_[line].GetFirstSegment();edge;edge=edge->GetNext()) {
+        if((edge->FirstParticleIndex!=-1&&edge->FirstParticleIndex!=trialParticle_)||
+            (edge->tempFirstParticleIndex.load()!=-1&&edge->tempFirstParticleIndex.load()!=trialParticle_))
+          std::terminate();
+        edge->FirstParticleIndex=-1;edge->tempFirstParticleIndex=-1;
+      }
+      saved_[line].Delete();
+    }
+    auto& store=SEP::Background::SnapshotStore::Instance();
+    try {store.ResetForTests();if(previous_){store.Publish(*previous_);store.RestoreCheckpoint(previous_);}}
+    catch(...){std::terminate();}
+  }
+};
 
 class ZeroPitchDiffusionConfiguration {
  public:
@@ -384,7 +504,8 @@ bool ParkerModelMoverTest_convection() {
   ptr=PB::GetNewParticle();
   PB::SetI(0,ptr);
 
-  for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
+  for(int fixtureLine=0;fixtureLine<FL::nFieldLine;++fixtureLine)
+  for (auto Vertex=FL::FieldLinesAll[fixtureLine].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
     cVertexData t;
 
     Vertex->GetDatum(FL::DatumAtVertexPlasmaDensity,&t.DensityCurrent);
@@ -406,6 +527,7 @@ bool ParkerModelMoverTest_convection() {
   {
     SEP::Transport::PICAdapter::ScopedVelocityGradientFixture derivatives(
         -std::log(DensityCurrent/DensityOld)/dtTotal);
+    ZeroCenterlineMaterialFixture material("PARKER01",ptr);
     SEP::Background::ParticleReadPhase backgroundRead =
         SEP::Background::SnapshotStore::Instance().BeginParticleRead(
             SEP::Background::SimulationTimeSeconds());
@@ -508,7 +630,8 @@ bool ParkerModelMoverTest_convection() {
   //return the original parameters of the field line
   auto p=VertexData.begin();
   
-  for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;p++,Vertex=Vertex->GetNext()) {
+  for(int fixtureLine=0;fixtureLine<FL::nFieldLine;++fixtureLine)
+  for (auto Vertex=FL::FieldLinesAll[fixtureLine].GetFirstVertex();Vertex!=NULL;p++,Vertex=Vertex->GetNext()) {
     Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,p->DensityCurrent);
     Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,p->DensityOld);
     Vertex->SetPlasmaVelocity(p->v);
@@ -583,7 +706,8 @@ bool FTE_Convectoin() {
   PB::SetIndividualStatWeightCorrection(1.0,ptr);
   PB::SetFieldLineId(0,ptr);
 
-  for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
+  for(int fixtureLine=0;fixtureLine<FL::nFieldLine;++fixtureLine)
+  for (auto Vertex=FL::FieldLinesAll[fixtureLine].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
     cVertexData t;
 
     Vertex->GetDatum(FL::DatumAtVertexPlasmaDensity,&t.DensityCurrent);
@@ -617,6 +741,7 @@ bool FTE_Convectoin() {
     // vanishes. Its magnetic line may curve; d(U.b)/ds is not bb:grad U.
     SEP::Transport::PICAdapter::ScopedVelocityGradientFixture derivatives(
         std::array<double,9>{{0,0,0,0,0,0,0,0,0}});
+    ZeroCenterlineMaterialFixture material("FTE01",ptr);
     SEP::Background::ParticleReadPhase backgroundRead =
         SEP::Background::SnapshotStore::Instance().BeginParticleRead(
             SEP::Background::SimulationTimeSeconds());
@@ -687,7 +812,8 @@ bool FTE_Convectoin() {
   //return the original parameters of the field line
   auto p=VertexData.begin();
 
-  for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;p++,Vertex=Vertex->GetNext()) {
+  for(int fixtureLine=0;fixtureLine<FL::nFieldLine;++fixtureLine)
+  for (auto Vertex=FL::FieldLinesAll[fixtureLine].GetFirstVertex();Vertex!=NULL;p++,Vertex=Vertex->GetNext()) {
     Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,p->DensityCurrent);
     Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,p->DensityOld);
     Vertex->SetPlasmaVelocity(p->v);

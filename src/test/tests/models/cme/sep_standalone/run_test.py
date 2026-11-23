@@ -12,7 +12,8 @@ from lib.runner_support import case, load_context, run_command, write_result, er
 
 def main():
     context=load_context('Standalone SEP/core integration')
-    extension={'CORE-SEP-BACKEND-ADMISSION-001':'backend',
+    extension={'CORE-SEP-MATERIAL-BACKGROUND-001':'material',
+               'CORE-SEP-BACKEND-ADMISSION-001':'backend',
                'CORE-SEP-BACKEND-NATIVE-001':'backend-native',
                'CORE-SEP-FULL-APPLICATION-001':'application'}.get(context['test']['id'])
     if extension:
@@ -134,7 +135,7 @@ def stage7_checkpoint(context):
 
 
 def maintained_extension(context,kind):
-    """Import complete stage-8/9 catalogs, retaining each original case status.
+    """Import complete stage-8/9/11 catalogs, retaining each original case status.
 
     Backend results qualify rejection/diagnostic compatibility. The application
     reader separately requires the original physical window and budget bound.
@@ -143,7 +144,11 @@ def maintained_extension(context,kind):
     try:
         repo=Path(context['repo_root']);local=Path(context['artifact_dir'])/'local'
         build=Path(os.environ.get('AMPS_FIELD_LINE_NATIVE_BUILD',str(repo)))
-        if kind=='application':
+        if kind=='material':
+            argv=[sys.executable,str(repo/'srcSEP/test/run_material_background_tests.py'),'--output-dir',str(local)]
+            identities=[f'MBC{i:02d}' for i in range(1,21)]
+            report=local/'summary.json'
+        elif kind=='application':
             argv=[sys.executable,str(repo/'srcSEP/test/run_standalone_application.py'),
                   '--build-root',str(build),'--output-dir',str(local)]
             report=local/'verified-results.json';identities=['SAPP01','SAPP02','SAPP03']
@@ -157,17 +162,18 @@ def maintained_extension(context,kind):
         result=run_command(argv,repo,timeout=5700 if kind=='application' else 600)
         payload=json.loads(report.read_text());rows=payload['results']
         if [r.get('test_id') for r in rows]!=identities:
-            raise RuntimeError('stage8/9 report has missing/foreign/duplicate cases')
+            raise RuntimeError('maintained report has missing/foreign/duplicate cases')
         sys.path.insert(0,str(repo/'tools'))
-        from sep_test_orchestrator import reader_backend_admission,reader_standalone_application
+        from sep_test_orchestrator import reader_backend_admission,reader_standalone_application,reader_material_background
         # Run the shared strict schema/window reader without changing results.
         class ImportContext:
             def record(self,*args,**kwargs):return args
-        reader=(reader_standalone_application(local) if kind=='application' else
+        reader=(reader_material_background(local) if kind=='material' else
+                reader_standalone_application(local) if kind=='application' else
                 reader_backend_admission(local,native=kind=='backend-native'))
         reader(ImportContext())
         failed=any(r['status'] in ('FAIL','ERROR') for r in rows)
-        if result.returncode!=int(failed):raise RuntimeError('stage8/9 child exit disagrees with its case results')
+        if result.returncode!=int(failed):raise RuntimeError('maintained child exit disagrees with its case results')
         selected=context['test'].get('selected_cases',identities)
         imported=[case(r['test_id'],r['status'],r.get('message',payload.get('scope','complete fixed-step native campaign')))
                   for r in rows if r['test_id'] in selected]

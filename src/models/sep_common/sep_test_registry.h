@@ -21,7 +21,11 @@ enum class Status { Pass, Fail, Skip, Error };
 // callback is safe.  Step 1 needs only tests that are independent of model state
 // and tests that consume the initialized AMPS field-line model.  Adding an enum
 // value later is preferable to hiding extra initialization inside a callback.
-enum class InitializationLevel { None, FieldLineModel };
+// Existing values are an archive/CLI compatibility surface. NativeStorage is
+// deliberately not an ordinal "higher" physical prerequisite: it allocates
+// buffers for a fixture which owns its own state, and does not authorize a
+// production particle read or claim a material geometry map.
+enum class InitializationLevel { None = 0, FieldLineModel = 1, NativeStorage = 2 };
 
 // Routine tests are included by --all-tests and by the bounded make test target.
 // Extended tests remain discoverable and individually selectable, but are kept

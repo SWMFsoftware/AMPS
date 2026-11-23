@@ -67,6 +67,73 @@ def require_order(body: str, earlier: str, later: str, context: str) -> None:
         fail(f"{context}: expected {earlier!r} before {later!r}")
 
 
+def check_analytic_history_owner(source: str) -> None:
+    """Follow the real shared initializer rather than its former driver site.
+
+    Analytic history now belongs in main_lib.cpp so standalone and host entry
+    points use the same provider transaction. Requiring an old enum spelling
+    in main.cpp rejects that correct ownership move. Check the actual guard
+    and its no-op-before-write order instead; imported/reduced owners must not
+    acquire synthetic analytic history. Comments cannot satisfy these checks.
+    """
+    signature="SEP::Background::AnalyticRadial::InitializeFixedNativeHistory()"
+    body=function_body(code_without_comments(source),signature)
+    compact=re.sub(r"\s+", "", body)
+    if "ConfiguredProvider()==BG::Provider::Analytic?1:0" not in compact:
+        fail("analytic history initializer must select the actual analytic provider")
+    require_order(compact,"if(!maximumEnabled)returnT::Status::Ok();",
+                  "for(intline=0;", "analytic history provider no-op before native writes")
+
+
+def check_turbulence_step_owner(main_cpp: str, main_lib_cpp: str) -> None:
+    """One common physical-step owner serves standalone and coupled entry.
+
+    Particle steps and wave evolution must not acquire separate owners in the
+    standalone driver: a second call would consume the same fixed AMPS interval
+    twice. Count executable calls across both translation units, then require
+    the unique library call to belong to the real common amps_time_step body.
+    This audits production wiring; physical dt and wave/source budgets remain
+    the responsibility of their numerical and native execution gates.
+    """
+    advance_pattern = r"SEP::Turbulence::PICAdapter::Advance\s*\("
+    library = code_without_comments(main_lib_cpp)
+    if len(re.findall(advance_pattern, library)) != 1:
+        fail("main_lib.cpp must contain exactly one live PICAdapter::Advance call")
+    if re.search(advance_pattern, code_without_comments(main_cpp)):
+        fail("main.cpp must not advance turbulence outside amps_time_step()")
+    body = function_body(library, "void amps_time_step()")
+    if len(re.findall(advance_pattern, body)) != 1:
+        fail("the unique turbulence Advance must belong to common amps_time_step()")
+
+
+def turbulence_owner_negative_controls(main_cpp: str, main_lib_cpp: str) -> None:
+    """Reject duplicate/missing/foreign owners in in-memory source fixtures.
+
+    These mutations never edit a production file or supply a physics result.
+    They ensure that replacing the obsolete two-driver grep does not merely
+    suppress its failure: a second driver call, double library call, absent
+    call, or call moved outside the common physical-step owner must all fail.
+    """
+    extra = "\nvoid invalid_owner(){SEP::Turbulence::PICAdapter::Advance(0,0,0);}\n"
+    no_call = re.sub(r"SEP::Turbulence::PICAdapter::Advance\s*\(",
+                     "MissingTurbulenceAdvance(", main_lib_cpp)
+    foreign = main_lib_cpp.replace("void amps_time_step()", "void unrelated_time_step()")
+    candidates = (
+        ("second-driver-call", main_cpp + extra, main_lib_cpp),
+        ("double-library-call", main_cpp, main_lib_cpp + extra),
+        ("missing-library-call", main_cpp, no_call),
+        ("foreign-library-owner", main_cpp, foreign),
+    )
+    for label, driver, library in candidates:
+        if driver == main_cpp and library == main_lib_cpp:
+            fail("ownership negative control did not mutate source: " + label)
+        try:
+            check_turbulence_step_owner(driver, library)
+        except AssertionError:
+            continue
+        fail("turbulence ownership audit accepted invalid mutation: " + label)
+
+
 def main() -> int:
     main_cpp = (ROOT / "main.cpp").read_text(encoding="utf-8")
     main_lib_cpp = (ROOT / "main_lib.cpp").read_text(encoding="utf-8")
@@ -80,11 +147,8 @@ def main() -> int:
 
     # Recommendation 1: the common application timestep owns exactly one live
     # turbulence transaction and the standalone driver owns none.
-    advance_pattern = r"SEP::Turbulence::PICAdapter::Advance\s*\("
-    if len(re.findall(advance_pattern, code_without_comments(main_lib_cpp))) != 1:
-        fail("main_lib.cpp must contain exactly one live PICAdapter::Advance call")
-    if re.search(advance_pattern, code_without_comments(main_cpp)):
-        fail("main.cpp must not advance turbulence outside amps_time_step()")
+    check_turbulence_step_owner(main_cpp, main_lib_cpp)
+    turbulence_owner_negative_controls(main_cpp, main_lib_cpp)
 
     # sep.h already imports the canonical coefficient registry from
     # src/models/sep_common.  Including the retired application-local header in
@@ -103,11 +167,12 @@ def main() -> int:
         "SelfConsistentIntegrated",
         "SelfConsistentSpectral",
         "ConfiguredProvider()",
-        "Provider::Analytic",
         "Provider::Swcme",
     ):
         if marker not in executable_main:
             fail(f"provider/source ownership marker is absent: {marker}")
+
+    check_analytic_history_owner(main_lib_cpp)
 
     # Recommendation 4: each native mover fixture enters the immutable read
     # phase after its temporary setup and before its first production move.

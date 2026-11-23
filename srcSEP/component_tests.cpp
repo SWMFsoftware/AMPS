@@ -90,6 +90,29 @@ void BroadcastString(std::string& value) {
   if(length)MPI_Bcast(&value[0],length,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
 }
 
+// A fresh-process birth role retains the shared campaign schedule even though
+// each raw native invocation executes only one replicate. Bind the reviewed
+// external replicate index BEFORE NativeTestStateScope derives its native
+// campaign/source key; rebinding only inside the callback would mix replicate0
+// source streams with replicateN operator streams. This is the existing shared
+// DeriveTestCaseSeed law, not a new RNG or physical control.
+class BirthCampaignContextScope {
+  SEP::Testing::ExecutionContext saved_=SEP::Testing::GetExecutionContext();
+ public:
+  explicit BirthCampaignContextScope(const SEP::Testing::BirthNativeRequest& request) {
+    auto context=saved_;
+    if(context.replicateCount!=1)
+      throw std::runtime_error("birth role requires one raw native invocation; repeat complete experiments through the isolated driver");
+    if(request.campaignReplicateIndex&&!context.seedActive)
+      throw std::runtime_error("a repeated birth role requires an explicit campaign seed");
+    context.caseSeed=SEP::Testing::DeriveTestCaseSeed(context.campaignSeed,
+        context.testId,request.campaignReplicateIndex);
+    context.replicateIndex=request.campaignReplicateIndex;
+    SEP::Testing::SetExecutionContext(context);
+  }
+  ~BirthCampaignContextScope(){SEP::Testing::SetExecutionContext(saved_);}
+};
+
 // All numerical test cases run after worker joins. Preserve the pre-existing
 // snapshot metadata even for a pure callback which explicitly ResetForTests.
 // Restoring this test fixture is not a provider fallback in a production step.
@@ -99,7 +122,7 @@ class NativeTestStateScope {
       SEP::Background::SnapshotStore::Instance().Current();
   const std::uint64_t previousCampaign=SEP::Transport::PICAdapter::CampaignRandomSeed;
   SEP::SourceLifecycle::State source;
-  bool sourceValid=false;
+  bool sourceValid=false,processOwnedBirth=false;
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_ && _CUDA_MODE_ == _OFF_
   const unsigned long legacySeed=RandomNumberGenerator::rndLastSeed;
   const std::mt19937 legacyEngine=RandomNumberGenerator::gen;
@@ -109,7 +132,20 @@ class NativeTestStateScope {
 #endif
   explicit NativeTestStateScope(const SEP::Testing::Descriptor& descriptor) {
     const auto& context=SEP::Testing::GetExecutionContext();
-    const bool native=descriptor.initialization==SEP::Testing::InitializationLevel::FieldLineModel;
+    const bool birthCapability=std::find(descriptor.tags.begin(),descriptor.tags.end(),
+        "birth-operator-startup-v1")!=descriptor.tags.end();
+    if(birthCapability&&!context.inputPath.empty()) {
+      // The dispatcher has already required one selected case/raw repeat and
+      // the same strict request parser validates its role and startup again.
+      // This test-only tag cannot register an owner or waive any mover guard.
+      const auto request=SEP::Testing::ReadBirthNativeRequest(descriptor.id,context.inputPath);
+      if(!request.selected)throw std::runtime_error("process-owned birth role lacks its reviewed request");
+      // The outer registry execution scope already bound the reviewed external
+      // replicate. It must remain bound through Registry::RunOne's evidence
+      // stamping, which occurs AFTER this state guard has been destroyed.
+      processOwnedBirth=true;
+    }
+    const bool native=descriptor.initialization!=SEP::Testing::InitializationLevel::None;
     if(!native)return;
     source=SEP::SourceLifecycle::CaptureNativeState();sourceValid=!source.fixedLineLayout.empty();
     if(context.seedActive) {
@@ -133,8 +169,13 @@ class NativeTestStateScope {
   }
   ~NativeTestStateScope() {
     try {
-      SEP::Transport::PICAdapter::CampaignRandomSeed=previousCampaign;
-      if(sourceValid) {
+      // A successful process-owned experiment has published R1. Restoring
+      // the old fixed R0 namespace/snapshot over that real geometry is invalid.
+      // Its final state was checked explicitly in Finish below and this is the
+      // only callback before MPI_Finalize/exit. Every other fixture retains its
+      // exact pre-existing source/background restoration and failure handling.
+      if(!processOwnedBirth)SEP::Transport::PICAdapter::CampaignRandomSeed=previousCampaign;
+      if(sourceValid&&!processOwnedBirth) {
         const auto restored=SEP::SourceLifecycle::RestoreNativeState(source);
         if(!restored.ok())throw std::runtime_error(restored.message);
       }
@@ -144,9 +185,33 @@ class NativeTestStateScope {
       RandomNumberGenerator::NormalSpareAvailable=legacyHasNormal;
       RandomNumberGenerator::NormalSpare=legacyNormal;
 #endif
-      auto& store=SEP::Background::SnapshotStore::Instance();
-      store.ResetForTests();if(background)store.Publish(*background);
+      if(!processOwnedBirth) {
+        auto& store=SEP::Background::SnapshotStore::Instance();
+        store.ResetForTests();if(background)store.Publish(*background);
+      }
     } catch(const std::exception&) {campaignStateFailed=true;}
+  }
+  void Finish(SEP::Testing::Result& result) {
+    if(!processOwnedBirth)return;
+    result.configuration.push_back("lifecycle=process-owned-material;R0-restoration=not-applicable;selected-callbacks=1;raw-repeat=1");
+    if(result.status!=SEP::Testing::Status::Pass)return;
+    // Final validity replaces no numerical assertion: the callback has already
+    // scored its full native/reference/RNG/Cartesian/map images. Verify that
+    // its process-owned source namespace, actual clock, geometry and immutable
+    // snapshot agree after that physical publication; never report a stale R0
+    // source history as successfully restored over R1.
+    const auto finalSource=SEP::SourceLifecycle::CaptureNativeState();
+    const auto sourceStatus=SEP::SourceLifecycle::ValidateNativeState(finalSource);
+    if(!sourceStatus.ok())throw std::runtime_error("process-owned birth final source state invalid: "+sourceStatus.message);
+    const double epoch=SEP::Background::SimulationTimeSeconds();
+    const auto current=SEP::Background::SnapshotStore::Instance().Current();
+    if(!current||current->provider()!=SEP::Background::ConfiguredProvider()||!current->Covers(epoch))
+      throw std::runtime_error("process-owned birth final snapshot does not cover its actual provider/clock");
+    for(int line=0;line<PIC::FieldLine::nFieldLine;++line) {
+      const auto& geometry=PIC::FieldLine::FieldLinesAll[line];
+      if(!geometry.ExternallyManagedGeometry||geometry.GetGeometryOwnerIdentity().empty()||geometry.GeometryEpochS!=epoch)
+        throw std::runtime_error("process-owned birth final material epoch differs from the actual PIC clock");
+    }
   }
 };
 
@@ -810,6 +875,16 @@ bool ConfigureComponentTestCampaign(const SEP::Util::CLI::Options& options,
   for(const auto* descriptor:selectedForConfiguration)
     processExclusive=processExclusive||std::find(descriptor->tags.begin(),descriptor->tags.end(),
         "native-process-exclusive")!=descriptor->tags.end();
+  const bool birthProcess=std::any_of(selectedForConfiguration.begin(),selectedForConfiguration.end(),
+      [](const SEP::Testing::Descriptor* descriptor) {
+        return std::find(descriptor->tags.begin(),descriptor->tags.end(),
+            "birth-operator-startup-v1")!=descriptor->tags.end();
+      });
+  if(birthProcess&&!originalContext.inputPath.empty()&&
+      (selectedForConfiguration.size()!=1||options.testRepeat!=1)) {
+    if(error)*error="process-owned birth protocol requires exactly one selected case and one raw native repeat; use the isolated driver for complete repeated role groups";
+    return false;
+  }
   const int localInvalidExclusive=processExclusive&&!originalContext.inputPath.empty()&&
       (selectedForConfiguration.size()!=1||options.testRepeat!=1)?1:0;
   int invalidExclusive=0;
@@ -1117,6 +1192,19 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
     // Tags are explicit catalog metadata. Selection must not infer a mover or
     // geometry capability from substrings in a human-readable test name.
     for(auto& descriptor:descriptors) {
+      // These callbacks inspect actual native buffers or install a declared
+      // manufactured field before their own particle read. Allocating native
+      // geometry is necessary; pre-publishing a production particle snapshot
+      // for the unrelated startup background is not. Explicit stable IDs keep
+      // admission independent of names, group substrings, and provider flags.
+      const std::vector<std::string> storageCases={
+          "ARBN01","ARBN02","ARBN03","ARBN04","POPN01","POPN02","POPN03",
+          "PNW01","PNW02","PNW03","PNW04","SBWN01","SBWN02",
+          "SOURCE01","SOURCE02","DXX01","FTE01","PARKER01"};
+      if(std::find(storageCases.begin(),storageCases.end(),descriptor.id)!=storageCases.end())
+        descriptor.initialization=SEP::Testing::InitializationLevel::NativeStorage;
+      if(descriptor.id=="PNW01"||descriptor.id=="PNW02"||descriptor.id=="PNW03"||descriptor.id=="PNW04")
+        descriptor.tags.push_back("native-wave-storage-snapshot-v1");
       if(descriptor.id=="FTE01"||descriptor.id=="PARKER01"||descriptor.id=="PARKER02") {
         descriptor.seedCapability=SEP::Testing::SeedCapability::Context;
         descriptor.repeatSupported=true;
@@ -1141,11 +1229,16 @@ SEP::Testing::InitializationLevel RequiredInitializationLevel(
     if(campaignConfigured&&descriptor&&
        ((campaignOptions.seedProvided&&descriptor->seedCapability==SEP::Testing::SeedCapability::FixedContract)||
         (campaignOptions.repeatCount>1&&!descriptor->repeatSupported)))continue;
-    if (descriptor &&
-        descriptor->initialization ==
-            SEP::Testing::InitializationLevel::FieldLineModel) {
-      required = SEP::Testing::InitializationLevel::FieldLineModel;
-    }
+    // Capability precedence is explicit because NativeStorage=2 preserves
+    // existing enum values but is physically weaker than FieldLineModel=1.
+    // A mixed legacy --all-tests request retains its historical maximum
+    // prerequisite; the maintained isolated driver requests one real fixture
+    // at a time so a storage-only callback cannot inherit another test's guard.
+    if(descriptor&&descriptor->initialization==SEP::Testing::InitializationLevel::FieldLineModel)
+      required=SEP::Testing::InitializationLevel::FieldLineModel;
+    else if(descriptor&&descriptor->initialization==SEP::Testing::InitializationLevel::NativeStorage&&
+            required==SEP::Testing::InitializationLevel::None)
+      required=SEP::Testing::InitializationLevel::NativeStorage;
   }
   return required;
 }
@@ -1193,6 +1286,7 @@ int RunSelectedComponentTests(
         try {
           NativeTestStateScope state(descriptor);
           local=descriptor.callback();
+          state.Finish(local);
         } catch(const std::exception& exception) {
           local.status=T::Status::Error;local.message=exception.what();
         } catch(...) {
@@ -1206,7 +1300,27 @@ int RunSelectedComponentTests(
         local.configuration.push_back("test_artifact_directory="+localContext.artifactDirectory);
         artifacts->Finish(local);return local;
       };
-      result=registry.RunOne(scoped);
+      try {
+        std::unique_ptr<BirthCampaignContextScope> externalBirthContext;
+        const auto& context=T::GetExecutionContext();
+        if(!context.inputPath.empty()&&std::find(descriptor.tags.begin(),descriptor.tags.end(),
+            "birth-operator-startup-v1")!=descriptor.tags.end()) {
+          const auto request=T::ReadBirthNativeRequest(descriptor.id,context.inputPath);
+          if(!request.selected)throw std::runtime_error("birth registry scope lacks its reviewed request");
+          externalBirthContext.reset(new BirthCampaignContextScope(request));
+        }
+        // Registry::RunOne appends campaign/case/stream seed evidence after the
+        // callback returns. Keeping this scope outside NativeTestStateScope
+        // ensures external replicateN is reported as well as actually used.
+        // Restore the parent raw-invocation context only after those records
+        // exist; every non-birth callback retains the original execution path.
+        result=registry.RunOne(scoped);
+      }catch(const std::exception& error) {
+        auto rejected=descriptor;const std::string message=error.what();
+        rejected.callback=[message](){T::Result failure;failure.status=T::Status::Error;
+          failure.message=message;return failure;};
+        result=registry.RunOne(rejected);
+      }
     }
     result.configuration.push_back("run_purpose=controlled-diagnostic");
     result.configuration.push_back("production_polarized_closure=unqualified");

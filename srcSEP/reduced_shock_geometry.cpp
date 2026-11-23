@@ -1,5 +1,6 @@
 #include "sep.h"
 #include "reduced_shock_geometry.h"
+#include "adapters/reduced_material_background_adapter.h"
 #include "util/sep_initialization.h"
 #include "util/sep_background_runtime.h"
 #include "util/sep_run_configuration.h"
@@ -26,6 +27,13 @@ Core::Result<std::shared_ptr<const LineView>> PrepareLineView(
   candidate->geometryGeneration=generation;candidate->arc.push_back(0);
   for(std::size_t i=1;i<points.size();++i)candidate->arc.push_back(candidate->arc.back()+
       FL::Geometry::Norm(FL::Geometry::Difference(points[i],points[i-1])));
+  // Native metadata has its own generation (cache/geometry join), distinct
+  // from both the physical material labels and the core cache cadence.
+  const auto material=MaterialAdapter::Capture(interval.value,generation,
+      std::max(interval.value.Generation(),generation+1),Background::CurrentConfigurationFingerprint(),
+      Controls(interval.value.ArrivalS()-epoch,candidate->arc[1]));
+  if(!material.ok())return Return::Failure(material.status.code,material.status.message);
+  candidate->material=material.value;
   const auto connected=ConnectLine(interval.value,points,epoch,Controls(0,candidate->arc[1]).positionToleranceM);
   if(!connected.ok())return Return::Failure(connected.status.code,connected.status.message);
   candidate->departureConnections=connected.value;return Return::Success(std::move(candidate));
@@ -136,6 +144,11 @@ Core::Status InstallBackground(double epoch) {
     if(!cadence.ok())throw std::runtime_error(cadence.status.message);
     cadencePublication=cadence.value;
     auto& line=FL::FieldLinesAll[0];
+    // The actual registered owner establishes lineage, even at valid initial
+    // generation zero. Reject a merely allocated/unregistered line rather than
+    // inventing a positive counter or accepting a default metadata identity.
+    if(!line.ExternallyManagedGeometry||line.GetGeometryOwnerIdentity()!=EventIdentity()+":configured-line:0")
+      throw std::runtime_error("reduced publication requires the actual registered core material owner");
     if(line.GeometryEpochS!=epoch)throw std::runtime_error("initial background and material geometry epochs differ");
     const auto current=store.Current();
     const double until=std::min(EventEndS(),epoch+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]);
@@ -144,7 +157,15 @@ Core::Status InstallBackground(double epoch) {
         current->epoch_seconds()==epoch&&current->valid_until_seconds()==until&&
         current->field_line_generation()==generation;
     store.AssertProviderMayWrite(Background::Provider::ReducedShock);
-    const auto view=CapturePhysicalStep(epoch,until,EventIdentity());if(!view.ok())throw std::runtime_error(view.status.message);
+    // The candidate cadence may be newer than the live cache (especially
+    // when background_dt < fixed AMPS dt). Bind to that exact staged owner,
+    // whose cache generation is used by the candidate native snapshot above.
+    // Reading the live owner here would join two different realizations and
+    // can falsely reject a correct publication when the cache counter exceeds
+    // the geometry counter. The immutable physical functions and full fixed
+    // AMPS interval are unchanged; neither candidate is published yet.
+    const auto view=cadencePublication.PhysicalInterval(epoch,until);
+    if(!view.ok())throw std::runtime_error(view.status.message);
     std::vector<Position> points;
     for(auto* vertex=line.GetFirstVertex();vertex;vertex=vertex->GetNext()) {
       const double* x=vertex->GetX();points.push_back({{x[0],x[1],x[2]}});
@@ -169,13 +190,20 @@ Core::Status InstallBackground(double epoch) {
       }
       const auto status=PutState(staged.back(),sample.value,false);if(!status.ok())throw std::runtime_error(status.message);
     }
-    const auto connected=PrepareLineView(epoch,line.GeometryGeneration,points);
+    const auto connected=PrepareLineView(epoch,line.GeometryGeneration,points,&view.value);
     if(!connected.ok())throw std::runtime_error(connected.status.message);
     preparedView=connected.value;
-    if(!reuseMetadata)publication=store.PreparePublication(Background::BackgroundSnapshot(
+    const Background::BackgroundSnapshot snapshot(
         Background::Provider::ReducedShock,Background::Ownership::ModelOwned,epoch,epoch,until,generation,
         Background::CurrentConfigurationFingerprint(),"core reduced Parker material initial state",
-        current?(current->epoch_seconds()==epoch?current->previous_physical_epoch_seconds():current->current_physical_epoch_seconds()):epoch,epoch));
+        current?(current->epoch_seconds()==epoch?current->previous_physical_epoch_seconds():current->current_physical_epoch_seconds()):epoch,epoch);
+    // Reuse validates the actual retained store object. Validating only the
+    // hypothetical replacement above would let a foreign fingerprint or
+    // ownership survive when no publication is performed. Reject before any
+    // native datum/cache/view changes; no implicit reconfiguration is inferred.
+    const auto compatible=preparedView->material->BindSnapshot(reuseMetadata?*current:snapshot);
+    if(!compatible.ok())throw std::runtime_error(compatible.message);
+    if(!reuseMetadata)publication=store.PreparePublication(snapshot);
   } catch(const std::exception& error){local=Error(error.what());}
   // All callbacks, queries and allocations finish before collective readiness.
   // A rank-local late failure cannot leave some native arrays or metadata at
@@ -321,6 +349,12 @@ Core::Status Advance(double departure,double arrival) {
       if(line.GeometryGeneration>std::numeric_limits<std::uint64_t>::max()-2)
         throw std::overflow_error("reduced snapshot geometry generation exhausted");
       const auto controls=Controls(arrival-departure,line.GetFirstSegment()->GetLength());
+      const auto material=MaterialAdapter::Capture(view.value,line.GeometryGeneration,
+          std::max(view.value.Generation(),line.GeometryGeneration+1),Background::CurrentConfigurationFingerprint(),controls);
+      if(!material.ok())throw std::runtime_error(material.status.message);
+      const auto complete=material.value->RequireStep(departure,arrival,
+          PIC::ParticleWeightTimeStep::GlobalTimeStep[0],Background::Material::Region::ParkerExterior);
+      if(!complete.ok())throw std::runtime_error(complete.message);
       FL::Geometry::Context context;context.departureS=departure;context.arrivalS=arrival;
       context.minimumRadiusM=Initialization::Active().innerRadiusM;context.maximumRadiusM=Initialization::Active().outerRadiusM;
       context.toleranceM=controls.positionToleranceM;context.maximumInsertions=100000;context.expectedGeneration=line.GeometryGeneration;
@@ -376,12 +410,15 @@ Core::Status Advance(double departure,double arrival) {
         // bad_alloc cannot leave old metadata attached to new geometry.
         auto& store=Background::SnapshotStore::Instance();
         store.AssertProviderMayWrite(Background::Provider::ReducedShock);
-        publication=store.PreparePublication(Background::BackgroundSnapshot(
+        const Background::BackgroundSnapshot snapshot(
             Background::Provider::ReducedShock,Background::Ownership::ModelOwned,
             arrival,arrival,std::min(EventEndS(),arrival+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]),
             std::max(Metadata().generation,line.GeometryGeneration+2),
             Background::CurrentConfigurationFingerprint(),"core reduced material geometry and state",
-            departure,arrival));
+            departure,arrival);
+        const auto compatible=nextLineView->material->BindSnapshot(snapshot);
+        if(!compatible.ok())throw std::runtime_error(compatible.message);
+        publication=store.PreparePublication(snapshot);
       }
       // Stage rank-local retirement history before readiness. Histories differ
       // across particle owners; preserve them separately instead of summing

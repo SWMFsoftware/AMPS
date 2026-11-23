@@ -2,6 +2,7 @@
 
 #include "../util/sep_common_header_path.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_background_snapshot.h)
+#include SRCSEP_SEP_COMMON_HEADER(sep_material_background.h)
 
 // The makefile's adapter-only rule supplies AMPS/src/models/swcme as an
 // include root. This is the sole srcSEP production translation unit that
@@ -234,6 +235,19 @@ void Configure(Scenario scenario) {
   request.preset=scenario;
   const Status status=Configure(request);
   if (!status.ok()) throw std::invalid_argument(status.detail);
+}
+
+Background::Material::Profile MaterialProfile() {
+  // A caller may query admission before preparing an epoch, but must already
+  // have resolved the canonical configuration. Do not infer a region mode
+  // from a filename, scenario, function pointer or an uninitialized Model.
+  using P=Background::Material::Profile;
+  if(!configuration_resolved)return static_cast<P>(0);
+  switch(resolved_configuration.model.region_mode) {
+    case swcme::regions::Mode::ShockOnly:return P::Swcme1dShockOnlyV1;
+    case swcme::regions::Mode::FullICME:return P::Swcme1dFullIcmeDiagnosticV1;
+  }
+  return static_cast<P>(0);
 }
 
 ConfigurationSummary GetConfigurationSummary() {

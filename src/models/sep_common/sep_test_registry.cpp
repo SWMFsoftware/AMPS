@@ -217,6 +217,7 @@ const char* InitializationName(InitializationLevel level) {
   switch (level) {
     case InitializationLevel::None: return "none";
     case InitializationLevel::FieldLineModel: return "field-line-model";
+    case InitializationLevel::NativeStorage: return "native-storage";
   }
 
   return "unknown";

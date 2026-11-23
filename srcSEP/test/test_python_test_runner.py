@@ -79,7 +79,15 @@ class PythonTestRunnerTests(unittest.TestCase):
                 ("maxwell-juttner-flux", "test-maxwell-juttner-flux-unit", "run_maxwell_juttner_flux_tests.sh")):
             with self.subTest(suite=suite):
                 self.assertEqual(runner.SOURCE_SUITES[suite], target)
-                self.assertIn(target + ":\n\t./test/" + script, makefile)
+                # These two tracked POSIX scripts have mode 0644. Their
+                # strict numerical runner must be invoked through Make's
+                # shell so a source archive preserves the same behavior as
+                # the checkout. Keep the exact target/script assertion and
+                # failure propagation; only account for the required launcher.
+                launcher = "$(SHELL) " if script in (
+                    "run_standard_batsrus_wave_tests.sh",
+                    "run_maxwell_juttner_flux_tests.sh") else ""
+                self.assertIn(target + ":\n\t" + launcher + "./test/" + script, makefile)
                 self.assertTrue((ROOT / "test" / script).is_file())
 
     def test_fct_source_guard_discards_compile_and_execution_mutations(self):

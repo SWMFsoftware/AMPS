@@ -164,7 +164,7 @@ SEP::Core::Status FieldLineBundleAdapter::LoadAndPublish(
   // allocation callback. Ordinary immutable snapshot exchange is preserved.
   if(use==BundleUse::MaterialTransport)
     return SEP::Background::Admission::RequireMovingTransport(
-        SEP::Background::Admission::Backend::CoronalBundle);
+        SEP::Background::Material::Profile::CoronalBundleSnapshotV1);
   if(use!=BundleUse::SnapshotExchange)
     return SEP::Core::Status::Failure(SEP::Core::StatusCode::InvalidConfiguration,
         "Unknown neutral bundle use; no snapshot/material fallback is permitted");

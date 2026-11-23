@@ -204,6 +204,61 @@ Core::Result<FrontSample> IntervalView::FrontAt(const Position& x,double epoch) 
   return Return::Success(std::move(out));
 }
 
+Core::Result<Background::Material::Descriptor> IntervalView::MaterialDescriptor(
+    std::uint64_t geometry,std::uint64_t snapshot,const std::string& nativeIdentity) const {
+  namespace M=Background::Material;using R=Core::Result<M::Descriptor>;
+  const auto valid=ValidateEpoch(departureS_);if(!valid.ok())return R::Failure(valid.code,valid.message);
+  M::Descriptor d;d.profile=M::Profile::ReducedParkerV1;d.revision=1;
+  d.capabilities=M::MaterialRequirements|M::Bit(M::Capability::ShockSurface);
+  d.backgroundGeneration=generation_;d.geometryGeneration=geometry;d.geometryGenerationPresent=true;d.snapshotGeneration=snapshot;
+  d.eventIdentity=d.physicalConfigurationIdentity=identity_;d.nativeConfigurationIdentity=nativeIdentity;
+  d.materialIdentity=identity_+":configured-line:0";
+  d.compositionIdentity=identity_+":canonical-composition";
+  d.eosIdentity=identity_+":canonical-ideal-gas";d.frame="HCI";d.units="SI";
+  // Canonical ideal-MHD/EOS densities are nonrelativistic fluid scalars.
+  // This declaration does not invent an exact relativistic proper-density
+  // conversion or reinterpret an imported MHD frame.
+  d.densityBasis=M::DensityBasis::CoreNonrelativisticFluid;
+  d.beginS=departureS_;d.endS=arrivalS_;
+  const auto checked=M::Validate(d);if(!checked.ok())return R::Failure(checked.code,checked.message);
+  return R::Success(std::move(d));
+}
+Core::Result<Background::Material::State> IntervalView::MaterialStateAt(
+    const Background::Material::Descriptor& d,const Background::Material::Query& q) const {
+  namespace M=Background::Material;using R=Core::Result<M::State>;
+  const auto exact=MaterialDescriptor(d.geometryGeneration,d.snapshotGeneration,d.nativeConfigurationIdentity);
+  if(!exact.ok())return R::Failure(exact.status.code,exact.status.message);
+  if(M::Payload(exact.value)!=M::Payload(d))return R::Failure(Core::StatusCode::DataIntegrityFailure,
+      "neutral request descriptor differs from the captured core owner");
+  // This smooth ambient API cannot impersonate either limiting shock state.
+  // FrontAt owns those limits. In particular no downstream volume is inferred
+  // merely because the undisturbed reference can be queried behind a front.
+  if(q.region!=M::Region::ParkerExterior||q.side!=M::Side::Smooth||!q.interfaceIdentity.empty())
+    return R::Failure(Core::StatusCode::UnsupportedCapability,"neutral reduced material query requires the smooth Parker exterior; use the explicit front API for jump limits");
+  const auto sample=AmbientAt(q.positionM,q.epochS);if(!sample.ok())return R::Failure(sample.status.code,sample.status.message);
+  if(!sample.value.parkerExterior)return R::Failure(Core::StatusCode::UnsupportedCapability,"PFSS state is not qualified as a material Parker exterior");
+  const auto primitive=provider_->Ambient().Evaluate({q.positionM[0],q.positionM[1],q.positionM[2]},q.epochS);
+  if(!primitive.ok())return R::Failure(primitive.status.code,primitive.status.message);
+  const auto& a=sample.value;const auto& composition=provider_->Event().ambient.composition;
+  M::State state;state.eventIdentity=state.physicalConfigurationIdentity=identity_;
+  state.backgroundGeneration=generation_;state.geometryGeneration=d.geometryGeneration;
+  state.epochS=q.epochS;state.positionM=q.positionM;state.region=q.region;state.side=q.side;
+  state.velocityMPerS=a.velocityMPerS;state.magneticFieldT=a.magneticFieldT;
+  state.massDensityKgM3=a.massDensityKgM3;state.pressurePa=a.pressurePa;
+  state.gammaAdiabatic=composition.gammaAdiabatic;
+  // Electron/proton temperatures are actual sampled core values. Alpha
+  // temperature is the explicit isothermal composition input used by this
+  // canonical profile's EOS, never inferred from proton mass or total pressure.
+  state.species=std::vector<M::Species>{{"electron",a.electronNumberDensityM3,primitive.value.electronTemperatureK},
+      {"proton",a.protonNumberDensityM3,a.protonTemperatureK},
+      {"alpha",a.alphaNumberDensityM3,composition.alphaTemperatureK}};
+  const auto branch=identity_+":ParkerExterior:sector:"+std::to_string(a.magneticSector);
+  state.velocityGradientPerS=M::Gradient{a.velocityGradientPerS,branch,true};
+  state.magneticGradientTPerM=M::Gradient{a.magneticGradientTPerM,branch,true};
+  const auto checked=M::Validate(d,q,state);if(!checked.ok())return R::Failure(checked.code,checked.message);
+  return R::Success(std::move(state));
+}
+
 bool Configure(const std::string& eventPath,std::string* error) {
   if(eventPath.empty())return Fail("reduced shock event path is empty",error);
   const std::filesystem::path path(eventPath);

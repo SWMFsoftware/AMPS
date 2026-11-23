@@ -150,8 +150,13 @@ for makefile in "$fixture/srcSEP/makefile" \
     printf '%s\n' "$output" >&2
     exit 1
   }
+  # The production include contract now also names the two canonical CME
+  # libraries, their shared front API and the generic input parser. Keep an
+  # exact independent expectation for ALL roots in both layouts. Comparing
+  # only the old two-root whole string wrongly rejected a valid extension;
+  # checking merely for a SWCME substring would miss foreign/omitted owners.
   printf '%s\n' "$output" | grep -Fx \
-    "MODEL_INCLUDE_FLAGS=-I$expected_root/src/models/sep_common -I$expected_swcme" >/dev/null || {
+    "MODEL_INCLUDE_FLAGS=-I$expected_root/src/models/sep_common -I$expected_swcme -I$expected_root/src/models/sep_coronal_cme/include -I$expected_root/src/models/sep_corona_swcme/include -I$expected_root/src/models/sep_corona_swcme/shock_front -I$expected_root/src/general/input" >/dev/null || {
     echo "FAIL SWCME-R1: canonical include flag is absent from $makefile" >&2
     printf '%s\n' "$output" >&2
     exit 1

@@ -75,7 +75,7 @@ SEP_CORONA_SWCME_OBJECTS := $(patsubst \
 # from a source-only archive.  Every production build target still requires the
 # enclosing AMPS configuration exactly as before.
 STANDALONE_GOALS := test-cli-unit test-state-unit test-geometry-source-unit \
-                    test-backend-admission-unit test-backend-admission-native \
+                    test-backend-admission-unit test-backend-admission-native test-material-background-unit \
                     test-standalone-application-runner-unit test-standalone-application-native \
                     test-standalone-integration-native \
                     test-material-checkpoint-native test-material-checkpoint-unit \
@@ -525,11 +525,14 @@ test-polarized-wkb-unit:
 
 test test-controlled-analytical: test-polarized-wkb-unit
 
+# These retained POSIX test scripts have source mode 0644. Invoke their
+# declared shell explicitly so a source checkout/archive runs the exact tests
+# without depending on executable-bit repair or bypassing any sanitizer gate.
 # The exact relativistic material-plane flux and its independently evaluated
 # cold limit are tested without enabling a native guiding-center injection.
 .PHONY: test-maxwell-juttner-flux-unit
 test-maxwell-juttner-flux-unit:
-	./test/run_maxwell_juttner_flux_tests.sh
+	$(SHELL) ./test/run_maxwell_juttner_flux_tests.sh
 
 test test-controlled-analytical: test-maxwell-juttner-flux-unit
 
@@ -553,7 +556,7 @@ test test-controlled-analytical: test-material-tube-kinematics-unit
 # the dependency-light conversion is separate from actual native array reads.
 .PHONY: test-standard-batsrus-wave-unit
 test-standard-batsrus-wave-unit:
-	./test/run_standard_batsrus_wave_tests.sh
+	$(SHELL) ./test/run_standard_batsrus_wave_tests.sh
 
 test test-controlled-analytical: test-standard-batsrus-wave-unit
 
@@ -638,6 +641,8 @@ test-wp59-wp64-native:
 # writes generated figures into the source tree.
 test-python-runner-unit:
 	@PYTHONDONTWRITEBYTECODE=1 python3 test/test_python_test_runner.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/test_routine_fixtures.py
+	@PYTHONDONTWRITEBYTECODE=1 python3 test/test_routine_wiring.py
 
 test-xm01-xm03-unit:
 	./test/run_xm01_xm03_tests.sh
@@ -707,8 +712,16 @@ test-scientific-validation: test-ov01-ov05-unit test-ev01-ev02-unit
 # class cannot satisfy another.  The external-data targets authenticate all
 # referenced files through validation/check_external_gate.py before reporting
 # success; unset inputs fail with usage guidance rather than being skipped.
+# One maximum native startup cannot satisfy all Routine physics fixtures.
+# Keep every compiled Routine ID, but let the maintained descriptor-aware
+# runner prepare each actual protocol independently. This includes the full
+# independent CV/IV comparisons and all Birth control roles; no SKIP/missing
+# fixture can qualify. JSON/JUNIT retain their existing Make destinations.
+SEP_ROUTINE_OUTPUT ?= $(if $(SEP_TEST_OUTPUT_DIR),$(abspath $(SEP_TEST_OUTPUT_DIR))/routine,$(if $(SRCSEP_REPORT_DIR),$(abspath $(SRCSEP_REPORT_DIR))/routine,$(abspath test_output/routine)))
+SEP_ROUTINE_COMMAND = PYTHONDONTWRITEBYTECODE=1 python3 "$(SEP_MAKEFILE_DIR)/test/run_tests.py" --amps "$(SEP_EXECUTABLE)" --routine --output-dir "$(SEP_ROUTINE_OUTPUT)" --plot none $(if $(JSON),--report-json "$(JSON)",) $(if $(JUNIT),--report-junit "$(JUNIT)",)
+
 test-native-amps-validation: require-sep-executable
-	@"$(SEP_EXECUTABLE)" --all-tests $(if $(JSON),--test-json "$(JSON)",) $(if $(JUNIT),--test-junit "$(JUNIT)",)
+	@$(SEP_ROUTINE_COMMAND)
 
 test-swmf-validation:
 	@test -n "$(SWMF_MANIFEST)" || { echo "ERROR: set SWMF_MANIFEST=/path/to/real-swmf-manifest.json." >&2; exit 2; }
@@ -734,9 +747,9 @@ test-sanitizer:
 	./test/run_frozen_collision_transaction_tests.sh
 	./test/run_flux_tube_state_tests.sh
 	./test/run_polarized_wkb_tests.sh
-	./test/run_maxwell_juttner_flux_tests.sh
+	$(SHELL) ./test/run_maxwell_juttner_flux_tests.sh
 	./test/run_material_tube_kinematics_tests.sh
-	./test/run_standard_batsrus_wave_tests.sh
+	$(SHELL) ./test/run_standard_batsrus_wave_tests.sh
 	./test/run_conservation_resampling_tests.sh
 	./test/run_resonant_collision_tests.sh
 	@set -e; for step in 3 6 7 8 9 10 11 12 13; do \
@@ -777,11 +790,11 @@ test-list: require-sep-executable
 
 test-case: require-sep-executable
 	@test -n "$(CASE)" || { echo "ERROR: use make test-case CASE=<stable-ID>." >&2; exit 2; }
-	@"$(SEP_EXECUTABLE)" --test "$(CASE)"
+	@PYTHONDONTWRITEBYTECODE=1 python3 "$(SEP_MAKEFILE_DIR)/test/run_tests.py" --amps "$(SEP_EXECUTABLE)" --test "$(CASE)" --output-dir "$(SEP_ROUTINE_OUTPUT)/selected" --plot none $(if $(JSON),--report-json "$(JSON)",) $(if $(JUNIT),--report-junit "$(JUNIT)",)
 
 test-group: require-sep-executable
 	@test -n "$(GROUP)" || { echo "ERROR: use make test-group GROUP=<name>." >&2; exit 2; }
-	@"$(SEP_EXECUTABLE)" --test-group "$(GROUP)"
+	@PYTHONDONTWRITEBYTECODE=1 python3 "$(SEP_MAKEFILE_DIR)/test/run_tests.py" --amps "$(SEP_EXECUTABLE)" --group "$(GROUP)" --output-dir "$(SEP_ROUTINE_OUTPUT)/selected" --plot none $(if $(JSON),--report-json "$(JSON)",) $(if $(JUNIT),--report-junit "$(JUNIT)",)
 
 test-turbulence: require-sep-executable
 	@"$(SEP_EXECUTABLE)" --test-group turbulence
@@ -796,7 +809,7 @@ MPIEXEC ?= mpiexec
 MPI_NP ?= 2
 test-mpi: require-sep-executable
 	@command -v "$(MPIEXEC)" >/dev/null || { echo "ERROR: MPI launcher '$(MPIEXEC)' not found." >&2; exit 2; }
-	@"$(MPIEXEC)" -n "$(MPI_NP)" "$(SEP_EXECUTABLE)" --all-tests $(if $(JSON),--test-json "$(JSON)",) $(if $(JUNIT),--test-junit "$(JUNIT)",)
+	@$(SEP_ROUTINE_COMMAND) --mpi-np "$(MPI_NP)" --mpiexec "$(MPIEXEC)"
 
 # Keep the top-level sequence explicit and serial even when invoked as
 # `make -j test`: component tests share initialized model/output state and must
@@ -804,7 +817,7 @@ test-mpi: require-sep-executable
 # internal parallel build through its native target.
 test: test-swcme-relocation-unit test-cli-unit test-reduced-shock-background-unit test-initialization-unit test-state-unit test-geometry-source-unit test-mover-api-unit test-field-line-scope-unit test-transport-common-unit test-parker-unit test-fte-dmumu-unit test-fte-mfp-unit test-coefficients-unit test-turbulence-core-unit test-reproducibility-unit test-wp01-wp10-unit test-wp11-wp20-unit test-wp21-wp30-unit test-wp31-wp41-unit test-python-runner-unit test-cv01-unit test-acceptance-unit test-documentation-unit require-sep-executable
 	@"$(SEP_EXECUTABLE)" --list-tests >/dev/null
-	@"$(SEP_EXECUTABLE)" --all-tests $(if $(JSON),--test-json "$(JSON)",) $(if $(JUNIT),--test-junit "$(JUNIT)",)
+	@$(SEP_ROUTINE_COMMAND)
 	@PYTHONDONTWRITEBYTECODE=1 python3 "$(SWCME_DIR)/test/run_tests.py" \
 	  --routine --output-dir "$(abspath test_output/swcme-r1)"
 
@@ -879,3 +892,10 @@ test-standalone-integration-application:
 	@test -n "$(EVIDENCE_DIR)" || { echo "Set EVIDENCE_DIR to the completed stage-6 application campaign"; exit 1; }
 	python3 test/verify_standalone_application.py --campaign-dir "$(EVIDENCE_DIR)"
 	python3 test/test_standalone_application_verifier.py --campaign-dir "$(EVIDENCE_DIR)"
+
+# Stage 11 shares actual canonical adapters with production. Missing physics
+# stays an explicit capability error; these tests never admit another backend.
+.PHONY: test-material-background-unit
+test-material-background-unit:
+	python3 -B test/run_material_background_tests.py
+test test-controlled-analytical: test-material-background-unit

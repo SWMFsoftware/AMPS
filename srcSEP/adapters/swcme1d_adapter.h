@@ -22,6 +22,10 @@
 #include <string>
 #include <vector>
 
+namespace SEP { namespace Background { namespace Material {
+enum class Profile : std::uint32_t;
+} } }
+
 namespace SEP {
 namespace SW1DAdapter {
 
@@ -193,6 +197,10 @@ void Configure(Scenario scenario);
 // model/configuration untouched.
 Status Configure(const ConfigurationRequest& request);
 ConfigurationSummary GetConfigurationSummary();
+// Exact neutral profile selected by the canonical region mode. An unconfigured
+// or unknown mode returns the invalid ID, never a default admission. Canonical
+// SWCME types stay private, and all existing public symbols remain unchanged.
+Background::Material::Profile MaterialProfile();
 
 // The legacy PIC post-compile parser stages raw assignments here. Coupled hosts
 // should skip staging and call Configure(request) directly, keeping their

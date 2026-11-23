@@ -1244,7 +1244,9 @@ standalone and SWMF-coupled run. See
 properties that equation-level tests cannot infer from numerical output:
 
 - `main_lib.cpp` contains exactly one live turbulence `Advance` call and
-  standalone `main.cpp` contains none;
+  standalone `main.cpp` contains none; the call must belong to common
+  `amps_time_step()`, and four negative controls reject duplicate, missing or
+  foreign owners;
 - `main.cpp` does not include the retired application-local coefficient
   registry after `sep.h` has loaded the canonical `sep_common` registry;
 - the legacy unconditional initializer is not executable and local wave
@@ -1347,10 +1349,13 @@ Run `./test/run_wp01_wp10_tests.sh` from the srcSEP directory. The disposable
 C++11 strict-warning executable checks physical snapshot limits and generations,
 physical background epochs, full gyrotropic coefficients, location-aware
 midpoint sampling, carried nonhomogeneous optical depth, zero-probability empty
-branches, and duplicate physical-key rejection. The same script checks that
-both production drivers call the single turbulence PIC adapter and that all
-three movers publish self-contained coupling records without a stored particle
-pointer.
+branches, and duplicate physical-key rejection. The same script reuses the
+Stage 1–2 ownership audit: the common `amps_time_step()` owns exactly one
+turbulence PIC-adapter call and the standalone driver owns none. Four in-memory
+negative controls reject duplicate driver/library calls, a missing call and a
+foreign owner. Requiring both entry points to advance waves independently would
+consume the fixed physical interval twice. All three movers must still publish
+self-contained coupling records without a stored particle pointer.
 
 This is a source-only controlled gate. It does not claim a native AMPS build,
 MPI decomposition, SWMF coupling, restart continuity, or observational PASS;
@@ -1963,17 +1968,67 @@ execution. A changed input discards the entire run with nonzero status.
 
 ## Native source birth lifecycle: BIRTHN01–BIRTHN06
 
-The `birth-window-native` group exercises actual registered PIC storage and
-mover adapters: Parker (BIRTHN01), Dmumu (BIRTHN02), and MFP (BIRTHN03) consume
-the declared positive remaining birth duration; BIRTHN04 checks invalid timing
-and late intervals; BIRTHN05 checks clone/split/migration birth history; BIRTHN06
-checks that completed-state checkpoint creation refuses pending first movement.
-The separate `birth-window-native` orchestrator step runs the isolated native
-runner on two MPI ranks and requires all six IDs to report PASS. A missing case
-or SKIP is surfaced as an ERROR in that required-native gate. This verifies
-native lifecycle plumbing against controlled fixtures, without certifying a
-source sampler, frame convention, physical injection history or production
-particle/wave coupling.
+The `birth-window-native` group retains its six stable required IDs. BIRTHN01,
+BIRTHN02 and BIRTHN03 exercise the actual Parker, Dmumu and MFP adapters;
+BIRTHN04 retains invalid-window/history/Cartesian atomic rejection and the
+strictly positive late interval at epoch `1e12`; BIRTHN05 retains generic
+clone, actual MPI exchange and exact split history checks. BIRTHN06 tests the
+real completed-state checkpoint boundary. These are lifecycle/operator
+regressions, not a qualification of a new source sampler or a different time
+integration method.
+
+Use `run_birth_operator_stage_tests.py --amps /absolute/amps --mpi-ranks 2
+--output /absolute/new-directory`. Each operator experiment is a fresh process
+initialized with the same physical AMPS timestep `D=0.01 s`; no callback writes
+`GlobalTimeStep`. For BIRTHN01–03 the runner executes independent `direct`,
+`full`, and `actual` roles. All three consume the exact same frozen departure
+realization R0: geometry/owner metadata, provider and coefficient identities,
+all consumed vertex/segment bytes, and initial particle/RNG/hazard/identity
+bytes must match. The actual role freezes the full parent window and creates
+a phase-0.75 birth with the unchanged exact remaining duration `h=0.0025 s`.
+The direct control calls the existing native diagnostic dispatcher for `h`,
+without a physical source window, counter increment or sampling. Its complete
+particle image must match the actual pending-birth operator, excluding only
+the original birth-record/list-link exclusions. The independent full-`D`
+control must differ. Missing controls, changed inputs, native SKIP, contradictory
+exit/status/metrics, or unequal byte images fail the gate.
+
+This comparison grades the maintained departure-snapshot/operator-split
+method. It does not claim that a fresh physical simulation starting at the
+birth epoch uses the same fields. The diagnostic owns the actual declared
+nonzero radial wind, and after readers join it publishes the same complete
+material map `M_D` through `PrepareGeometryStep`/`CommitGeometryStep` in every
+role. Existing vertices, including both endpoints, move; inner extension
+traces along the pushed magnetic field, new segments start empty, and normal
+outer retirement applies. The initial curved Parker field is pushed using
+`B=F B0/J` and number density using `n=n0/J`; full radial strain, independent
+Cauchy-field/continuity checks, owner epoch/generation, and exact
+`PB::X == GetCartesian(S)` are checked. The Cartesian assertion runs once on
+the frozen operator chart and again on the completed material chart. Thermal
+and wave evolution are outside this controlled fixture. At epoch `1e12`, the
+map captures the explicit physical `D`, retaining the positive birth remainder
+separately; rounded endpoint subtraction never supplies either duration.
+
+BIRTHN06 uses the existing explicit reduced-material checkpoint protocol2
+startup and its unchanged initialized timestep. It injects genuine source
+records, completes their actual mover, absorbing-boundary, source-ledger and
+material-geometry transactions, and requires a nonempty surviving source
+cohort. A positive completed save establishes ordinary prerequisites. Fault
+injection then changes only the pending-first-move bit of those actual birth
+records: source identity, birth energy and cohort bytes remain unchanged.
+The save must reject for the original unconsumed-movement reason and preserve
+both the full particle image and an existing destination. Active-window save
+and load retain their separate rejection/nonmutation checks. No source history
+or material-checkpoint capability is fabricated.
+
+`--repeat-count N` runs complete independent role groups in fresh processes,
+preserving the registry's existing campaign/ID/replicate seed schedule. The
+native descriptor retains repeat capability with `repeat:process-isolated`;
+a raw in-process repeat request returns an explicit ERROR directing callers to
+the runner. Per-role requests/logs/reports and binary images remain under the
+owned output, together with detailed `summary.json`, standard
+`srcsep-tests.json` and JUnit output. Every requested role and repetition must
+pass; no required ID is dropped or converted to SKIP.
 
 ## Local numerical MFLAMPA comparison: verified feasibility and required contracts
 
@@ -2649,3 +2704,171 @@ executable and physical inputs; old output cannot certify a changed checkout.
 These tests quantify software/numerical behavior for the declared synthetic
 event. A manufactured release distance is not a production SEP calibration,
 and passing an unsupported-mode rejection is not downstream qualification.
+
+
+### Shared material contract: stages 10–11
+
+MBC01–20 test exact profile admission, immutable SI/HCI identity and coverage,
+explicit species/EOS and all nine derivative entries, canonical samples and
+trajectories, local shock limits, descriptor round-trip/rejection and failed
+publication rollback. The independent radial trajectory check integrates the
+actual accelerating Parker wind; it does not assume constant solar-wind speed.
+The metadata controls distinguish an absent geometry generation from the valid
+initial value zero; the actual native fixture also checks geometry registration
+ownership before permitting publication, without renumbering PIC geometry.
+No additional backend, downstream volume or partial physical step is admitted.
+
+The neutral material trajectory has the same Parker-exterior region contract
+as a material state query. MBC18 rejects actual open/closed PFSS points, a
+zero-duration PFSS query, a verified reverse-time crossing from the Parker
+exterior into the PFSS corona, and a foreign adapter descriptor. The wrapper
+checks every canonical primitive used by the existing RK controller and its
+accepted endpoint; it does not infer that endpoint membership proves the
+whole path qualified. Its positive trajectory remains bitwise equal to the
+legacy diagnostic mover and satisfies the unchanged independent flight-time
+oracle. The generic diagnostic `MoveVertex` API remains available under its
+existing broader core-query contract.
+
+```sh
+make -C srcSEP test-material-background-unit
+python3 -B srcSEP/test/run_tests.py --suite material-background --plot none --output-dir /tmp/sep-material-suite
+python3 -B srcSEP/test/run_material_background_tests.py --sanitizers --output-dir /tmp/sep-material-asan
+python3 -B tools/sep_test_orchestrator.py --app srcsep --skip-build --only material-background --output-dir /tmp/sep-material-orchestrated
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json --test CORE-SEP-MATERIAL-BACKGROUND-001 --output-dir /tmp/sep-material-shared
+```
+
+Use fresh output directories. The maintained runner builds actual canonical
+libraries in isolation, enforces `-Werror`, hashes compiled inputs and rejects
+changed inputs. It records actual assertion counts, per-case durations, reference residuals,
+unchanged tolerances and source configuration in JSON/JUnit; missing build/output is
+ERROR for every required case and exits nonzero. Existing evidence is immutable.
+The orchestrator self-tests also exercise malformed/missing catalogs, retained
+FAIL/ERROR statuses, actual compiler failure and output-directory reuse.
+This suite is a prerequisite of routine `test`/`test-controlled-analytical` and
+belongs to the shared **extended** campaign. It is not selected by smoke alone.
+Native MPI, full output windows and restart/thread gates remain separately
+required; source assertions never substitute for them. See the
+[qualification record](../validation/STAGE11_MATERIAL_BACKGROUND_CONTRACT.md).
+
+CV01 provenance hashes the canonical shared transport implementation at
+`src/models/sep_common/sep_transport_common.cpp`, alongside the actual focused
+transport kernel. A missing source remains an error; the former application-local
+path cannot silently stand in for that relocated production implementation.
+The relocation gate likewise requires the complete six-root canonical include
+contract in both source and copied build layouts. Its expectation includes the
+shared transport, SWCME, both CME libraries, shared front and generic input
+owners; extra or omitted roots fail the exact comparison.
+
+SCOPE02 distinguishes the authoritative one-dimensional field-line coordinate
+from PIC's derived Cartesian position cache. `CommitAndAttach` must project the
+exact committed coordinate on the particle's own immutable line and commit that
+SI position to the same particle; it must not add a separate solar-wind
+displacement or perform an independent Cartesian advance. Motion of the line's
+vertices already enters this view through the geometry projection, so adding
+`U*dt` again would double-count that motion. `check_field_line_position_contract.py` permits
+exactly that one projection/commit across the seven audited advance units and
+rejects additional position accesses, pointer escapes, changed coordinates or
+owners, extra writers and geometry mutation. Its fifteen in-memory negative
+controls run as part of `make -C srcSEP test-field-line-scope-unit`; the existing
+Boris, perpendicular-diffusion and AMR-list bans remain enforced. These are source
+contract controls, not numerical physics evidence. Native SINT08 independently
+checks the actual stored Cartesian view against `GetCartesian` after movement
+and remains required on the declared MPI decompositions.
+
+### Isolated Routine initialization and material fixture ownership
+
+`make test`, `make test-native-amps-validation`, `make test-mpi`, and the
+maintained Python `--routine` entry use `routine_fixtures.py`. The native
+`amps --all-tests` CLI retains its existing selection and startup semantics.
+The maintained dispatcher reads the actual compiled catalog and requires all
+222 reviewed Routine IDs, including their initialization, seed/repeat,
+isolation and tag metadata. Each case receives its declared startup protocol;
+CV01–CV12 and IV01–IV06 execute their complete independent comparisons. No
+Routine ID is removed to avoid a prerequisite. Missing fixtures, changed
+metadata, duplicate/foreign reports, contradictory child exits and incomplete
+role groups are ERROR. Native SKIP remains visible and makes this required
+aggregate unsuccessful. Extended cases remain separate explicit campaigns.
+The existing `--all` orchestrator surface reuses these Routine results and
+continues through **every Extended descriptor** in its existing independent
+workflow; it is never replaced with `--routine`. Selected CP05C01–CP05C05 reuse
+the same reviewed hashed source/event protocol through the existing Python
+`--test` and Make `test-case` interfaces. An explicit native role manifest still
+selects the raw native path.
+
+Examples (the linked executable is reused):
+
+```sh
+python3 test/run_tests.py --amps ../amps --routine --plot none
+make test JSON=/absolute/results.json JUNIT=/absolute/results.xml
+make test-case CASE=BIRTHN01
+python3 test/run_tests.py --amps ../amps --test BIRTHN01 --plot none
+python3 test/run_tests.py --amps ../amps --group birth-window-native --mpi-np 2 --plot none
+```
+
+`make test-case CASE=BIRTHN01` and the maintained single-ID selector execute
+that ID's complete reviewed operator/control roles. An explicitly forwarded
+native `--test-input` retains the raw role-protocol path. Birth roles default
+to two MPI ranks, including the real BIRTHN05 migration check. Other native
+cases retain the requested/default rank count. Every repeated Birth experiment
+uses fresh complete role processes and the existing shared case/replicate seed
+law. The context remains bound through registry seed-report stamping, so actual
+streams and reported case seeds agree. Physical startup dt is unchanged within
+every process. A raw repeated role or multiselection is an explicit error.
+
+JSON/JUNIT Make destinations and Python `--report-json`/`--report-junit` export
+the same authoritative aggregate. Repeating an entry retains fresh nested raw
+case directories instead of replacing earlier native evidence. The parsed
+fixture declaration is saved and hash-bound throughout execution; a changed
+manifest blocks dependent callbacks and invalidates every required aggregate
+record while preserving raw child reports. Fixture arguments cannot override
+the selected callback, hashed input or report destinations. Software boundary
+and negative protocol tests exercise these failure paths without pretending
+their labelled fake reports are model calculations. They are prerequisites of
+`test-python-runner-unit` and therefore of `make test`.
+
+`NativeStorage` preserves the existing initialization enum values and appends a
+separate allocation capability. It means native buffers exist; it does not
+claim a production particle snapshot, a material map, or the absence of
+particle allocation inside a diagnostic. SOURCE02, for example, initializes a
+real thermal population under its own tested contract. PNW's explicit
+snapshot-only tag requests actual SWCME primitive export and spectral storage.
+The orchestrator selects `--shock-model swcme1d` explicitly. Wave inertia uses
+actual exported composition/mass density and magnetic/plasma data, rather
+than the unconsumed energetic SEP source mass/charge. Production and all other
+source hosts retain their original species checks and tolerances. This is
+snapshot/export evidence, not admission of SWCME1D material transport.
+
+FTE01 and PARKER01 explicitly select analytical startup and install their
+existing manufactured fields before their own production particle preflight.
+All three components of U vanish at every centerline vertex, so the exact
+centerline material map is the identity. PARKER01 still supplies its full
+nonzero transverse velocity-gradient tensor: zero centerline U does not imply
+zero divergence or zero adiabatic momentum change. Scoped detached native
+lines preserve and restore the exact original owner, pointers, buffers,
+geometry and sampling vectors. Negative controls reject nonzero centerline
+flow and a foreign registered owner. Provider names, scalar U-dot-B and an
+ownership flag cannot substitute for this physical declaration.
+
+BIRTHN01–05 are process-owned frozen-departure operator experiments. Every
+role initializes the same fixed physical timestep of .01 s. Actual scheduled
+births consume the existing .0025-s first-move remainder; the direct control
+calls the existing diagnostic operator with that duration, and the full-step
+negative control uses .01 s. These are native operator calls, not shorter
+physical host steps or fractional sampling. All roles start with the same
+curved Parker realization and publish the same completed full-step material
+map. BIRTHN06 instead uses the qualified reduced source/checkpoint host with
+its original fixed timestep, genuine injection/ledgers and preserved sampling
+contract. The diagnostic role's operator duration and physical clock are
+reported separately and truthfully; these tests do not introduce new source
+physics or dense-time material transport equations.
+
+After real material publication, restoring an obsolete fixed R0 source
+namespace or snapshot over R1 would be invalid. The single-process-owned
+protocol validates its final source, clock, geometry and immutable snapshot
+before it exits. A fresh empty material source namespace is prepared and
+independently validated before any diagnostic birth; existing counters or live
+particles cannot be relabeled. Other native callbacks retain exact restoration
+and failure propagation. The unsupported generic analytical checkpoint guard
+remains intact; BIRTHN06 uses the actual supported reduced source owner. No
+production guard or numerical acceptance limit is relaxed by these fixture
+boundaries.

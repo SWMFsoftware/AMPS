@@ -1760,3 +1760,31 @@ above. Stages 8–9 preserve the supported reduced profile, enforce the publishe
 backend admission matrix and repeat its required native/application/coupling
 gates. They do not qualify propagation on rejected backends or observational
 agreement.
+
+
+## Material-background interface (roadmap stages 10–11)
+
+The [backend audit](validation/STAGE10_BACKEND_CAPABILITY_AUDIT.md) records the
+actual core baseline, twelve distinct profile identities and unresolved physics
+decisions. Only the existing reduced SSE/Parker exterior qualifies for moving
+material transport. SWCME diagnostic modes, neutral coronal snapshots and
+planned regional consumers retain explicit rejection; a capability declaration
+does not supply missing conservative evolution or downstream thermodynamics.
+
+The [shared contract](../src/models/sep_common/sep_material_background.h) retains
+an immutable physical owner and exact coverage, profile/revision, SI/HCI frame,
+composition/EOS, density basis and separate cache/geometry/snapshot generations.
+Geometry-generation availability is explicit: a registered PIC line starts at
+generation zero, which must remain valid without admitting unregistered lines.
+The reduced adapter exports actual core species and full branch-preserving
+velocity/magnetic derivatives, the existing trajectory and surface-local RH
+limits. Missing inverse, deformation, contact and physical downstream volume
+remain unavailable. AMPS physical dt and particle displacement are unchanged.
+Native publication validates this binding before the existing transaction;
+checkpoint restoration reconstructs the derived view without changing schema 5.
+
+MBC01–20 run automatically under `make -C srcSEP test` and
+`test-controlled-analytical`, as orchestrator step `material-background`, and as
+shared extended suite `CORE-SEP-MATERIAL-BACKGROUND-001`. Focused strict and
+sanitizer commands and the current qualification limits are in the
+[stage 11 contract](validation/STAGE11_MATERIAL_BACKGROUND_CONTRACT.md).

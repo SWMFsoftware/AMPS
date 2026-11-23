@@ -7,6 +7,7 @@
 #include <string>
 #include "../util/sep_common_header_path.h"
 #include SRCSEP_SEP_COMMON_HEADER(sep_status.h)
+#include SRCSEP_SEP_COMMON_HEADER(sep_material_background.h)
 
 namespace SEP { namespace CoronaSwcme { namespace ShockFront {
 class Provider;
@@ -89,6 +90,15 @@ class IntervalView {
   Core::Result<SurfaceSphere> SphereAt(double epochS) const;
   Core::Result<Position> LeadingPointOnRay(const Position&,double epochS) const;
   Core::Result<FrontSample> FrontAt(const Position&,double epochS) const;
+  // Stage-11 neutral export from this exact captured core owner. These APIs
+  // expose existing SI physics without adding fields to AmbientSample or
+  // changing that established record's layout/meaning. Geometry and native
+  // snapshot generations are separate identities; neither is cache cadence.
+  Core::Result<Background::Material::Descriptor> MaterialDescriptor(
+      std::uint64_t geometryGeneration,std::uint64_t snapshotGeneration,
+      const std::string& nativeConfigurationIdentity) const;
+  Core::Result<Background::Material::State> MaterialStateAt(
+      const Background::Material::Descriptor&,const Background::Material::Query&) const;
  private:
   friend class CadencePublication;
   friend Core::Result<IntervalView> CaptureInterval(double,double,const std::string&);

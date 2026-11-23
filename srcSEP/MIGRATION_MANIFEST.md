@@ -389,3 +389,23 @@ make test SEP_EXECUTABLE=../amps
 
 The source archive cannot truthfully claim the second gate when AMPS-generated
 headers, MPI, or the linked executable are unavailable.
+
+
+## Stages 10–11: additive neutral material contract
+
+No existing symbol or record is removed or renamed. The canonical
+`sep_material_background.h` and reduced `MaterialAdapter::Capture` are additive;
+existing `BackgroundSnapshot`, neutral schema-1 bundle, SWCME public records
+and two-argument `LoadAndPublish` retain their layout/signatures. The seven
+canonical SEP-common object owners are unchanged. The new descriptor-v1 codec
+is metadata, not a replacement checkpoint or bundle schema.
+
+`Admission::RequireMovingTransport(Backend)` remains source compatible for its
+existing inventory users, with no deprecation deadline. New production SWCME
+preflight uses the exact `Material::Profile` overload and the actual canonical
+`SW1DAdapter::MaterialProfile()` selection. Coronal material requests name the
+exact snapshot-only profile and still reject. Reduced `IntervalView` gains
+export methods without changing its existing ambient record. Native
+`MaterialView` adds a derived immutable pointer reconstructed on restore; no
+physical checkpoint bytes or schema version change. Native qualification must
+pass before closing the stage-11 gate.

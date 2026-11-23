@@ -492,7 +492,7 @@ Status LoadParticle(long int pointer, ParticleContext* context) {
   // and all three movers, before touching particle records or stochastic state.
   if(Background::ConfiguredProvider()==Background::Provider::Swcme) {
     const auto admission=Background::Admission::RequireMovingTransport(
-        Background::Admission::Backend::Swcme1D);
+        SW1DAdapter::MaterialProfile());
     if(!admission.ok())return Status::Error(StatusCode::UnsupportedConfiguration,admission.message);
   }
   const Status closure=ProductionClosurePreflight();

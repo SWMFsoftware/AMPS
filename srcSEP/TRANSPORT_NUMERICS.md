@@ -888,3 +888,27 @@ continuation. The existing conservative merger lacks a birth-energy invariant;
 if its actual trigger is reached for this source, it rejects before changing
 weights. Cohort-preserving resampling, remapping and moving restart belong to
 stage 7. Exact splitting already copies the complete cohort record.
+
+
+## Common material admission and the fixed physical timestep
+
+The stage-11 neutral interval requires `end == begin + configured_dt` and full
+physical coverage before native material advancement. It never shortens a
+physical step to a cache cadence or event endpoint. Internal trajectory
+quadrature remains the established endpoint-preserving adaptive RK method;
+its controls do not change the sampling timestep. Relative particle transport
+and moving field-line geometry retain their existing frame convention.
+
+Capabilities distinguish primitives, species/EOS, full grad(U)/grad(B), dense
+time, trajectory, inverse/deformation, local shock/contact limits and physical
+downstream volume. An unsupported quantity, stale realization, unpreserved
+branch or out-of-coverage query returns explicit status. The native snapshot
+store remains the sole publication/read-phase authority. No velocity, density,
+heating, mapping or interpolation law is invented by the neutral adapter.
+
+MBC15–19 compare the reduced export with the separately constructed canonical
+provider, charge/mass/ideal-gas identities, independent radial flight-time
+quadrature/bisection in the actual accelerating Parker wind and actual local
+shock states. These are synthetic/canonical verification, not observations.
+The original physical residual, sampling, conservation and continuation gates
+remain controlling; see `validation/STAGE11_MATERIAL_BACKGROUND_CONTRACT.md`.

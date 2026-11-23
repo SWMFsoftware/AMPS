@@ -31,6 +31,7 @@ import argparse
 import csv
 import datetime as _datetime
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -87,6 +88,7 @@ SOURCE_SUITES: Dict[str, str] = {
     "d03-native-integration": "test-d03-native-integration",
     "standalone-integration": "test-standalone-integration-unit",
     "standalone-integration-native": "test-standalone-integration-native",
+    "material-background": "test-material-background-unit",
     "backend-admission": "test-backend-admission-unit",
     "backend-admission-native": "test-backend-admission-native",
     "standalone-application-runner": "test-standalone-application-runner-unit",
@@ -363,7 +365,8 @@ Examples:
        python3 test/run_tests.py --amps ../amps --routine \
          --output-dir test_output/routine
 
-     --routine forwards the native --all-tests policy and excludes tests marked
+     --routine dispatches every actual Routine descriptor through its reviewed
+     isolated fixture and full validation protocol. It excludes tests marked
      extended, keeping the development gate bounded.
 
   5. Run every discoverable test, including extended Monte Carlo cases:
@@ -635,7 +638,7 @@ def _native_command(args: argparse.Namespace, report_json: Path,
         # future refactor unable to silently discard fault isolation.
         raise RunnerError("internal error: --all requires isolated orchestration")
     if args.routine:
-        selection.append("--all-tests")
+        raise RunnerError("internal error: --routine requires descriptor-aware isolated fixture orchestration")
     else:
         for test_id in args.tests:
             selection.extend(("--test", test_id))
@@ -651,6 +654,69 @@ def _native_command(args: argparse.Namespace, report_json: Path,
     if args.mpi_np:
         command = [args.mpiexec, "-n", str(args.mpi_np), *command]
     return command
+
+
+def _routine_protocol_module():
+    """Load the maintained fixture dispatcher by audited source location."""
+    specification=importlib.util.spec_from_file_location("srcsep_routine_fixtures", ROOT/"test/routine_fixtures.py")
+    if specification is None or specification.loader is None:
+        raise RunnerError("cannot import the required Routine fixture dispatcher")
+    module=importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+def _run_routine_tests(args: argparse.Namespace, output: Path, requested_ids=None):
+    """Execute every actual Routine descriptor through its reviewed fixture.
+
+    The native --all-tests CLI retains its existing semantics. This maintained
+    runner separates prerequisites instead of asking one unrelated startup to
+    satisfy every case. A fresh nested directory retains earlier raw evidence
+    when a developer repeats the gate at the same requested output location.
+    The dispatcher requires exact membership/metadata and all mandatory cases;
+    neither an unsupported fixture nor SKIP can make the aggregate successful.
+    """
+    dispatcher=_routine_protocol_module()
+    case_output=Path(tempfile.mkdtemp(prefix="routine-",dir=output))/"cases"
+    invocation=argparse.Namespace(amps=Path(args.amps),
+        manifest=ROOT/"test/routine_fixture_manifest.json",output=case_output,
+        timeout=args.timeout,native_args=list(args.model_args),
+        mpi_np=args.mpi_np,mpiexec=args.mpiexec,requested_ids=requested_ids)
+    try:code=dispatcher.run(invocation)
+    except (ValueError,OSError) as error:raise RunnerError(str(error)) from error
+    report=_load_report(case_output/"srcsep-tests.json")
+    destination=output/"srcsep-tests.json"
+    _write_json(destination,report);_write_junit(output/"srcsep-tests.xml",report)
+    commands=json.loads((case_output/"run_manifest.json").read_text())["commands"]
+    return code,destination,commands
+
+
+def _run_birth_group(args: argparse.Namespace, output: Path, log: Path):
+    """Run the complete native Birth role protocol for the selected group.
+
+    Each repetition needs its own fixed-startup direct/full/actual processes.
+    Forward the existing campaign controls through the shared adapter; never
+    silently drop a model override or replace the independent comparisons with
+    a single callback PASS. The role driver retains every required stable ID.
+    """
+    dispatcher=_routine_protocol_module()
+    role_output=Path(tempfile.mkdtemp(prefix="birth-",dir=output))/"roles"
+    command=[sys.executable,str(ROOT/"test/run_birth_operator_stage_tests.py"),
+        "--amps",str(Path(args.amps).resolve()),"--output",str(role_output),
+        "--mpi-ranks",str(args.mpi_np or 2),"--mpi-exec",args.mpiexec]
+    selected=getattr(args,"tests",[])
+    if selected:command += ["--test-id",selected[0].upper()]
+    try:command+=dispatcher.birth_campaign_arguments(args.model_args)
+    except ValueError as error:raise RunnerError(str(error)) from error
+    status=_run_streaming(command,ROOT,log,dict(os.environ),None)
+    report=_load_report(role_output/"srcsep-tests.json")
+    required={selected[0].upper()} if selected else {"BIRTHN01","BIRTHN02","BIRTHN03","BIRTHN04","BIRTHN05","BIRTHN06"}
+    rows=report.get("results",[])
+    if len(rows)!=len(required) or {row.get("id") for row in rows}!=required:
+        raise RunnerError("Birth protocol did not retain every requested required native ID")
+    destination=output/"srcsep-tests.json"
+    _write_json(destination,report);_write_junit(output/"srcsep-tests.xml",report)
+    return status,destination,[command]
 
 
 def _native_scope(args: argparse.Namespace, output: Path, label: str) -> Tuple[Path,List[str]]:
@@ -944,8 +1010,30 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
     reports: List[Path] = []
     commands: List[List[str]] = []
     print(f"Discovered {len(ids)} tests; executing each in an isolated process.")
+    completed_routine=set()
+    required_routine_exit=0
+    discovery_log=discovery/"discovery.log"
+    discovery_text=discovery_log.read_text() if discovery_log.is_file() else ""
+    # Current native descriptors expose explicit Routine/Extended metadata.
+    # Reuse all reviewed Routine protocols once, then retain EVERY Extended ID
+    # in the existing per-ID path below. Never replace --all with --routine.
+    # The older four-column discovery protocol remains compatible for legacy
+    # executables; it grants no new physics fixture capability. A malformed
+    # modern catalog fails its strict audit rather than taking that fallback.
+    if re.search(r"^ID\s*\|\s*group\s*\|\s*class\s*\|\s*initialization",discovery_text,re.MULTILINE):
+        dispatcher=_routine_protocol_module()
+        try:routine_rows=dispatcher.parse_catalog(discovery_text)
+        except ValueError as error:raise RunnerError(str(error)) from error
+        routine_ids=[row["id"] for row in routine_rows]
+        if routine_ids:
+            routine_output=output_dir/"routine-required";routine_output.mkdir(parents=True,exist_ok=True)
+            required_routine_exit,routine_report,routine_commands=_run_routine_tests(args,routine_output,routine_ids)
+            reports.append(routine_report);commands.extend(routine_commands)
+            completed_routine=set(routine_ids)
 
     for index, test_id in enumerate(ids, start=1):
+        if test_id in completed_routine:
+            continue
         print(f"\n=== [{index}/{len(ids)}] {test_id} ===", flush=True)
         test_directory = individual / test_id
         test_directory.mkdir(parents=True, exist_ok=True)
@@ -1052,6 +1140,12 @@ def _run_all_tests(args: argparse.Namespace, output_dir: Path,
 
     aggregate_path = output_dir / "srcsep-tests.json"
     aggregate = _merge_reports(reports, aggregate_path)
+    # A required Routine SKIP keeps its native status for evidence, but its
+    # dispatcher deliberately returns nonzero. Generic merge treats SKIP as
+    # informational, so preserve that stronger required-gate exit explicitly
+    # while still executing and retaining every Extended descriptor above.
+    aggregate["exit_code"]=max(int(aggregate["exit_code"]),int(required_routine_exit))
+    _write_json(aggregate_path,aggregate)
     _write_junit(output_dir / "srcsep-tests.xml", aggregate)
     return int(aggregate["exit_code"]), aggregate_path, commands
 
@@ -1470,7 +1564,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--group", dest="groups", action="append", default=[],
                         help="run one registry group; repeatable")
     parser.add_argument("--routine", action="store_true",
-                        help="run the bounded native --all-tests set")
+                        help="run every Routine descriptor with its reviewed isolated initialization and validation protocol")
     parser.add_argument("--all", action="store_true",
                         help=("run every discovered test in an isolated process, "
                               "continuing after failures and printing a summary"))
@@ -1485,6 +1579,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--case-input", type=Path,
                         help=("override one CV/IV validation input; XM02/XM03 "
                               "and OV01-OV05 always use registered reviewed inputs"))
+    parser.add_argument("--report-json", type=Path,
+                        help="also export the authoritative aggregate JSON to this path")
+    parser.add_argument("--report-junit", type=Path,
+                        help="also export the authoritative aggregate JUnit to this path")
     parser.add_argument("--from-json", type=Path,
                         help="plot an existing component-test JSON without running tests")
     parser.add_argument("--output-dir", type=Path,
@@ -1619,12 +1717,40 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args, output_dir, log_path)
             command = build_commands + native_commands
             report = _load_report(report_path)
+        elif args.routine:
+            exit_code,report_path,command=_run_routine_tests(args,output_dir)
+            report=_load_report(report_path)
+        elif (not args.groups and len(args.tests)==1 and args.tests[0].upper() in
+              {"CP05C01","CP05C02","CP05C03","CP05C04","CP05C05"}) and not any(
+                  argument.partition("=")[0]=="--test-input" for argument in args.model_args):
+            exit_code,report_path,command=_run_routine_tests(args,output_dir,[args.tests[0].upper()])
+            report=_load_report(report_path)
+        elif ((not args.tests and [group.casefold() for group in args.groups]==["birth-window-native"]) or
+              (not args.groups and len(args.tests)==1 and args.tests[0].upper() in
+               {"BIRTHN01","BIRTHN02","BIRTHN03","BIRTHN04","BIRTHN05","BIRTHN06"})) and not any(
+                  argument.partition("=")[0]=="--test-input" for argument in args.model_args):
+            # An explicit native role manifest retains the existing raw CLI
+            # path. Without one, the maintained single-ID/group interface owns
+            # the complete reviewed controls rather than a missing-fixture call.
+            exit_code,report_path,command=_run_birth_group(args,output_dir,log_path)
+            report=_load_report(report_path)
         else:
             native_cwd,resolved_model_args=_native_scope(args,output_dir,"selected")
             command = _native_command(args, report_path, junit_path,resolved_model_args)
             exit_code = _run_streaming(
                 command, native_cwd, log_path, dict(os.environ), args.timeout)
             report = _load_report(report_path) if report_path.is_file() else None
+
+    # Make's historical JSON/JUNIT destinations remain explicit exports of the
+    # same authoritative records. Report-write errors remain failures; copying
+    # must never replace a failed native process exit with shell success.
+    if report is not None:
+        if args.report_json:
+            exported=args.report_json.expanduser().resolve();exported.parent.mkdir(parents=True,exist_ok=True)
+            _write_json(exported,report)
+        if args.report_junit:
+            exported=args.report_junit.expanduser().resolve();exported.parent.mkdir(parents=True,exist_ok=True)
+            _write_junit(exported,report)
 
     # Native AMPS output is not assumed to use a stable human-readable layout.
     # Reprinting normalized records from JSON guarantees that every successful
