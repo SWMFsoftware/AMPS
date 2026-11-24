@@ -396,9 +396,8 @@ potential and separation of core, halo, strahl and spacecraft populations.
   radial proton trends from Ulysses for a population-level check. Wilson
   et al. demonstrate near-5-AU proton and alpha moments from Juno during
   the 2016 Jupiter approach. The public PDS JADE calibrated archive
-  includes the 2024 epoch in its mission coverage. An upstream plasma
-  interval, polarity, travel time and magnetic connection to the
-  2024 eclipse stream have yet to be established.
+  includes the 2024 epoch in its mission coverage. The ephemeris screen
+  below evaluates the arrival geometry for the April 2024 stream.
   [Ebert et al. Ulysses analysis](https://doi.org/10.1029/2008JA013631) · [Wilson et al. Juno approach](https://doi.org/10.1002/2017JA024860) · [NASA PDS JADE catalogue](https://pds.nasa.gov/ds-view/pds/viewProfile.jsp?dsid=JNO-J%2FSW-JAD-3-CALIBRATED-V1.0)
 
 The raw legacy FITS, archive metadata, screened catalogue rows and HAPI
@@ -414,6 +413,387 @@ at 1.05 solar radii as closed for all three trace settings. SolarSoft
 processed both rasters and the corrected Mg IX pointing replay classified
 all 6,744 intersections as closed. Suess et al. also identify May 27 as
 part of the variable streamer interval I2. [Calibration, geometry and fit requirements](soho-ulysses-1997/README.md)
+
+### Additional archive search for basal thermodynamics and outer-wind coverage
+
+#### SOHO and Ulysses in 2003 and 2004
+
+The search used the SOHO campaign calendar, the SUMER planning and FITS
+catalogues, the NASA SOHO FITS archive, the MSSL annual CDS catalogues
+and NASA CDAWeb Ulysses plasma and field products. The 2003 CDS catalogue
+has 130 records tagged with campaign 6942 and 716 tagged with campaign
+7007. The 2004 catalogue returned zero records under campaign IDs 7054
+and 7101. These are campaign-tag counts. Individual records still require
+pointing, line and exposure checks. The SUMER archive supplied the
+original FITS files for the 2004 pointings below.
+[SOHO 2003 calendar](https://soho.nascom.nasa.gov/soc/calendar2003_old.html) · [SOHO 2004 calendar](https://soho.nascom.nasa.gov/soc/calendar2004_old.html) · [SUMER campaign catalogue](https://www.sidc.be/users/dammasch/mssl/campaigns.html) · [MSSL CDS catalogue](https://www.mssl.ucl.ac.uk/www_solar/gis/) · [NASA SUMER archive](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/)
+
+| Campaign and recovered SUMER data | What the archive establishes |
+| --- | --- |
+| 7054, May 28–31 and June 1, 2004. [Study 2468](https://www.sidc.be/users/dammasch/mssl/studies.html#2468) and [study 2536](https://www.sidc.be/users/dammasch/mssl/studies.html#2536) | The [May 28 raw spectrum](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/may/sum_040528_000604.fts) has a 50-pixel window centered at 972.640 Å with nominal coverage of 971.53–973.71 Å, which includes H I Lyγ. The nominal slit footprint projects to 1.0945–1.1822 solar radii. The [May 30 Lyα setting](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/may/sum_040530_223226.fts) is at 1215.66 Å with a nominal footprint of 1.1129–1.1482 solar radii. The checked [May 31 setting](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/may/sum_040531_000104.fts) at 749.57 Å has a nominal footprint of 1.0835–1.1467 solar radii. |
+| 7101, November 27–December 3, 2004. [Study 2606](https://www.sidc.be/users/dammasch/mssl/studies.html#2606) | The [November 27 raw file](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/november/sum_041127_073904.fts) identifies the Mg IX temperature and Ne V density observing program. This slit intersects the projected 1.05-solar-radius shell in the nominal geometry (range 1.0223–1.0996). The [December 3 example](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/december/sum_041203_101020.fts) projects to 1.0094–1.0282 solar radii. Each exposure still requires the actual spectral windows and pointing, plus a foreground and magnetic-connectivity analysis. |
+
+The projected ranges use the raw primary-header slit center, width,
+height and roll, and the apparent solar radius from the nearest hourly
+SOHO heliocentric distance, using 695,700 km as the solar radius. They
+are a nominal footprint calculation before pixel-level optical pointing
+correction and radiometric calibration. A line of sight whose projected
+radius exceeds 1.05 solar radii cannot intersect that shell. The hydrogen
+settings therefore offer a proton diagnostic above the basal shell. An
+inversion would need instrument and scattered-light corrections, separation
+of radiative and collisional emission, neutral–proton coupling and
+separation of thermal and nonthermal broadening. The published streamer
+H I Lyβ/Lyγ analysis describes the emission separation and illustrates
+how rapidly usable line coverage can end with height. The SUMER helium
+abundance measurements and off-limb line-width studies also document
+population and stray-light sensitivity. Their values are for their own
+observed regions and dates.
+[SOHO ephemeris metadata](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOHO_HELIO1HR_POSITION) · [SUMER archive and calibration](https://arxiv.org/abs/1309.1314) · [Landi and Testa H I diagnostic](https://doi.org/10.1088/0004-637X/800/2/110) · [Laming and Feldman helium diagnostic](https://arxiv.org/abs/astro-ph/0008427) · [Dolla and Solomon line-width corrections](https://doi.org/10.5194/angeo-27-3551-2009)
+
+Ulysses records provide a timing screen before any magnetic or
+compositional pairing. For each proton row with positive density,
+radial speed and temperatures and a present radial field, the script
+back-propagates from its archived distance at its measured radial
+speed to 2.5 solar radii. The source interval is the scheduled SUMER
+observing dates in the table. Arrival envelopes below encompass the
+earliest and latest proton candidates lying in the downloaded windows.
+Electron counts within the envelope require positive reported density
+and temperature in each of the total, core and halo channels. The
+method assumes constant radial speed for timing. Longitude, latitude,
+sector continuity, intervening stream interactions and calibration
+uncertainties are still required to associate a flux tube.
+[SWOOPS proton moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_PROTON-MOMENTS_SWOOPS) · [SWOOPS electron moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_M0_BAE) · [SWOOPS proton and alpha densities](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_M0_BAI) · [Hourly Ulysses fields and plasma](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_COHO1HR_MERGED_MAG_PLASMA)
+
+| SUMER source dates (UTC) | Ulysses time-only candidate envelope (UTC, rounded to day) | Distance (AU) | Proton candidates | Electron rows inside envelope |
+| --- | --- | ---: | ---: | ---: |
+| 2003 May 19–23 (6942) | June 5–8 | 4.94 | 287 | 0 |
+| 2003 November 25–December 4 (7007) | December 13–24 | 5.28–5.30 | 1,111 | 0 |
+| 2004 May 28–June 1 (7054) | June 19–22 | 5.41 | 256 | 150 |
+| 2004 November 27–December 3 (7101) | December 20–25 | 5.31–5.32 | 677 | 0 |
+
+The November 2003 electron query included 421 valid January 2004 rows
+after the candidate envelope. The December 2004 query returned only
+electron fill records. The full June 8–July 12, 2004 query returned
+1,343 electron rows, 3,552 usable proton rows under the numeric screen,
+8,245 SWOOPS rows with positive proton and alpha densities and 811
+hourly rows with plasma and vector field values present. The archive
+contains both radial-field signs during the 256 June timing candidates.
+June 2004 is the strongest of these new near-5-AU leads for a multi-species
+comparison. Dated mapping and a quality-controlled matched interval are
+still required before computing a mass-loading anchor. The separate
+SWOOPS alpha-moments and SWICS kinetic-temperature products provide
+additional June coverage, documented below.
+[2004 SWOOPS electron archive](https://spdf.gsfc.nasa.gov/pub/data/ulysses/plasma/swoops_cdaweb/bae_m0/2004/) · [Ulysses instrument and fill notes](https://cdaweb.gsfc.nasa.gov/misc/NotesU.html#UY_M0_BAE)
+
+#### June 2004 alpha temperatures and coronal connectivity
+
+Two additional archive products supply outer alpha temperatures at 5.41
+AU. The SWOOPS alpha distribution moments provide density, radial velocity
+and field-aligned parallel and perpendicular kinetic temperatures. The
+SWICS main-charge-state moments provide a separate alpha kinetic
+temperature and speed for each multi-hour accumulation. SWICS normalizes
+its alpha density channel to O VI. Use a measured proton and alpha
+density pair for He/H. Both products were retrieved for June 18 through
+24 UTC. In the exact proton arrival envelope, June 19 19:56:35 to June
+22 16:48:28 UTC, 43 SWOOPS rows contain positive alpha density, radial
+speed and both temperatures, and 22 SWICS rows contain positive alpha
+speed and kinetic temperature. These are archive coverage counts before
+instrument quality or single-sector selection.
+[SWOOPS alpha moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_ALPHA-MOMENTS_SWOOPS) · [SWICS kinetic moments](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_M1_SWI) · [2004 native SWICS ZIP](https://spdf.gsfc.nasa.gov/pub/data/ulysses/plasma/swics/3p5h_moments/zip/swics04.zip) · [Native archive format](https://spdf.gsfc.nasa.gov/pub/data/ulysses/plasma/swics/new_readme.txt)
+
+The follow-up traces both sides of each nominal SOHO line of sight on
+the 1.05, 1.10, 1.15 and 1.20 solar-radius shells for the three recovered
+campaign 7054 FITS pointings. The central slit column was sampled every
+10 arcseconds at the midpoint of the primary-header observing interval.
+None of the rays intersects the basal shell. The 316 intersections above
+it were traced with the existing potential-field source-surface (PFSS)
+evaluator and a 2.5-solar-radius source surface. The SOLIS/VSM maps are
+synoptic pseudo-radial fields in gauss, assembled over a rotation. The
+complete 2017 and 2018 maps were tested with harmonic degrees 8 and 12
+and integration steps of 0.01 and 0.02 solar radii. The CR 2016 map
+contains 5,400 nonfinite cells and was omitted from the trace. The
+later CR 2018 map tests sensitivity to magnetic reconstruction and
+epoch. Neither reconstruction resolves source variability at the
+exposure time.
+[SOLIS map processing](https://solis.nso.edu/0/vsm/aboutmaps.html) · [SOLIS rotations 2006–2025](https://solis.nso.edu/0/vsm/crmaps/6302l_cr2006-2025.html)
+
+All 34 intersections at 1.10 solar radii were closed in every run. The
+May 28 Lyγ sightline at 1.20 solar radii had open negative-polarity
+intersections in both complete maps. In the constant-radial-speed
+back-map of the Ulysses proton rows, every run identified the same
+nearest arrival at June 20 05:59:58 UTC, with a computed departure at
+May 28 01:29:22 UTC. For that sightline at 1.20 solar radii, the closest
+same-sign directions on the source surface were 6.72–7.61° apart using
+CR 2017 and 1.32–4.02° using CR 2018. The direction search admitted
+departures within 24 hours of the exposure midpoint. The angle ranges
+describe map and truncation sensitivity and give a candidate interval.
+The screen leaves line-of-sight emission attribution, unsteady transport,
+and the magnetic connection uncertain.
+
+Native data near this candidate include a SWOOPS proton sample at
+05:59:58 UTC, an electron sample at 05:56:01 UTC, an alpha sample at
+05:43:55 UTC, and a SWICS multihour alpha moment timestamped 06:05:43 UTC.
+The proton sample has radial speed 403.1 km/s and radial magnetic field
+−0.0752 nT. The SWOOPS alpha sample has parallel and perpendicular
+temperatures of 74,449 K and 99,894 K. The SWICS alpha moment lists 24,980 K as
+its kinetic temperature. The samples have different times, integration
+intervals and temperature definitions. Keep them separate in the
+comparison and carry the difference into any moment and mass-flux analysis.
+The retrieval and calculation receipts are in
+`/data/vtenishe/TEST/stage13-wind-match.VH7zds/report.json`,
+with individual rays in `ray-results.csv` and the replay command
+`/usr/bin/python3 check.py` in that directory.
+
+#### Juno arrival geometry for the April 2024 eclipse stream
+
+The archive returned 101 hourly Solar Orbiter positions inside the
+published April 7–14 context and 70–105° Carrington range, before
+applying the sector, strahl or instrument masks. They span April 9
+01:00 to April 13 05:00 UTC at 0.3138–0.3567 AU. The screen uses 840
+hourly Juno positions from April 15 through May 19 UTC at 4.9985–5.0137 AU.
+For each Solar Orbiter row, the ballistic travel time is the difference
+in heliocentric distance divided by speed, with the Juno radius evaluated
+at the resulting arrival epoch on the hourly grid. The angular test
+compares the measured source and arrival directions in the same
+heliographic inertial (HGI) frame. All dates are in UTC.
+[Solar Orbiter positions](https://cdaweb.gsfc.nasa.gov/hapi/info?id=SOLO_HELIO1HR_POSITION) · [Juno positions](https://cdaweb.gsfc.nasa.gov/hapi/info?id=JUNO_HELIO1HR_POSITION) · [Rivera et al., Table 2](https://arxiv.org/abs/2610.04669)
+
+| Radial speed (km/s) | Arrival date range | HGI angular separation |
+| ---: | --- | ---: |
+| 363.54 | May 1–5 | 90.04–114.30° |
+| 443.03 | April 27–May 1 | 89.65–113.93° |
+| 522.52 | April 24–28 | 89.40–113.69° |
+
+Even allowing every pair of observation times in the full ephemeris
+windows, the minimum direction separation is 88.29°. This excludes a
+direct ballistic match of the tracked parcels to Juno. A differently
+dated recurrent stream would require its own mapping and evidence. The
+published Juno upstream and bow-shock measurements on December 10–11,
+2024 establish instrument coverage in a separate interval.
+[Juno JADE instrument archive](https://pds.nasa.gov/ds-view/pds/viewProfile.jsp?dsid=JNO-J%2FSW-JAD-3-CALIBRATED-V1.0) · [Juno December bow-shock study](https://www.nature.com/articles/s41467-026-76223-x)
+
+#### April 2024 transverse magnetic constraint
+
+The six matched April 9 DKIST metadata records list Stokes I alone.
+The MLSO UCoMP archive supplied two April 9 pairs of Level 2 Fe XIII
+FITS. The early 1079.8 and 1074.7 nm start times were 18:00:09.92 and
+18:07:48.30 UTC, close to the phase-speed and density observations
+listed at 18:00 UTC by Rivera et al. The later start times were
+21:03:22.87 and 21:07:52.08 UTC. All four files contain weighted
+Stokes I, Q and U and a noise mask. The early pair also contains two
+azimuth products for each line. The real-data inversion requires
+co-registration, time alignment, the occulter and noise masks and
+polarization calibration. The phase-speed and density maps must be
+compared across the source hole and neighboring structures using the
+same geometry and observing window.
+[NSO metadata request](https://api.dkistdc.nso.edu/datasets/v1?startTimeMin=2024-04-09T00%3A00%3A00Z&startTimeMax=2024-04-10T00%3A00%3A00Z&instrumentNames=CRYO-NIRSP&pageSize=100) · [MLSO April 9 archive](https://mlso.hao.ucar.edu/mlso_data_summary.php?date=2024-04-09&inst=ucomp) · [Early 1079.8 nm FITS](https://mlso.hao.ucar.edu/hao/acos/2024/04/09/20240409.180009.ucomp.1079.l2.fts) · [Early 1074.7 nm FITS](https://mlso.hao.ucar.edu/hao/acos/2024/04/09/20240409.180748.ucomp.1074.l2.fts) · [Late 1079.8 nm FITS](https://mlso.hao.ucar.edu/hao/acos/2024/04/09/20240409.210322.ucomp.1079.l2.fts) · [Late 1074.7 nm FITS](https://mlso.hao.ucar.edu/hao/acos/2024/04/09/20240409.210752.ucomp.1074.l2.fts)
+
+Paraschiv's published method combines the two lines' linear polarimetry
+with a seismology-derived plane-of-sky field. Its reported performance
+is based on synthetic observations. Check signal, ambiguity, viewing
+geometry and the single-dominant-emitter approximation in the observed
+source before using an inversion to constrain the magnetic part of the
+transverse force. The full momentum and work comparison still requires
+cross-field gradients, thermal and wave stresses, and their joint
+uncertainty on neighboring tubes. The dated MAS calculation can provide
+a model comparison for those quantities.
+[Paraschiv inversion, Sections II–III](https://arxiv.org/html/2607.12846v2) · [Rivera et al.](https://arxiv.org/abs/2610.04669) · [Downs et al. MAS reference data](https://zenodo.org/records/14889337)
+
+The retrieved files, exact URLs, SHA-256 checksums, footprint calculations,
+UTC envelopes, and FITS header summaries are retained in
+`/data/vtenishe/TEST/stage13-physical-input.Se1RHf/audit.json`. The
+companion `audit.py` can be rerun with `/usr/bin/python3 audit.py` in
+that directory. No candidate from this search yet supplies basal
+proton and alpha pressure and helium abundance on a confirmed open
+tube, a constrained transverse force, and independent outer comparison
+for the same stream.
+
+### Derived pressures and additional hydrogen spectra
+
+#### June 2004 outer wind
+
+The June 20 05:43:55 UTC proton and alpha SWOOPS records have the same
+timestamp and heliocentric distance, 5.41 AU. This ion pair is 16 minutes
+and 3 seconds before the closest ballistic candidate. The density and
+radial speed pairs are 0.12853 and 0.00451 cm⁻³, and 407.7 and 412.2 km/s,
+respectively. They give a local number-density ratio of **3.51%** and
+a radial alpha-to-proton number-flux ratio of **3.55%**. In an H–He
+plasma with ion charges +1 and +2, the corresponding electron density
+would be 0.13755 cm⁻³. For each ion species, the two measured temperature
+components give pressures `n k_B T_parallel` and `n k_B T_perp`.
+The scalar pressure reported here is one third of the trace of the
+gyrotropic pressure tensor.
+[Matched proton moments source](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_PROTON-MOMENTS_SWOOPS) · [Matched alpha moments source](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_ALPHA-MOMENTS_SWOOPS)
+
+| Species | Parallel pressure (Pa) | Perpendicular pressure (Pa) | Trace / 3 (Pa) |
+| --- | ---: | ---: | ---: |
+| Proton | 7.30 × 10⁻¹⁴ | 3.18 × 10⁻¹⁴ | 4.56 × 10⁻¹⁴ |
+| Alpha | 4.64 × 10⁻¹⁵ | 6.22 × 10⁻¹⁵ | 5.69 × 10⁻¹⁵ |
+
+The measured radial ion mass flux is `1.00e-16 kg/m²/s`, including
+each ion's own radial speed. Four independently retrieved 1-minute VHM
+samples within two minutes of the ion timestamp give radial field
+values from −0.132 to −0.054 nT. Dividing the ion flux by their
+absolute field values gives `0.76e-6–1.85e-6 kg/(s Wb)`. This is a
+local sensitivity calculation with the same ion flux in every quotient.
+The archive intervals and unresolved stream linkage preclude using
+it as a qualified mass-loading anchor.
+[Ulysses VHM one-minute magnetic field archive](https://cdaweb.gsfc.nasa.gov/hapi/info?id=UY_1MIN_VHM)
+
+Steady separate conservation of the proton and alpha fluxes would carry
+the *number-flux* ratio along a proven tube if both species remain in
+their stated ionization states and there are no sources or losses.
+The corresponding basal number-density ratio would still be
+`(F_alpha / F_p) (U_p / U_alpha)`, using the local normal speeds.
+It cannot be obtained from the 5.41-AU density ratio alone. The
+temperatures also require species energy equations with heat exchange and
+transport. The outer pressure estimates therefore support a local
+comparison only.
+
+Two independent SOHO/UVCS O VI-channel raw FITS files confirm additional
+May 28 campaign 7054 wavelength coverage. Observation 21242 at
+00:28:04–00:48:40 UTC has nominal slit center 1.75 solar radii at PA 95°
+and commanded windows that cover H I Lyγ and Lyα. Observation 21244
+at 11:36:53–18:13:37 UTC has nominal slit center 1.70 solar radii at
+PA 95° and a window covering H I Lyβ. The FITS primary headers establish
+dates, pointing and commanded wavelengths. Calibrating and modeling an
+actual line profile would give a constraint higher up the tube.
+[UVCS 2004 archive](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedUVCS/2004/) · [UVCS instrument and calibration metadata](https://esdcdoi.esac.esa.int/doi/html/data/heliophysics/soho/UVCS.html) · [Dolei et al. hydrogen-width analysis](https://doi.org/10.1051/0004-6361/201628753)
+
+#### The March–April 2024 source
+
+The published basal electron density and temperature give
+`p_e = n_e k_B T_e = 3.89e-3 Pa` near 1.05 solar radii. The range
+`2.60e-3–5.26e-3 Pa` uses the corners of the published marginal
+density and temperature ranges. It is a sensitivity interval without
+an assumed joint error distribution. The same paper's in-situ Parker
+Solar Probe summary means give a radial ion mass flux per absolute
+radial field of `2.17e-6 kg/(s Wb)` when the measured alpha drift
+is included. The quotient formed from the tabulated means is a scale
+estimate. Fitting an anchor requires products of simultaneous
+quality-controlled, sector-selected samples. The coronal sound
+speed and enthalpy in that analysis use the adopted ion temperatures.
+Reversing those calculations would recover the adopted temperatures.
+Even an independent total pressure would constrain only a sum of
+species pressures.
+[Rivera et al., Sections 3.2 and A.12 and Tables 2–3](https://arxiv.org/abs/2610.04669)
+
+The ESA Solar Orbiter Archive returned 3,675 Level 2 SPICE footprint
+records, including multiple releases of some observations, during the
+March 28–April 9 search. Two March 29 Probe Quadrature rasters start
+at 07:12:33 and 12:45:33 UTC, after the 05:15:01 Metis observation of
+the tracked region. The public MEDOC Data Release 6 files both contain
+a 31-channel H I Lyβ spectral image with calibrated spectral radiance,
+and both record a separate pointing-correction array for each sky axis.
+The audit retrieved the actual Lyβ data and the pointing extensions.
+Using the nominal WCS in an exploratory region spanning projected
+1.04–1.06 solar radii and position angles 96–107°, 3,796 and 1,735 pixels
+have finite radiance in the seven wavelength bins around Lyβ. This is a
+coverage check around the published Metis outflow direction. The
+maximum recorded pointing variations are 24.6 and 6.9 arcseconds, so
+the exact aperture and connection require correction and remapping.
+[ESA SOAR TAP](https://www.cosmos.esa.int/web/soar/how-to-use-tap) · [MEDOC March 29 FITS directory](https://spice.osups.universite-paris-saclay.fr/spice-data/release-6.0/level2/2024/03/29/) · [SPICE DR6 notes](https://spice.osups.universite-paris-saclay.fr/spice-data/release-6.0/release-notes.html) · [Rivera et al., Figure 14](https://arxiv.org/abs/2610.04669)
+
+The Lyβ window supports a candidate proton diagnostic through a
+hydrogen line-formation model. It requires instrument line-spread
+calibration, removal of scattered disk emission, a neutral–proton
+coupling model, and independent constraints on unresolved motions
+and the emitting structure. He II at 1025.27 Å is only 0.0452 nm
+from H I Lyβ, about 2.35 bins in these FITS files and smaller than the
+published representative SPICE long-wave line width. The archive
+check yields no separate coronal helium line measurement in the two
+rasters. A helium blend fit would require independent calibration and
+detectability evidence before using its intensity or width.
+[SPICE in-flight spectra](https://doi.org/10.1051/0004-6361/202141221) · [Instrument PSF study](https://doi.org/10.1051/0004-6361/202245582) · [NIST wavelengths](https://physics.nist.gov/PhysRefData/Handbook/Tables/findinglist1_a.htm)
+
+The Downs et al. archive identifies 3D MAS snapshot `002396` at
+19:00 UTC on April 9, about one hour after the published coronal
+seismology interval. It includes density, one temperature and all
+three components of velocity, field and current. These fields support
+an independent model comparison of the Lorentz and thermal-gradient
+terms. The archived April 9 field list does not include wave-stress
+tensors or separate ion temperatures. An instantaneous transverse
+momentum and work comparison also needs the time derivative of the
+flow or a demonstrated steady approximation. Neither a scalar wave
+energy flux nor the Lorentz term alone fixes the cross-field force.
+[Downs et al. data and run index](https://zenodo.org/records/14889337) · [Stage 13 force and work convention](../../../../src/models/sep_corona_swcme/docs/STAGE13_SPHERICAL_SHOCK_ONLY.md#kinematic-material-api-and-physical-ownership)
+
+Run `/usr/bin/python3 derive.py` in
+`/data/vtenishe/TEST/stage13-derived-input.Ny8HG2` to replay the
+calculations. The resulting `derived.json` records source URLs, byte
+ranges, checksums, native units, and the local comparison and
+sensitivity values. The observations provide separate basal electron
+pressure and outer ion pressure constraints for their own epochs.
+The same-stream basal ion pressures, helium abundance and transverse
+stress remain unqualified.
+
+### Targeted search for helium at the inner boundary
+
+The NSO inventory for March 28 through April 9, 2024 returned 66
+Cryo-NIRSP records. Three April 9 He I 1083 nm records have a
+wavelength axis and Stokes I. Their sequential pointings correspond
+to the three Fe XIII density-ratio pairs for the tracked southwestern
+coronal hole. The largest difference between corresponding archive
+bounding-box coordinates is 0.11 arcseconds. The public ASDF
+metadata contain the 181 exposure headers for each raster. The
+footprint below is computed from the per-exposure FITS WCS,
+the gnomonic sky projection and the archived angular solar radius.
+The radius is a line-of-sight impact parameter.
+[NSO inventory query](https://api.dkistdc.nso.edu/datasets/v1?startTimeMin=2024-03-28T00%3A00%3A00Z&startTimeMax=2024-04-10T00%3A00%3A00Z&instrumentNames=CRYO-NIRSP&pageSize=100) · [Rivera et al., Figures 8 and 12](https://arxiv.org/abs/2610.04669)
+
+| He I raster | April 9 start UTC | Paired Fe XIII rasters | Nominal projected radius (solar radii) | Spatial samples in 1.04–1.06 solar radii |
+| --- | --- | --- | ---: | ---: |
+| [ICODSO](https://dkist.data.nso.edu/datasetview/ICODSO) | 17:46:01.67 | TFPUCV, NDTDBO | 0.965–1.262 | 27,189 |
+| [JTOBIO](https://dkist.data.nso.edu/datasetview/JTOBIO) | 18:00:51.81 | KYLOTD, HPRKOY | 1.148–1.445 | 0 |
+| [VLGIHK](https://dkist.data.nso.edu/datasetview/VLGIHK) | 18:15:26.24 | SMTRNK, WRAEVA | 1.351–1.645 | 0 |
+
+ICODSO is the direct observing candidate for this boundary. Its
+headers describe the 1080.68–1084.48 nm interval at 0.004214 nm per
+spectral sample. The sample count is geometric and precedes
+occulter, data quality and stray-light screening. The ASDF metadata
+were retrieved and checked. The calibrated Level 1 FITS spectra
+require an authenticated Globus transfer and were unavailable in
+this session. The He I triplet traces neutral helium. Converting
+any detected solar signal to coronal He/H requires a
+collisional-radiative model with disk illumination, photoionization,
+and a constrained line-of-sight plasma distribution. The neutral
+line width also requires a velocity-formation model to constrain the
+He²⁺ kinetic temperature. The independent April 8 eclipse spectroscopy
+found terrestrial scattered light in its own He I observations,
+including over the occulting lunar disk. The DKIST spectra would
+require a separate scattering analysis.
+[DKIST Level 1 access](https://docs.dkist.nso.edu/projects/python-tools/en/stable/topic_guides/net.html) · [He I and He II emissivity calculations](https://doi.org/10.3847/1538-4357/ab9d84) · [April 8 eclipse scattering analysis](https://arxiv.org/abs/2501.01009)
+
+In the Solar Orbiter view on March 29, the public SOAR archive
+provides Level 2 FSI 304 Å context around the 05:15:01 UTC Metis
+observation. The retrieved V02 images started at 05:10:20.216 and
+05:20:20.217 UTC, with 10-second integrations in the
+`FSI_SYNOPTIC_B` mode. The FITS files store one 304 Å passband image
+each in DN/s. They provide a near-simultaneous spatial comparison.
+That passband combines He II with coronal emission including
+Si XI, and the images contain no resolved line width.
+[EUI image before Metis](https://soar.esac.esa.int/soar-sl-tap/data?product_type=SCIENCE&RETRIEVAL_TYPE=PRODUCT&data_item_id=solo_L2_eui-fsi304-image_20240329T051020216) · [EUI image after Metis](https://soar.esac.esa.int/soar-sl-tap/data?product_type=SCIENCE&RETRIEVAL_TYPE=PRODUCT&data_item_id=solo_L2_eui-fsi304-image_20240329T052020217) · [FSI 304 Å passband analysis](https://doi.org/10.1051/0004-6361/202244020)
+
+The 401 indexed SUMER records in the two campaign 7054 studies
+contain no listed wavelength range bracketing the dedicated
+1084.94 Å He II diagnostic. Four native FITS files do carry other
+He II wavelength coverage. The May 28 Lyγ window includes 972.11 Å,
+and the May 28 Lyα setting includes 1215.09 and 1215.17 Å. The
+May 31 and June 1 Lyβ settings include 1025.27 Å at 0.04436 Å per
+spectral pixel. These are commanded spectral windows with native
+WCS. Calibrated line detection and separation from the adjacent
+hydrogen and scattered-light contributions remain unverified.
+The four nominal slit footprints start at 1.085–1.112 solar radii,
+outside the basal shell. Any confirmed helium signal could
+constrain the outer part of the coronal profile for this epoch.
+[SUMER campaign 7054](https://www.sidc.be/users/dammasch/mssl/campaigns.html#7054) · [May 28 Lyγ](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/may/sum_040528_000604.fts) · [May 28 Lyα](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/may/sum_040528_083641.fts) · [May 31 Lyβ](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/may/sum_040531_070309.fts) · [June 1 Lyβ](https://soho.nascom.nasa.gov/data/Deprecated/deprecatedSUMER/2004/june/sum_040601_070255.fts) · [NIST He II wavelengths](https://physics.nist.gov/PhysRefData/Handbook/Tables/heliumtable2_a.htm)
+
+The replay command is `/usr/bin/python3 audit.py` from
+`/data/vtenishe/TEST/stage13-helium-search.I9L6fE`. Its `report.json`
+contains the native header geometry and the exact queries and file
+checksums. The search located a co-pointed helium spectrum at the
+inner boundary. It did not establish a basal helium abundance or
+alpha pressure for a stream with verified outer coverage.
 
 ## Use in wind qualification
 

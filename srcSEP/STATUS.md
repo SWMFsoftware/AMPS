@@ -14,6 +14,66 @@ the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
 
+## Observation-driven shock replay prototype, 2026-11-23
+
+The prototype now exports `evolution` as a time series for SEP. Every usable
+frame epoch is included by default. Custom epochs inside the fit interval
+query the same fitted realization and fixed HCI directions. The core recomputes
+geometry, normal speed, upstream state and local fast-shock classifications at
+every query. An explicit quadratic-drag extension can cover requested later
+epochs subject to the declared handoff and time limits. The handoff matches
+apex position and speed, and unsupported draws retain their ensemble weight.
+The `evolution` export runs independently of observer arrival forecasts.
+
+All eight forecast tests and all 57 reduced-shock checks passed. The new
+tests check the manufactured evolution along fixed rays, independently solve
+the nonzero-drag ODE, reject unqualified extrapolation, and preserve unresolved
+weight at an unsupported handoff. The archived manufactured example produced
+seven 49-ray maps in 2.65 s wall time, with five fitted epochs and two outer
+forecast epochs. Input, output and logs are in
+`/data/vtenishe/TEST/sep-shock-evolution-20261123/`. The present time series
+uses a fixed direction and width. Native SEP field-line intersections and
+event-specific observational validation remain open.
+
+The [shared-core forecast guide](../src/models/sep_corona_swcme/forecast/README.md)
+documents the time-gated observation format, HCI geometry, upstream ensemble,
+shock classification and fixed-observer arrival forecast through 1 AU. The
+prototype fits calibrated white-light sight lines to a finite SSE front and
+uses the existing PFSS/Parker, quadratic drag and Rankine–Hugoniot kernels.
+The reported strength and arrival intervals are conditional on the supplied
+ambient and propagation models. A geometry-only result carries explicit
+unresolved physics classifications.
+
+Six focused prototype tests and all 57 existing reduced-shock assertions
+passed with the strict C++ build and `/usr/bin/python3`. The independent
+projection fixture recovered the known 3-D surface from two noisy views.
+The linked replay tests checked ambient gaps, an unavailable late frame,
+rank rejection, atomic output, shock classification, and arrival through
+1 AU. The test of nonzero drag used an independent ODE crossing reference.
+The upstream-ensemble test verified both forecast-time availability and
+validity at the physical query epoch. A manufactured CLI replay processed
+332 picks, 49 rays, 16 fit draws, one ambient member and two observer
+directions in 0.97 s wall time on the archived run. The six replay tests also
+passed with the adapter built with AddressSanitizer and
+UndefinedBehaviorSanitizer. The sandbox ptrace wrapper prevented
+LeakSanitizer from running. The shared core architecture check passed.
+
+The additional local `make test` passed through `CSWC0627`. The first
+`CSWC0628-MASS-TIME` level at 40 cells, CFL 0.2 and 3600 s produced two
+shock zones, outside its frozen requirement of one common shock zone at
+every level. It also passed the global owner's 180 s wall-time allowance
+with the case still active. The direct Make invocation has no per-binary
+timeout and the full suite has no completion receipt.
+
+The published STEREO-A white-light trace for 17 May 2012 yielded an apparent
+speed of 1,095.9 km/s. [Figure 11](https://doi.org/10.1007/s11207-025-02449-5)
+provides a projected track. Calibrated multi-view picks and an independently
+qualified dated upstream realization are pending for this event, so its
+observational 3-D, strength and arrival gates remain SKIPPED. Operational
+forecast validation and the live Stage 13 SEP campaign remain open. Command
+logs and replay receipts are in
+`/data/vtenishe/TEST/sep-shock-forecast-20261123/`.
+
 ## Stage 13 spherical `SHOCK_ONLY`, 2026-11-23
 
 The approved physical heliocentric particle domain is 1.05 solar radii to
@@ -206,6 +266,58 @@ test-tube-isopoly test-stage14`, and `make -C src/models/sep_corona_swcme
 checks, 229 coronal core cases and 12 spherical cases passed. The core
 suite reported three existing SKIPs. The five source-mode backend checks
 and 22 checkpoint and routine-runner tests also passed.
+
+The additional [physical-input archive search](validation/cases/stage13/README.md#additional-archive-search-for-basal-thermodynamics-and-outer-wind-coverage)
+recovered native 2004 SUMER spectra. The May hydrogen pointings are
+above the 1.05-solar-radius shell, while a November SUMER electron
+diagnostic intersects it in the nominal geometry. The June 2004
+Ulysses interval at 5.41 AU has proton, alpha-density, electron and
+field observations available for a dated matching analysis. The
+November 2004 and both 2003 candidate envelopes lack electron rows
+after fill and time screening. A CDAWeb ephemeris check placed Juno
+at least 89.4° from the tracked April 2024 parcels at their estimated
+5 AU arrival times. Actual April 9 UCoMP Fe XIII FITS files provide
+two-line linear polarimetry for a magnetic-field comparison. The
+search leaves basal species pressure and composition on a mapped
+open tube, transverse stress and independent same-stream outer
+qualification open. The report and source checksums are in
+`/data/vtenishe/TEST/stage13-physical-input.Se1RHf/audit.json`.
+
+The [June 2004 follow-up](validation/cases/stage13/README.md#june-2004-alpha-temperatures-and-coronal-connectivity)
+recovered 43 SWOOPS alpha records with both temperature components and
+22 separate SWICS kinetic-temperature records in the arrival window.
+Using two complete SOLIS maps, the PFSS screen identified a common
+June 20 near-5-AU interval with the same radial field sign and a
+map-dependent angular separation from the SUMER line of sight at
+1.20 solar radii. The three sampled SUMER pointings lack coverage at
+1.05 solar radii, and the timing and field-angle screen alone leaves the
+connection uncertain. The archived measurements support a candidate
+outer comparison across species. A qualified basal plasma state,
+transverse stress budget and end-to-end observational mapping are open.
+The receipt is in `/data/vtenishe/TEST/stage13-wind-match.VH7zds/report.json`.
+
+The [pressure and spectroscopy follow-up](validation/cases/stage13/README.md#derived-pressures-and-additional-hydrogen-spectra)
+uses an exact-timestamp Ulysses proton–alpha pair at 5.41 AU to obtain the
+3.51% local helium density ratio, separate ion pressure components and a
+field-sensitive mass-flux estimate. The April 2024 electron diagnostics give
+a basal electron pressure of 3.89 mPa. Two recovered DR6 SPICE Lyβ windows
+have finite core radiances near the projected 1.05-solar-radius shell and
+the March 29 Metis outflow direction. The proton constraint requires a
+calibrated line-formation inversion and source mapping. The archive search
+found only unresolved He II coverage in those rasters and no same-stream
+transverse stress closure. Qualification is still open. The byte-range
+provenance and calculations are in
+`/data/vtenishe/TEST/stage13-derived-input.Ny8HG2/derived.json`.
+
+The [targeted helium search](validation/cases/stage13/README.md#targeted-search-for-helium-at-the-inner-boundary)
+found the April 9 Cryo-NIRSP ICODSO He I 1083 nm raster co-pointed with
+the relevant Fe XIII density pair. Its public ASDF exposure headers
+confirm the 1.04–1.06-solar-radius projected annulus is within the raster.
+The authenticated FITS transfer and an instrument/helium line-formation
+inversion are still needed for quantitative use. EUI 304 Å imaging
+provides near-simultaneous March 29 context, and the inspected 2004
+SUMER helium companion windows cover higher projected radii.
+The observationally qualified basal alpha state is still open.
 
 The observational replay with the regenerated executable returned one FAIL
 and six SKIPs. The original OV01 continuity comparison retained coverage

@@ -6,6 +6,12 @@ shared code has no AMPS, PIC, MPI, source, or particle type.  `model.md` is the
 physics/design authority, `BG3D0_CONTRACT.md` freezes the selected G1 profile,
 and this file documents the implemented surface of the current stage.
 
+## Observation-driven shock replay
+
+The [forecast guide](forecast/README.md) describes calibrated camera inputs,
+issue-time replay, and conditional shock and observer-arrival estimates using
+this core. `make forecast-test` exercises the standalone prototype.
+
 ## Spherical SHOCK_ONLY candidate (2026-11-23)
 
 The standalone Stage 13 core candidate reuses the maintained open PFSS/Parker

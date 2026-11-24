@@ -14,7 +14,7 @@ OBJECTS := $(patsubst src/%.cpp,$(BUILD)/%.o,$(SOURCES)) \
 	$(patsubst shock_front/%.cpp,$(BUILD)/shock_front_%.o,$(SHOCK_FRONT_SOURCES))
 CORONAL_ARCHIVE := ../sep_coronal_cme/build/libsep_coronal_cme.a
 
-.PHONY: all lib test clean coronal-lib check-architecture shock-front-test
+.PHONY: all lib test clean coronal-lib check-architecture shock-front-test forecast forecast-test
 .DEFAULT_GOAL := all
 
 all: lib
@@ -159,6 +159,15 @@ $(BUILD)/test_shock_front: test/shock_front/test_reduced.cpp \
 
 shock-front-test: $(BUILD)/test_shock_front
 	$(BUILD)/test_shock_front
+
+$(BUILD)/shock_forecast_core: forecast/core_cli.cpp $(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+forecast: $(BUILD)/shock_forecast_core
+
+forecast-test: forecast
+	$(PYTHON) forecast/test_replay.py $(BUILD)/shock_forecast_core
 
 check-architecture: $(BUILD)/libsep_corona_swcme.a
 	$(PYTHON) test/check_architecture.py

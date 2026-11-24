@@ -9,6 +9,12 @@ AMPS application, or qualify full-CME G1 propagation.
 [Global owner and reporting](../../../test/tests/models/cme/sep_corona_swcme_full/README.md) ·
 [Complete catalog](../../../test/TEST_CATALOG.md).
 
+`make -j4 forecast-test shock-front-test PYTHON=/usr/bin/python3` exercises
+the standalone observational replay and the reduced shock-front physics.
+The [forecast guide](../forecast/README.md) gives the data format, physics
+limits, reproduction commands and provenance for the optional observed
+projected track replay.
+
 ## Working directory and quick builds
 
 Run from the AMPS root, then enter the MODEL directory so relative fixture
