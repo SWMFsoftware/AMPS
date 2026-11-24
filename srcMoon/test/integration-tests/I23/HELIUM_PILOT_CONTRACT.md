@@ -18,3 +18,13 @@ one incident to two outgoing electrons. A diagnostic fitted mean alone supplies
 no derivative-uncertainty or model-admission evidence. Keep the separate
 [formal I23 acceptance](reference/acceptance.json) and [reservoir model
 contract](../../M3_RESERVOIR_PRODUCTS_CONTRACT.md) in force.
+
+For the optional Kim source comparison, also report the fraction of the
+10 eV Maxwellian helium ionization integral between the 100 and 2000 eV
+incident-energy endpoints studied by Peterson, Beaty and Opal. The denominator
+is the Kim fit integrated over its stated validity interval ending at 10 keV.
+Evaluate below, within and above the experimental window, including a
+separate quadrature of the entire interval for the closure check. Uncertainty
+from those integrals is numerical. The fraction sets an upper limit on the
+eligible collisions in this particular model. Individual sampled beam energies
+and emitted-electron angle/energy coverage can reduce the experimental overlap.

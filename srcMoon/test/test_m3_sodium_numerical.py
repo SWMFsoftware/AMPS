@@ -35,7 +35,7 @@ def plan(visible=1):
         'horizon_s':262144.,'reference_total_rate_s':rate,
         'source_channel_rates_s':[{'id':CHANNEL,'rate_s':rate}],'branch_claims':1,'seed':731993,
         'primary_estimator':'lifetime' if visible else 'zero-hazard',
-        'test_kind':'homogeneous-first-hit' if visible else 'zero-hazard-invariant',
+        'test_kind':'homogeneous-fixed-position' if visible else 'zero-hazard-invariant',
         'source_profile':{'path':'MISSING_REAL_PHYSICAL_PROFILE.json','sha256':'0'*64}}
 
 
@@ -60,13 +60,21 @@ def write_level(root,configuration,steps,ranks,error,visible=1):
         'physical_step_s':str(configuration['horizon_s']/steps),'physical_steps':steps,
         'initial_represented_number':str(configuration['initial_represented_number'])}
     (folder/'input_receipt.json').write_text(json.dumps(receipt))
+    events={}
     with (folder/'parent_records.csv').open('w',newline='') as stream:
         w=csv.writer(stream);w.writerow(q.PARENT_COLUMNS)
         for parent in range(configuration['original_parents']):
             event=first_hit(parent,configuration);reacted=event is not None and event<=Decimal.from_float(configuration['horizon_s'])
             actual=event+Decimal(str(error))*Decimal.from_float(configuration['horizon_s']) if reacted else None
-            w.writerow([parent,'REACTED' if reacted else 'SURVIVED',str(actual) if reacted else '',CHANNEL if reacted else '',configuration['initial_represented_number']])
-    return folder,ranks
+            if reacted:
+                # Project the analytic fixture onto a binary64 clock and
+                # reproduce the native parent CSV output format. Tests below
+                # also supply a finer native bit that the parent CSV loses.
+                events[str(parent)]={'relative_event_time_s':Fraction.from_float(float(actual)),
+                    'accepted_rate_s':Fraction.from_float(configuration['reference_total_rate_s'])}
+            w.writerow([parent,'REACTED' if reacted else 'SURVIVED',
+                format(float(actual),'.17g') if reacted else '',CHANNEL if reacted else '',configuration['initial_represented_number']])
+    return folder,ranks,events
 
 
 def request_fixture(root):
@@ -94,7 +102,66 @@ def owner_identity_fixture(root,receipt,documents,steps=8,ranks=1):
     return {'output':str(native),'mpi_ranks':ranks,'physical_steps':steps,'input_documents':documents,'input':input_descriptor,
         'owner_manifest':{'path':str(manifest_path),'sha256':q.sha(manifest_path)},'owner_result':{'path':str(result_path),'sha256':q.sha(result_path)}}
 
+
+def administrative_launch_matrix(root,configuration,first):
+    """Keep the frozen six launch identities intact in corrupted-graph tests.
+
+    The owning audit checks the complete launch matrix before reading a
+    single input graph. Supply the other five administrative identities too,
+    so an expected graph error exercises the intended check.
+    """
+    launches=[first]
+    for index,case in enumerate(configuration['native_adapter']['runs'][1:],start=1):
+        folder=root/('ADMIN-launch-%d'%index)
+        folder.mkdir()
+        docs=case['input_documents']
+        receipt={'input_documents':docs,'physical_steps':case['physical_steps']}
+        launches.append(owner_identity_fixture(folder,receipt,docs,case['physical_steps'],case['mpi_ranks']))
+    return launches
+
 class NumericalControls(unittest.TestCase):
+    def test_finite_lunar_shadow_geometry(self):
+        # Analytic diametral crossing, off-axis grazing, and a line which
+        # intersects behind either endpoint distinguish a finite segment from
+        # an infinite line or an unbounded ray in both directions.
+        segment=numerical.lunar_segment_geometry
+        self.assertEqual(segment([-2,0,0],[6,0,0],1)['closest_segment_fraction'],'1/4')
+        self.assertEqual(segment([-2,0,0],[6,0,0],1)['intersection'],'interior')
+        self.assertEqual(segment([-2,1,0],[6,1,0],1)['intersection'],'tangent')
+        for start,end,closest in (([2,0,0],[4,0,0],'0'),([-4,0,0],[-2,0,0],'1')):
+            result=segment(start,end,1)
+            self.assertEqual(result['intersection'],'exterior')
+            self.assertEqual(result['closest_segment_fraction'],closest)
+            self.assertEqual(result['minimum_distance_m'],2)
+        with self.assertRaises(ValueError):segment([2,0,0],[2,0,0],1)
+
+    def test_fixed_shadow_refuses_mutated_radius_and_detects_wrong_visibility(self):
+        # Administrative controls bind the analytical unit sphere to a
+        # synthetic producer manifest. These files never enter a native plan.
+        header_key='src/general/constants.PlanetaryData.h'
+        header=self.root/header_key
+        header.parent.mkdir(parents=True)
+        header.write_text('#define _MOON__RADIUS_ 1.0E0\n')
+        producer=self.root/'producer.json'
+        producer.write_text(json.dumps({'source_root':str(self.root),
+            'production_source_hashes':{header_key:q.sha(header)}}))
+        configuration={'native_adapter':{'producer_manifest':{'path':str(producer),'sha256':q.sha(producer)}}}
+        app=self.root/'sphere.in'
+        app.write_text('#begin application: moon\nsurface_geometry = sphere\nsimulation_environment_mode = frozen\n#end application\n')
+        native=self.root/'native.in'
+        native.write_text('earth_occultation = off\n')
+        launch={'input':{'path':str(native)},'input_documents':[{'path':str(x)} for x in (native,app)]}
+        ref=reference(0)
+        ref.update(source_position_lso_m=['-2','0','0'],sun_position_lso_m=['2','0','0'])
+        receipt={'case_kind':'homogeneous-fixed-position','schema':'srcMoon-native-sodium-input-receipt-v1',
+                 'homogeneous_reference':ref}
+        self.assertEqual(numerical.fixed_moon_shadow(configuration,launch,receipt)['status'],'PASS')
+        ref['point_sun_visible']=1
+        self.assertEqual(numerical.fixed_moon_shadow(configuration,launch,receipt)['status'],'FAIL')
+        header.write_text('#define _MOON__RADIUS_ 1.5\n')
+        with self.assertRaisesRegex(ValueError,'lunar-radius source differs'):
+            numerical.fixed_moon_shadow(configuration,launch,receipt)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
     def levels(self,errors=(.0001,.00005,.00001),visible=1):
@@ -131,6 +198,63 @@ class NumericalControls(unittest.TestCase):
     def test_strict_decrease_and_original_numeric_allocations_are_preserved(self):
         self.assertEqual(q.NUMERICAL_LIMIT,{'I21':.002,'I22':.002,'I23':.003,'I24':.003})
         p,runs=self.levels((.0001,.0001,.0001));self.assertEqual(numerical.verify(runs,p)['status'],'FAIL')
+    def test_source_clock_precision_binding_and_partial_diagnostics(self):
+        p,runs=self.levels()
+        p['optical_clock_precision']='compensated-extended-log'
+        with self.assertRaisesRegex(ValueError,'source-clock precision'):numerical.verify(runs,p)
+        for path,_,_ in runs:
+            key=path/'input_receipt.json';receipt=json.loads(key.read_text())
+            receipt['optical_clock_precision']='compensated-extended-log';key.write_text(json.dumps(receipt))
+        scored=numerical.verify(runs,p)
+        self.assertEqual(scored['status'],'PASS')
+        for row in scored['homogeneous_timing_breakdown']:
+            self.assertEqual(row['optical_clock_precision'],p['optical_clock_precision'])
+            self.assertNotIn('source_clock_rounding_s',row['component_extrema'])
+            self.assertIn('native_clock_and_transport_remainder_s',row['component_extrema'])
+
+    def test_score_uses_native_bits_despite_identical_binary64_parent_projection(self):
+        p,runs=self.levels()
+        native=runs[0][2]
+        key=next(iter(native))
+        base=native[key]['relative_event_time_s']
+        # Successor of this normal binary64 value on a 64-significand-bit
+        # grid, as on the x87 native host. Its projection to binary64 is unchanged.
+        shifted=base+Fraction(2)**(math.frexp(float(base))[1]-64)
+        self.assertEqual(float(base),float(shifted))
+        before=numerical.verify(runs,p)['comparisons']
+        native[key]['relative_event_time_s']=shifted
+        after=numerical.verify(runs,p)['comparisons']
+        parent=int(key)
+        self.assertEqual(before[parent]['original_parent_id'],parent)
+        self.assertNotEqual(before[parent]['normalized_error'],after[parent]['normalized_error'])
+        # Conversely, printing the exact decimal expansion of the double is
+        # the very same CSV projection and must leave physical timing intact.
+        path=runs[0][0]/'parent_records.csv'
+        with path.open(newline='') as stream:table=list(csv.reader(stream))
+        table[parent+1][2]=str(Decimal.from_float(float(base)))
+        with path.open('w',newline='') as stream:csv.writer(stream).writerows(table)
+        self.assertEqual(after,numerical.verify(runs,p)['comparisons'])
+        del native[key]['relative_event_time_s']
+        with self.assertRaises((KeyError,ValueError)):numerical.verify(runs,p)
+    def test_clock_rate_transport_and_reporting_components_have_independent_signs(self):
+        # All reference endpoints below are terminating binary fractions.
+        # At unit optical depth the +2^-54 increment falls inside a binary64
+        # half-ULP. A 2/s accepted rate halves the rounded reference time.
+        with localcontext() as c:
+            c.prec=80
+            depth=Decimal(1)+Decimal(2)**-54
+            rate=Fraction(2)
+            seconds=Fraction(3,4)+Fraction(1,2**54)
+            displayed='0.75000000000000001'
+            values=numerical.homogeneous_timing_breakdown(depth,Decimal(1),
+                {'accepted_rate_s':rate,'relative_event_time_s':seconds},displayed)
+            self.assertEqual(values['source_clock_rounding_s'],-Decimal(2)**-54)
+            self.assertEqual(values['accepted_rate_effect_s'],Decimal('-.5'))
+            self.assertEqual(values['native_clock_and_transport_remainder_s'],Decimal('.25')+Decimal(2)**-54)
+            self.assertEqual(values['parent_binary64_projection_s'],-Decimal(2)**-54)
+            self.assertEqual(values['parent_csv_text_rendering_s'],Decimal('1e-17'))
+            self.assertEqual(values['native_minus_reference_s'],Decimal('-.25'))
+            self.assertEqual(sum(list(values.values())[:5]),values['csv_text_minus_reference_s'])
     def test_decreasing_but_over_budget_is_still_failed(self):
         p,runs=self.levels((.02,.01,.0021));self.assertEqual(numerical.verify(runs,p)['status'],'FAIL')
     def test_wrong_first_hit_membership_is_evaluated_failure(self):
@@ -211,13 +335,13 @@ class NumericalControls(unittest.TestCase):
         p,main,included=request_fixture(self.root);profile=self.root/'ADMIN-profile.json';profile.write_text('{"scope":"ADMINISTRATIVE ONLY"}');p['source_profile']={'path':str(profile),'sha256':q.sha(profile)}
         planpath=self.root/'plan.json';planpath.write_text(json.dumps(p));native=self.root/'native';native.mkdir()
         docs=p['native_adapter']['runs'][0]['input_documents'];launch=owner_identity_fixture(self.root,{'input_documents':docs[:1],'physical_steps':8},docs)
-        registry=self.root/'runs.json';registry.write_text(json.dumps([launch]))
+        registry=self.root/'runs.json';registry.write_text(json.dumps(administrative_launch_matrix(self.root,p,launch)))
         result=audit.run(planpath,registry,self.root/'audit');self.assertEqual(result['status'],'ERROR');self.assertIn('include graph',result['checks'][-1]['reason'])
     def test_duplicate_actual_input_graph_is_not_silently_collapsed(self):
         p,_,_=request_fixture(self.root);profile=self.root/'ADMIN-profile.json';profile.write_text('{}');p['source_profile']={'path':str(profile),'sha256':q.sha(profile)}
         planpath=self.root/'plan.json';planpath.write_text(json.dumps(p));native=self.root/'native';native.mkdir();docs=p['native_adapter']['runs'][0]['input_documents']
         launch=owner_identity_fixture(self.root,{'input_documents':docs+[docs[0]],'physical_steps':8},docs)
-        registry=self.root/'runs.json';registry.write_text(json.dumps([launch]))
+        registry=self.root/'runs.json';registry.write_text(json.dumps(administrative_launch_matrix(self.root,p,launch)))
         result=audit.run(planpath,registry,self.root/'audit');self.assertEqual(result['status'],'ERROR');self.assertIn('duplicate',result['checks'][-1]['reason'].lower())
     def test_portable_adjacent_binary64_matches_independent_literal_boundaries(self):
         # These literal IEEE encodings are independent of the implementation's

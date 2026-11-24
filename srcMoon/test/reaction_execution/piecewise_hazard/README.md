@@ -26,6 +26,13 @@ integrals/quadratics are independent of the production implementation. A
 binary-exact subset additionally verifies the event and its predecessor
 against the mathematical cumulative exposure, with no acceptance epsilon.
 
+An interior event in a constant 5.1875 s⁻¹ channel checks exact identity of
+the selected rate and the total rate against the stored endpoint. The I24
+native refinement exposed a one-unit rounding difference when a constant
+channel was evaluated through the general affine formula. The fixture uses
+exactly representable endpoints, rates and a dimensionless threshold of
+258.5 in a 2202.375 s interval. The exact event lies strictly inside it.
+
 Exact segment-end events use the approved LEFT-limit rates, including an
 explicit zero total when the left law ends at zero. Downstream selection must
 refuse an empty CDF rather than substitute the next segment's rate. The

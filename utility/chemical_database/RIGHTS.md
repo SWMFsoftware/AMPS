@@ -117,3 +117,75 @@ citation with derived views. This is not a grant for the separately copyrighted
 WebBook/ASD compilations, another NIST paper or a source published elsewhere.
 Table cells preserve their native state, zero-K, reference and uncertainty
 semantics; permission is not a physical source-to-reaction mapping.
+
+## November 24 archive inputs
+
+- `zenodo-4555716-cc-by-4.0` is tied to the pinned native deposit record,
+  its listed `diff_cross_sections.zip` and the producer size and MD5.
+  Keep the Pawel Swaczyna attribution, data DOI, CC BY 4.0 notice and
+  change record for the two CSV views. The approval covers the deposit and
+  its CSV views. The journal paper and independent datasets have their
+  own licences. [Zenodo record](https://doi.org/10.5281/zenodo.4555716)
+- The live D119990 HTML is admitted with the existing IAEA policy and
+  exact numeric comparison to the retained sodium partial. The HTML
+  and numerical projection have separate identities.
+  [IAEA policy](https://db-amdis.org/collisiondb/licence/)
+- The NORAD He photoionization text files are catalogued with their
+  native identities and the OSU CC BY-NC 4.0 notice. The general shared
+  snapshot retains metadata for these files. OSU identifies its contact
+  for commercial permissions. [NORAD licence notice](https://norad.astronomy.osu.edu/)
+- Curtin CCC, NIFS, Verner–Yakovlev, NIST and the cited experimental
+  publications remain metadata-only. Preserve the terms of the source
+  objects individually. The NILS public counts carry CC BY-NC-SA 4.0
+  and the Bodi paper carries CC BY-NC 3.0.
+  [NILS record](https://doi.org/10.5878/v4sy-3t95)
+  [Bodi publisher notice](https://doi.org/10.1039/C4SC00791C)
+
+## Source-specific publication follow-up
+
+The `nist-jres-water-1966-kim-1992` policy applies to the exact reviewed
+Dibeler and Kim technical articles and their lexical CSV views. Preserve
+the original citation and the acknowledgment “Republished courtesy of
+the National Institute of Standards and Technology.” SRD 107 and the
+separate original experiments cited by Kim require their own review.
+[NIST technical-publication notice](https://www.nist.gov/open/license)
+
+The `mdpi-atoms13090074-cc-by-4.0` policy covers Cui et al.'s exact
+published article and the Table 1 projection. The grant binds the
+publisher PDF and its embedded CC BY 4.0 notice. Cite the DOI, authors
+and the lexical conversion. Angular data requested separately from the
+authors require their own file-specific review. [Cui et al.](https://doi.org/10.3390/atoms13090074)
+
+The r8 policies bind managed bytes to the exact reviewed versions and
+records listed in [the source report](NATIVE_M3_PARTIAL_SOURCES.md).
+`figshare-12389750-v2-cc-by-4.0` applies to version 2, file 22860461,
+with CC BY 4.0 attribution to Kalha et al. and Yeh and Lindau.
+`ntrs-19720018903-public-use` applies to the exact Sutton report and
+records NASA's source-specific public-use determination.
+`mdpi-atoms10010009-cc-by-4.0` applies to the inspected Bhatia article
+and the projections of his own calculations. The Science Data Bank He
+dataset and Suárez publication record enter this snapshot as metadata.
+
+The r10 `iop-aceff9-cc-by-4.0` policy binds Wang and Bruggeman's exact
+IOP PDF, its CC BY 4.0 statement and the corresponding Crossref version
+of record. Credit the title, authors, journal and DOI. The new
+`ntrs-19730006011-public-use` grant is specific to Sutton and Kay's
+NASA preprint and the matching public-use determination. The three
+CSV projections identify their source columns and preserve the
+authors' uncertainties. [Source-specific rights](NATIVE_M3_LAB_BENCHMARKS_SOURCES.md)
+
+The Moore–Mapaye Table 1 and Laurell Extended Data Fig. 4 permissions
+are tied to the exact files, DOI and CC BY 4.0 notice for each article.
+The Crowley evaluation is CC BY 3.0. Its underlying primary experiment
+has separate rights. The new IAEA member is covered by CollisionDB's
+CC BY 4.0 terms. The NIFS report, Shingal calculations and helium
+line-emission articles retain catalogue descriptions and individually
+attributed facts. Their source files have separate access policies.
+[Photon](NATIVE_M3_PHOTON_BENCHMARK_SOURCES.md)
+[Ice](NATIVE_M3_OH_ICE_SOURCES.md) [Sodium](NATIVE_M3_SODIUM_BENCHMARK_SOURCES.md)
+[Helium](NATIVE_M3_HELIUM_EMISSION_SOURCES.md)
+
+The `aas-peschel-2026-cc-by-4.0` policy covers the identified Peschel
+et al. article and the attributed projection of its Table 1 model inputs.
+The article carries its own CC BY 4.0 notice on page 1. Its citations have
+their own access and reuse terms. [Article](https://doi.org/10.3847/PSJ/ae4901)

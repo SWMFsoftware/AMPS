@@ -189,3 +189,99 @@ authoritative-source class compares the actual article/CSV cells and declares
 `AMPS_NIST_HXOY_SHA256=EXPECTED_SHA256`; otherwise it is SKIPPED in the full
 suite and outside CORE's protocol-only scope. It preserves source units and
 uncertainty strings and performs no thermochemical state/energy selection.
+
+The November 24 helium archive adds a nightly packet-admission control for
+unreviewed deposit bytes. Three opt-in tests verify the actual snapshot,
+including all 507,648 source rows against original ZIP members, the exact
+native C++/Python energy index, the live IAEA byte identity and the ten held
+source permissions. Select the real packet and snapshot explicitly.
+
+```bash
+AMPS_M3_ARCHIVE_PACKET=/path/to/packet/source_packet.json \
+python3 -B test/chemical_database/run_all_tests.py \
+  --database-lock /data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r6/database-lock.json \
+  --output-dir test_output/chemical_database/NEW_ARCHIVE_TEST_RUN
+```
+
+The [source contract](../../utility/chemical_database/NATIVE_M3_ARCHIVE_SOURCES.md)
+describes the producer references and the difference between exact table
+reproduction and physical model qualification.
+
+The nightly protocol also checks the reviewed article and permission
+binding for the r7 publication. For the three independent sources in
+the published r7 tables, set `AMPS_CHECK_M3_LITERATURE_RELEASE=1` and use
+the r7 lock with the same shared runner. The tests compare published
+tokens, preserve the missing helium measurement, exercise the actual C++
+reader, and check that metadata-only records grant no payload access.
+
+The r8 source checks run against the explicit r8 lock with
+`AMPS_CHECK_M3_PARTIAL_RELEASE=1`. They compare every projected cross
+section and blank against the original XLSX cells, verify the three published
+He tables, exercise the C++ catalogue, and check held-payload behavior.
+The nightly protocol verifies the new version and rights pinning policies.
+
+For r9, set `AMPS_CHECK_CEX_SCATTERING_RELEASE=1` with the r9 lock to
+verify the unchanged D119990 CSV, source-review link, PDF permission
+hold and exact C++/Python definition records. The source-independent
+nightly protocol checks the two new definitions and their activation
+flags through the model API.
+
+Set `AMPS_CHECK_M3_LAB_RELEASE=1` with the r10 lock to compare the
+new OH and He rows with the printed tables and check the native
+C++ view and held-source behavior. The nightly protocol verifies
+the new publication and source-specific rights pins.
+
+The r11 installed-source checks select
+`AMPS_CHECK_M3_PHOTON_BENCHMARKS=1`, `AMPS_CHECK_OH_ICE_RELEASE=1`,
+`AMPS_CHECK_M3_HELIUM_EMISSION=1` and `AMPS_CHECK_SODIUM_SOURCE_RELEASE=1`
+with the explicit r11 lock. They check primary numerical cells, figure
+lineage, source permissions, relative versus absolute quantities, and
+shared-language table access. The nightly core database case exercises the
+source-independent protocol. Retain the real-source suite result separately.
+
+Select `AMPS_CHECK_WATER_YIELDS_RELEASE=1` to check the three
+21.2 eV water fragment signals, denominator, ion-collection bias and
+held proceedings metadata. [Water benchmark](../../utility/chemical_database/NATIVE_M3_WATER_BRANCH_SOURCES.md)
+
+For the r12 real-source suite, use its explicit lock and set
+`AMPS_CHECK_M3_PICKUP_PRECEDENT=1`, `AMPS_CHECK_WATER_PRECEDENT_RELEASE=1`,
+and `AMPS_CHECK_LUNAR_SURFACE_PRECEDENT_RELEASE=1` along with the earlier
+release selectors. Test discovery includes all three modules. They check
+the deposited 1 au frequencies, conditional water branches, identified
+source algorithms, and separate OH sticking, residence and launch
+assumptions. The core nightly protocol runs without external acquisitions.
+[Inputs, scope and query examples](../../utility/chemical_database/DATABASE_README.md#18-reproduce-published-exosphere-model-choices-in-r12)
+
+On the r13 lock, add `AMPS_CHECK_M3_LUNAR_NOBLE_GAS=1`,
+`AMPS_CHECK_LUNAR_WATER_COVERAGE_RELEASE=1` and
+`AMPS_CHECK_EXOSPHID_ATOMS_RELEASE=1` to the previous release selectors.
+The real-source checks verify the Table 1 rates, conversion to per-second
+frequencies, coverage and light conditions of the water model, and the
+thresholds and product labels in the atomic code. The nightly protocol
+also rejects altered inputs presented under the Peschel publication's
+permission policy. [r13 model sources](../../utility/chemical_database/DATABASE_README.md#19-lunar-neutral-losses-water-coverage-and-noble-gas-product-assumptions)
+
+### Sodium pickup and ground-state capture scenarios (r14)
+
+The publication test exercises the two named database models through the Python
+reader and through the C++ CSV reader. The independent oracles are Poppe Table 1
+(for the three Na median frequencies, rounded to paper precision), the deposited
+Na row (for full precision), and Shingal Table 4 (4.0 keV/u and 0.22 Å²).
+The tests require zero lunar-frame birth velocity for the bulk source, and the
+pair-COM isotropic law and two-body recoil for the ground-state case. A release
+omitting a case's native sources must omit that case. The nightly protocol checks
+source selection without external files. For the four source-backed checks supply the
+r14 lock and set `AMPS_CHECK_NA_REFERENCE_MODELS=1` in the shared suite. These
+checks verify data access and the physical meaning of the inputs. Linked ion
+trajectories, recoil spectra and return fractions require separate simulations.
+
+From the AMPS root, the following runs the shared suite and requires both sodium
+cases in the selected release. Other source-specific checks depend on the
+acquisitions present and the corresponding release selections.
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r14
+work=$(mktemp -d)
+AMPS_CHECK_NA_REFERENCE_MODELS=1 python3 -B test/chemical_database/run_all_tests.py \
+  --database-lock "$db/database-lock.json" --output-dir "$work/suite"
+```

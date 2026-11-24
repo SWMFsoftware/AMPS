@@ -67,3 +67,9 @@ state-formation gap. `SourceEqualsState` remains the strict default. See the
 accounting, refusal and independent-oracle requirements. Moving-parent photon
 transforms remain owned by the production physical-event composer, which calls
 this parent-rest kernel; the kernel itself does not infer a frame transformation.
+
+The same runner now exercises the charged three-product Jacobi construction
+and its parent-rest photon wrapper. Numerical tests include unequal masses,
+independently prescribed noncollinear directions, pure-mode limits, finite
+bulk motion and a state-resolved photon threshold. For the required physical
+partition inputs and independent oracle see the [I22 test notes](../integration-tests/I22/README.md#conditional-products-for-charged-water-breakup).

@@ -118,20 +118,49 @@ bool GeneralTwoBodyFinalState(const TwoBodyInput& input,FinalState* output,std::
 // SourceEffectivePhoton explicitly keeps the archived representative photon
 // energy while using a separately authenticated physical formation-state gap.
 enum class PhotonEnergyPolicy { SourceEqualsState, SourceEffectivePhoton };
-struct PhotonTwoBodyInput {
+// Energy accounting is identical for both multiplicities. The channel-specific
+// direction/partition inputs are supplied on the corresponding derived type.
+template<std::size_t N> struct ParentRestPhotonInput {
   ResolvedState parent;
-  std::array<ResolvedState,2> products;
+  std::array<ResolvedState,N> products;
   Vector3 parentMomentumKgMS{{0,0,0}},photonDirection{{0,0,0}};
   EnergyValue channelThreshold,meanExcess;
   PhotonEnergyPolicy energyPolicy=PhotonEnergyPolicy::SourceEqualsState;
   std::string sourceThresholdCrosswalkIdentity;
-  Real polarOpenUniform=0,azimuthOpenUniform=0;
   Context context;NumericControls controls;
+};
+struct PhotonTwoBodyInput : ParentRestPhotonInput<2> {
+  Real polarOpenUniform=0,azimuthOpenUniform=0;
 };
 // PARENT-REST inertial frame only: nonzero parent momentum is refused.
 // Complete products, reference material mass/charge, source-state threshold,
 // photon momentum and all energy terms are checked before output publication.
 bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::string* error);
+
+// Conditional I22 event construction. After the caller has accounted for
+// parent/photon momentum, internal states and COM motion, the remaining
+// energy is split between electron–pair and ion–neutral relative motion.
+// Both relative directions use the caller's common inertial axes. No RNG,
+// assumed equal sharing or assumed isotropy is built into this construction.
+struct ChargedPartition {
+  Vector3 electronRelativeToPair{},ionRelativeToNeutral{};
+  Real electronRelativeEnergyFraction=-1;
+  // The input distribution/explicit analytical fixture must be identified,
+  // separately from the frame and the model which supplied the total energy.
+  std::string partitionSourceIdentity;
+};
+struct ChargedBreakupInput : ChargedPartition {
+  ResolvedState electron,ion,neutral;
+  Vector3 totalMomentumKgMS{};
+  Real availableCOMKineticJ=-1;
+  Context context;NumericControls controls;
+};
+bool ChargedBreakupFinalState(const ChargedBreakupInput& input,FinalState* output,std::string* error);
+// For a state-resolved parent at rest, compute the source/state Q, photon
+// momentum and COM recoil before constructing all three product occurrences.
+// products[] is ordered electron, ion, neutral as in ChargedBreakupFinalState.
+struct PhotonChargedBreakupInput : ParentRestPhotonInput<3> { ChargedPartition partition; };
+bool PhotonChargedBreakup(const PhotonChargedBreakupInput& input,FinalState* output,std::string* error);
 
 struct ThreeBodyInput {
   std::array<ResolvedState,3> products;

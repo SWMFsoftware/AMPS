@@ -201,6 +201,7 @@ bool Prepared::Install(void* user,std::string* error){
   if(!status.ok()){*error=status.message;return false;}p.provider_=native;
   if(!SemanticRandom::RegisterStorage(p.request_.random,error))return false;
   Controller::Configuration c;c.identity=p.definition_.identity;c.eventFrame=Frames::SolarOrbital;c.catalog=p.definition_.catalog;
+  c.clockPrecision=p.request_.random.clockPrecision;
   c.resolveInitialState=Resolve;c.openUniform=SemanticRandom::DrawForParticle;c.userData=&p;c.ledger=&p.ledger_;
   c.elementaryChargeC=p.elementaryChargeC_;c.elementaryChargeSourceIdentity=p.elementaryChargeIdentity_;
   c.initializeProduct=SemanticRandom::InitializeStagedProduct;c.productInitializerIdentity="full-genealogy-HMAC-SHA256-child-key-v1";
@@ -247,7 +248,7 @@ bool Prepared::Kinematics(const Controller::EventContext& event,Species::Reactio
   if(!SemanticRandom::DrawForParticle(Controller::DrawPurpose::Kinematics,event.particle,event.channelIndex,nullptr,&polar,error)||
       !SemanticRandom::DrawForParticle(Controller::DrawPurpose::Kinematics,event.particle,event.channelIndex,nullptr,&azimuth,error)||
       !SemanticRandom::ProspectiveProductClockForParticle(event.particle,0,&u,error)||
-      !Species::ReactionExecution::OpticalDepthClock::FromOpenUniform(u,&input.freshIonClock,error))return false;
+      !Species::ReactionExecution::OpticalDepthClock::FromOpenUniform(u,&input.freshIonClock,error,p.request_.random.clockPrecision))return false;
   input.polarOpenUniform=polar;input.azimuthOpenUniform=azimuth;
   input.ionReferenceWeight=event.node->block->GetLocalParticleWeight(p.definition_.catalog[p.definition_.ion.catalogIndex].compiledSpecies);
   if(!EventFrame(p.request_,p.field_,event,&input,error))return false;

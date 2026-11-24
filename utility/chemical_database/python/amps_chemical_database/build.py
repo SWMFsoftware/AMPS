@@ -74,11 +74,12 @@ def _load_iaea():
     return module, source
 
 
-def _iaea_processing(root, prefix, datasets, source_rows, table_rows, table_metadata):
+def _iaea_processing(root, prefix, datasets, source_rows, table_rows, table_metadata,
+                     d119990_scope_review_id=None):
     """Bind permitted derived CSVs to exact native responses and real recipes.
 
     D107581 is a composite fit/plot representation, with a Patch and a Line;
-    D119990 is the distinct twelve-point measured partial. Reproduction checks
+    D119990 is a twelve-point compilation with a disputed state assignment. Reproduction checks
     preserve every renderer's native role and exact CSV bytes. They are source
     processing checks, never a fit, new observation or physical validation.
     """
@@ -86,6 +87,9 @@ def _iaea_processing(root, prefix, datasets, source_rows, table_rows, table_meta
     files = {file["logical_name"]: file for dataset in datasets
              if dataset["id"] == "iaea-collisiondb-research" for file in dataset["files"]}
     source_by_id = {row["source_id"]: row for row in source_rows}
+    sodium_evidence = {item["id"]: item.get("observed_sha256") for dataset in datasets
+                       if dataset["id"] == "sodium-ground-capture-benchmark-20261124"
+                       for item in dataset["files"]}
     result_members = {}
     for dataset_id, name in ((119990, "collisiondb_Na_H1s_119990.html"),
                              (107581, "collisiondb_Na3s_107581.html")):
@@ -106,6 +110,25 @@ def _iaea_processing(root, prefix, datasets, source_rows, table_rows, table_meta
             table_metadata[table_id]["processing"] = dict(record,
                 source_id=source["id"], source_object_path=source_by_id[source["id"]]["path"],
                 recipe_path=prefix + "/provenance/recipes/native_iaea.py")
+            if dataset_id == 119990 and d119990_scope_review_id:
+                # Add a documentary reference after native reproduction has
+                # authenticated the table. The label, columns and data hash
+                # stay verbatim. C++ also sees the note in the table index.
+                table_metadata[table_id]["source_scope_review_id"] = d119990_scope_review_id
+                row["notes"] += (". Rate/state crosswalk and 4 keV/u angular data are unresolved."
+                                 " See " + d119990_scope_review_id + ".")
+            # Earlier snapshots had only the rendered curve. When the original
+            # release member and the matching NIFS catalogue entry are present,
+            # put the figure identification next to the numeric CSV. The original
+            # 12 knots and published reaction label keep their native identities.
+            if (dataset_id == 119990 and
+                    sodium_evidence.get("iaea-d119990:release-2024.1") ==
+                    "418a70144dce1719c38ed4d72d5994ecf370c9bb8f5778722c689475df618537" and
+                    sodium_evidence.get("nifs-chart:38917-knoop") ==
+                    "939ccf8359d42778986eb34b3119315e3418446198e2ceb3be7949d12e8aa24e"):
+                table_metadata[table_id]["source_figure_review_dataset"] = "sodium-ground-capture-benchmark-20261124"
+                row["notes"] += (" Knoop et al. (2004), Figure 2, reports capture by target shell."
+                                 " It does not resolve the outgoing H(1s) partial. See sodium-ground-capture-benchmark-20261124.")
         for path in directory.iterdir():
             result_members[str(path.relative_to(root))] = sha256(path)
     return result_members, recipe
@@ -299,8 +322,10 @@ def build_database(amps_root, validation_root, output_root, release_id, source_p
         # No download receipt is invented for locally authored JSON/CSV.
         models, authored_members = (), {}
         if include_model_definitions:
-            from .model_definitions import materialize
-            dataset, models = materialize(root, release_id, amps_root)
+            from .model_definitions import D119990_SCOPE_REVIEW_ID, materialize
+            # Source-bound scenarios need the same authenticated packet inventory
+            # that supplies the numerical tables and publication metadata below.
+            dataset, models = materialize(root, release_id, amps_root, native_datasets)
             native_datasets.append(dataset)
             authored_members = {str(path.relative_to(root)): sha256(path)
                 for path in Path(dataset["expected_root"]).iterdir() if path.is_file()}
@@ -403,7 +428,8 @@ def build_database(amps_root, validation_root, output_root, release_id, source_p
             raise DatabaseError("InvalidInput", "duplicate dataset identifiers")
         prefix = "releases/" + release_id
         processing_members, native_iaea_source = _iaea_processing(
-            root, prefix, datasets, source_rows, table_rows, table_metadata)
+            root, prefix, datasets, source_rows, table_rows, table_metadata,
+            D119990_SCOPE_REVIEW_ID if include_model_definitions else None)
         catalogue_path = prefix + "/catalogue/catalogue.json"
         species, reactions = _reaction_metadata(validation_root)
         catalogue = {"schema": "amps-chemical-catalogue-v1", "datasets": datasets,

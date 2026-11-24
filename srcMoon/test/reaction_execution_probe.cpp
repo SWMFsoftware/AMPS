@@ -118,6 +118,36 @@ int main() {
   Check(!R::OpticalDepthClock::FromOpenUniform(std::numeric_limits<double>::quiet_NaN(),&saved,&error),"nonfinite draw refused");
   R::OpticalDepthClock copyClock;std::memcpy(&copyClock,&clock,sizeof(clock));
   Check(copyClock.fresh() && copyClock.remaining()==clock.remaining(),"clock byte-storage roundtrip");
+  // Decimal ln(2) from the alternating/atanh log series, independent of
+  // native libm. A binary64 log alone loses about 2.3e-17 at this input.
+  // Compare both retained components, including after an ordinary PIC-style
+  // byte copy, rather than comparing their rounded binary64 projection.
+  const auto extendedMode=R::OpticalDepthPrecision::CompensatedExtendedLog;
+  R::OpticalDepthClock extended;
+  if (std::numeric_limits<long double>::radix==2 &&
+      std::numeric_limits<long double>::digits>std::numeric_limits<double>::digits &&
+      std::numeric_limits<long double>::digits<=2*std::numeric_limits<double>::digits) {
+    double high=0,low=0;
+    const long double ln2=0.693147180559945309417232121458176568075500134360255254120680L;
+    Check(R::OpticalDepthClock::FromOpenUniform(.5,&extended,&error,extendedMode) &&
+        extended.PendingDepthComponents(&high,&low,&error) && low!=0 &&
+        std::abs(extended.remainingExtended()-ln2)<std::abs(static_cast<long double>(clock.remaining())-ln2),
+        "compensated source log resolves independently known ln(2) more closely");
+    R::OpticalDepthClock migrated;
+    std::memcpy(&migrated,&extended,sizeof(extended));
+    Check(migrated.fresh() && migrated.SamePendingDepth(extended) && !migrated.SamePendingDepth(clock),
+        "extended clock preserves both physical depth components across an opaque copy");
+  }
+  else {
+    Check(!R::OpticalDepthClock::FromOpenUniform(.5,&extended,&error,extendedMode) && !extended.valid(),
+        "unsupported host cannot silently claim a higher precision optical clock");
+  }
+  const auto beforeInvalid=extended;
+  Check(!R::OpticalDepthClock::FromOpenUniform(0,&extended,&error,extendedMode) &&
+      (!beforeInvalid.valid() || extended.SamePendingDepth(beforeInvalid)),
+      "invalid explicit physical source draw leaves extended clock unchanged");
+  Check(!R::OpticalDepthClock::FromOpenUniform(.5,&extended,&error,
+      static_cast<R::OpticalDepthPrecision>(-1)), "unknown optical-clock precision is refused");
   double delay=-1;
   const long double exactDelay=static_cast<long double>(clock.remaining())/3;
   Check(R::ConstantHazardEventDelay({{0,1},{1,2}},clock,&delay,&error) &&

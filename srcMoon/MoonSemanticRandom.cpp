@@ -18,7 +18,11 @@ bool Fingerprint(const Configuration& c,std::uint64_t* out,std::string* e){
   Q::Key key;key.campaignSeed=c.seed;key.cohort=c.cohort;key.originalParent=0;
   // Capacity and seed/cohort are part of opaque record interpretation. This
   // integrity tag is not a substitute for the full retained SHA provenance.
-  key.genealogy={static_cast<std::uint64_t>(c.genealogyCapacity)};std::string hash;
+  key.genealogy={static_cast<std::uint64_t>(c.genealogyCapacity)};
+  // Domain-separate only the storage fingerprint. Every physical draw uses
+  // the same seed, semantic key and counters regardless of clock arithmetic.
+  if(c.clockPrecision!=Species::ReactionExecution::OpticalDepthPrecision::Binary64Log)key.genealogy.push_back(1);
+  std::string hash;
   if(!Q::DigestHex(key,Q::Purpose::SourceClock,0,&hash,e))return false;
   std::uint64_t x=0;for(unsigned i=0;i<16;++i){const char h=hash[i];x=(x<<4)|static_cast<unsigned>(h<='9'?h-'0':h-'a'+10);}*out=x;return true;
 }
@@ -117,9 +121,9 @@ bool InitializeStagedProduct(const Species::ReactionExecution::EventPlan& plan,s
   State parent,next;if(!Read(p,&parent,e)||!ChildState(*active,parent,ordinal,true,&next,e))return false;
   double u=0;Species::ReactionExecution::OpticalDepthClock expected;
   if(ordinal>=plan.products().size()||!ProspectiveProductClock(*active,parent,ordinal,&u,e)||
-      !Species::ReactionExecution::OpticalDepthClock::FromOpenUniform(u,&expected,e))return false;
+      !Species::ReactionExecution::OpticalDepthClock::FromOpenUniform(u,&expected,e,active->clockPrecision))return false;
   const auto& actual=plan.products()[ordinal].clock;
-  if(!actual.fresh()||actual.consumed()||actual.remainingExtended()!=expected.remainingExtended())
+  if(!actual.fresh()||actual.consumed()||!actual.SamePendingDepth(expected))
     return Reject(e,"staged daughter's supplied optical clock was not constructed from its declared full semantic key/draw0; publication refused");
   return Write(child,next,e);
 }

@@ -478,6 +478,12 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
   double CellSize,CharacteristicSpeed;
 
   switch (spec) {
+    // An H emerging from charge exchange can carry most of the beam energy.
+    // Use its declared cell-crossing speed, including when other species use
+    // local steps. Startup checks the setting before allocating the mesh.
+    case _H_SPEC_:
+      CharacteristicSpeed=Moon::Runtime::GetConfiguration().hydrogenCharacteristicSpeedMS;
+      break;
 	  case _NA_SPEC_: case _HE_SPEC_:case _NE_SPEC_: case _AR_SPEC_: 
     CharacteristicSpeed=2.0E3;
     break;
@@ -1358,6 +1364,11 @@ void amps_init() {
     // Runtime tracing reserves persistent physical-time fields before any
     // source, mover or MPI transfer can allocate a particle. Legacy receipts
     // return immediately and retain their exact historical particle layout.
+    const bool hydrogenConfigured=Moon::Runtime::GetConfiguration().hydrogenCharacteristicSpeedMS>0;
+    if ((_H_SPEC_>=0)!=hydrogenConfigured)
+      exit(__LINE__,__FILE__,"Moon tracked H requires hydrogen_characteristic_speed_m_s and "
+          "hydrogen_to_sodium_reference_weight_ratio in the Moon .in section. "
+          "Supply both controls when H is compiled, or omit both when H is absent.");
     Moon::RegisterParticleTracing();
 
 #if _PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ == _PIC_MODE_ON_
@@ -2161,6 +2172,14 @@ if (writeMeshTecplot) {
 
     PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=localParticleInjectionRate;
     PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_NA_SPEC_);
+
+    // H is produced by a reaction and has no primary injection rate in this
+    // case. The ratio defines its reference packet size; the transaction
+    // computes the individual correction to conserve represented atoms.
+    if (_H_SPEC_>=0) {
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(
+          _H_SPEC_,_NA_SPEC_,Moon::Runtime::GetConfiguration().hydrogenToSodiumReferenceWeightRatio);
+    }
 
     //copy the weight and time step from Na neutra to Na ions
     if (_NA_PLUS_SPEC_>=0) {

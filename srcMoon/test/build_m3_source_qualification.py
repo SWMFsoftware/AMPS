@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded source-bound Na/Na+ build in an explicit disposable checkout only.
+"""Bounded source-bound Na/Na+ or Na/Na+/H build in a disposable checkout.
 
 No particle execution or source qualification is inferred. Public invocation
 is from the active checkout; its private worker uses the normal maintained
@@ -28,6 +28,7 @@ WORKFLOW=('srcMoon/test/build_m3_source_qualification.py','srcMoon/test/build_m2
  'srcMoon/test/campaign_budget.py','utility/chemical_database/state_profiles/compile_recipe/prepare.py',
  'utility/chemical_database/state_profiles/compile_recipe/export.cpp')
 EXPECTED_MAPPING={'Na':'23Na:ground','NA_PLUS':'23Na+:ground'}
+GROUND_CAPTURE_MAPPING = {**EXPECTED_MAPPING, 'H': '1H:ground'}
 
 
 def strict(path):
@@ -43,8 +44,12 @@ def strict(path):
 
 def validate_mapping(path):
     value=strict(path)
-    if value!=EXPECTED_MAPPING or list(value)!=list(EXPECTED_MAPPING):
-        raise ValueError('explicit ordered mapping must be Na->23Na:ground, NA_PLUS->23Na+:ground')
+    # The third tracked particle is the fast H atom formed from the incident
+    # plasma proton. Only the collision fixture requests this ABI. The order
+    # fixes the species indices shared by the native PIC allocator and mover.
+    if not isinstance(value, dict) or list(value.items()) not in (
+            list(EXPECTED_MAPPING.items()), list(GROUND_CAPTURE_MAPPING.items())):
+        raise ValueError('expected ordered ground-state mapping for Na, NA_PLUS and optionally H')
     return value
 
 

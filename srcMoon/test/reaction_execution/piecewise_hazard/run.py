@@ -49,6 +49,12 @@ def fixtures():
     constant = [segment(0, 2, (11, 2, 2))]
     add("constant", constant, 2)
     add("constant_exposure", constant, 2, operation="integrate")
+    # All three inputs are exact binary rationals. The event time lies strictly
+    # inside the segment. Weighted affine interpolation of the equal endpoints
+    # previously returned 5.18750000000000000043 on x86 extended precision,
+    # and broke the exact rate-identity check in the real I24 collision owner.
+    add("exact_constant_interior", [segment(0,"2202.375",(11,"5.1875","5.1875"))],
+        "2202.375","258.5")
     add("zero_hazard_no_event", [segment(0, 2, (11, 0, 0))], 2)
     add("rising", [segment(0, 2, (11, 0, 4))], 2)
     add("falling", [segment(0, 2, (11, 2, 0))], 2)
@@ -290,6 +296,12 @@ def run(output, compiler="g++"):
                 rates = {int(k): Decimal(a)+(Decimal(b)-Decimal(a))*(event-first)/(last-first) for k, a, b in s["channels"]}
                 check(name+"/instantaneous-channel-identities", set(row["rates"]) == set(rates))
                 for k, expected in rates.items(): number("instantaneous-rate-"+str(k), row["rates"].get(k, "NaN"), expected)
+                if name == "exact_constant_interior":
+                    # A constant channel returns its stored rate at any event.
+                    # The generic affine roundoff allowance does not apply.
+                    check(name+"/constant-rate-identity", Decimal(row["rates"][11]) == Decimal("5.1875")
+                          and Decimal(total_rate) == Decimal("5.1875"),actual=row["rates"][11],
+                          expected="5.1875")
                 number("instantaneous-total", total_rate, sum(rates.values(), Decimal(0)))
                 if case["exact_binary"]:
                     at = cumulative_at(mathematical_case, begin, event); before = cumulative_at(mathematical_case, begin, predecessor)

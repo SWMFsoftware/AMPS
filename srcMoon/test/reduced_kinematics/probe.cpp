@@ -133,6 +133,57 @@ int main() {
     badPhoton=photon;badPhoton.photonDirection={{0,0,0}};Refusal("invalid-photon-direction",badPhoton,K::PhotonTwoBody);
     badPhoton.controls.unitVectorTolerance=2;Refusal("zero-photon-direction-even-with-wide-bound",badPhoton,K::PhotonTwoBody);
     badPhoton=photon;badPhoton.parent=x;Refusal("incomplete-material-products",badPhoton,K::PhotonTwoBody);
+    // Prescribed analytical fractional energies and directions exercise the
+    // charged three-product map. These controls make no claim about the
+    // spectrum or states populated by photodissociation of lunar water.
+    K::ChargedBreakupInput charged;
+    charged.electron=electron;charged.ion=ion;charged.neutral=b;
+    charged.availableCOMKineticJ=4;charged.electronRelativeEnergyFraction=.25L;
+    charged.electronRelativeToPair={{0,1,0}};charged.ionRelativeToNeutral={{.6L,0,.8L}};
+    charged.context={"ANALYTICAL-INERTIAL","ANALYTICAL-COM-ENERGY"};charged.controls=Controls();
+    charged.partitionSourceIdentity="ANALYTICAL-DECLARED-PARTITION";
+    auto chargedCase=[&](const std::string& name,const K::ChargedBreakupInput& input) {
+      const bool ok=K::ChargedBreakupFinalState(input,&event,&error);
+      Check(name,ok);
+      if(ok)Emit(name,event);else std::cerr<<name<<": "<<error<<'\n';
+    };
+    chargedCase("charged-rest",charged);
+    charged.totalMomentumKgMS={{3,-2,1}};
+    chargedCase("charged-drift",charged);
+    auto endpoint=charged;endpoint.electronRelativeEnergyFraction=0;endpoint.electronRelativeToPair={};
+    chargedCase("charged-heavy-only",endpoint);
+    endpoint=charged;endpoint.electronRelativeEnergyFraction=1;endpoint.ionRelativeToNeutral={};
+    chargedCase("charged-electron-only",endpoint);
+    endpoint.availableCOMKineticJ=0;endpoint.electronRelativeToPair={};
+    chargedCase("charged-at-threshold",endpoint);
+    auto badCharged=charged;badCharged.partitionSourceIdentity.clear();
+    Refusal("unsourced-charged-partition",badCharged,K::ChargedBreakupFinalState);
+    badCharged=charged;badCharged.electronRelativeEnergyFraction=1.01L;
+    Refusal("nonphysical-charged-partition",badCharged,K::ChargedBreakupFinalState);
+    badCharged=charged;std::swap(badCharged.ion,badCharged.neutral);
+    Refusal("wrong-charged-product-class",badCharged,K::ChargedBreakupFinalState);
+    badCharged=charged;badCharged.electronRelativeToPair={};
+    Refusal("missing-active-mode-direction",badCharged,K::ChargedBreakupFinalState);
+    badCharged=charged;badCharged.electronRelativeEnergyFraction=1e-100L;
+    Refusal("charged-small-mode-lost-in-boost",badCharged,K::ChargedBreakupFinalState);
+    K::PhotonChargedBreakupInput fragment;
+    fragment.parent=Resolve("XB",{{"X",1},{"B",1}},0,-3);
+    fragment.products={{electron,ion,b}};
+    fragment.partition=charged;
+    fragment.channelThreshold={8,"ANALYTICAL-XB-THRESHOLD"};fragment.meanExcess={4,"ANALYTICAL-XB-EXCESS"};
+    fragment.photonDirection={{1,0,0}};fragment.context=charged.context;fragment.controls=charged.controls;
+    if(K::PhotonChargedBreakup(fragment,&event,&error)) {
+      Check("charged-photon",true);Emit("charged-photon",event);
+      Check("charged-complete-state-terms",event.photonIncluded&&event.formationBalance.terms.size()==4&&
+            event.products.size()==3&&event.products[0].state.definition().elementaryCharge==-1);
+    }
+    else {Check("charged-photon",false);std::cerr<<error<<'\n';}
+    auto badFragment=fragment;badFragment.products[2]=o;
+    Refusal("charged-photon-isotope-mismatch",badFragment,K::PhotonChargedBreakup);
+    badFragment=fragment;badFragment.parentMomentumKgMS[0]=1;
+    Refusal("charged-photon-nonrest-parent",badFragment,K::PhotonChargedBreakup);
+    badFragment=fragment;badFragment.channelThreshold.joules-=1;
+    Refusal("charged-photon-incompatible-threshold",badFragment,K::PhotonChargedBreakup);
     K::ThreeBodyInput three;three.products={{o,h,h}};three.availableCOMKineticJ=1;
     three.standardNormals={{{{1,2,-1}},{{2,-1,.5L}},{{-.2L,.7L,-2}}}};
     three.context={"ANALYTICAL-INERTIAL","ANALYTICAL-THREE-BODY"};three.controls=Controls();

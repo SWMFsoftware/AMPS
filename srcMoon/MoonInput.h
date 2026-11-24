@@ -173,6 +173,12 @@ struct Configuration {
   double tracingTimeToleranceS=0;
   double tracingMinimumSubstepS=0;
   double tracingMaximumSubstepS=0;
+  // Neutral H can be a fast charge-exchange product. Both its characteristic
+  // speed in m/s (for the cell-crossing timestep) and its dimensionless
+  // reference weight relative to Na are explicit numerical case choices.
+  // Zero for both fields denotes omission in a build without tracked H.
+  double hydrogenCharacteristicSpeedMS=0;
+  double hydrogenToSodiumReferenceWeightRatio=0;
   bool tracingAdaptive=false;
   int tracingMaximumSubsteps=0,tracingMaximumRefinements=0;
   int tracingMaximumInteractions=0,tracingMaximumSamePointInteractions=0;

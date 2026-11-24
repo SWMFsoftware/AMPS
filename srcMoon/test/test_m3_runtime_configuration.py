@@ -116,6 +116,27 @@ def run_checks(output):
                 ('unknown-capture-model',change(both,'charge_exchange_rate_model','scaled-argon-assumed'),3,None),
                 ('disabled-capture-settings',change(both,'charge_exchange_rate_model','disabled'),3,None),
             ]
+            # These dimensioned, exactly representable test values distinguish
+            # swapped fields from correct parsing. They are parser fixtures,
+            # not recommended cell-crossing speeds or physical species weights.
+            speed_key = 'hydrogen_characteristic_speed_m_s'
+            ratio_key = 'hydrogen_to_sodium_reference_weight_ratio'
+            hydrogen = change(change(base,speed_key,'1.5625e4'),ratio_key,'0.03125')
+            variants.extend([
+                ('hydrogen-complete',hydrogen,0,None),
+                ('hydrogen-programmatic-incomplete',hydrogen,0,'reject-incomplete-hydrogen'),
+                ('hydrogen-speed-alone',change(base,speed_key,'15625'),3,None),
+                ('hydrogen-ratio-alone',change(base,ratio_key,'0.03125'),3,None),
+            ])
+            hydrogen_diagnostics = {'hydrogen-speed-alone':ratio_key, 'hydrogen-ratio-alone':speed_key}
+            # Explicit zero cannot mean "omitted". A partial group, a signed
+            # value, a non-finite value and a trailing unit are parser errors.
+            for role, key in (('speed',speed_key),('ratio',ratio_key)):
+                for label, invalid in (('zero','0'),('negative','-1'),('infinite','inf'),
+                                       ('nan','nan'),('trailing-unit','4 m/s')):
+                    name = 'hydrogen-'+role+'-'+label
+                    variants.append((name,change(hydrogen,key,invalid),3,None))
+                    hydrogen_diagnostics[name] = key
             for order in ('first','second'):
                 tracing=(ROOT/f'srcMoon/examples/m3_tracing_{order}_order.in').read_text()
                 variants += [(order+'-order-tracing',tracing,0,None),
@@ -145,6 +166,12 @@ def run_checks(output):
                 elif expected==3 and values.get('parse_preserved')!='1':errors.append('failed parse mutated output')
                 elif expected==4 and values.get('install_preserved')!='1':errors.append('failed install published a registry')
                 elif expected==0:
+                    if name in ('legacy','hydrogen-complete','hydrogen-programmatic-incomplete'):
+                        pair = tuple(float(values.get(key,'nan')) for key in (speed_key,ratio_key))
+                        if pair != ((0,0) if name=='legacy' else (15625,0.03125)):
+                            errors.append('installed hydrogen speed or reference-weight ratio differs from input')
+                    if mode=='reject-incomplete-hydrogen' and values.get('incomplete_hydrogen_install_preserved')!='1':
+                        errors.append('incomplete direct install was not refused before the successful retry')
                     if name in ('quiet-photons','active-photons','all-rate-registries','registry-install-rollback'):
                         solar='active' if name=='active-photons' else 'quiet'
                         if values.get('photon_catalogue_rows')!='17' or values.get('photon_reactive_rows')!='15':
@@ -167,6 +194,8 @@ def run_checks(output):
                         errors.append('existing independent clock default changed')
                 if name.endswith('-m2-parse-refusal') and 'm2_environment=disabled' not in native.stderr:
                     errors.append('wrong refusal: unsupported physical-time coupling was not identified')
+                if name in hydrogen_diagnostics and hydrogen_diagnostics[name] not in native.stderr:
+                    errors.append('expected hydrogen setting was absent from the parser diagnostic')
                 status='ERROR' if native.returncode<0 else 'FAIL' if errors else 'PASS'
                 result['checks'].append({'name':name,'status':status,'command':invocation,
                     'expected_returncode':expected,'returncode':native.returncode,'errors':errors,

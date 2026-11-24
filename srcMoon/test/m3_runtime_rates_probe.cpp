@@ -12,10 +12,14 @@ int main(int argc,char** argv) {
   Moon::Runtime::Configuration configuration;
   // A failed native parse must leave a caller's previous configuration intact.
   configuration.randomSeed=-12345;
+  configuration.hydrogenCharacteristicSpeedMS=17.5;
+  configuration.hydrogenToSodiumReferenceWeightRatio=1.25;
   std::string error;
   if (!Moon::Runtime::ParseApplicationInput(argv[1],&configuration,&error)) {
     std::cerr<<error<<'\n';
-    std::cout<<"parse_preserved="<<(configuration.randomSeed==-12345)<<'\n';
+    std::cout<<"parse_preserved="<<(configuration.randomSeed==-12345 &&
+        configuration.hydrogenCharacteristicSpeedMS==17.5 &&
+        configuration.hydrogenToSodiumReferenceWeightRatio==1.25)<<'\n';
     return 3;
   }
   if (argc==3 && std::string(argv[2])=="rollback") {
@@ -47,6 +51,17 @@ int main(int argc,char** argv) {
         error.find("m2_environment=disabled")==std::string::npos) return 10;
     std::cout<<"incompatible_m2_install_preserved=1\n";
   }
+  if (argc==3 && std::string(argv[2])=="reject-incomplete-hydrogen") {
+    // A caller installing a Configuration directly can also lose one of
+    // these inputs. Verify that failing this check leaves the singleton free
+    // for the valid, complete retry below.
+    auto incomplete=configuration;
+    incomplete.hydrogenToSodiumReferenceWeightRatio=0;
+    if (Moon::Runtime::InstallConfiguration(incomplete,&error) ||
+        Moon::Runtime::HasConfiguration() ||
+        error.find("hydrogen_to_sodium_reference_weight_ratio")==std::string::npos) return 11;
+    std::cout<<"incomplete_hydrogen_install_preserved=1\n";
+  }
   if (!Moon::Runtime::InstallConfiguration(configuration,&error)) {
     std::cerr<<error<<'\n';
     std::cout<<"install_preserved="<<(!Moon::Runtime::HasConfiguration() &&
@@ -71,7 +86,9 @@ int main(int argc,char** argv) {
   std::cout<<"tracing_mover="<<actual.particleTracingMover<<'\n'
       <<"tracing_clock_mode="<<actual.tracingClockMode<<'\n'
       <<"tracing_maximum_substep_s="<<actual.tracingMaximumSubstepS<<'\n'
-      <<"tracing_field_frame="<<actual.tracingFieldFrame<<'\n';
+      <<"tracing_field_frame="<<actual.tracingFieldFrame<<'\n'
+      <<"hydrogen_characteristic_speed_m_s="<<actual.hydrogenCharacteristicSpeedMS<<'\n'
+      <<"hydrogen_to_sodium_reference_weight_ratio="<<actual.hydrogenToSodiumReferenceWeightRatio<<'\n';
   if (photons) {
     using Moon::Species::Photochemistry::SolarCase;
     const auto solar=actual.photochemistrySolarCase=="quiet" ? SolarCase::Quiet : SolarCase::Active;

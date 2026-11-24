@@ -64,3 +64,57 @@ the published fit over its finite range and records the result separately
 in `kim_model_comparison.json`. It compares the predicted rate and incident
 mean, with numerical quadrature errors distinct from physical data and
 fit uncertainty. [Kim, 1992](https://doi.org/10.6028/jres.097.032)
+
+Shared r11 records two independent absolute He II 30.4 nm emission
+measurements at 200 eV and distinguishes them from the direct He⁺ 2s and
+2p production calculations. Use the recorded photon observable, cascade
+and polarization conditions when comparing those results. All-state
+Maxwellian excitation and recoil budgets remain open.
+[Helium evidence](../../../../utility/chemical_database/NATIVE_M3_HELIUM_EMISSION_SOURCES.md)
+
+Turner et al.'s multi-code helium discharge benchmark assumes isotropic
+scattering in the center-of-mass frame and divides the residual ionization
+energy equally between the two electrons. Its purpose is to test whether
+different particle codes solve the same prescribed problem. The published
+WarpX binary-ionization routine also specifies the angular and energy-sharing
+assumptions and includes ion recoil when solving the energy budget. Both
+provide examples for event-conservation tests. The populated electronic state
+of the residual He⁺ requires separate physical evidence. [Turner et al., section I](https://doi.org/10.1063/1.4775084)
+[WarpX implementation](https://warpx.readthedocs.io/en/26.06/_static/doxyhtml/_split_and_scatter_func_8_h_source.html#l00504)
+
+Peterson, Beaty and Opal measured the emitted electron's energy and angle
+for incident electron energies of 100 eV to 2 keV. The incident-energy range
+and single-electron observable limit its use for the controlled 10 eV
+Maxwellian ensemble. Applying it there would require the collision-weighted
+coverage of that energy interval and a separate residual-state assignment.
+[Primary helium experiment](https://doi.org/10.1103/PhysRevA.5.712)
+
+With `--kim-1992-pdf`, the pilot additionally evaluates the fraction of the
+helium ionization rate at `Te = 10 eV` whose incident energy lies between 100 eV
+and 2 keV, the limits of the Peterson et al. experiment. It uses the electron
+flux times the Kim total single-ionization cross section and normalizes within
+Kim's threshold-to-10-keV domain. The resulting fraction is about **0.5321%**.
+The JSON records the contributions below, inside and above the window, plus an
+independent whole-domain quadrature check. The eligible interval includes
+unsampled laboratory energies. This result quantifies the incident-energy overlap. A residual He⁺ state
+assignment still requires separate evidence.
+[Kim total-cross-section fit](https://doi.org/10.6028/jres.097.032) ·
+[Peterson, Beaty and Opal](https://journals.aps.org/pra/abstract/10.1103/PhysRevA.5.712)
+
+The r14 catalogue exposes the Opal secondary-energy marginal and the
+parent-velocity heavy-ion reservoir as separate model definitions. The
+approved reduced reservoir requires only a bounded heavy-particle observable.
+It can account for one incident and two outgoing electrons collectively,
+without reconstructing a fully differential outgoing-electron spectrum. At
+10 eV its known Voronov coefficient and logarithmic slope determine a
+**model** mean. Admitting the physical helium row still requires a
+source/state threshold mapping, uncertainties on the temperature-dependent
+shape or conditional moment (including the tail), an excited-state bound,
+and a tolerable omitted-ion-impulse/mass-convention bound for the declared
+observable. The linked exposure also needs the prescribed electron bath.
+The 200 eV He II emission and discrete-energy electron distributions can test
+limited parts of that construction. The Turner and WarpX recipes support
+separate code comparisons for a chosen partition. A switch to one requires
+an explicit new model choice and a state assignment. The full I23 numerical
+and weighted event-budget gates remain open.
+[Reduced heavy-product contract](../../M3_RESERVOIR_PRODUCTS_CONTRACT.md)

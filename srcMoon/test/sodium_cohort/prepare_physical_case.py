@@ -162,7 +162,7 @@ def validate_controls(case_path):
     if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]*', cohort):
         raise ValueError('cohort_id must be one unquoted native owner name')
     controls = value['controls']
-    unknown = set(controls) - REQUIRED - WEIGHT_KEYS
+    unknown = set(controls) - REQUIRED - WEIGHT_KEYS - {'optical_clock_precision'}
     if unknown:
         raise ValueError('unknown case controls: ' + ', '.join(sorted(unknown)))
     missing = [k for k in sorted(REQUIRED) if controls.get(k) is None]
@@ -173,6 +173,14 @@ def validate_controls(case_path):
         result[key] = safe(controls[key], key)
         if result[key] != result[key].strip():
             raise ValueError(key + ': leading/trailing scalar whitespace is not preserved by native parsing')
+    # Omitted selectors preserve the complete historical native input. An
+    # explicit policy must survive writing native.in; treating a misspelling
+    # as the legacy clock would compare different numerical experiments.
+    if 'optical_clock_precision' in controls:
+        selected=controls['optical_clock_precision']
+        if selected not in ('binary64-log','compensated-extended-log'):
+            raise ValueError('optical_clock_precision must be binary64-log or compensated-extended-log')
+        result['optical_clock_precision']=selected
     weight_mode = result['reference_weight_mode']
     if weight_mode == 'explicit':
         if any(controls.get(k) is None for k in WEIGHT_KEYS):

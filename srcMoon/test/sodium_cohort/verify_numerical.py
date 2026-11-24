@@ -15,6 +15,7 @@ from pathlib import Path
 import struct
 import sys
 import math
+import re
 from fractions import Fraction
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -106,6 +107,81 @@ def inverse_square_checks(events,reference_rate):
                     'relative_limit':str(I21_INVERSE_SQUARE_RELATIVE_LIMIT),'status':'PASS' if passed else 'FAIL'})
     return {'status':'FAIL' if any(r['status']=='FAIL' for r in checks) else 'PASS','checks':checks,
         'events_evaluated':len(events),'scope':'existing fixed I21 inverse-square criterion; empty set is only a bookkeeping identity'}
+
+
+def lunar_segment_geometry(source, sun, radius_m):
+    """Project the origin onto the *finite* source-to-Sun segment in LSO metres.
+
+    Fraction parses the printed SI coordinates exactly. Keeping the decision
+    in squared distance avoids introducing rounding in the grazing case. The
+    square root is used only for the human-readable distance in the artifact.
+    """
+    if len(source) != 3 or len(sun) != 3:
+        raise ValueError('source and Sun need exactly three LSO coordinates')
+    point = [Fraction(value) for value in source]
+    ray = [Fraction(value)-initial for value,initial in zip(sun,point)]
+    radius = Fraction(radius_m)
+    norm2 = sum(value*value for value in ray)
+    if radius <= 0 or norm2 == 0:
+        raise ValueError('positive lunar radius and nonzero finite solar segment required')
+    projection = -sum(initial*delta for initial,delta in zip(point,ray))/norm2
+    position = min(Fraction(1),max(Fraction(0),projection))
+    distance2 = sum((initial+position*delta)**2 for initial,delta in zip(point,ray))
+    return {'intersection': 'interior' if distance2 < radius*radius else
+            'exterior' if distance2 > radius*radius else 'tangent',
+            'radius_m': str(radius), 'closest_segment_fraction': str(position),
+            'minimum_distance_squared_m2': str(distance2),
+            'minimum_distance_m': math.sqrt(float(distance2))}
+
+
+def fixed_moon_shadow(plan,launch,receipt):
+    """Certify a lunar-only dark case independently of the native rate and flag.
+
+    An authenticated fixed-position launch enforces both zero velocity and the
+    zero-force binding. With the frozen environment one segment is sufficient
+    for the entire physical horizon. Other geometries need a different oracle.
+    """
+    from m2_initial_state import assignments
+    if receipt['case_kind'] != 'homogeneous-fixed-position':
+        raise q.MissingPrerequisite('fixed lunar shadow requires a stationary source')
+    # prepare_cohort freezes the generated native input followed by the actual
+    # application root and its recursive includes. The owner authenticates
+    # the complete graph before invoking this check.
+    native_input=Path(launch['input']['path'])
+    documents=launch['input_documents']
+    if len(documents)<2 or Path(documents[0]['path']).resolve()!=native_input.resolve():
+        raise ValueError('missing native or application root in frozen input graph')
+    application=Path(documents[1]['path'])
+    settings=assignments(application)
+    earth=re.findall(r'^\s*earth_occultation\s*=\s*(off|on)\s*$',native_input.read_text(),re.M)
+    if (settings.get('surface_geometry',{}).get('value')!='sphere'
+            or settings.get('simulation_environment_mode',{}).get('value')!='frozen'
+            or earth!=['off']):
+        raise q.MissingPrerequisite('fixed lunar-only oracle requires a frozen sphere and Earth occultation off')
+    descriptor=plan['native_adapter']['producer_manifest']
+    path=Path(descriptor['path'])
+    if q.sha(path)!=descriptor['sha256']:
+        raise ValueError('frozen native producer manifest changed')
+    producer=q.strict_object(path)
+    key='src/general/constants.PlanetaryData.h'
+    header=Path(producer['source_root'])/key
+    if not header.is_file():
+        raise q.MissingPrerequisite('production lunar-radius source unavailable')
+    if q.sha(header)!=producer['production_source_hashes'][key]:
+        raise ValueError('lunar-radius source differs from the compiled producer')
+    radii=re.findall(r'^\s*#define\s+_MOON__RADIUS_\s+([0-9.eE+-]+)\s*$',header.read_text(),re.M)
+    if len(radii)!=1:
+        raise ValueError('expected one explicit lunar radius in metres in the compiled planetary constants')
+    reference=reference_receipt(receipt)
+    geometry=lunar_segment_geometry(reference['source_position_lso_m'],reference['sun_position_lso_m'],radii[0])
+    if geometry['intersection']=='tangent':
+        raise q.MissingPrerequisite('exact grazing contact has no strict fixed lunar-shadow classification')
+    geometry.update(status='PASS' if geometry['intersection']=='interior' and reference['point_sun_visible']==0 else 'FAIL',
+        production_point_sun_visible=reference['point_sun_visible'],
+        lunar_radius_source={'path':str(header),'sha256':q.sha(header)},
+        application_input={'path':str(application),'sha256':q.sha(application)},
+        frame='Moon-centred LSO',geometry_basis_epoch_et_s=reference['geometry_basis_epoch_et_s'])
+    return geometry
 
 
 def reference_receipt(receipt):
@@ -302,15 +378,66 @@ class StraightLineExposure:
         return root(threshold),root(threshold*(1+self.relative_projection_bound))
 
 
+def homogeneous_timing_breakdown(depth,reference_rate,native,display_text,precision='binary64-log'):
+    """Signed time differences in seconds, independent of the acceptance test.
+
+    The historical source clock stores binary64 -log(U). Its archived
+    receipts retain the native event time and instantaneous rate, but do not
+    serialize the original libm result. Calculate the correctly rounded clock
+    independently from Decimal's log, and attribute any discrepancy between
+    libm and that reference to the *combined* transport remainder. In a
+    compensated-extended-log case the receipt does not separately retain the
+    evaluated libm result. Use the unrounded Decimal depth for the accepted
+    rate comparison, and leave the extended log contribution inside the
+    combined native clock/transport remainder rather than estimating it.
+    In a homogeneous case a diagnostic first-hit root at the actual instantaneous
+    rate does not require a model of the integration/clock update history.
+    """
+    def decimal_fraction(value):
+        return Decimal(value.numerator)/Decimal(value.denominator)
+
+    with localcontext() as context:
+        context.prec=80
+        if not {'accepted_rate_s','relative_event_time_s'}<=native.keys():
+            raise ValueError('homogeneous first hit requires the exact native time and accepted rate')
+        rate=decimal_fraction(native['accepted_rate_s'])
+        if depth<=0 or reference_rate<=0 or rate<=0:
+            raise ValueError('a homogeneous first hit requires positive optical depth and rates')
+        if precision not in ('binary64-log','compensated-extended-log'):
+            raise ValueError('unsupported optical clock precision in native receipt')
+        clock_depth=Decimal.from_float(float(depth)) if precision=='binary64-log' else depth
+        independent=depth/reference_rate
+        clock_at_reference_rate=clock_depth/reference_rate
+        root_at_native_rate=clock_depth/rate
+        exact_native=decimal_fraction(native['relative_event_time_s'])
+        projected=Decimal.from_float(float(native['relative_event_time_s']))
+        displayed=Decimal(display_text)
+        # Preserve a missing component in extended mode. Reporting zero
+        # would imply exact knowledge of the native libm rounding error.
+        quantified_clock = ({'source_clock_rounding_s':clock_at_reference_rate-independent}
+                            if precision=='binary64-log' else {})
+        return {
+            **quantified_clock,
+            'accepted_rate_effect_s':root_at_native_rate-clock_at_reference_rate,
+            'native_clock_and_transport_remainder_s':exact_native-root_at_native_rate,
+            'parent_binary64_projection_s':projected-exact_native,
+            'parent_csv_text_rendering_s':displayed-projected,
+            'native_minus_reference_s':exact_native-independent,
+            'csv_text_minus_reference_s':displayed-independent,
+        }
+
+
 def verify(runs,plan):
     """Audit native-output directories for frozen increasing common steps.
 
-    `runs` is a list of (output-directory, mpi-ranks) actual launches. This is
+    `runs` supplies (output-directory, mpi-ranks, parsed exact native events)
+    for every actual launch. This is
     a per-cohort numerical proof, not global I21 qualification. All membership,
     source and horizon checks precede timing scores; corrupt CSV is ERROR.
     """
     q.validate_plan(plan);reference_basis,identities=frozen_reference(plan);comparisons=[];levels={1:[],8:[]}
     baseline=None
+    timing_breakdown=[]
     varying=plan.get('test_kind')=='trajectory-integrated-hazard'
     expected_kind='trajectory-integrated-hazard' if varying else 'homogeneous-fixed-position'
     for directory,ranks,events in runs:
@@ -326,7 +453,12 @@ def verify(runs,plan):
         reference=reference_receipt(receipt);rate,channel=source_rate(reference,identities)
         if reference_basis is not None and reference!=reference_basis:
             raise ValueError('actual geometry, endpoint or zero-force binding differs from the frozen reference')
-        geometry=json.dumps([reference,receipt.get('trajectory_reference')],sort_keys=True)
+        precision=receipt.get('optical_clock_precision','binary64-log')
+        if precision not in ('binary64-log','compensated-extended-log'):
+            raise ValueError('unsupported native source-clock precision')
+        if 'optical_clock_precision' in plan and precision!=plan['optical_clock_precision']:
+            raise ValueError('native source-clock precision differs from frozen plan')
+        geometry=json.dumps([reference,receipt.get('trajectory_reference'),precision],sort_keys=True)
         if baseline is None:baseline=geometry
         elif baseline!=geometry:raise ValueError('geometry/source/force convention differs between matched refinements')
         if len(plan['source_channel_rates_s'])!=1 or plan['source_channel_rates_s'][0]['id']!=channel:
@@ -343,21 +475,33 @@ def verify(runs,plan):
             raise ValueError('actual cohort must retain every frozen global original-parent ID')
         motion=StraightLineExposure(plan,receipt,rate) if varying else None
         maximum=Decimal(0);horizon=Decimal.from_float(float(plan['horizon_s']))
+        maxima={}
         with localcontext() as context:
             context.prec=80
             for row in rows:
                 parent=int(row['original_parent_id']);u=Decimal.from_float(source_uniform(plan['seed'],plan['cohort_id'],parent))
-                root_interval=motion.first_hit(-u.ln()) if motion else None
-                event=(sum(root_interval)/2 if root_interval is not None else None) if motion else (None if rate==0 else -u.ln()/rate)
+                depth=-u.ln()
+                root_interval=motion.first_hit(depth) if motion else None
+                event=(sum(root_interval)/2 if root_interval is not None else None) if motion else (None if rate==0 else depth/rate)
                 expected='REACTED' if event is not None and event<=horizon else 'SURVIVED'
                 if row['status']!=expected:
                     raise ArithmeticError('native first-removal membership differs from independent clock: parent'+str(parent))
                 actual_time=row['relative_event_time_s']
                 position_error=None
-                if motion is not None and expected=='REACTED':
+                if expected=='REACTED':
                     native=events[row['original_parent_id']]
                     exact_time=native['relative_event_time_s']
                     actual_time=Decimal(exact_time.numerator)/Decimal(exact_time.denominator)
+                    if motion is None:
+                        components=homogeneous_timing_breakdown(depth,rate,native,row['relative_event_time_s'],precision)
+                        # A full cohort can contain many thousands of events.
+                        # Keep one actual signed example at the largest
+                        # magnitude for each cause and level. Every parent is
+                        # still scored against its independent physical root.
+                        for name,value in components.items():
+                            if name not in maxima or abs(value)>abs(maxima[name][1]):
+                                maxima[name]=(parent,value)
+                if motion is not None and expected=='REACTED':
                     positions=[native[f'parent_event_x{i}'] for i in range(3)]
                     actual_position=[Decimal(x.numerator)/Decimal(x.denominator) for x in positions]
                     position_error=max(abs(x-x0-v*event) for x,x0,v in zip(actual_position,motion.start,motion.velocity))
@@ -371,6 +515,12 @@ def verify(runs,plan):
                     'reference_root_width_s':None if root_interval is None else str(root_interval[1]-root_interval[0]),
                     'position_error_m':None if position_error is None else str(position_error)})
         levels[ranks].append({'steps':receipt['physical_steps'],'actual':str(maximum),'reference':'0','scale':'1'})
+        if motion is None:
+            timing_breakdown.append({'mpi_ranks':ranks,'steps':receipt['physical_steps'],
+                'events_evaluated':len(events),'optical_clock_precision':precision,'component_extrema':{
+                    name:{'original_parent_id':parent,'signed_seconds':str(value),
+                          'absolute_over_horizon':str(abs(value)/horizon)}
+                    for name,(parent,value) in maxima.items()}})
     scores={}
     for ranks,rows in levels.items():
         rows.sort(key=lambda r:r['steps'])
@@ -387,4 +537,5 @@ def verify(runs,plan):
     return {'schema':'srcMoon-M3-independent-'+('trajectory' if varying else 'homogeneous')+'-numerics-v1',
         'status':status,'scores':scores,
         'comparisons':comparisons,'input_sha256':identities,'finite_uniform_resolution':finite_resolution,
+        'homogeneous_timing_breakdown':timing_breakdown,
         'scope':'actual per-cohort source-clock timing; no observational or full I21 qualification'}

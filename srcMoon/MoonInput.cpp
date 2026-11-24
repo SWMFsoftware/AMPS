@@ -419,6 +419,15 @@ bool ValidateTracingThermalCoupling(const Configuration& c,std::string* error) {
 }
 
 bool ValidateTracingConfiguration(const Configuration& c,std::string* error) {
+  // Programmatic installation uses the same pair validation as the .in reader.
+  // Startup also compares this pair with the actual compiled species table.
+  const double hSpeed=c.hydrogenCharacteristicSpeedMS;
+  const double hRatio=c.hydrogenToSodiumReferenceWeightRatio;
+  if (!((hSpeed==0 && hRatio==0) ||
+        (hSpeed>0 && hRatio>0 && std::isfinite(hSpeed) && std::isfinite(hRatio)))) {
+    *error="hydrogen_characteristic_speed_m_s and hydrogen_to_sodium_reference_weight_ratio must both be finite and positive";
+    return false;
+  }
   if(c.ionSurfaceBoundary!="unsupported" && c.ionSurfaceBoundary!="ideal-collector") {
     *error="ion_surface_boundary must be unsupported or ideal-collector";return false;
   }
@@ -658,6 +667,7 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "tracing_absolute_position_tolerance_m","tracing_absolute_velocity_tolerance_m_s",
       "tracing_geometry_tolerance_m","tracing_time_tolerance_s",
       "tracing_minimum_substep_s","tracing_maximum_substep_s","tracing_adaptive",
+      "hydrogen_characteristic_speed_m_s","hydrogen_to_sodium_reference_weight_ratio",
       "tracing_maximum_substeps","tracing_maximum_refinements",
       "tracing_maximum_interactions","tracing_maximum_same_point_interactions",
       "tracing_electric_field_v_m","tracing_magnetic_field_t","tracing_field_frame"};
@@ -703,6 +713,13 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
     *error=At(settings["particle_tracing_mover"],
         "particle_tracing_mover must be legacy, force-cut-surface-first-order "
         "or force-cut-surface-second-order");return false;
+  }
+  for (auto item : {std::make_pair("hydrogen_characteristic_speed_m_s",&candidate.hydrogenCharacteristicSpeedMS),
+                    std::make_pair("hydrogen_to_sodium_reference_weight_ratio",&candidate.hydrogenToSodiumReferenceWeightRatio)}) {
+    if (settings.count(item.first) && !ParsePositiveFinite(settings[item.first].value,item.second)) {
+      *error=At(settings[item.first],std::string(item.first)+" must be finite and positive");
+      return false;
+    }
   }
   const bool tracing=candidate.particleTracingMover!="legacy";
   // Every new-mode numerical control is explicit in the receipt. Inactive

@@ -1,5 +1,9 @@
 # I24 first-channel source review
 
+The [angular-source follow-up](ANGULAR_SOURCE_FOLLOWUP_20261124.md)
+adds the Knoop ground-product angle coverage and identifies an
+integral cross-section discrepancy at the selected energy.
+
 The approved priority is proton capture from ground-reference Na. The
 transport gate requires a consistent source for the rate, populated states,
 energy convention, uncertainty and differential information or a usable
@@ -30,3 +34,9 @@ from the [retained source decision](../../M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.
 The newer publications were inspected as source leads. This review produced
 zero new numerical collision rows and made no runtime profile selection.
 Formal I24 remains SKIPPED.
+
+**Updated lineage in r11.** The IAEA release file and NIFS figure
+cross-reference now identify the underlying Knoop figure. Its measured
+outer-shell signal combines hydrogen final states. D119990 cannot be used
+as the experimental partial for the proposed channel. See the
+[r11 numerical benchmarks and source crosswalk](../../../../utility/chemical_database/NATIVE_M3_SODIUM_BENCHMARK_SOURCES.md).

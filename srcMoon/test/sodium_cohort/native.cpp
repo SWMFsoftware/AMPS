@@ -66,7 +66,7 @@ Input Parse(const std::string& path,bool sourceOnly){
  if(!doc.root.assignments.empty()||doc.root.blocks.size()!=1||doc.root.blocks[0].kind!="sodium_qualification"||doc.root.blocks[0].name.empty())throw std::runtime_error("one named sodium_qualification block required");
  const auto& b=doc.root.blocks[0];
  const std::set<std::string> known={"application_input","campaign_seed","case_kind","channel_id","constants_file","constants_sha256","crosswalk_file","crosswalk_sha256","earth_occultation","electron_maximum_relative_acceleration_error","electron_maximum_relative_inertial_mass_error","electron_maximum_relative_relativistic_kinetic_error","electron_state_id","energy_absolute_bound","energy_reference_identity","energy_relative_bound","exposure_absolute_depth_tolerance","exposure_maximum_geometry_intervals","exposure_maximum_segments","exposure_relative_depth_tolerance","exposure_root_time_tolerance_s","genealogy_capacity","hazard_maximum_root_refinements","inertial_frame","inertial_origin","ion_compiled_species","ion_maximum_relative_acceleration_error","ion_maximum_relative_inertial_mass_error","ion_maximum_relative_relativistic_kinetic_error","ion_state_id","isotopes_file","isotopes_sha256","mass_absolute_bound","mass_relative_bound","maximum_classical_speed_ms","model_identity","number_absolute_bound","number_relative_bound","momentum_absolute_bound","momentum_relative_bound","original_parents","parent_compiled_species","parent_maximum_relative_acceleration_error","parent_maximum_relative_inertial_mass_error","parent_maximum_relative_relativistic_kinetic_error","parent_state_id","physical_horizon_s","physical_step_s","physical_steps","planner_energy_absolute_bound","planner_energy_relative_bound","planner_mass_absolute_bound","planner_mass_relative_bound","planner_momentum_absolute_bound","planner_momentum_relative_bound","profile_metadata_file","profile_metadata_sha256","profile_native_manifest_file","profile_native_manifest_sha256","represented_number_per_parent","rotation_absolute_bound","rotation_relative_bound","rate_absolute_bound","rate_relative_bound","schema","solar_endpoint","source_position_lso_m_0","source_position_lso_m_1","source_position_lso_m_2","source_reference_distance_identity","source_reference_distance_m","source_velocity_lso_ms_0","source_velocity_lso_ms_1","source_velocity_lso_ms_2","states_file","states_sha256","threshold_absolute_bound","threshold_relative_bound","transport_policy_evidence_file","transport_policy_evidence_sha256","transport_policy_identity","unit_vector_tolerance"};
- for(const auto&a:b.assignments)if(!known.count(a.key)&&a.key!="photon_energy_policy"&&a.key!="reference_weight_mode"&&a.key!="parent_reference_weight"&&a.key!="ion_reference_weight")throw std::runtime_error(a.where.Prefix()+"unknown sodium_qualification key "+a.key);
+ for(const auto&a:b.assignments)if(!known.count(a.key)&&a.key!="optical_clock_precision"&&a.key!="photon_energy_policy"&&a.key!="reference_weight_mode"&&a.key!="parent_reference_weight"&&a.key!="ion_reference_weight")throw std::runtime_error(a.where.Prefix()+"unknown sodium_qualification key "+a.key);
  Owner o{b,{}};Input c;c.cohort=b.name;c.documents=doc.files;
  if(o.Text("schema")!="srcMoon-native-sodium-cohort-v1")throw std::runtime_error("unsupported native sodium cohort schema");
  c.applicationPath=o.Path("application_input");std::string error;
@@ -97,6 +97,12 @@ Input Parse(const std::string& path,bool sourceOnly){
  r.exposure.rootTimeToleranceS=o.Double("exposure_root_time_tolerance_s");r.exposure.absoluteDepthTolerance=o.Number("exposure_absolute_depth_tolerance");r.exposure.relativeDepthTolerance=o.Number("exposure_relative_depth_tolerance");
  r.exposure.maximumSegments=o.Uint("exposure_maximum_segments");r.exposure.maximumGeometryIntervals=o.Uint("exposure_maximum_geometry_intervals");r.maximumRootRefinements=o.Uint("hazard_maximum_root_refinements");
  auto&d=r.controls;d.identity=o.Text("model_identity");d.channelId=o.Text("channel_id");d.energyReferenceIdentity=o.Text("energy_reference_identity");
+ // Historical inputs retain their published binary64 clock convention.
+ if(b.Find("optical_clock_precision")){
+  const auto mode=o.Text("optical_clock_precision");
+  if(mode=="compensated-extended-log")r.random.clockPrecision=Moon::Species::ReactionExecution::OpticalDepthPrecision::CompensatedExtendedLog;
+  else if(mode!="binary64-log")throw std::runtime_error("unsupported optical_clock_precision");
+ }
  if(b.Find("photon_energy_policy")){
   const auto energyPolicy=o.Text("photon_energy_policy");
   if(energyPolicy=="source-effective-photon")d.photonEnergyPolicy=Moon::Species::ReducedKinematics::PhotonEnergyPolicy::SourceEffectivePhoton;
@@ -145,6 +151,7 @@ void InputReceipt(const Input& c,const fs::path& out,bool sourceOnly,const Moon:
  if(geometry){
   const auto* transport=Moon::GetCommonTransportClock();if(!transport)throw std::runtime_error("actual native common transport clock unavailable after normal startup");
   f<<",\n  \"transport_origin_et_s\": \""<<transport->originEtS()<<"\"";
+  f<<",\n  \"optical_clock_precision\": "<<Json(c.source.random.clockPrecision==Moon::Species::ReactionExecution::OpticalDepthPrecision::Binary64Log?"binary64-log":"compensated-extended-log");
   f<<",\n  \"geometry_basis_et_s\": \""<<geometry->frozenGeometryEpochS<<"\",\n  \"sun_position_lso_m\": [\""<<geometry->sunPositionM[0]<<"\",\""<<geometry->sunPositionM[1]<<"\",\""<<geometry->sunPositionM[2]<<"\"],\n  \"source_position_lso_m\": [\""<<c.position[0]<<"\",\""<<c.position[1]<<"\",\""<<c.position[2]<<"\"],\n  \"actual_source_distance_m\": \""<<std::hypot(geometry->sunPositionM[0]-c.position[0],geometry->sunPositionM[1]-c.position[1],geometry->sunPositionM[2]-c.position[2])<<"\",\n  \"total_acceleration_macro\": "<<Json(NativeAccelerationMacro);
   if(c.caseKind=="trajectory-integrated-hazard"){
     // A straight-line audit needs actual launch velocity and actual

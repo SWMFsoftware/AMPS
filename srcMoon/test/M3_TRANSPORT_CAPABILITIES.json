@@ -27,9 +27,10 @@
       "implemented_support": [
         "complete 15-channel D04 registry and separate source-bound He/Ne/Ar ground-ion reference profiles",
         "explicit quiet/active endpoints and isotope-specific effective-photon preparation worksheet",
-        "integer product/state inventory",
+        "integer product/state inventory and guarded parent-rest photon breakup into an ion, an electron and a neutral using explicitly supplied relative directions and Jacobi energy fraction",
         "conservative packet/event services",
-        "normal-path constant-history conservative packet dispatch; analytical native scope only"
+        "normal-path constant-history conservative packet dispatch; analytical native scope only",
+        "U24 source-bound Laferriere conditional surface residence and finite-time release using the existing lunar first-order kernel"
       ],
       "missing_formal_capabilities": [
         "qualified atomic product kinetic policies",
@@ -45,7 +46,8 @@
         "combined-hazard primitives",
         "conservative packet transaction adapter",
         "normal-path constant-history controller; analytical native scope only",
-        "stationary 4He 10 eV source-bound coefficient, conditional moment and guarded signed-bath packet composer"
+        "stationary 4He 10 eV source-bound coefficient, conditional moment and guarded signed-bath packet composer",
+        "optional independent Kim total-cross-section Maxwellian integral quantifying the fraction of modeled collisions in the 100-2000 eV incident-energy window of the Peterson laboratory data"
       ],
       "missing_formal_capabilities": [
         "qualified ion/secondary-electron recoil and bath mass-energy policy",
@@ -59,7 +61,9 @@
         "explicit Na source-knot log-log model",
         "strict energy-domain refusal",
         "monoenergetic rate service",
-        "actual PIC constant-history controller and complete-packet continuation; no physical CEX law activated",
+        "actual PIC constant-history controller and complete-packet continuation",
+        "r14 Shingal partial 4.0 keV/u Na(3s) ground capture; source-locked target-rest beam, approved isotropic pair-COM model, exothermic Q, signed incident proton and both heavy products",
+        "registered sodium provider and distinct 32768-parent rate/survival and real one-packet PIC verification runners",
         "reviewed I24 Na and He first-channel source candidates with explicit differential admission limits"
       ],
       "missing_formal_capabilities": [
@@ -113,7 +117,7 @@
     "controller_checks": 73,
     "common_clock_checks": 80,
     "normal_startup_checks": 32,
-    "reduced_kinematics": "Additive isotope/electron masses, separately compensated formation/excitation Q, explicit model-error checks, parent-rest photon two-body and mass-weighted neutral-three-body kernels; physical moving-parent provider not installed",
+    "reduced_kinematics": "Additive isotope/electron masses, separately compensated formation/excitation Q, explicit model-error checks, parent-rest photon two-body and charged-three-product assembly, and mass-weighted neutral-three-body assembly. The Na provider has its own admission below. Molecular state populations and correlated product laws remain unqualified.",
     "Na_partial_capture": "Native twelve-node partial channel, immutable source/rate receipt, target-rest forward-COM reference products; native initial-state crosswalk unqualified; not total capture",
     "ion_boundary": "Strict default; explicit ideal collector wired before neutral sticking with actual PIC weights/epochs; source/state installation required; one/eight-rank sphere control is analytical, not a physical material benchmark",
     "He_silica": "Seven source-specific conditional scattered-charge fits; actual velocity-vector projection Unavailable",

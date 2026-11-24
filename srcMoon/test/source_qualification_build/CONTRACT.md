@@ -54,3 +54,10 @@ After the actual clean build, a guarded C++ preprocessor probe of the generated
 ON constant. Its command, logs and generated SHA are bound to the actual
 producer receipt. Older source-compilation evidence without this proof remains
 limited to its recorded layout and cannot imply product-execution readiness.
+
+The r14 I24 commissioning build adds the explicit ordered mapping Na, NA_PLUS,
+H for a single ground-state capture. The hydrogen atom is transported. The
+incident H⁺ is represented by the signed incoming proton bath ledger. The
+requirement is exact agreement between the native resolver's source-defined
+masses/charges and the generated PIC values for each tracked species. The
+ordinary Na-only and two-species builds retain their respective selections.

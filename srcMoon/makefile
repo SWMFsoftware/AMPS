@@ -15,12 +15,12 @@ MAINLIBOBJ += species/ElectronImpact.o
 # unsupported daughter kinetics and legacy receipts from enabling reactions.
 MAINLIBOBJ += species/Photochemistry.o species/MoonChargeExchange.o species/ReactionExecution.o
 MAINLIBOBJ += MoonReactionAdapter.o MoonReactionController.o MoonTracing.o
-MAINLIBOBJ += MoonNativeReactionRegistration.o MoonSemanticRandom.o MoonSodiumCohort.o
+MAINLIBOBJ += MoonNativeReactionRegistration.o MoonSemanticRandom.o MoonSodiumCohort.o MoonSodiumCaptureCohort.o
 MAINLIBOBJ += MoonTransportClock.o species/PiecewiseHazard.o species/ReactionExposure.o
 # Approved P01--P09 component services. These are the same production kernels
 # linked by supporting probes; linking does not select missing state/threshold
 # data, activate physical reactions or install the optional ideal collector.
-MAINLIBOBJ += species/ReducedKinematics.o species/SodiumPartialCapture.o
+MAINLIBOBJ += species/ReducedKinematics.o species/SodiumPartialCapture.o species/SodiumGroundCapture.o
 MAINLIBOBJ += species/IonCollector.o species/HeliumSilicaChargeSurvival.o
 # Source-bound M3 completion services. These objects provide the same profile,
 # event, exposure and keyed-random kernels used by qualification adapters.

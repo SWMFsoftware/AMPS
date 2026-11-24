@@ -109,6 +109,26 @@ class SourcePackets(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "provider"):
                     self.load()
 
+    def test_zenodo_helium_policy_refuses_unreviewed_record_bytes(self):
+        policy = "zenodo-4555716-cc-by-4.0"
+        self.policies[policy] = self.policy
+        # A matching URL alone cannot authorize this administrative file.
+        self.row.update(policy=policy, source_uri="https://zenodo.org/api/records/4555716")
+        self.row["rights_evidence"][0]["source_uri"] = self.row["source_uri"]
+        with self.assertRaisesRegex(ValueError, "reviewed native deposit record"):
+            self.load()
+
+    def test_m3_article_rights_are_tied_to_reviewed_article_and_notice(self):
+        # These are administrative bytes at reviewed-looking URLs. A valid
+        # host and a nonempty notice cannot grant rights over altered bytes.
+        for policy, (article_urls, notice_urls) in module._M3_ARTICLES.items():
+            with self.subTest(policy=policy):
+                self.policies[policy] = self.policy
+                self.row.update(policy=policy, source_uri=next(iter(article_urls)), role="source-native")
+                self.row["rights_evidence"][0]["source_uri"] = next(iter(notice_urls))
+                with self.assertRaisesRegex(ValueError, "reviewed publication and notice"):
+                    self.load()
+
     def test_ntrs_determination_cannot_clear_another_record(self):
         policy = "ntrs-19700032941-public-use"
         self.policies[policy] = self.policy

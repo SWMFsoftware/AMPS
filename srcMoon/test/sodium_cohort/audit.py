@@ -118,6 +118,13 @@ def run(plan_path,runs_path,output,*,development=False):
             if {k:mapping.get(k) for k in ('parent','ion','electron')}!=plan['native_adapter']['state_mapping']:
                 raise ValueError('native state selections differ from frozen mapping')
             reference=numerical.reference_receipt(receipt)
+            if plan.get('test_kind')=='zero-hazard-invariant':
+                # The visibility flag recorded by production is itself derived
+                # from the photon rate. Require a separate finite-segment
+                # geometric proof before crediting a fixed lunar dark case.
+                shadow=numerical.fixed_moon_shadow(plan,launch,receipt)
+                (output/('lunar_shadow-%02d.json'%index)).write_text(json.dumps(shadow,indent=2)+'\n')
+                records.append({'name':'independent-fixed-lunar-shadow-%02d'%index,'status':shadow['status']})
             reference_rate,channel=numerical.source_rate(reference,manifest['input_sha256'])
             motion=numerical.StraightLineExposure(plan,receipt,reference_rate) if varying else None
             inverse_square=numerical.inverse_square_checks(actual_events,motion.point_rate if motion else reference_rate)

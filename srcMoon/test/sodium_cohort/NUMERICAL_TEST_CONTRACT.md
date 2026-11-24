@@ -51,3 +51,14 @@ uses exact IEEE binary64 bit stepping only, with explicit unsupported-format
 refusal. Independent literal encodings test signed zeros, both signs, minimum
 subnormals, binade boundaries and maximum finite values; a nonfinite epoch
 envelope is ERROR. No epsilon or alternate physical time bound is introduced.
+
+The primary timing observable on every physical trajectory is the native
+hexadecimal relative event time. Reprinting the same binary64 CSV projection
+with more digits must leave the score invariant. A narrower or missing native
+receipt must be detectable even if it rounds to the same CSV representation.
+For homogeneous positive-rate events retain a signed, dimensioned breakdown
+of the clock quantization, accepted-rate evaluation, transport and reporting
+terms. Closed-form rational fixtures must recover each term, including its
+sign. Their sum reproduces the full timing discrepancy up to the independent
+Decimal arithmetic precision. Retain the strict decrease gate, even if the
+largest fixed clock quantization dominates all refinement levels.

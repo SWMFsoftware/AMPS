@@ -1007,6 +1007,26 @@ fields are refused in a legacy receipt; missing/corrupt selected sources are
 errors rather than fallback physics. Paths resolve against the containing
 input file, including an included file's own directory.
 
+### Moon neutral-hydrogen time step and reference weight
+
+In `#begin application: moon`, supply both fields below when the executable
+tracks neutral atomic H (`_H_SPEC_ >= 0`). Omit both for an executable without
+H. The Moon parser validates the pair together, and normal startup checks it
+against the compiled species table before mesh allocation. Neither field has
+a physical default.
+
+| Key | Input type and units | Use by AMPS |
+|---|---|---|
+| `hydrogen_characteristic_speed_m_s` | Finite positive real, m/s | Reference speed for the H cell-crossing time. A cell of characteristic size `L` in metres gives the Moon time-step estimate `0.3 * L / speed` in seconds. |
+| `hydrogen_to_sodium_reference_weight_ratio` | Finite positive real, dimensionless | Sets the reference model-particle weight `W_H = ratio * W_Na` globally or per block according to the configured particle-weight mode. |
+
+Write bare numeric values after `=` in the units above. For each H-producing
+case, select the speed from the supported H kinematics and specify the
+reference weight for the intended sampling. The event composer calculates the
+individual daughter correction needed to preserve the reacted population.
+The I24 runner writes both chosen values in each retained `moon.in`.
+[I24 input and run instructions](../srcMoon/test/integration-tests/I24/README.md)
+
 ### Optional Moon physical-time cut-cell tracing
 
 Set `particle_tracing_mover` to `force-cut-surface-first-order` or

@@ -8,6 +8,8 @@ missing production kinetic model into a formal PASS or an invented native run.
 """
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -18,6 +20,144 @@ import test_runner as global_owner
 
 
 class FormalOwnerControls(unittest.TestCase):
+    def test_i24_expired_checkout_and_changed_evidence_are_distinct(self):
+        # Exercise the build-receipt admission code only. These administrative
+        # bytes and patched production identity cannot launch a physical case.
+        with patch.object(sys,'path',[str(owner.TEST/'integration-tests/I24'),*sys.path]):
+            import run_pic_ground_capture as pic
+        with tempfile.TemporaryDirectory() as work:
+            root=Path(work)
+            def record(path,content):
+                path.parent.mkdir(exist_ok=True,parents=True)
+                path.write_text(content)
+                return dict(path=str(path),sha256=owner.sha(path))
+            library=record(root/'scratch/build/libAMPS.a','fixture-library')
+            saved=record(root/'generated/pic.h','fixture-ABI')
+            generated=record(root/'scratch/build/pic.h','fixture-ABI')
+            path=root/'normal_build_evidence.json'
+            recipe=record(root/'recipe.json','administrative fixture')
+            recipe.update(packet_layout='conservative-products',reference_problem='homogeneous-zero-acceleration',
+                          mapping=dict(record(root/'mapping.json','fixture'),states=pic.MAPPING),
+                          profile=record(root/'profile.json','fixture'))
+            payload=dict(schema='srcMoon-actual-normal-restore-producer-v1',status='PASS',
+                source_qualification_recipe=recipe, production_source_hashes={},
+                build_log=record(root/'build.log','EXIT: 0\nEXIT: 0\n'),
+                executable=record(root/'amps','fixture'),library=library,
+                retained_generated_snapshots={saved['path']:saved['sha256']})
+            path.write_text(json.dumps(payload))
+            with patch.object(pic,'production_source_identity',return_value={}), \
+                    patch.object(pic,'native_sources',side_effect=lambda value:value):
+                self.assertEqual(pic.checked_build(path),root/'scratch/build')
+                Path(generated['path']).write_text('altered header')
+                with self.assertRaisesRegex(ValueError,'changed configured build member'):
+                    pic.checked_build(path)
+                Path(library['path']).unlink()
+                with self.assertRaisesRegex(ValueError,'changed configured build member'):
+                    pic.checked_build(path)
+                Path(generated['path']).write_text('fixture-ABI')
+                with self.assertRaisesRegex(pic.MissingPrerequisite,'disposable configured build member'):
+                    pic.checked_build(path)
+                Path(saved['path']).write_text('altered retained snapshot')
+                with self.assertRaisesRegex(ValueError,'changed retained generated ABI'):
+                    pic.checked_build(path)
+
+    def test_i24_pic_registration_requires_explicit_sodium_lock(self):
+        # Validate the actual aggregate CLI before it configures or runs a case.
+        command = [sys.executable, '-B', str(owner.TEST/'run_all_test.py'), '--skip-build',
+                   '--only', 'I24', '--i24-pic-producer', 'absent-producer.json']
+        attempt = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(attempt.returncode, 2)
+        self.assertIn('--i24-pic-producer requires --i24-sodium-lock', attempt.stderr)
+
+    def test_i24_report_keeps_stronger_child_status(self):
+        # These temporary fixtures exercise bookkeeping only. No MPI is
+        # launched and no fixture survives this test as scientific evidence.
+        for statuses, expected in ((('PASS','PASS'),'SKIPPED'),(('PASS','FAIL'),'FAIL'),
+                                   (('FAIL','ERROR'),'ERROR'),(('ERROR','FAIL'),'ERROR')):
+            with self.subTest(statuses=statuses), tempfile.TemporaryDirectory() as work:
+                root = Path(work)
+                iterator = iter(statuses)
+                def issue_control(command, cwd, log, *, output):
+                    child = Path(command[command.index('--output-dir')+1])
+                    child.mkdir()
+                    status = next(iterator)
+                    (child/'result.json').write_text(json.dumps({'status':status,
+                        'reason':'temporary orchestration fixture'}))
+                    index = {}
+                    if status == 'FAIL':
+                        if child.name == 'sodium-ground-capture':
+                            (child/'native_receipt.json').write_text('{"fixture":true}')
+                        else:
+                            csv = child/'fixture-events-rank-0.csv'
+                            csv.write_text('temporary orchestration fixture')
+                            index = {'result_files':{csv.name:owner.sha(csv)}}
+                    (child/'run_manifest.json').write_text(json.dumps(index))
+                    return {'reason':None,'returncode':{'PASS':0,'FAIL':1,'ERROR':2}[status]}
+                with patch.object(owner.CampaignBudget,'run',side_effect=issue_control):
+                    result = owner.run('I24',owner.ROOT/'amps',owner.ROOT/'srcMoon/examples/m3_reaction_rates.in',
+                                       root,i24_lock=root/'fixture-lock',i24_pic_producer=root/'fixture-build')
+                self.assertEqual(result['formal_status'],'SKIPPED / NOT QUALIFIED')
+                self.assertEqual(result['status'],expected)
+                self.assertEqual(tuple(row['status'] for row in result['supporting_checks']),statuses)
+                # Run the final summary's real schema/count/severity validator.
+                aggregate.validate_supporting_results(result,result['status'])
+                self.assertEqual((root/'I24/receipt.txt').is_file(),'FAIL' in statuses)
+
+    def test_i24_aggregate_retains_both_independent_children(self):
+        # Exercise both real child CLIs via the public aggregate. One broken
+        # input at a time tests that either child can return ERROR without
+        # losing the other child's SKIP and its separately hashed evidence.
+        for damaged in ('none','lock','producer'):
+            with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as work:
+                root = Path(work)
+                lock, producer = root/'database-lock.json', root/'producer.json'
+                if damaged == 'lock':
+                    lock.write_text('{}')
+                elif damaged == 'producer':
+                    producer.write_text('{}')
+                command = [sys.executable, '-B', str(owner.TEST/'run_all_test.py'), '--only','I24',
+                           '--skip-build','--i24-sodium-lock',str(lock),'--i24-pic-producer',str(producer),
+                           '--i24-pic-refinement',
+                           '--test-runtime-seconds','60','--output-dir',str(root/'out')]
+                attempt = subprocess.run(command, capture_output=True, text=True,timeout=90)
+                folder = root/'out/I24'
+                result = json.loads((folder/'result.json').read_text())
+                manifest = json.loads((folder/'run_manifest.json').read_text())
+                expected = ['ERROR' if damaged=='lock' else 'SKIPPED',
+                            'ERROR' if damaged=='producer' else 'SKIPPED']
+                self.assertEqual([r['status'] for r in result['supporting_checks']], expected)
+                self.assertEqual(result['status'],'SKIPPED' if damaged=='none' else 'ERROR')
+                self.assertEqual(result['formal_status'],'SKIPPED / NOT QUALIFIED')
+                self.assertEqual(attempt.returncode,0 if damaged=='none' else 2,attempt.stdout+attempt.stderr)
+                for key, status in zip(('i24_sodium_provider','i24_pic_commissioning'),expected):
+                    entry = manifest[key]
+                    self.assertEqual(json.loads(Path(entry['result']).read_text())['status'],status)
+                    self.assertEqual(entry['result_sha256'],owner.sha(entry['result']))
+                    self.assertEqual(entry['manifest_sha256'],owner.sha(entry['manifest']))
+                    self.assertTrue(Path(entry['log']).is_file())
+                    self.assertEqual('--refinement' in entry['supervision']['command'],
+                                     key=='i24_pic_commissioning')
+                # Neither invalid configuration evaluated a physical criterion.
+                self.assertFalse((folder/'receipt.txt').exists())
+
+    def test_i24_absent_and_corrupt_requested_database_have_different_statuses(self):
+        # No science data are synthesized. An empty file is deliberately an
+        # invalid release lock, while the absent file exercises a dependency
+        # SKIP on the same public owner and aggregator.
+        for exists,expected,code in ((False,'SKIPPED',77),(True,'ERROR',2)):
+            with self.subTest(existing_corrupt_lock=exists),tempfile.TemporaryDirectory() as work:
+                folder=Path(work)
+                lock=folder/'database-lock.json'
+                if exists:lock.touch()
+                result=owner.run('I24',owner.ROOT/'amps',owner.ROOT/'srcMoon/examples/m3_reaction_rates.in',
+                    folder,i24_lock=lock)
+                self.assertEqual(result['supporting_checks'][0]['status'],expected)
+                self.assertEqual(result['status'],expected)
+                self.assertFalse((folder/'I24/receipt.txt').exists())
+                aggregate_result=aggregate.load_runner_result('I24',owner.TEST/'integration-tests/I24/test.py',
+                    folder/'I24/result.json',folder/'I24/stdout.log',code)
+                self.assertEqual(aggregate_result['status'],expected)
+
     def test_literal_global_registration(self):
         self.assertEqual(aggregate.validate_registry(),[])
         self.assertEqual(global_owner.audit_architecture(),[])

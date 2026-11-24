@@ -131,3 +131,55 @@ uncleared payload rights remain metadata-only. Earlier releases and application
 selections remain unchanged. Installed README section11 gives source/table
 queries. The new `native_nist_hxoy.py` reader performs lossless cell extraction,
 not thermochemical state selection or unit/uncertainty conversion.
+
+The [November 24 source integration](NATIVE_M3_ARCHIVE_SOURCES.md) adds the
+Swaczyna resonant helium angular archive and two native-token CSV views in
+the independent `amps-chemistry-20261124-r6` snapshot. It corroborates
+the existing IAEA sodium partial using the live catalogue and records the
+new photon, electron-impact and laboratory evidence under source-specific
+rights. Use installed README section 12 for executable CLI/Python examples.
+
+The [literature follow-up](NATIVE_M3_LITERATURE_SOURCES.md) adds the original
+open Cui helium capture article and two NBS/NIST technical publications in
+the independent `amps-chemistry-20261124-r7` snapshot. Four shared CSV views
+expose historical water onsets and relative signals, neutral ionization
+fit coefficients, and laboratory/theory helium capture fractions. See
+installed README section 13 for the table IDs and exact queries.
+
+The [r8 atomic-source follow-up](NATIVE_M3_PARTIAL_SOURCES.md) adds four
+shared tables and preserves the original Figshare workbook, NASA report
+and Bhatia paper. Installed README section 14 gives API examples and
+units. Intrinsic residual-ion state probabilities, recoil kernels and
+qualification of any application remain separate work.
+
+The [r9 scattering review](NATIVE_CEX_SCATTERING_SOURCES.md) exposes
+the proton–sodium source discrepancy, angular coverage and the
+isotropic two-body sensitivity model in the shared model catalogue.
+The integral D119990 table links to that review. Installed README
+section 15 gives the exact table and model queries.
+
+The [r10 laboratory benchmarks](NATIVE_M3_LAB_BENCHMARKS_SOURCES.md)
+give condition-specific OH loss at fused silica, its measurement
+resolution dependence, and the Sutton–Kay gas-phase He⁺ ratios.
+Installed README section 16 gives shared query examples.
+
+For the r11 packet and installed query examples, see
+[shared API examples, section 17](DATABASE_README.md#17-reaction-specific-laboratory-and-solar-inputs-in-r11).
+The sodium lineage and finite-energy benchmark, absolute helium photon
+emission measurements, OH ice evaluation, solar partial rates, and argon
+energy splitting each have a separate source and applicability record.
+
+The [published model comparison](NATIVE_M3_MODEL_PRACTICE_SOURCES.md) covers
+lunar pickup-ion rates and birth motion, electron impact, water fragmentation,
+OH surface return and charge-exchange scattering. The [r12 API examples](DATABASE_README.md#18-reproduce-published-exosphere-model-choices-in-r12)
+retrieve the original 25-species file, its five-row atomic projection and the
+source-specific assumptions used in other applications.
+
+[Section 19 of the installed manual](DATABASE_README.md#19-lunar-neutral-losses-water-coverage-and-noble-gas-product-assumptions)
+shows how to query the r13 lunar-model inputs and their documented scope.
+
+The r14 release adds two selectable Na models. The pickup source reads the
+three deposited median frequencies at 1 au and specifies a stationary newborn
+ion in the lunar frame. The monoenergetic ground-capture case binds the Shingal
+A34 partial to the approved isotropic pair-COM model and conservative two-body
+recoil. See the [installed README and runnable API example](DATABASE_README.md#sodium-pickup-and-binary-charge-exchange-r14).

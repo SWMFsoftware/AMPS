@@ -23,6 +23,19 @@ class Protocol(unittest.TestCase):
             p=Path(d)/'mapping.json';p.write_text(json.dumps(production.EXPECTED_MAPPING))
             self.assertEqual(production.validate_mapping(p),production.EXPECTED_MAPPING)
 
+    def test_three_species_capture_mapping(self):
+        # This recipe owns two independently weighted transported daughters.
+        # H is the third species. An H+ packet would count the incoming bath
+        # twice and would conflate a charged projectile with the outgoing atom.
+        with tempfile.TemporaryDirectory() as directory:
+            mapping = Path(directory) / 'mapping.json'
+            mapping.write_text(json.dumps(production.GROUND_CAPTURE_MAPPING))
+            self.assertEqual(production.validate_mapping(mapping), production.GROUND_CAPTURE_MAPPING)
+            for state in ('1H+:ground', '2H:ground'):
+                mapping.write_text(json.dumps({**production.EXPECTED_MAPPING, 'H': state}))
+                with self.subTest(state=state), self.assertRaises(ValueError):
+                    production.validate_mapping(mapping)
+
     def test_wrong_case_unknown_state_or_reordered_mapping_refused(self):
         with tempfile.TemporaryDirectory()as d:
             p=Path(d)/'mapping.json'

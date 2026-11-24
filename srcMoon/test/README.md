@@ -909,7 +909,7 @@ convergence evidence.
 | U21 | argon source | local uniform kernel verified; full ID SKIPPED | The species-specific continuous source conserves its 3.8e20 atoms/s reference-sphere area partition and rejects unsupported maps. D10 is regional/QA-incomplete, Ar-linked stochastic injection and transient/K-weighted modes are absent, so this is not source validation. |
 | U22 | Na sources | implemented linked probe and configuration guard | M0 built-in impact-on/`MySource`-off invariant, impact normalization, PSD density kernel, and exact Tenishev-2013 Case-1 parser/runtime scalars; no linked prescribed-reservoir or night-to-day migration claim. |
 | U23 | meteoroid driver | SKIPPED | No production forcing path. |
-| U24 | H2O/OH chemistry | SKIPPED | No production species/chemistry path. |
+| U24 | H2O/OH chemistry | SKIPPED | Source-bound OH/H₂O residence and finite-time release run as a supporting check. Molecular surface and chemistry dispatch remain open. [Scope and r14 lock](U24_water_chemistry/README.md) |
 | U25 | data provenance | SKIPPED | Requires a selected Dxx package and linked campaign context. |
 | U26 | observation geometry | SKIPPED | The M1 observation-grid settings are parsed strictly, but the complete two-limb, body-fixed pole/shell, finite-beam, and exposure-time operators are not yet implemented or qualified; D14 lacks the radial WHAM response and numerical full raster. |
 
@@ -1175,6 +1175,39 @@ native selectors documented in its README. The optional Na fit-source audit
 retains104PASS/2FAIL printed-coefficient comparisons; it is separate from
 source-reader software tests and the frozen Voronov production-rate choice.
 
+The [November 24 archive search](M3_ARCHIVE_SOURCE_SEARCH_20261124.md)
+documents same-reaction sodium scattering measurements, a verified numerical
+helium charge-exchange archive, and new cross-section diagnostics for the
+I22 and I23 source reviews. It includes native hashes, reproduction commands
+and the outstanding physics evidence required for transport.
+
+The [shared r6 release](../../utility/chemical_database/NATIVE_M3_ARCHIVE_SOURCES.md)
+adds permission-cleared numerical He⁺–He charge-transfer data and the live
+IAEA corroboration. It is selected by its own database lock. The shared
+database checks cover exact source rows and API behavior. The Moon I24
+sodium angle and physical-error gates remain open.
+
+The [r7 literature follow-up](../../utility/chemical_database/NATIVE_M3_LITERATURE_SOURCES.md)
+adds source-specific water onsets and ion signals, neutral H/He integral
+ionization fits, and measured and calculated He⁺–He capture percentages.
+It records the still-missing joint water fragment data, I23 uncertainty
+envelope and sodium angular data. The source tables are accessible through
+the shared database's explicit r7 lock.
+
+The [r8 follow-up](../../utility/chemical_database/NATIVE_M3_PARTIAL_SOURCES.md)
+adds He, Ne, Na and Ar theoretical subshell photon cross sections, a
+He photoionization calculations with ground and excited residuals, and gas-phase He⁺ excitation
+ratios at 200 eV. Its shared API checks cover source fidelity. The
+atomic broadband daughter mapping, complete water fragment kinetics,
+I23 recoil and I24 sodium angular-data gates remain open.
+
+The [r10 laboratory source follow-up](../../utility/chemical_database/NATIVE_M3_LAB_BENCHMARKS_SOURCES.md)
+adds atmospheric-pressure OH loss on fused silica and gas-phase
+He⁺ ratios at 200 eV. These laboratory observables retain their
+conditions. Lunar OH sticking/accommodation, excited fractions and
+recoil bounds, broadband photon weighting and sodium capture data
+still need source-qualified input for M3.
+
 ### Nightly coverage audit — 2026-11-23
 
 The nightly `moon` entry in `utility/nightly/runners.json` invokes
@@ -1309,3 +1342,37 @@ The original native timestep and rounded-affine failures are retained in the
 November 19 approved-P02 package. Bounds and source rates are unchanged by their
 fixes. The actual rounded-matrix regression uses an independent high-precision
 inverse; it is frame arithmetic, not observational geometry validation.
+
+Shared r11 physical input and application-specific admission decisions are
+documented in the [I22](integration-tests/I22/README.md),
+[I23](integration-tests/I23/README.md) and [I24](integration-tests/I24/README.md)
+runner descriptions. The database software suite checks the archive contracts
+and reports its results separately from the formal linked M3 gates.
+
+For I21–I24 experimental comparisons, see the
+[survey of published model choices](../../utility/chemical_database/NATIVE_M3_MODEL_PRACTICE_SOURCES.md).
+It identifies which lunar and comet observations constrain neutral survival
+or bulk pickup, the starting velocities other models use, and the evidence
+still needed for daughter transport and OH surface interactions.
+
+The [lunar and sibling-AMPS reference comparison](M3_LUNAR_MODEL_REFERENCE_CROSSWALK.md)
+identifies the reviewed I04 output, the native and analytical I21 event
+records, and the fragment observables that a matched Europa AMPS run can
+provide. It also documents what independent lunar models assume about
+ionization, water surface coverage and ion return.
+
+The r14 shared database provides named reference cases for bulk lunar Na⁺
+pickup and for the 4.0 keV/u ground-product charge-exchange event. The shared
+database suite checks their physical units, frames, model bindings and source
+provenance. The I24 runner retains responsibility for linked reaction budgets
+and verification. [I24 contract](integration-tests/I24/README.md#selectable-database-reference-for-modeled-recoil)
+
+Select the sodium I24 cohort with `--only I24 --i24-sodium-lock <r14-lock>`.
+Add `--i24-pic-producer <normal_build_evidence.json>` to execute both PIC
+tracing orders at one and eight MPI ranks in the same development run.
+The aggregate retains each supporting outcome, launch log and native
+artifact directory. [Commands and result locations](integration-tests/I24/README.md#running-both-the-mpi-cohort-and-the-linked-pic-movers)
+
+Add `--i24-pic-refinement` to that command to include second-order checks
+at three time-step and three reference-weight levels, keeping the proton
+beam, parent population and final time fixed. [Levels and outputs](integration-tests/I24/README.md#time-step-and-particle-weight-refinement)

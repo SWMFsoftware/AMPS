@@ -1,5 +1,14 @@
 # AMPS lunar exosphere application (`srcMoon`)
 
+M0 is complete. M1 convergence and M2 environment qualification remain open.
+M3 development includes linked sodium photoionization and ground-state
+charge exchange, a conditional molecular-breakup solver and a stationary-He
+electron-impact pilot. The production charge-exchange test follows both
+daughters through lunar particle transport and records the corresponding
+incident-proton exchange. Formal I21–I24 results and the physical coverage
+of each case are tracked in the [current status](STATUS.md#557-linked-m3-chemistry-development--2026-11-24-utc).
+[Run the sodium charge-exchange case](RUN.md#i24-sodium-charge-exchange-at-40-kevu)
+
 The November 16 M2 completion work adds opt-in finite-disc terrain forcing,
 review-gated December thermal execution, normal-run I19 campaign dispatch and
 production I20 thermal export/independent polar scoring. Current qualification
@@ -1008,7 +1017,7 @@ identities for executed checks belong to the dated STATUS/evidence receipts.
 | Declared nonconstant exposure / optical-clock bridge | `species/PiecewiseHazard`, `species/ReactionExposure`; normal library, pure callable services | Explicit affine histories and relative seconds → dimensionless integrals, first representable event time, instantaneous channel rates and copied optical-clock decisions | No external data/RNG inside integrator; gaps retained, exact rational supplied-binary crossing comparisons; lossy compensated-depth projection refused; U15 supporting analytical controls; no physical trajectory provider/controller activation |
 | Common transport chronology / source births | `MoonTransportClock`, `MoonTracing`, normal `amps_time_step` Begin/Commit, `ProductionInjectionEpochS`; optional `tracing_clock_mode` | Explicit SPICE-interpreted origin, actual equal constant block/species dt, source offsets → compensated relative transport time and absolute ET projections; environmental ET remains frozen | Default independent-history retained; common packet targets survive actual MPI/cloning; no observations/RNG; U15 local clock/parser checks plus linked one/eight-rank fixture; unequal dt/restart/uninitialized or incomplete packets refused; asynchronous sampling unqualified |
 | Additive masses and reduced recoil | `species/ReducedKinematics::{ResolveState,FormationQ,GeneralTwoBodyFinalState,PhotonTwoBody,ThreeNeutralMicrocanonical}`; normal library, explicit programmatic calls | Source-identified isotope/electron masses [kg], formation/excitation [J], directions and supplied variates → immutable state/energy receipts and momenta [kg m/s]; photon entry is parent-rest inertial only | NIST preparation preserves uncertainties; no implicit state or mass table replacement. U15 supporting Decimal/Jacobi/40000-event controls; physical moving-parent provider, threshold crosswalk and error budget remain open |
-| Native-node Na partial capture | `species/SodiumPartialCapture::Registry`, `ForwardProducts`; explicit source loading, not automatic controller installation | Native target-rest beam energy [eV/u], cross section [cm²], supplied density [m^-3] → authenticated rate [s^-1] and experimental forward-COM heavy products; SI output and physical source-derived Q | IAEA D119990 partial H(1s) product nodes only, 4–25keV/u; no interpolation/RNG. U17 source/Decimal/closure/refusal controls; native initial Na state and complete physical family remain unqualified |
+| Native-node Na partial capture | `species/SodiumPartialCapture::Registry`, `ForwardProducts`; explicit source loading, not automatic controller installation | Native target-rest beam energy [eV/u], cross section [cm²], supplied density [m^-3] → authenticated rate [s^-1] and experimental forward-COM heavy products; SI output and physical source-derived Q | Archived D119990 nodes, 4–25 keV/u. The underlying figure sums outer-shell capture over H states. These historical checks reproduce the archive and forward model. For the 4 keV/u ground-state case use the source-bound Shingal provider below |
 | Strict/ideal ion boundary | `Moon::IonAwareSphereInteraction`, static/moving terrain callbacks → `SurfaceEnvironment::{InstallProductionIonCollector,HandleProductionIonImpact}` → `species/IonCollector` | `ion_surface_boundary`, source-state resolver, actual local W/correction, particle ET, geometry epoch, LSO/body transforms and facet velocity → owned rank-local incident material/charge/momentum/kinetic/formation/excitation ledger in SI | Default unsupported, MPI-only explicit first/second tracer; no RNG or implicit collective. U15 mathematical/parser controls and actual one/eight-rank sphere adapter; physical regolith fate and real moving-terrain ion qualification remain open |
 | Conditional He/silica laboratory operator | `species/HeliumSilicaChargeSurvival::Registry`; normal library, explicit fit selection | Published reciprocal-velocity coordinate and TableI regime → dimensionless scattered-ion charge survival; energy domain explicitly eV | Seven native coefficients/uncertainties, no RNG/interpolation outside source law; U17 source/independent evaluation controls. Physical-vector projection unavailable; not incident sticking/retention or a lunar material law |
 | O I state/transition source preparation | `test/state_cascades/prepare_sources.py`, offline `test_m3_oxygen_sources.py`; no runtime cascade caller | Native ASD requests [cm^-1, vacuum nm, s^-1] → exact levels, distinct M1/E2 components, retained gaps and unnormalized stored graph | Immutable captured responses and reproducible replay; U15 named source controls only. Complete physical exits/isotope applicability/quenching and molecular relaxation are unresolved; physical lifetimes/branches remain null |
@@ -1068,7 +1077,7 @@ and the preserved campaign report. Formal M1/M2 remain unresolved.
 | cold trapping | `MoonSurfacePhysics.cpp`, production temperature/inventory service, native I20 state exporter and independent polar scorer | species residence vs explicit timescale → bounded retention/release diagnostics; geometry, surface brightness and subsurface kinetic temperature remain separate | D02 PARTIAL; D03 selected inputs READY; actual epoch/time/depth/site support and independent references remain mandatory | Earlier local U13 evidence retained; new polar scoring/export plumbing implemented and supporting checks registered; formal I20 remains SKIPPED without I15/I17/I18/I19 and physical/statistical qualification |
 | photoionization/dissociation | `Moon.h::ExospherePhotoionizationLifeTime`, `Moon.cpp::Chemistry::ProcessParticle`, configured PIC chemistry list walker | species/LSO position, dt [s] → actual neutral-Na survival/removal; existing lifetime/shadow law | Bernoulli seed 731993 in linked fixture; neutral Na production, charged-product configuration rejected; D04 rate qualification remains separate | U14 lifetime kernel; linked I11 prerequisite verifies p=1/2 sunlit and exact shadow survival; former generic Na bypass corrected; I21/I22 and Na+ products pending |
 | electron impact | `Moon::ElectronImpactIonizationRate` → shared scalar entry; `species/ElectronImpact` native Voronov table; immutable `MoonInput` installation | legacy callback preserved; explicit Maxwellian `n_e [m^-3]`, `k_B T_e [eV]` → coefficient [m3/s], rate [s^-1] within native bounds | D05 native coefficients/provenance; declared bath, no measured D06 inference; particle executor remains OFF/guarded | U16 local rate/runtime controls and actual eight-rank/eight-species callback PASS; actual generated masses/charges checked; I23 ensemble/product/forcing qualification SKIPPED |
-| charge exchange | `species/ChargeExchange`, immutable runtime installation; explicit `total-capture-v1` selection | native He/Na energy [eV/u], sigma [m²], monoenergetic rate [s^-1]; strict source domains | Original ORNL/Morgan publications and independent fit/knot evaluators; no inferred differential law or collision-conditioned bath | Supporting U17 services PASS; full U17/I24 remain SKIPPED without joint state/angle kinetics and a physical event provider |
+| charge exchange | `species/ChargeExchange`, immutable runtime installation; explicit `total-capture-v1` selection | native He/Na energy [eV/u], sigma [m²], monoenergetic rate [s^-1]; strict source domains | Original ORNL/Morgan publications and independent fit/knot evaluators; no inferred differential law or collision-conditioned bath | Supporting U17 rate tests PASS. The separate r14 single-energy provider binds the Shingal partial to modeled angles and actual tracked H/Na⁺ products. Full I24 retains its linked qualification criteria |
 | plasma/magnetic driver | typical fields or dormant coupler/datafile path | driver fields → E/B/plasma state | D06 QA ERROR | U18/I25/I26/I35/I40 SKIPPED |
 | He source/reservoir | `Exosphere_Helium.cpp`; no production registration | projected alpha flux → rate/Maxwellian particle | RNG; no reservoir contract | U19/I27/I34/I35 SKIPPED |
 | Ne source/accommodation | `Exosphere_Neon.cpp`; no production registration | projected flux → rate | incomplete generator path | U20/I27/I36 SKIPPED |
@@ -1472,6 +1481,14 @@ and event ledger audit. New He/Ne/Ar ground-ion reference profiles and the
 analytic Voronov temperature slope support subsequent I22/I23 integration.
 See [STATUS.md](STATUS.md) for the evaluated results and open qualification gates.
 
+The sodium qualification input accepts `optical_clock_precision` in its
+`sodium_qualification` block. The original `binary64-log` selection is the
+default. Selecting `compensated-extended-log` evaluates each physical
+source and fresh daughter optical depth at higher precision and carries its
+two components through the production tracer. The JSON case preparer accepts
+the same control and the linked audit checks it against the frozen plan.
+See the [I21 runner instructions](test/integration-tests/I21/README.md).
+
 The [I21 varying-exposure control](test/integration-tests/I21/VARYING_EXPOSURE_CONTRACT.md)
 uses a stable analytical clock for the prescribed radial problem and a
 separate finite-ray oracle for the linked Sun-distance drift. The
@@ -1481,3 +1498,59 @@ an authenticated evidence gate before committing a physical event.
 The [I22 atomic worksheet](../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)
 and [I24 source admission](test/integration-tests/I24/SOURCE_ADMISSION_20261124.md)
 track the remaining source choices.
+
+### Sodium single-energy charge-exchange transport
+
+The explicit `SodiumCaptureCohort` startup owner models a uniform proton beam
+incident on stationary neutral ²³Na. Select the r14 model
+`hplus-na3s-ground-capture-4kev-u-isotropic-v1`. Its source gives the integral
+H⁺ + ²³Na(3s) → H(1s) + ²³Na⁺(2p⁶) cross section at 4.0 keV/u in the
+target-rest frame. Uniform solid-angle scattering in the pair center of mass is
+a prescribed angular approximation. The hydrogen projectile defines the polar
+axis. The outgoing H and Na⁺ receive opposite COM momenta with the magnitude
+set by the incoming relative energy and the ground-state formation-energy Q.
+The frozen D119990 archive and Poppe's total pickup rate represent different
+final-state selections. [r14 model and its sources](../utility/chemical_database/DATABASE_README.md#sodium-pickup-and-binary-charge-exchange-r14)
+
+To export the exact source point for the native provider, run from the AMPS root:
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r14
+work=$(mktemp -d)
+python3 -B srcMoon/tools/export_ground_capture.py --lock "$db/database-lock.json" --output "$work/point.csv"
+```
+
+The PIC owner accepts a prepared `SodiumGroundCapture::Provider`, a prescribed
+beam density and velocity in LSO, a parent-keyed random stream definition, and
+explicit numerical controls. It registers through
+`SodiumCaptureCohort::Prepared::RegisterForNormalStartup` before normal
+`amps_init`. Compiled Na, Na⁺ and H masses and charges must match the chosen
+isotope/state model. The neutral radius-independent beam rate is
+`n_proton * sigma * |v_proton - v_Na|` in s⁻¹. The normal tracer checks the
+particle velocity and force on every segment because an accelerating parent
+could leave the single supported energy between events. Give each original
+parent a persistent key with `SemanticRandom::InitializeSource` before its first
+trace. Newborn Na⁺ and H are distinct tracked PIC particles, each representing
+the original physical parent count and continuing its remaining local time.
+The prescribed bath loses one incoming proton per physical reaction. The
+committed ledger retains both initialized product packets and the signed charge,
+mass, momentum and energy transfer. Pair diagnostic compositions with committed
+entries before scoring. The global I24 contract still governs formal qualification.
+[Provider API](species/SodiumGroundCapture.h) · [Normal PIC registration](MoonSodiumCaptureCohort.h) ·
+[I24 test and execution](test/integration-tests/I24/README.md)
+
+Normal Moon startup requires two explicit positive, finite numbers in the
+Moon input block whenever neutral H is a compiled species. Omit both numbers
+when the executable has no neutral H. `hydrogen_characteristic_speed_m_s`
+is a speed in m/s used by the mesh time-step estimate
+`0.3 * characteristic_cell_size_m / speed`. Select it for the H speeds the
+case can produce. `hydrogen_to_sodium_reference_weight_ratio` is dimensionless
+and sets the H reference packet weight relative to neutral Na. Each daughter
+packet receives the individual correction required for the represented
+population. Neither control has a physical default.
+
+For the I24 stationary-Na target, the runner bounds H speed by assigning all
+initial projectile kinetic energy plus released reaction energy to H. It
+writes this bound and its numerical weight ratio of 0.125 to the four
+mover/layout input decks. The two-body event provider calculates the actual
+recoil of each daughter. [Input field definitions](../src/INPUT_FILE.md#moon-neutral-hydrogen-time-step-and-reference-weight)

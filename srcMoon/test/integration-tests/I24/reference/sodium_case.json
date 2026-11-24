@@ -1,0 +1,17 @@
+{
+  "schema": "srcMoon-I24-ground-capture-case-v1",
+  "model_id": "hplus-na3s-ground-capture-4kev-u-isotropic-v1",
+  "lock_sha256": "9fd6272f652fa14e33517f1354d9dc3ee6bf47948a07b3438b3b9f4c7b14f0d8",
+  "mass_inventory_sha256": "7c255c05398c9dbaf4d55a8b17550576884dd0c5710773d3f8bfb20cde6f7fa1",
+  "cohort": "I24-Shingal-1H-23Na-4keVu-isotropic-v1",
+  "seed": 731993,
+  "parents": 32768,
+  "proton_density_m3": "2.5e6",
+  "optical_depth": "1",
+  "parent_weight": "3",
+  "daughter_weights": ["2", "4"],
+  "energy_ev_per_u": "4000",
+  "printed_area_angstrom_squared": "0.22",
+  "stochastic_family_alpha": 0.01,
+  "arithmetic_relative_tolerance": 5e-12
+}

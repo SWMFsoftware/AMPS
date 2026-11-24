@@ -701,3 +701,344 @@ encoding and original layout. Its XPS-derived values use a gold S=1 calibration,
 20K surface and300K gas; it supplies no energy-accommodation law or broad
 lunar-temperature extrapolation. The normal C++ Catalogue reads the same two
 CSV views; opaque originals use the ordinary source-access path.
+
+## 12. Helium charge-exchange archive and sodium source cross-check
+
+Select `/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r6`
+with its own lock. The Swaczyna Zenodo deposit (DOI 10.5281/zenodo.4555716,
+CC BY 4.0) includes the unmodified producer ZIP and two exact numerical
+views for its calculated resonant `He0He1ct` branch. Both views support
+the ordinary C++ Catalogue and Python CSV APIs. For a single-energy lookup,
+use the smaller index to select the native ZIP member.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r6
+LOCK="$CHEM_DB_ROOT/database-lock.json"
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table swaczyna-4555716:he-ct-index --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" describe iaea-d119990-20261124:live-html
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$LOCK" <<'PY'
+from decimal import Decimal
+import sys
+from zipfile import ZipFile
+
+from amps_chemical_database import Database
+
+db = Database.from_lock(sys.argv[1])
+index = db.table("swaczyna-4555716:he-ct-index")
+row, = (row for row in index.dictionaries()
+        if Decimal(row["energy_cm_eV_native"]) == Decimal("10"))
+with ZipFile(db.source_path("swaczyna-4555716:native-zip")) as archive:
+    member = archive.read(row["native_member"]).decode("ascii")
+print(row)
+print(member.splitlines()[18])
+PY
+```
+
+The second table, `swaczyna-4555716:he-ct-angles`, joins to the index
+via `log10_e_cm_x1000` and contains 507,648 native rows. Energies are
+center-of-mass collision energies in eV. Angles are in radians and follow
+the neutral direction in the [source paper's Appendix A](https://pmc.ncbi.nlm.nih.gov/articles/PMC8861972/).
+The tabulated differential already includes `2π sin(θ)`. Integrate by
+weighting that column with the source quadrature weights. The native
+area unit is `2.8002852056e-17 cm²`. The publisher adds identifiers and
+CSV delimiters. It preserves every numeric spelling and angle order.
+
+The new live IAEA D119990 HTML confirms the existing 12-knot sodium
+partial table. Groningen and Courbin evidence, the NORAD He photon
+tables, Curtin electron-impact ionization and other inputs can be found
+through `describe chemistry-archive-20261124` as source records. The
+general shared snapshot holds only metadata for sources with restricted
+or uncleared managed access. Describe the record before selecting a source
+for a particular process. See the source/rights specifics in
+`NATIVE_M3_ARCHIVE_SOURCES.md`.
+
+## 13. Published laboratory observables and neutral ionization fits (r7)
+
+Select this snapshot to access four small source tables through the
+same CLI, Python API or C++ Catalogue. Example queries follow.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r7
+LOCK="$CHEM_DB_ROOT/database-lock.json"
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table cui2025-he-capture:table1 --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table kim1992-neutral-ionization:table1 --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table dibeler1966-water:observed-onsets --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table dibeler1966-water:relative-ion-signals --csv
+```
+
+Cui et al. report separate measured and calculated helium capture
+percentages. The missing excited-state measurement at 0.5 keV/u is blank.
+These projectile energies are in keV/u. The r6 Swaczyna table uses
+center-of-mass collision energy in eV. Agreement checks require an
+explicit convention match. Kim's coefficients are read with his Eq. (2).
+The historical water data are measured onsets and parent-relative ion
+signals, with no detector mass-response correction. Source locators,
+limitations, and source-specific rights appear in
+`NATIVE_M3_LITERATURE_SOURCES.md` and the catalogue.
+
+## 14. Subshell photoionization and helium-ion excitation (r8)
+
+The r8 release provides the original 103-element Kalha et al. workbook,
+the NASA Sutton report and the Bhatia paper. Use the existing read-only
+API from any application. To retrieve a different element, use the original
+workbook and its explanatory sheet.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r8
+LOCK="$CHEM_DB_ROOT/database-lock.json"
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table kalha-yeh-lindau-v2:he-ne-na-ar --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table sutton1972-he:excitation-ratios --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table bhatia2022-he:hybrid-table2 --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table bhatia2022-he:excited-table8 --csv
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$LOCK" <<'PY'
+import sys
+from amps_chemical_database import Database
+
+db = Database.from_lock(sys.argv[1])
+for row in db.table("kalha-yeh-lindau-v2:he-ne-na-ar").dictionaries():
+    if row["neutral_atom"] == "Na" and row["subshell"] == "3s":
+        print(row["photon_energy_eV_native"], row["photoionization_sigma_Mb_native"])
+print(db.source_path("kalha-yeh-lindau-v2:workbook"))
+PY
+```
+
+The four-element view preserves the exact spreadsheet strings and native
+blanks. Its cross sections are theoretical, in Mb, at tabulated photon
+energies in eV. Sutton reports gas-phase orbital cross-section ratios at
+200 eV incident electron energy with instrument-width sensitivity and the
+author's estimated errors. Bhatia's helium table uses outgoing electron
+momentum in the source convention. His two Table 8 ratios describe
+excited He⁺ relative to ground-state He⁺ and preserve the printed decade
+jumps that need independent review. Check the source locator, exact units,
+licence and domain details in `NATIVE_M3_PARTIAL_SOURCES.md`. The release
+also records the embargoed Science Data Bank helium angular dataset and
+the water-cation study as metadata.
+
+## 15. Charge-exchange scattering and the D119990 review (r9)
+
+The `isotropic-com-two-body-scattering-v1` entry describes uniform
+solid-angle sampling in the incoming pair's center-of-mass frame.
+It describes an experimental direction law for any two-body channel.
+The caller supplies the rate and product states. The conservative
+two-body model supplies the momentum magnitude and transformation with
+the declared reaction energy.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r9
+LOCK="$CHEM_DB_ROOT/database-lock.json"
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" describe isotropic-com-two-body-scattering-v1
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" describe proton-sodium-ground-capture-evidence-v1
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" describe collisiondb_119990_embedded_arrays.csv
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$LOCK" <<'PY'
+import sys
+from amps_chemical_database import Database
+
+db = Database.from_lock(sys.argv[1])
+print(db.model("isotropic-com-two-body-scattering-v1")["equations"])
+integral = db.describe("collisiondb_119990_embedded_arrays.csv")
+print(db.model(integral["source_scope_review_id"])["limitations"])
+PY
+```
+
+C++ applications can read the entries through `Catalogue::TableRows`
+on `amps-reduced-model-definitions-v1` and the D119990 table note
+through `Catalogue::GetTable`. The D119990 CSV retains the 12 native
+integral cross-section rows. The table now links to the unresolved
+ground-product rate/state comparison and the 4 keV/u angle gap.
+The entries describe evidence and an experimental model. Both have
+`physical_activation=false`. [Source review](NATIVE_CEX_SCATTERING_SOURCES.md)
+
+## 16. OH surface loss and helium excitation-ionization (r10)
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r10
+LOCK="$CHEM_DB_ROOT/database-lock.json"
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table wang2023-quartz-oh:table2 --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table wang2023-quartz-oh:table3 --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table sutton-kay1972-he:table3 --csv
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$LOCK" <<'PY'
+from amps_chemical_database import Database
+import sys
+
+db = Database.from_lock(sys.argv[1])
+for row in db.table("wang2023-quartz-oh:table2").dictionaries():
+    print(row["Y_mm_native"], row["plasma_feed"], row["loss_probability_beta_native"])
+print(db.source_path("sutton-kay1972-he:preprint"))
+PY
+```
+
+Wang and Bruggeman Table 2 gives atmospheric-pressure fused-silica OH
+loss estimates with the source's two distinct flux scales. Native
+missing values stay blank. Table 3 compares two spatial resolutions
+at the same dry-helium location. Use the source conditions when
+interpreting any loss probability. The Sutton and Kay file gives
+200 eV gas-phase He⁺ excitation cross-section ratios relative to 4s.
+It preserves the asymmetric and symmetric uncertainty estimates from
+Table III. The earlier single-author NASA report remains separately
+queryable. The ordinary shared C++ Catalogue uses the same CSV IDs.
+[Source details and limits](NATIVE_M3_LAB_BENCHMARKS_SOURCES.md)
+
+## 17. Reaction-specific laboratory and solar inputs in r11
+
+Select the snapshot by its lock. The table interface returns the original
+column tokens. The dataset description exposes experimental conditions,
+theoretical assumptions, source locators, and individual measurements
+from papers retained as metadata.
+
+```bash
+CHEM_DB_ROOT=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r11a
+LOCK="$CHEM_DB_ROOT/database-lock.json"
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table moore-mapaye2025:oh-water-fits --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table laurell2025:argon-peak-centers --csv
+"$CHEM_DB_ROOT/bin/chemdb" --lock "$LOCK" table iupac2010-oh-ice:uptake --csv
+PYTHONPATH="$CHEM_DB_ROOT/python" python3 -B - "$LOCK" <<'PY'
+from amps_chemical_database import Database
+import sys
+
+db = Database.from_lock(sys.argv[1])
+for dataset in ("sodium-ground-capture-benchmark-20261124", "he-electron-ion-emission-20261124"):
+    for source in db.describe(dataset)["files"]:
+        print(source["id"], dict(source["quantity_metadata"]))
+PY
+```
+
+Use the two sodium calculations as integral theory benchmarks with their
+individual incident-energy conventions. The NIFS figure identification
+disqualifies D119990 as a ground-product experimental rate. The helium
+measurements are photon-emission cross sections for electron impact. The
+flow-tube OH results describe irreversible uptake on ice. The solar fits
+provide frequencies for individual products. The argon fitted centers
+measure a fine-structure energy separation under narrow-band illumination.
+The reports document parent states, apparatus, uncertainties and
+applicability. [Sodium](NATIVE_M3_SODIUM_BENCHMARK_SOURCES.md)
+[Helium](NATIVE_M3_HELIUM_EMISSION_SOURCES.md)
+[OH on ice](NATIVE_M3_OH_ICE_SOURCES.md)
+[Partial photorates and argon](NATIVE_M3_PHOTON_BENCHMARK_SOURCES.md)
+
+For the monochromatic water experiment, query
+`db.describe("kronebusch-water-photofragmentation")["files"]`. Kronebusch
+and Berkowitz report fragment ions relative to total ionization at 21.2 eV.
+The collection efficiency drops for ions above 1 eV. Use the printed
+proceedings page when checking the weak O⁺ signal.
+[Water source and replay](NATIVE_M3_WATER_BRANCH_SOURCES.md)
+[ASMS primary report, printed page 114](https://www.asms.org/docs/default-source/proceedings-archive/1975_asms_23rd_conference.pdf#page=117)
+
+## 18. Reproduce published exosphere model choices in r12
+
+Poppe, Halekas and Harada's original 1 au rate file covers 25 species. The
+CSV exposes five atomic rows with the native species tokens and all nine
+frequencies per row. The article identifies the archive's `Ar` row as ⁴⁰Ar.
+Each rate is per neutral per second. Use the minimum, median and maximum as
+the authors' three environmental conditions. [Deposited rates](https://doi.org/10.5281/zenodo.6994648)
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r12
+"$db/bin/chemdb" --lock "$db/database-lock.json" table poppe2022:atomic-1au-rates --csv
+PYTHONPATH="$db/python" python3 -B - "$db/database-lock.json" <<'PY'
+from amps_chemical_database import Database
+import sys
+
+db = Database.from_lock(sys.argv[1])
+print(db.source_path("poppe2022:ionization-rates"))
+for dataset in ("water-photofragment-model-precedents-20261124",
+                "lunar-oh-surface-model-precedents"):
+    for source in db.describe(dataset)["files"]:
+        print(source["id"], dict(source["quantity_metadata"]))
+PY
+```
+
+The water records distinguish neutral fragment speeds, assumed charged
+branch fractions, and the products returned by a published sampler. The OH
+records distinguish incident retention, residence time and thermal launch.
+Each record identifies its native source and the limits on its application.
+The cross-model report links the individual studies, code and regression uses.
+[Comparison and sources](NATIVE_M3_MODEL_PRACTICE_SOURCES.md)
+
+## 19. Lunar neutral losses, water coverage and noble-gas product assumptions
+
+The r13 snapshot adds three separately identifiable model inputs. The first
+query exports the exact quiet-Sun frequencies from Peschel et al. Table 1.
+The other two return the parameters for molecular water on lunar grains and
+the single-channel He, Ne and Ar model used by EXOSPHID.
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r13
+"$db/bin/chemdb" --lock "$db/database-lock.json" table peschel2026:quiet-sun-neutral-loss --csv
+PYTHONPATH="$db/python" python3 -B - "$db/database-lock.json" <<'PY'
+from amps_chemical_database import Database
+import sys
+
+catalogue = Database.from_lock(sys.argv[1])
+for dataset in ("schorghofer-lunar-water-models-v123", "exosphid-noble-gas-photoionization"):
+    for source in catalogue.describe(dataset)["files"]:
+        print(source["id"], dict(source["quantity_metadata"]))
+PY
+```
+
+Compare the Ne frequency under the author's stated solar conditions and
+the Ar threshold under the source's stated product convention. The water
+desorption flux depends on coverage in molecules/m² and surface temperature
+in K. Its species is adsorbed molecular H₂O. The source notes document
+the differences from PHIDRATES, NIST and incident-OH sticking.
+[Noble-gas loss rates](NATIVE_M3_LUNAR_NOBLE_GAS_SOURCES.md)
+[Water surface model](NATIVE_M3_LUNAR_WATER_COVERAGE_SOURCES.md)
+[EXOSPHID atomic channels](NATIVE_M3_EXOSPHID_ATOMS_SOURCES.md)
+
+## Sodium pickup and binary charge exchange (r14)
+
+Select a reference case by its model ID. A source-bound model appears only in
+a release containing its reviewed source records. Python exposes the selectors
+as `db.model(id)["source_bindings"]`. The CLI and C++ table reader expose the
+same selectors through `amps-model-source-bindings-v1`, keyed by `model_id`.
+
+| Model ID | Physical input and intended use |
+| --- | --- |
+| `poppe2022-na-pickup-median-v1` | Total Na⁺ pickup production at 1 au for the authors' median conditions. The Na row supplies photoionization, solar-wind proton charge exchange and electron impact. The published frequencies to three significant digits are 7.59 × 10⁻⁶, 8.40 × 10⁻⁷ and 5.00 × 10⁻⁷ s⁻¹ per neutral. The ion starts at zero velocity in the lunar frame. Multiply each frequency by neutral density where that process operates. The authors neglect gravity and use steady perpendicular wind and magnetic field for their pickup trajectories. [Poppe et al., Table 1 and §2.2](https://doi.org/10.1029/2022JE007422) · [Deposited data, CC BY 4.0](https://doi.org/10.5281/zenodo.6994648) |
+| `hplus-na3s-ground-capture-4kev-u-isotropic-v1` | Monoenergetic H⁺ + Na(3s) → H(1s) + Na⁺(2p⁶). Shingal's A34 calculation supplies 0.22 Å² = 2.2 × 10⁻²¹ m² at 4.0 keV/u in the target-rest frame. AMPS supplies the angular assumption. Draw uniform cos θ on [−1,1] and uniform azimuth on [0,2π) in the incoming pair center of mass, and give the products opposing momenta. Use the actual reactant momentum, product masses and state-dependent reaction energy Q for recoil. The published point has no stated numerical uncertainty. Off-energy use is undefined. [Shingal et al., Table 4](https://doi.org/10.1088/0022-3700/19/3/014) |
+
+The first case includes all contributing hydrogen final states. Adding the
+second case to that total would count ground-state capture twice. To study the
+effect of the birth law on Na⁺ energies and surface returns, hold the production
+rate, source locations and fields fixed across the sensitivity runs. Such a
+comparison measures dependence on the approximation.
+
+Hartle et al. justify the zero birth velocity by comparing typical exospheric
+and background plasma speeds. Shen et al. use the same assumption to trace
+lunar pickup trajectories in their ARTEMIS analysis. These studies support the
+bulk transport approximation. The Na frequencies come from the Poppe deposit.
+[Hartle et al.](https://doi.org/10.1029/2011JA016859) · [Shen et al.](https://doi.org/10.3847/1538-4357/ad40a4)
+
+From any directory, inspect both cases and obtain the values from the pinned sources:
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r14
+"$db/bin/chemdb" --lock "$db/database-lock.json" table amps-model-source-bindings-v1 --csv
+PYTHONPATH="$db/python" python3 -B - "$db/database-lock.json" <<'PY'
+from decimal import Decimal
+import sys
+from amps_chemical_database import Database
+
+db = Database.from_lock(sys.argv[1])
+pickup = db.model("poppe2022-na-pickup-median-v1")["source_bindings"]
+na, = (row for row in db.table(pickup["table_id"]).dictionaries()
+       if all(row[key] == value for key, value in pickup["row_match"].items()))
+rates = {process: Decimal(na[column]) for process, column in pickup["columns"].items()}
+print(rates, pickup["unit"], tuple(pickup["birth_velocity_m_s"]), pickup["velocity_frame"])
+print("charge-exchange fraction when all three processes apply",
+      rates["solar_wind_proton_charge_exchange"] / sum(rates.values()))
+
+collision = db.model("hplus-na3s-ground-capture-4kev-u-isotropic-v1")["source_bindings"]
+point, = (source for source in db.describe(collision["dataset_id"])["files"]
+          if source["id"] == collision["source_id"])
+for key in collision["metadata_path"]:
+    point = point[key]
+print(point["projectile_energy"], point["energy_unit"], point["energy_frame"],
+      point[collision["area_field"]], collision["area_unit"])
+print(collision["angular_model_id"], collision["recoil_model_id"])
+PY
+```
+
+The original Poppe numerical file and its projection retain their attribution.
+The Shingal selector resolves to the published fact preserved in bibliographic
+metadata. Both sources retain their original access policies. Database tests
+verify the selections independently of an application enabling transport.

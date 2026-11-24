@@ -128,6 +128,15 @@ class Preparation(unittest.TestCase):
         for record in manifest['outputs']:
             self.assertEqual(record['sha256'],P.sha(record['path']))
 
+    def test_explicit_extended_optical_clock_survives_native_input_generation(self):
+        self.case['controls']['optical_clock_precision']='compensated-extended-log'
+        self.write_case();self.prepare()
+        self.assertIn('  optical_clock_precision = compensated-extended-log\n',
+                      (self.output/'native.in').read_text())
+
+    def test_unknown_optical_clock_mode_is_refused(self):
+        self.case['controls']['optical_clock_precision']='extended';self.write_case();self.refused()
+
     def test_actual_native_parser_preserves_raw_text_values_and_quoted_paths(self):
         """Owner.Text reads RAW values; only Owner.Path removes outer quotes.
 

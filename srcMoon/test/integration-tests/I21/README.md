@@ -38,6 +38,17 @@ remain SKIPPED and corrupt identities are ERROR.
 
 ### Run the pinned development cohort
 
+For the fixed-point lunar shadow case, select a sphere, a frozen environment,
+zero initial velocity, the reviewed zero-force producer and Earth occultation
+off. The auditor independently projects the lunar centre onto the finite
+particle-to-Sun segment using LSO coordinates and the lunar radius from the
+authenticated producer. Each `lunar_shadow-XX.json` records the closest
+distance in metres, radius, intersection class, native visibility and source
+identities. Every original parent must survive through the full common
+horizon. The six launch-specific event ledgers must be empty. A fully dark
+fixture tests the zero-hazard invariant only. Positive-rate lifetimes,
+branching precision and the M1/M2 predecessors have their own gates.
+
 First prepare the source-bound profile, application, case controls and
 isolated zero-acceleration producer as in [the commissioning workflow](../../../RUN.md).
 Retain that producer checkout and its generated ABI. Supply the approved
@@ -96,3 +107,66 @@ The output under `I21/trajectory/` retains actual native receipts, the event
 time/position comparison, the moving-path survival diagnostic and the
 independent inverse-square and budget checks. The constant cohort's result
 remains in its original campaign.
+
+### Select the initial optical-clock precision
+
+For the illuminated fixed-position refinement, add
+`"optical_clock_precision": "compensated-extended-log"` to the `controls`
+object in your copy of the case JSON **before preparing the plan**. If you
+prepare a single native input directly, the equivalent assignment is
+`optical_clock_precision = compensated-extended-log` inside its existing
+`sodium_qualification` block. The six-launch preparer writes the assignment
+and freezes the selection. Each `native-output/input_receipt.json` reports
+the mode used by the compiled binary. Existing input files that omit the
+selection use `binary64-log`.
+
+The production controller computes the first-hit optical depth from the same
+open uniform for either choice. Extended mode evaluates the logarithm before
+splitting its result into the existing two binary64 words. A continuing parent
+retains both words during movement and MPI migration. Each new daughter gets
+its own keyed draw under the selected convention. The mode is part of the
+opaque particle configuration fingerprint. The experimental extended mode
+requires a binary `long double` with 54–106 significand bits.
+
+Inspect the timing maxima in `independent-audit/numerical.json`, the
+per-parent differences in `numerical_comparison.csv` and the matching
+PNG/EPS figures. The independent comparison uses exact native event times
+and an 80-digit logarithm of each original parent's keyed uniform. Timing,
+rate, chronology and signed ledger criteria are scored individually.
+Production-time error contributions and the preserved historical comparison
+are documented in the [numerical audit guide](../../sodium_cohort/NUMERICAL_README.md).
+
+### Reproduce the lunar shadow fixture
+
+The checked-in [sphere input](reference/shadow_sphere.in) and
+[cohort controls](reference/shadow_controls.json) specify the compact mesh,
+quiet solar endpoint, fixed spherical occluder, seed, source point, 65,536 s
+horizon and 128 original parents. Obtain the Na/Na⁺ producer, ground-state
+profile and crosswalk using the source-qualification build instructions
+above. Generate the source-bound input and an independent native geometry
+receipt first. From the repository root run
+
+```bash
+case_root=srcMoon/test/integration-tests/I21/reference
+NA_APPLICATION="$PWD/$case_root/shadow_sphere.in"
+NA_CONTROLS="$PWD/$case_root/shadow_controls.json"
+work=$(mktemp -d)
+export NA_APPLICATION NA_CONTROLS
+/usr/bin/python3 -B srcMoon/test/sodium_cohort/prepare_physical_case.py \
+  --profile "$NA_PROFILE" --crosswalk "$NA_CROSSWALK" \
+  --application-input "$NA_APPLICATION" --case-json "$NA_CONTROLS" \
+  --output-dir "$work/reference-input"
+producer_root=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_root"])' "$NA_PRODUCER_MANIFEST")
+/usr/bin/python3 -B "$producer_root/srcMoon/test/run_m3_sodium_cohort.py" \
+  --mode run --mpi-ranks 1 --producer-manifest "$NA_PRODUCER_MANIFEST" \
+  --input "$work/reference-input/native.in" --output-dir "$work/reference"
+NA_REFERENCE_RECEIPT="$work/reference/native-output/input_receipt.json"
+NA_REFERENCE_SHA256=$(sha256sum "$NA_REFERENCE_RECEIPT" | cut -d ' ' -f 1)
+NEW_PLAN_DIR="$work/plan"
+NEW_RUN_DIR="$work/execution"
+```
+
+Use these paths in the plan-preparation and aggregate commands above. The
+geometry-only comparison uses the Sun direction actually returned by SPICE.
+The reference-segment test also checks the Moon's radius from the authenticated
+build. No observation files are needed for this analytical shadow case.

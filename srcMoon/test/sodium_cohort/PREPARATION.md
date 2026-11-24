@@ -76,6 +76,19 @@ population; LSO position/velocity; solar endpoint, frame, origin and source
 reference distance/identity; and hash-bound transport-policy evidence. There
 is no assumed energy correction, source rate or physical model budget.
 
+The optional `optical_clock_precision` numerical control selects the
+arithmetic used to construct the initial optical depth of each original
+particle and each fresh daughter. Add
+`"optical_clock_precision": "compensated-extended-log"` to `controls` to
+request an extended-precision evaluation of `-ln(U)`. The preparer writes
+`optical_clock_precision = compensated-extended-log` into the named
+`sodium_qualification` block of `native.in`. The I21 plan builder freezes
+the selection, and each physical launch reports what it used in
+`native-output/input_receipt.json`. Omitting this key or selecting
+`binary64-log` retains the original binary64 source-clock convention. The
+random key, draw sequence, source rates, point visibility, timestep and
+acceptance thresholds are identical for both selections.
+
 Once every control is explicitly supplied:
 
 ```sh

@@ -109,3 +109,33 @@ unconditionally, normalize accepted near-unit encodings, sum signed energy
 components through a floating expansion while retaining original occurrence
 records, and use `2*sqrt(u)*sqrt(1-u)` for sine. The original criteria remain;
 new explicit source/Decimal regressions exercise each mechanism.
+
+### I22 explicit charged-breakup construction
+
+Use one supplied fraction of the post-state, post-COM kinetic energy and two
+supplied directions in the same inertial axes. The first direction gives the
+outgoing electron relative to the heavy-pair center of mass. The second gives
+the ion relative to its neutral partner. The event has one free electron, one
+singly charged ion and one neutral with explicit nuclear composition. Each
+state uses the same resolved mass and formation-energy reference. The caller
+supplies the available translation after accounting for all chosen internal
+energies, the incoming photon and common COM motion. Each fraction endpoint
+is valid, and all nonzero relative modes require a supplied unit direction.
+This algebra alone assigns no population, energy or angular distribution.
+
+The predeclared deterministic controls use two noncollinear directions,
+unequal masses, zero and nonzero bulk velocities, both partition endpoints,
+zero available energy, invalid partitions, missing source provenance and
+wrong product classes. Reconstruct both relative-mode energies and directions,
+each product momentum, the total momentum and the total kinetic energy.
+Compare against the independent Decimal two-body boost identities under
+the existing 128-machine-epsilon arithmetic rule. The existing supporting
+reduced-kinematics runner records its CSV, manifest and individual statuses.
+No new observational data or stochastic physical law enters this control.
+
+The parent-rest photon wrapper adds a resolved parent and independently sourced
+threshold and mean excess energy. Verify the photon energy and momentum,
+formation Q and all three material occurrences using the same additive mass
+reference. Require exact isotope/charge conservation, refuse a moving parent
+in a parent-rest call and reject an inconsistent source threshold under the
+strict source-equals-state policy.

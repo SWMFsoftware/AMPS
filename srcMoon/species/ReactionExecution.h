@@ -62,10 +62,17 @@ class TraceInterval {
 
 // An optical depth is dimensionless. A consumed parent clock cannot be
 // assigned to a daughter; fresh() distinguishes a new draw from continuation.
+enum class OpticalDepthPrecision { Binary64Log, CompensatedExtendedLog };
 class OpticalDepthClock {
  public:
   static bool FromOpenUniform(double uniform,OpticalDepthClock* output,
                               std::string* error);
+  // The original constructor preserves the published binary64 boundary
+  // convention. The explicit overload computes the same physical -ln(U) in
+  // extended precision and stores its exact high and low binary64 components
+  // when requested. Neither overload mutates the output on refusal.
+  static bool FromOpenUniform(double uniform,OpticalDepthClock* output,
+                              std::string* error,OpticalDepthPrecision precision);
   bool valid() const;
   bool consumed() const { return consumed_; }
   bool fresh() const { return fresh_; }

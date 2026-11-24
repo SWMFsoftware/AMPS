@@ -104,6 +104,7 @@ def prepare_cohort(args):
             'zero-hazard-invariant' if rate == 0 else 'homogeneous-fixed-position',
         'reference_total_rate_s': float(rate),
         'primary_estimator': 'integrated-exposure' if varying else 'zero-hazard' if rate == 0 else 'lifetime',
+        'optical_clock_precision': controls.get('optical_clock_precision','binary64-log'),
         'branch_claims': args.branch_claims,
         'source_channel_rates_s': [{'id': channel, 'rate_s': float(rate)}],
         'source_profile': descriptor(args.profile),

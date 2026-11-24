@@ -103,3 +103,27 @@ are needed by existing core compilation even when only Na and NA_PLUS are active
 Keeping those declarations does not add injected or transported species. The
 actual normal species parser and clean compile exercise this compatibility
 requirement; no core compatibility macro is invented by the test.
+
+### Build the I24 sodium capture case
+
+Use the ordered [Na, Na⁺, H mapping](../integration-tests/I24/reference/compiled_species.json)
+and a source-authenticated profile containing all three ground states. The
+projectile is a prescribed proton bath with explicit mass and momentum
+exchange. The outgoing H particle is tracked on the mesh. The builder checks
+the profile, source checkout and generated individual-weight ABI. Prepare
+the disposable checkout as described above. From the source checkout run
+
+```bash
+/usr/bin/python3 -B srcMoon/test/build_m3_source_qualification.py \
+  --checkout "$private_checkout" --profile "$profile" \
+  --mapping srcMoon/test/integration-tests/I24/reference/compiled_species.json \
+  --reference-problem homogeneous-zero-acceleration \
+  --spice-path /home/vtenishe/SPICE/cspice \
+  --spice-kernels /home/vtenishe/SPICE/Kernels \
+  --wall-seconds 1200 --output-dir "$build_receipt"
+```
+
+Supply `$build_receipt/normal_build_evidence.json` to the I24 aggregate
+while the private checkout and its build artifacts are available. Putting
+a build directory on temporary storage means a machine reboot may require
+rebuilding it. [Run the linked tests](../integration-tests/I24/README.md#running-both-the-mpi-cohort-and-the-linked-pic-movers)

@@ -71,6 +71,9 @@ std::uint64_t Fingerprint(const Configuration& c) {
   // Integrity of migrated state, not a replacement for source/data SHA-256
   // provenance. Function/user-data addresses intentionally are NOT serialized.
   std::uint64_t hash=UINT64_C(1469598103934665603);HashString(hash,c.identity);HashString(hash,c.eventFrame);
+  // Old records retain their original fingerprint. The experimental precision
+  // has a distinct fingerprint, so stale mixed-precision restarts refuse.
+  if(c.clockPrecision!=R::OpticalDepthPrecision::Binary64Log)HashString(hash,"compensated-extended-log-v1");
   HashValue(hash,c.elementaryChargeC);HashString(hash,c.elementaryChargeSourceIdentity);
   HashString(hash,c.productInitializerIdentity);
   const bool hasProductInitializer=c.initializeProduct!=nullptr;HashValue(hash,hasProductInitializer);
@@ -334,7 +337,7 @@ void PrepareParticle(long int particle,double requested,Node* node) {
       record.history.catalogSpecies=state;record.history.internalEnergyJ=internal;
       record.history.configurationFingerprint=Active->fingerprint;
       if(!R::TraceInterval::Create(epoch,requested,0,&record.history.interval,&error) ||
-          !R::OpticalDepthClock::FromOpenUniform(Draw(DrawPurpose::SourceClock,particle,std::numeric_limits<std::size_t>::max()),&record.history.clock,&error))Fatal(error);
+          !R::OpticalDepthClock::FromOpenUniform(Draw(DrawPurpose::SourceClock,particle,std::numeric_limits<std::size_t>::max()),&record.history.clock,&error,Active->configuration.clockPrecision))Fatal(error);
       SetOrigin(record,requested,epoch);
     }
     else {

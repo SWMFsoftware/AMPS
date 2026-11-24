@@ -1049,3 +1049,35 @@ admission-control comparisons under the chosen output directory:
 
 See `result.json`, `comparison.csv`, the exact profile snapshot and the
 separate build/native logs. This controlled run has no measured plasma input.
+
+### I24 sodium charge exchange at 4.0 keV/u
+
+This development runner uses the pinned r14 partial cross section for a
+monoenergetic proton beam incident on ground-state Na. The ensemble
+estimates removal frequency and lifetime. The independent linked test
+tracks both outgoing particles through each production force-cut-surface
+mover. Prepare a three-species build by following the
+[source-qualification instructions](test/source_qualification_build/README.md#build-the-i24-sodium-capture-case).
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r14
+producer=test_output/srcMoon/m3-production-aPrmWNe5/closure-capture-build/normal_build_evidence.json
+out=$(mktemp -d -p "$PWD/test_output/srcMoon" i24-capture-XXXXXXXX)
+/usr/bin/python3 -B srcMoon/test/run_all_test.py --only I24 --skip-build \
+  --campaign-mode regression --mpi-ranks 8 --test-runtime-seconds 1800 \
+  --i24-sodium-lock "$db/database-lock.json" --i24-pic-producer "$producer" \
+  --output-dir "$out"
+```
+
+On another machine set `producer` to the new local producer manifest.
+Supply `--i24-mass-inventory` when the NIST source packet is in another
+directory. Add `--i24-pic-refinement` to the command to compare one, two and four
+common time steps and three reference-weight scales on both MPI layouts.
+The aggregate retains each child status in `$out/I24/result.json`.
+Open `$out/I24/sodium-ground-capture/comparison.png` for the population
+comparison and
+`$out/I24/sodium-pic-ground-capture/second-8mpi/continuation.png` for the
+two products' ballistic continuations. Corresponding CSV and EPS files are
+available. Each run uses a fresh output directory. Formal I24 has separate
+predecessor and physical-coverage requirements.
+[Physics and output contract](test/integration-tests/I24/SODIUM_CASE.md)

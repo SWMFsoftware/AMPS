@@ -71,6 +71,44 @@ NIST_JRES_121005 = _policy('allowed', 'allowed', 'source-specific-technical-publ
     dict(url='https://nvlpubs.nist.gov/nistpubs/jres/121/jres.121.005.pdf',
          note='Inspected unmarked NIST-employee H/O thermochemical evaluation, DOI10.6028/jres.121.005; not the separately copyrighted WebBook/ASD product.'),
     conditions='Only JRes121.005 official PDF/native PMC7339710 rendition and pinned notice. Cite the article and include: Republished courtesy of the National Institute of Standards and Technology. Preserve native table/uncertainty/state conventions; no grant for unrelated SRD or paper payloads.')
+NIST_JRES_M3 = _policy('allowed', 'allowed', 'source-specific-technical-publication-reuse',
+    dict(url='https://www.nist.gov/open/license', note='NBS/NIST employee publications in the Journal of Research are covered by the technical-publication notice.'),
+    conditions='Only the exact reviewed Dibeler et al. 1966 and Kim 1992 original articles and native-token views. Cite the author and article, and acknowledge Republished courtesy of the National Institute of Standards and Technology. No grant for NIST SRD107 or neighbouring publications.')
+MDPI_CUI_2025 = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://doi.org/10.3390/atoms13090074', note='The original article prints the CC BY 4.0 licence.'),
+    conditions='Attribute Cui et al. and the original DOI. Record extraction of Table 1 as a lexical CSV change. Grant covers the article and its printed data, with no grant asserted for unpublished angular arrays.')
+FIGSHARE_YEH_LINDAU = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://api.figshare.com/v2/articles/12389750/versions/2',
+         note='The version 2 record applies CC BY 4.0 to native workbook 22860461.'),
+    conditions='Credit Kalha et al. and Yeh and Lindau. Retain the version, native MD5 and SHA-256, licence link and projected cell locators.')
+NTRS_19720018903 = _policy('allowed', 'allowed', 'source-specific-public-use',
+    dict(url='https://ntrs.nasa.gov/citations/19720018903',
+         note='Public distribution and GOV_PUBLIC_USE_PERMITTED for the exact report. The record declares no third-party material.'),
+    conditions='Credit J. F. Sutton and NASA Goddard. Preserve the reported 200 eV conditions, instrument sensitivity and estimated errors.')
+MDPI_BHATIA_2022 = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://doi.org/10.3390/atoms10010009', note='The original article prints the CC BY 4.0 licence.'),
+    conditions='Credit A. K. Bhatia. Identify the Table 2 hybrid-theory projection and retain the native outgoing electron momentum convention.')
+IUPAC_2010_OH_ICE = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://doi.org/10.5194/acp-10-9059-2010',
+         note='Crowley et al. print an original-content CC Attribution 3.0 notice on page 9059.'),
+    conditions='Credit Crowley et al. and Cooper and Abbatt. Identify the CSV as a projection of section V.A1.3. The licence applies to the exact evaluated article.')
+AAS_MOORE_MAPAYE = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://doi.org/10.3847/PSJ/add6a2', note='Publisher article and version-of-record metadata specify CC BY 4.0.'),
+    conditions='Credit Moore and Mapaye, the paper and licence. Identify the lexical projection of their Table 1.')
+AAS_PESCHEL = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://doi.org/10.3847/PSJ/ae4901', note='Page 1 grants CC BY 4.0 for the original article content.'),
+    conditions='Credit Peschel, Grava, Breternitz and Reiss. Identify the Table 1 projection, article DOI and CC BY 4.0 licence.')
+NATURE_LAURELL_EXT4 = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://www.nature.com/articles/s41566-024-01607-8', note='Author source data for Extended Data Fig. 4 on the CC BY 4.0 article page.'),
+    conditions='Credit Laurell et al. and preserve the DOI, licence, workbook identity, and paired Bayesian fit sample interpretation.')
+IOP_WANG_BRUGGEMAN_2023 = _policy('allowed', 'allowed', 'allowed-with-attribution',
+    dict(url='https://doi.org/10.1088/1361-6595/aceff9',
+         note='Original-content CC BY 4.0 in the article. The Crossref record identifies the same licence for the version of record.'),
+    conditions='Credit Jianan Wang and Peter J. Bruggeman and retain title, journal, DOI, licence and modifications. Applies to this article and its original tables.')
+NTRS_19730006011 = _policy('allowed', 'allowed', 'source-specific-public-use',
+    dict(url='https://ntrs.nasa.gov/citations/19730006011',
+         note='Public distribution and GOV_PUBLIC_USE_PERMITTED for the exact Sutton and Kay preprint. Its record declares no third-party material.'),
+    conditions='Credit Sutton and Kay and NASA Goddard. The published numerical view selects only the authors’ original experimental ratios.')
 NIST_UNMARKED = _policy('allowed', 'allowed', 'allowed-with-source-credit',
     dict(url='https://www.nist.gov/copyrights-disclaimers',
          note='Use of NIST information permits copying of information not marked copyrighted.'),
@@ -581,12 +619,24 @@ def inventory(amps_root: Path, validation_root: Path, source_packets=()) -> list
         policies = {'metadata-only': UNKNOWN, 'iaea-cc-by-4.0': IAEA,
                     'exomol-cc-by-sa-4.0': EXOMOL, 'nasa-cea-apache-2.0': NASA_CEA,
                     'zenodo-cc-by-4.0': ZENODO_CC_BY,
+                    'zenodo-4555716-cc-by-4.0': ZENODO_CC_BY,
                     'tuwien-regolith-cc-by-4.0': TUWIEN_REGOLITH,
                     'chianti-use-attribution': CHIANTI,
                     'springer-cc-by-4.0': SPRINGER_CC_BY,
                     'ntrs-19700032941-public-use': NTRS_19700032941,
                     'figshare-13274840-cc-by-4.0': FIGSHARE_STICKING,
-                    'nist-jres-121005-public-use': NIST_JRES_121005}
+                    'nist-jres-121005-public-use': NIST_JRES_121005,
+                    'nist-jres-water-1966-kim-1992': NIST_JRES_M3,
+                    'mdpi-atoms13090074-cc-by-4.0': MDPI_CUI_2025,
+                    'figshare-12389750-v2-cc-by-4.0': FIGSHARE_YEH_LINDAU,
+                    'ntrs-19720018903-public-use': NTRS_19720018903,
+                    'mdpi-atoms10010009-cc-by-4.0': MDPI_BHATIA_2022,
+                    'iupac-acp-2010-oh-ice-cc-by-3.0': IUPAC_2010_OH_ICE,
+                    'iop-aceff9-cc-by-4.0': IOP_WANG_BRUGGEMAN_2023,
+                    'aas-moore-mapaye-2025-cc-by-4.0': AAS_MOORE_MAPAYE,
+                    'aas-peschel-2026-cc-by-4.0': AAS_PESCHEL,
+                    'nature-laurell-ext4-cc-by-4.0': NATURE_LAURELL_EXT4,
+                    'ntrs-19730006011-public-use': NTRS_19730006011}
         for item in module.load_packets(source_packets, policies):
             if item['id'] in datasets or any(row['id'] in file_ids for row in item['files']):
                 raise ValueError('new source packet collides with historical dataset/source IDs')

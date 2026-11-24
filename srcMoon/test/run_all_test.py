@@ -671,6 +671,10 @@ def run_test(
     m3_input: Path | None = None,
     i21_cohort_plan: Path | None = None,
     i21_cohort_plan_sha256: str | None = None,
+    i24_sodium_lock: Path | None = None,
+    i24_mass_inventory: Path | None = None,
+    i24_pic_producer: Path | None = None,
+    i24_pic_refinement: bool = False,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -715,6 +719,15 @@ def run_test(
             command.extend(["--i21-cohort-plan",str(i21_cohort_plan),
                 "--i21-cohort-plan-sha256",i21_cohort_plan_sha256,
                 "--test-runtime-seconds",str(test_runtime_seconds)])
+        if test_id=="I24" and i24_sodium_lock is not None:
+            command.extend(["--i24-sodium-lock",str(i24_sodium_lock),
+                            "--test-runtime-seconds",str(test_runtime_seconds)])
+            if i24_pic_producer is not None:
+                command.extend(["--i24-pic-producer",str(i24_pic_producer)])
+            if i24_pic_refinement:
+                command.append("--i24-pic-refinement")
+            if i24_mass_inventory is not None:
+                command.extend(["--i24-mass-inventory",str(i24_mass_inventory)])
     else:
         command = [
             sys.executable,
@@ -794,6 +807,14 @@ def main() -> int:
     parser.add_argument("--i21-cohort-plan",type=Path,
         help="explicit frozen I21 fixed-position or development trajectory cohort plan")
     parser.add_argument("--i21-cohort-plan-sha256",help="SHA-256 of the explicit I21 cohort plan")
+    parser.add_argument("--i24-sodium-lock",type=Path,
+        help="run the 4.0 keV/u sodium provider and event-plan comparison with the pinned r14 lock")
+    parser.add_argument("--i24-pic-producer",type=Path,
+        help="source-bound producer manifest for first/second-order I24 native PIC tests at 1 and 8 ranks")
+    parser.add_argument("--i24-pic-refinement",action="store_true",
+        help="extend the I24 PIC matrix with fixed-horizon timestep and fixed-population weight refinement")
+    parser.add_argument("--i24-mass-inventory",type=Path,
+        help="use a relocated source-backed NIST mass inventory for the I24 sodium comparison")
     parser.add_argument(
         "--campaign-mode",
         choices=("regression", "qualification"),
@@ -811,7 +832,7 @@ def main() -> int:
     parser.add_argument("--i11-parallel-levels", type=int, choices=(1, 2, 4), default=1,
                         help="concurrent I11 meshes, with --mpi-ranks per mesh")
     parser.add_argument("--test-runtime-seconds", type=float, default=3600,
-                        help="bounded I11, I19 or explicit I21 run allowance; interrupted children are ERROR")
+                        help="bounded I11, I19 or explicit I21/I24 run allowance; interrupted children are ERROR")
     parser.add_argument("--m2-cluster-execute",action="store_true",
                         help="opt in to reviewed I19 long execution; defaults to deferred/import-only")
     parser.add_argument(
@@ -876,6 +897,14 @@ def main() -> int:
         parser.error("a test ID may be selected only once")
     if args.i21_cohort_plan is not None and "I21" not in selected:
         parser.error("an explicit I21 cohort plan requires selecting I21")
+    if args.i24_sodium_lock is not None and ("I24" not in selected or args.campaign_mode!="regression"):
+        parser.error("--i24-sodium-lock requires I24 in regression mode")
+    if args.i24_pic_producer is not None and args.i24_sodium_lock is None:
+        parser.error("--i24-pic-producer requires --i24-sodium-lock")
+    if args.i24_pic_refinement and args.i24_pic_producer is None:
+        parser.error("--i24-pic-refinement requires --i24-pic-producer")
+    if args.i24_mass_inventory is not None and args.i24_sodium_lock is None:
+        parser.error("--i24-mass-inventory requires --i24-sodium-lock")
 
     output_root = (
         args.output_dir.resolve()
@@ -999,6 +1028,7 @@ def main() -> int:
             m2_amps, args.i11_parallel_levels, args.test_runtime_seconds,
             args.m2_cluster_execute,
             m3_input, args.i21_cohort_plan, args.i21_cohort_plan_sha256,
+            args.i24_sodium_lock,args.i24_mass_inventory,args.i24_pic_producer,args.i24_pic_refinement,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)

@@ -14,6 +14,8 @@ from pathlib import Path
 
 
 TABLE_ID = "amps-reduced-model-definitions-v1"
+BINDINGS_TABLE_ID = "amps-model-source-bindings-v1"
+D119990_SCOPE_REVIEW_ID = "proton-sodium-ground-capture-evidence-v1"
 COLUMNS = ("model_id", "implementation", "evidence_kind", "equations_json",
            "inputs_json", "outputs_json", "assumptions_json", "limitations_json", "citations_json")
 
@@ -144,6 +146,40 @@ _DEFINITIONS = (
          "An unpolarized dipole angular alternative requires an energy/state-dependent anisotropy parameter; no universal He/Na/Ne/Ar value is selected.",
          "Neither a source-mean energy nor isotropy supplies electron heating, spectral widths or state populations."],
         ["https://phidrates.space.swri.edu/"], "explicit experimental closure specification"),
+    # Treat the angular law as an explicitly selected mathematical model.
+    # The shared two-body kinematics can use its direction, but neither
+    # definition chooses a rate, species, internal state or source domain.
+    _definition("isotropic-com-two-body-scattering-v1", "descriptor-only",
+        ["mu = cos(theta) = 2*U - 1", "phi = 2*pi*V",
+         "n = (sqrt(1-mu^2)*cos(phi), sqrt(1-mu^2)*sin(phi), mu)",
+         "dP/dOmega = 1/(4*pi) [sr^-1]"],
+        ["Two independent unit-uniform variates U and V in [0,1).",
+         "Pair center-of-mass axes with theta measured from the incident relative direction.",
+         "Separately declared reaction rate, product masses, state-energy Q [J], total incoming momentum [kg m/s] and energy [J]."],
+        ["One center-of-mass direction for opposing product momenta.",
+         "Compose with two-body-conservative-v1 for the momentum magnitude and event-frame velocities."],
+        ["Uniform solid angle in the incoming pair center-of-mass frame.",
+         "One shared sampled direction for both products, with opposite momenta and the reaction Q applied."],
+        ["Experimental sensitivity model. It supplies no measured angular law, integral rate, state mapping or physical applicability bound.",
+         "For forward-peaked collisions the model can substantially increase the predicted recoil energy."],
+        evidence="explicit experimental sensitivity model"),
+    # These are provenance findings about existing sources. A figure-scale
+    # discrepancy is not an extracted numerical angular or rate table.
+    _definition(D119990_SCOPE_REVIEW_ID, "descriptor-only", [],
+        ["Selected reference reaction H+ + Na(3s) -> H(1s) + Na+(2p6).",
+         "Existing source records iaea-d119990-20261124:live-html and chemistry-archive-20261124:knoop-h-na.",
+         "Existing integral table collisiondb_119990_embedded_arrays.csv, SHA-256 2a887ad43497a7f9e2b3d7b6173ae1b2597cc893d897926762c181946c92db93."],
+        ["Unresolved source/state crosswalk and angular-data gap for the declared reaction."],
+        ["The native IAEA label leaves the incoming Na state and the original publication unspecified.",
+         "Knoop Chapter 5 section 5.2.3 reports laboratory ground-product angular results from 7 keV/u upward. Figure 5.10 shows a peak-normalized ground-product trace at 25 keV/u. The 4 keV/u panel omits that trace.",
+         "At 4 keV/u the exact D119990 value is 6.34e-15 cm^2. Knoop Figure 5.6 puts the prompt outer-shell H(n=1) point between the 1e-17 and 1e-16 cm^2 decades. This is a figure-scale consistency check."],
+        ["The published angular trace supplies no numerical absolute bins, full-tail coverage or 4 keV/u ground-product distribution.",
+         "Resolve the original citation, initial state and prompt or eventual product convention before combining the rate and angle evidence.",
+         "The source review does not reassign the D119990 channel or qualify its rate for physical transport."],
+        ["https://db-amdis.org/collisiondb/datasets/119990/",
+         "https://pure.rug.nl/ws/portalfiles/portal/2855778/c5.pdf",
+         "https://pure.rug.nl/ws/portalfiles/portal/2855777/c4.pdf"],
+        "published source-scope review"),
 )
 
 
@@ -152,7 +188,92 @@ def definitions():
     return copy.deepcopy(_DEFINITIONS)
 
 
-def materialize(root, release_id, amps_root):
+def sodium_scenarios(datasets):
+    """Attach each scenario only when its reviewed source objects are in this selection.
+
+    Use payload identities, so replaying an acquisition at a different time
+    does not invalidate a scenario. A different source edition may still be
+    published in its own right. Its model binding needs a new scope review.
+    """
+    selected = []
+    # Resolve within the named source packet. A matching identifier in a
+    # differently scoped dataset cannot supply the selector exported below.
+    packets = {dataset["id"]: {row["id"]: row for row in dataset["files"]}
+               for dataset in datasets if "source_packet" in dataset}
+    pickup_files = packets.get("poppe2022-lunar-pickup-rates", {})
+    poppe_table = "poppe2022:atomic-1au-rates"
+    poppe_hashes = {
+        poppe_table + ":csv": "76fb5cdb5181a5a4a6ceb0e9fff40da28fb3069affe107e440644863ed083b61",
+        "poppe2022:ionization-rates": "a208a94f318bbe2c63c59e6e28cfd15bf78901b7f7560480c8298bb235b7826e",
+        "poppe2022:article": "2c8facf7d53366bb65c9f4285ed0e18e335536527926f9c898a1718747ea1ec0",
+    }
+    if all(pickup_files.get(key, {}).get("sha256") == digest for key, digest in poppe_hashes.items()):
+        projected = pickup_files[poppe_table + ":csv"]
+        if projected.get("table", {}).get("id") != poppe_table or projected["evaluation_permission"] != "allowed":
+            raise ValueError("reviewed Poppe median reference requires its accessible named CSV")
+        pickup = _definition("poppe2022-na-pickup-median-v1", "descriptor-only",
+            ["S_j = n_Na * nu_j", "v_birth = (0, 0, 0) in the lunar frame"],
+            ["Local neutral Na number density [m^-3]", "Deposited median frequencies per neutral at 1 au [s^-1]"],
+            ["Volumetric Na+ source for each selected process [m^-3 s^-1]", "Lunar-frame ion birth velocity [m/s]"],
+            ["Select the Na row and the median of each process. Section 2.2 neglects parent-neutral motion at pickup.",
+             "Compute each process only where its driver acts. The authors trace pickup in steady uniform crossed fields."],
+            ["The proton charge-exchange frequency includes all contributing final states under the published solar wind.",
+             "Adding a ground-capture source to that frequency for the same population would double count events.",
+             "The minimum and maximum columns describe different conditions; they are not errors on the median."],
+            # Poppe supplies the rates and birth condition. Hartle and Shen
+            # independently document this birth approximation for pickup-ion
+            # transport; neither supplies a Na binary differential cross section.
+            ["https://doi.org/10.1029/2022JE007422", "https://doi.org/10.5281/zenodo.6994648",
+             "https://doi.org/10.1029/2011JA016859", "https://doi.org/10.3847/1538-4357/ad40a4"],
+            "published lunar pickup source model")
+        # Select columns by name. Native decimal tokens and the CC BY 4.0
+        # attribution stay with the authoritative CSV and its parent deposit.
+        pickup["source_bindings"] = dict(
+            rate_kind="frequency_per_neutral", unit="s^-1", heliocentric_distance_au=1,
+            table_id=poppe_table, row_match={"native_species": "Na"},
+            columns={process: process + "_median_per_s" for process in
+                     ("photoionization", "solar_wind_proton_charge_exchange", "solar_wind_electron_impact")},
+            birth_velocity_m_s=[0, 0, 0], velocity_frame="lunar", source_sha256=poppe_hashes)
+        selected.append(pickup)
+
+    theory_id = "shingal1986-na:ground-partial-benchmark"
+    theory_sha = "58bc33f7f8e7dd960ff2972edf0bd3999ada697e8ec666f04da97bc08e7e8078"
+    theory_packet = "sodium-ground-capture-benchmark-20261124"
+    record = packets.get(theory_packet, {}).get(theory_id, {})
+    if record.get("sha256") == theory_sha:
+        point = record.get("quantity_metadata", {}).get("benchmark_point", {})
+        if any(point.get(key) != expected for key, expected in
+               (("projectile_energy", "4.0"), ("energy_unit", "keV/u"), ("cross_section_cm2", "2.2E-17"),
+                ("energy_frame", "target-rest laboratory"), ("method", "A34 theory"))):
+            raise ValueError("reviewed Shingal reference requires its Table 4 benchmark metadata")
+        ground = _definition("hplus-na3s-ground-capture-4kev-u-isotropic-v1", "descriptor-only",
+            ["nu = n_projectile * sigma_1s * v_relative for a monoenergetic beam",
+             "dP/dOmega = 1/(4*pi) in the pair center of mass"],
+            ["Published A34 ground-product partial at the selected target-rest energy",
+             "Projectile number density [m^-3], relative speed [m/s], state-consistent masses [kg] and reaction Q [J]"],
+            ["Single-channel frequency per Na target [s^-1]", "Opposing COM momenta and both event-frame product velocities [m/s]"],
+            ["H+ + Na(3s) -> H(1s) + Na+(2p6). Both outgoing atoms/ions are in their ground states.",
+             "The AMPS sensitivity scenario supplies isotropy. Shingal Table 4 supplies the integral cross section."],
+            ["Use only at the source energy. No off-energy interpolation or solar-wind averaging is defined.",
+             "The physical angular distribution and numerical cross-section uncertainty are unspecified.",
+             "Hold production fixed when comparing modeled Na+ spectra or return fractions across birth-direction laws."],
+            ["https://doi.org/10.1088/0022-3700/19/3/014"], "atomic theory with an approved modeled scattering law")
+        # The benchmark is already inspectable publication metadata. Point to
+        # that fact without copying restricted PDF bytes or creating a new
+        # numerical table from them. Both products share one relative direction.
+        ground["source_bindings"] = dict(
+            rate_kind="single_energy_partial_cross_section", dataset_id=theory_packet,
+            source_id=theory_id, metadata_path=["quantity_metadata", "benchmark_point"],
+            area_field="cross_section_cm2", area_unit="cm^2", projectile_energy_kev_u="4.0",
+            energy_frame="target-rest laboratory", off_energy_policy="undefined",
+            incident_states=["H+", "Na(3s)"], product_states=["H(1s)", "Na+(2p6)"],
+            angular_model_id="isotropic-com-two-body-scattering-v1", recoil_model_id="two-body-conservative-v1",
+            source_sha256={theory_id: theory_sha})
+        selected.append(ground)
+    return selected
+
+
+def materialize(root, release_id, amps_root, datasets=()):
     """Create authored software metadata as ordinary permission-cleared sources.
 
     This is NOT a download and carries no fabricated HTTP/acquisition record.
@@ -161,7 +282,8 @@ def materialize(root, release_id, amps_root):
     """
     directory = Path(root) / "releases" / release_id / "provenance" / "authored-models"
     directory.mkdir(parents=True, exist_ok=False)
-    values = definitions()
+    scenarios = sodium_scenarios(datasets)
+    values = definitions() + tuple(scenarios)
     document = directory / "model-definitions.json"
     document.write_text(json.dumps(dict(schema="amps-chemical-model-definitions-v1", models=values,
         physical_activation=False), indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
@@ -181,7 +303,19 @@ def materialize(root, release_id, amps_root):
         evidence=[dict(url="https://github.com/SWMFsoftware/AMPS/blob/master/LICENSE.txt")],
         conditions="Mathematical software/author-authored source descriptions only; no third-party numerical data grant or physical activation.")
     files = []
-    for name, path in (("definitions-json", document), ("definitions-csv", table), ("software-licence", licence)):
+    members = [("definitions-json", document), ("definitions-csv", table), ("software-licence", licence)]
+    if scenarios:
+        # Preserve the original definitions CSV schema. Native clients can join
+        # this two-column table by model_id to obtain the same selectors Python
+        # exposes on db.model(id). This table contains pointers and model choices.
+        bindings = directory / "model-source-bindings.csv"
+        with bindings.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream, lineterminator="\n")
+            writer.writerow(("model_id", "bindings_json"))
+            for scenario in scenarios:
+                writer.writerow((scenario["id"], json.dumps(scenario["source_bindings"], sort_keys=True)))
+        members.append(("source-bindings-csv", bindings))
+    for name, path in members:
         entry = dict(id="amps-models:" + name, logical_name=path.name, path=str(path),
             sha256=hashlib.sha256(path.read_bytes()).hexdigest(), role="authored-software-definition",
             source_uri="https://github.com/SWMFsoftware/AMPS", storage_permission="allowed",
@@ -190,6 +324,10 @@ def materialize(root, release_id, amps_root):
             entry["table"] = dict(id=TABLE_ID, format="csv", schema_id="amps-reduced-model-definitions-v1",
                 columns=list(COLUMNS), row_count=len(values),
                 description="Explicit-input software definitions and source descriptors; not a physical reaction profile.")
+        elif name == "source-bindings-csv":
+            entry["table"] = dict(id=BINDINGS_TABLE_ID, format="csv", schema_id=BINDINGS_TABLE_ID,
+                columns=["model_id", "bindings_json"], row_count=len(scenarios),
+                description="Source selectors, physical scope and birth-model choices for explicitly named reference cases.")
         files.append(entry)
     dataset = dict(id="amps-reusable-models-v1", title="AMPS application-independent explicit-input models",
         provider="AMPS software", version="v1", description="Authored mathematical/reduced-model definitions and limitations; no selected species parameters.",

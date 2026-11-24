@@ -28,12 +28,92 @@ _HOSTS = {
     "exomol-cc-by-sa-4.0": {"exomol.com", "www.exomol.com"},
     "nasa-cea-apache-2.0": {"raw.githubusercontent.com", "github.com", "nasa.github.io"},
     "zenodo-cc-by-4.0": {"zenodo.org"},
+    "zenodo-4555716-cc-by-4.0": {"zenodo.org"},
     "tuwien-regolith-cc-by-4.0": {"researchdata.tuwien.ac.at"},
     "chianti-use-attribution": {"sohoftp.nascom.nasa.gov", "db.chiantidatabase.org", "www.chiantidatabase.org"},
     "springer-cc-by-4.0": {"static-content.springer.com", "www.ebi.ac.uk"},
     "ntrs-19700032941-public-use": {"ntrs.nasa.gov"},
     "figshare-13274840-cc-by-4.0": {"api.figshare.com", "ndownloader.figshare.com"},
     "nist-jres-121005-public-use": {"nvlpubs.nist.gov", "pmc.ncbi.nlm.nih.gov", "www.nist.gov"},
+    "nist-jres-water-1966-kim-1992": {"nvlpubs.nist.gov"},
+    "mdpi-atoms13090074-cc-by-4.0": {"mdpi-res.com"},
+    "figshare-12389750-v2-cc-by-4.0": {"ndownloader.figshare.com"},
+    "ntrs-19720018903-public-use": {"ntrs.nasa.gov"},
+    "mdpi-atoms10010009-cc-by-4.0": {"mdpi-res.com"},
+    "iupac-acp-2010-oh-ice-cc-by-3.0": {"acp.copernicus.org"},
+    "iop-aceff9-cc-by-4.0": {"iopscience.iop.org"},
+    "ntrs-19730006011-public-use": {"ntrs.nasa.gov"},
+    "aas-moore-mapaye-2025-cc-by-4.0": {"iopscience.iop.org"},
+    "aas-peschel-2026-cc-by-4.0": {"iopscience.iop.org"},
+    "nature-laurell-ext4-cc-by-4.0": {"static-content.springer.com"},
+}
+
+# Bind each reviewed publication or deposit version to its own rights evidence.
+# The permission for one publication does not extend to referenced datasets.
+_M3_ARTICLES = {
+    # Page 1 grants CC BY 4.0 for the authors' original work. Bind the
+    # permitted Table 1 projection to the same version that prints the grant.
+    "aas-peschel-2026-cc-by-4.0": ({
+        "https://iopscience.iop.org/article/10.3847/PSJ/ae4901/pdf":
+            "2aa3fc35bf93027e5879c904250c840e0a3db2ee37fd4330f5bdd5feffd978ae",
+    }, {"https://iopscience.iop.org/article/10.3847/PSJ/ae4901/pdf":
+        "2aa3fc35bf93027e5879c904250c840e0a3db2ee37fd4330f5bdd5feffd978ae"}),
+    "aas-moore-mapaye-2025-cc-by-4.0": ({
+        "https://iopscience.iop.org/article/10.3847/PSJ/add6a2/pdf":
+            "00c8d5da05b0c458f98d1d28d193189d05c5d71eb85df74695d4cada96853a0c",
+    }, {"https://api.crossref.org/works/10.3847/PSJ/add6a2":
+        "b5555aa8cf0529ecd205bf46f68a3212c6a562deab1e1c51c0ff3efb9ed54670"}),
+    # The exact publisher page identifies this workbook as source data for
+    # Extended Data Fig. 4 and credits the authors under CC BY 4.0.
+    "nature-laurell-ext4-cc-by-4.0": ({
+        "https://static-content.springer.com/esm/art%3A10.1038%2Fs41566-024-01607-8/MediaObjects/41566_2024_1607_MOESM6_ESM.xlsx":
+            "9685df33108f39aeeff02edb45e02a33812a1327371fd4c434c7517edfd5a516",
+    }, {"https://www.nature.com/articles/s41566-024-01607-8":
+        "98b61065d980f6addb064dd838cd3610673c0402448e4b7fb9b4435aad8f9ed9"}),
+    # The original paper contains its own CC BY notice on the title page.
+    # A different edition or an ACS paper it cites needs its own rights review.
+    "iupac-acp-2010-oh-ice-cc-by-3.0": ({
+        "https://acp.copernicus.org/articles/10/9059/2010/acp-10-9059-2010.pdf":
+            "2b6dbc6195f42e196ba1e8de83abbe34c0334d8dfc669032f26927c5760397f2",
+    }, {"https://acp.copernicus.org/articles/10/9059/2010/acp-10-9059-2010.pdf":
+        "2b6dbc6195f42e196ba1e8de83abbe34c0334d8dfc669032f26927c5760397f2"}),
+    "nist-jres-water-1966-kim-1992": ({
+        "https://nvlpubs.nist.gov/nistpubs/jres/70A/jresv70An6p459_A1b.pdf":
+            "caab1a72ff76e4d02fe59c559efd2eff4f2a5542730505eb7fc2776dcc9eff04",
+        "https://nvlpubs.nist.gov/nistpubs/jres/097/jresv97n6p689_A1b.pdf":
+            "b777277069851715e5810c17f36ad8fcbaf005fd6c0071c2b9baba28082be961",
+    }, {"https://www.nist.gov/open/license":
+        "5127d122b9b00973a0a92d98f462595d2dd39e831105d7ffc8d7ad40cd7e4b57"}),
+    "mdpi-atoms13090074-cc-by-4.0": ({
+        "https://mdpi-res.com/d_attachment/atoms/atoms-13-00074/article_deploy/atoms-13-00074.pdf":
+            "7ed7cbf026341d5c1c7be67c25a48000f0b8243a366ba9c5d259040badb922d0",
+    }, {"https://mdpi-res.com/d_attachment/atoms/atoms-13-00074/article_deploy/atoms-13-00074.pdf":
+        "7ed7cbf026341d5c1c7be67c25a48000f0b8243a366ba9c5d259040badb922d0"}),
+    "figshare-12389750-v2-cc-by-4.0": ({
+        "https://ndownloader.figshare.com/files/22860461":
+            "95770ea450655b6a26598dfe6b34a64787a558fdb933c1c13db2329da86570b5",
+    }, {"https://api.figshare.com/v2/articles/12389750/versions/2":
+        "cde84aa0eb1d55dcc8f9adb2d2a6b34adf424e2bac089b2efe8a0f0fc97fdaa8"}),
+    "ntrs-19720018903-public-use": ({
+        "https://ntrs.nasa.gov/api/citations/19720018903/downloads/19720018903.pdf":
+            "d2996c3204e2bc56fa3fe0448bb56c6947e017a17ce5f18a90d62765082904ba",
+    }, {"https://ntrs.nasa.gov/api/citations/19720018903":
+        "ad3ccbff11faba160af354bc12fa0832156d797b3a6b973bc2fcbef6c5ca4871"}),
+    "mdpi-atoms10010009-cc-by-4.0": ({
+        "https://mdpi-res.com/d_attachment/atoms/atoms-10-00009/article_deploy/atoms-10-00009.pdf":
+            "939c68ea8fafa4c8502a126c76b88d2114290cee1095b1c8b875916eef3f1f80",
+    }, {"https://mdpi-res.com/d_attachment/atoms/atoms-10-00009/article_deploy/atoms-10-00009.pdf":
+        "939c68ea8fafa4c8502a126c76b88d2114290cee1095b1c8b875916eef3f1f80"}),
+    "iop-aceff9-cc-by-4.0": ({
+        "https://iopscience.iop.org/article/10.1088/1361-6595/aceff9/pdf":
+            "d64a3b7d454b79efb389f812116c387bd62a89429a7a5d990d25518aeaf540ac",
+    }, {"https://api.crossref.org/works/10.1088/1361-6595/aceff9":
+        "120609b87f3ec8c472fe7201d9124a01445c3ab3a43521a55b4b8d5a0ce4ba76"}),
+    "ntrs-19730006011-public-use": ({
+        "https://ntrs.nasa.gov/api/citations/19730006011/downloads/19730006011.pdf":
+            "ce5eb4aba0ce7512b81d87767b7748844ef1a352417799c6ceb6f29676369db9",
+    }, {"https://ntrs.nasa.gov/api/citations/19730006011":
+        "748c46e84cd6d8e4f534f533495d5a089752a4e97adda1a2372a6d098120e335"}),
 }
 
 
@@ -135,6 +215,40 @@ def _figshare_sticking_grant(evidence, uri):
         raise ValueError("Figshare payload is not the reviewed deposit's listed Table1 file")
 
 
+def _zenodo_helium_grant(evidence, uri, role, path, observed_sha256):
+    """Bind this deposit's licence to its native record and listed ZIP.
+
+    Derived tables name the ZIP URL and cite their authenticated native
+    parent. The same-policy check below prevents borrowing another grant.
+    """
+    record_url = "https://zenodo.org/api/records/4555716"
+    deposit_sha256 = "11538b55d67c1b89aa2ad69fd0cfbf6682580028c96c15ca0027b2ba1b1e3ef1"
+    notices = [item for item in evidence if item["source_uri"] == record_url]
+    if len(notices) != 1 or notices[0]["sha256"] != deposit_sha256:
+        raise ValueError("Zenodo4555716 requires its reviewed native deposit record")
+    record = _json(notices[0]["original_path"])
+    if (record["id"] != 4555716 or record["doi"] != "10.5281/zenodo.4555716" or
+            record["metadata"]["license"]["id"] != "cc-by-4.0"):
+        raise ValueError("Zenodo4555716 record/licence identity changed")
+    if uri.geturl() == record_url and role == "source-metadata":
+        if observed_sha256 != deposit_sha256:
+            raise ValueError("Zenodo4555716 metadata differs from the reviewed record")
+        return
+    file, = [item for item in record["files"] if item["key"] == "diff_cross_sections.zip"]
+    if uri.geturl() != file["links"]["self"] or role not in ("source-native", "derived-table"):
+        raise ValueError("Zenodo4555716 grant is specific to its listed scattering ZIP")
+    if role == "source-native":
+        # MD5 records the producer's file identity. SHA-256 separately pins the
+        # independently retrieved bytes and the package's actual source object.
+        with path.open("rb") as stream:
+            digest = hashlib.md5(usedforsecurity=False)
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        if (path.stat().st_size != file["size"] or "md5:" + digest.hexdigest() != file["checksum"] or
+                observed_sha256 != "16027a414c603d84a2a500964a8a877a2bf2e8d5573f53827330f75e5ab7e0e8"):
+            raise ValueError("Zenodo4555716 ZIP does not match the reviewed file identity")
+
+
 def load_packets(packet_paths, policies):
     """Produce ordinary inventory datasets without changing the default release.
 
@@ -212,6 +326,16 @@ def load_packets(packet_paths, policies):
             if role not in ("source-native", "source-metadata", "rights-evidence", "derived-table"):
                 raise ValueError("explicit source/metadata/derived role is required")
             path = _member(root, row.get("path"), row.get("sha256"))
+            if policy_id == "zenodo-4555716-cc-by-4.0":
+                _zenodo_helium_grant(evidence, uri, role, path, row["sha256"])
+            if policy_id in _M3_ARTICLES:
+                originals, notices = _M3_ARTICLES[policy_id]
+                pinned_article = originals.get(uri.geturl())
+                acquired_notices = {item["source_uri"]: item["sha256"] for item in evidence}
+                if (not pinned_article or role not in ("source-native", "derived-table") or
+                        (role == "source-native" and row["sha256"] != pinned_article) or
+                        any(acquired_notices.get(url) != digest for url, digest in notices.items())):
+                    raise ValueError("article permission requires the reviewed publication and notice")
             if role == "derived-table":
                 if not row.get("derived_from") or not row.get("recipe"):
                     raise ValueError("derived source requires parent identities and a pinned recipe")
@@ -323,4 +447,11 @@ def load_packets(packet_paths, policies):
                 entries[parent]["storage_permission"] != "allowed" or
                 entries[parent]["policy"] != entry["policy"]):
                 raise ValueError("derived table cannot clear or change its native parent's source policy")
+        if entry["policy"] == "zenodo-4555716-cc-by-4.0" and (
+                len(parents) != 1 or entries[parents[0]]["role"] != "source-native"):
+            raise ValueError("Zenodo4555716 projection requires its native ZIP parent")
+        if entry["policy"] in _M3_ARTICLES and (
+                len(parents) != 1 or entries[parents[0]]["role"] != "source-native" or
+                entries[parents[0]]["source_uri"] != entry["source_uri"]):
+            raise ValueError("published table must cite its exact original article")
     return datasets

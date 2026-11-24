@@ -2,6 +2,29 @@
 
 **Status date:** 2026-11-24 UTC
 
+**Current M3 chemistry development.** The 4.0 keV/u sodium capture
+provider now produces both heavy fragments and accounts for the incoming
+proton. Normal Moon startup accepts explicit neutral-H timestep and
+statistical-weight controls for this build. The I21–I24 formal gates are open.
+[Source, current executions, and remaining gates](#557-linked-m3-chemistry-development--2026-11-24-utc)
+
+**Latest source update — shared chemistry r10.** The catalogue adds
+fused-silica OH surface-loss data and the 200 eV Sutton–Kay He⁺
+ratios. See section 5.52 for the experimental conditions and the
+remaining M3 gates.
+
+**Previous source update — shared chemistry r9.** The D119990 integral
+table now points to a source review of the ground-product rate and
+angular coverage. The shared catalogue also describes the isotropic
+center-of-mass sensitivity model. See section 5.51.
+
+**Previous source update — shared chemistry r8.** The release adds
+theoretical He/Ne/Na/Ar subshell photoionization, two theoretical He
+photoionization tables, and measured 200 eV He⁺ excitation ratios.
+The [source report](../utility/chemical_database/NATIVE_M3_PARTIAL_SOURCES.md)
+records the evidence gaps and table restrictions. See section 5.49
+for the release and verification record.
+
 **Latest development — I21 homogeneous native execution, ground-ion profiles,
 and I23 fit slope.** The Moon aggregate accepts an explicit pinned I21 cohort
 plan and preserves the formal predecessor decision. The scoped 8/16/32-step
@@ -5005,3 +5028,779 @@ shadow, both movers, weight and powered survival cases), the pending
 physical source packages and I22–I24 production activation and
 qualification. I13–I20 remain same-campaign prerequisites. The
 development numerical PASS does not supersede the constant-clock FAIL.
+
+## 5.46 M3 archive and publication search — 2026-11-24 UTC
+
+The [source search report](test/M3_ARCHIVE_SOURCE_SEARCH_20261124.md)
+records the datasets, source-domain limits, exact hashes and reproduction
+commands against revision `e5f2978ac0576f42dc510e0da110dcbe0029d69a`.
+The live IAEA D119990 catalogue reproduced the 12 frozen sodium partial
+cross sections. Groningen MOTRIMS measurements identify the same
+ground-state reaction and report differential extractions from 7 keV/u,
+with published peak-normalized figures. Their numerical differential
+bins, acceptance, uncertainty, normalization and D119990 lineage are
+still needed for I24. The verified CC BY 4.0 helium resonant-exchange
+archive contains 661 center-of-mass energy tables with 768 angles each.
+Native quadrature reproduces all archive integrals. A separate helium
+case would require a reviewed scope.
+
+NORAD supplies ground-residual and total He photon cross sections, and
+Curtin single-ionization cross sections give a finite-table incident
+mean of 46.08014 eV for the 10 eV Maxwellian helium diagnostic. Broadband
+state weighting, joint charged-water product kinetics, incident OH
+surface response and the I23 physical error envelope remain open.
+Source bytes and audit results are in
+`test_output/srcMoon/m3-source-search-9wqcZyI0/`. This package ran
+zero builds and zero linked cases. The formal I21–I24 status is
+0 PASS, 0 FAIL, 0 ERROR and 4 SKIPPED.
+
+## 5.47 Shared chemistry archive integration — 2026-11-24 UTC
+
+The new snapshot is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r6`.
+Use its explicit `database-lock.json` and README section 12 to access
+the tables from any application. This run used AMPS revision
+`e5f2978ac0576f42dc510e0da110dcbe0029d69a` with the
+[new source packet recipe and contract](../utility/chemical_database/NATIVE_M3_ARCHIVE_SOURCES.md).
+Both roadmap hashes and source/admission scopes are recorded there.
+
+The r6 packet adds 15 records, with five archived payloads and ten
+metadata-only entries. The two new CSV views contain 661 native
+center-of-mass He⁺–He charge-transfer energy rows and 507,648 angular
+rows, covering 0.0001–10,000 eV. The original Zenodo ZIP is attributed
+and stored under its deposit-specific CC BY 4.0 grant. All 661 native
+quadrature sums agree with printed integrals within `4.60e-11` relative.
+The live IAEA HTML is archived as corroborating evidence for the
+existing 12-knot sodium partial. It reproduces the same numerical
+SHA-256. The replay retained all r5 sources, table payloads, models,
+reactions and species. Four old IAEA processing paths reflect the
+release relocation, with their source and recipe hashes preserved.
+
+The general snapshot retains metadata for NORAD's noncommercial He
+cross sections, Curtin CCC and the other held sources. Molecular daughter
+data, sodium differential bins and uncertainty, and physical error
+bounds remain open. The snapshot selects no reaction and does not alter
+the original lock or the supported production profiles.
+
+Artifacts are in
+`test_output/chemical_database/archive-integration-20261124-vUSDrSTa/`.
+`build-command.json` pins the 24 previous packets and the new packet.
+`packet-final.stdout.json` and `r5-preservation-verified.json` give
+the native and preservation checks. `installation-r6.json` records
+the verified external copy and its lock SHA-256
+`c7c87fb0b00f98c1c402e552b297347bd1ba56e935b634b3de04c68a1ac07689`.
+The full shared software suite
+reported **337 PASS, 6 SKIPPED, 0 FAIL, 0 ERROR**. All three explicit
+real-source methods passed. Missing optional inputs from other sources
+account for the skips. The actual nightly CORE adapter passed its
+one registered case with **307 passing protocol checks** and zero
+nonpasses. Formal I21–I24 remain SKIPPED. No AMPS application build or
+linked Moon run was required.
+
+## 5.48 M3 publication follow-up and shared r7 release — 2026-11-24 UTC
+
+The [source report](../utility/chemical_database/NATIVE_M3_LITERATURE_SOURCES.md)
+records the archive search, native SHA-256 hashes, permissions, scientific
+limitations and the offline extraction command. The release uses AMPS
+revision `e5f2978ac0576f42dc510e0da110dcbe0029d69a` plus the recorded
+working-source changes. The report identifies which roadmap amendments
+control development order and which shared criteria control qualification.
+
+r7 adds 11 source records and four queryable tables with 12 published rows.
+The NBS water onsets and relative ion signals, Kim's neutral H/He total
+ionization fits, and Cui's measured and calculated helium capture fractions
+retain the exact native values. The Cui excited measurement at 0.5 keV/u
+remains blank. Existing r6 data and selectors were replayed and compared.
+The full r7 catalogue has 54 datasets, 940 source records and 123 queryable
+tables. The explicit lock is in
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r7`.
+Its SHA-256 is
+`949a06675f1d58a261f35c9f4eb4dd4b06c096e18d121a5173013115df1ec020`.
+
+Artifacts are in `test_output/chemical_database/m3-source-r7-xBR6k1oF/`.
+`build-final-command.json` records the exact packet selection and builder
+command. `r6-preservation.json` records source and numerical-table identity.
+The installer verified **457 files**. The four installed CLI exports match
+the packet projections byte for byte. The full shared test runner produced
+**341 PASS, 6 SKIPPED, 0 FAIL, 0 ERROR**, including all three r7 source
+checks. The six skips are optional sources outside this acquisition.
+The nightly CORE case passed with **308 protocol checks** and zero nonpasses.
+No AMPS application was built or run. Formal I21–I24 remain SKIPPED.
+
+I22 continues to require joint single-photon charged-water product data or
+an independently bounded reduced model, the broadband atomic state mapping,
+and incident OH sticking and accommodation. I23 requires independent
+gas-phase product-state and recoil bounds. The preferred I24 sodium
+channel still needs native angular coverage and provenance. The Wang CDS
+table acquisition was unsuccessful. The Cui results support a separate
+helium comparison within their reported domain.
+
+## 5.49 Atomic and molecular source follow-up for shared r8 — 2026-11-24 UTC
+
+The shared snapshot
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r8`
+adds nine source records and four queryable tables with 218 rows.
+All 940 r7 source entries, 151 table entries, 21 species, 17 reactions
+and 12 model definitions were preserved. Four existing IAEA table
+locators were relocated and their referenced recipe and native file
+hashes agree with r7. The installer checked 472 files. The complete r8
+catalogue contains 55 datasets and 949 sources, with 127 queryable
+tables and 28 unavailable or held table entries. Select its explicit
+lock, SHA-256
+`0d5cf5a26f2c2b6d154e7732f6690993629b7325fbabf6c4983c6b4a95549f13`.
+The default root and r7 locks retain their previous hashes.
+
+The original Kalha workbook includes 103 elements. The four-element
+CSV preserves 192 source combinations with native energy strings,
+cross sections and blanks. Sutton's 200 eV He⁺ 4p/4s, 4d/4s and 4f/4s
+ratios, their reported uncertainties and instrument-width dependence
+give an independent laboratory observable. Bhatia's two theoretical
+tables keep their native momentum convention and the suspect Table 8
+exponents as printed. The archive and publication evidence leaves the
+Wang helium angular dataset and Suárez water surface study as
+metadata records. The former is embargoed. The latter treats
+prepared H₂O⁺ dissociation and gives no joint photon-event product law.
+
+This work used AMPS revision
+`e5f2978ac0576f42dc510e0da110dcbe0029d69a` with working-source changes
+to packet admission, the offline projection, shared tests and
+documentation. The [source report](../utility/chemical_database/NATIVE_M3_PARTIAL_SOURCES.md)
+provides both roadmap hashes, native source and rights record hashes,
+and the extraction command. Artifacts in
+`test_output/chemical_database/m3-source-r8-tU34BqBU/` include the
+published packet `packet-final-v2/source_packet.json`, exact
+`build-final-command.json` using Python 3.14, byte-preservation audit
+`r7-preservation.json`, installer receipt and four matching installed
+CLI CSV exports. No AMPS application build or linked Moon run was needed.
+
+The full shared suite reported **346 PASS, 6 SKIPPED, 0 FAIL, 0 ERROR**
+in 90.3 seconds. All five explicit r8 checks passed. The six skips
+concern optional inputs outside this acquisition. Reproduce the suite
+with `AMPS_CHECK_M3_PARTIAL_RELEASE=1 AMPS_CHECK_M3_LITERATURE_RELEASE=1`,
+`AMPS_M3_ARCHIVE_PACKET` pointing to the r6 packet and
+`python3 -B test/chemical_database/run_all_tests.py --database-lock <r8-lock> --output-dir <new-directory>`.
+The shared nightly protocol case `CORE-CHEMICAL-DATABASE-001` passed
+308 checks with no skips, failures or errors under
+`python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir <new-directory>`.
+I21–I24 remain formally SKIPPED. I22 needs the broadband state weighting, charge-resolved
+water products and incident OH surface response. I23 needs an
+energy-dependent gas-phase residual-state and recoil bound. I24
+needs the native ground-capture proton–sodium differential angles
+and uncertainty. The helium data cover a distinct reaction.
+
+## 5.50 I24 ground-capture angular-source follow-up — 2026-11-24 UTC
+
+The [source review](test/integration-tests/I24/ANGULAR_SOURCE_FOLLOWUP_20261124.md)
+finds published ground-product laboratory angular evidence from
+7 keV/u upward. The reported 4 keV/u curves cover other channels.
+The same source shows that the D119990 integral at 4 keV/u is far
+larger than the published prompt ground-product partial. Both
+conditions require channel-specific provenance and source data for
+physical use. The review records the uniform solid-angle
+center-of-mass option for a controlled sensitivity case and an
+independent scale calculation for the sodium recoil. It admitted
+zero angular rows and generated no linked or software test outcomes.
+Formal I24 remains SKIPPED. Exact source identities and reviewed
+scope are in the source review.
+
+## 5.51 I24 evidence and isotropic model in the shared database — 2026-11-24 UTC
+
+The shared r9 catalogue publishes two entries through the existing model API.
+`proton-sodium-ground-capture-evidence-v1` records the D119990
+rate/state crosswalk discrepancy and the available laboratory angular
+coverage. `isotropic-com-two-body-scattering-v1` defines the experimental
+solid-angle distribution in the pair center-of-mass frame. Its parameters
+and assumptions are explicit, and it supplies no rate or event provider.
+The [shared database contract](../utility/chemical_database/NATIVE_CEX_SCATTERING_SOURCES.md)
+records the permitted source scope, both roadmap hashes and native
+evidence identities. Formal I24 remains SKIPPED.
+
+The D119990 table metadata links to the evidence entry. The preserved
+12-node integral has SHA-256
+`2a887ad43497a7f9e2b3d7b6173ae1b2597cc893d897926762c181946c92db93`.
+No angular data rows were admitted. All 27 source packets, 949 source
+entries, 155 table entries, and previously published species and reaction
+records were carried forward. The authored definition table grew from 12
+to 14 entries. The IAEA table notice is readable in C++ and Python.
+
+The publication uses AMPS revision
+`e5f2978ac0576f42dc510e0da110dcbe0029d69a` plus the recorded shared-source
+changes. The explicit installed lock is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r9/database-lock.json`
+with SHA-256
+`4f49bfcea74ebc015948d8068fc9315f953086037bcb23a65ddf51b291340cd8`.
+Artifacts are in `test_output/chemical_database/cex-scattering-r9-2GDzNL/`.
+`build-final-command.json` records the exact replay command and all
+selected packets. The preservation audit checked the root and r8 locks
+and the D119990 bytes. No AMPS application build or linked lunar test
+was required. The first stage logged an error on a string-valued
+processing field in an unrelated source. The successful retry adds the
+review link at the native IAEA reproduction step.
+
+The installer verified 474 files. The installed CLI resolved the two
+entries and the original table. Its D119990 CSV export matches r8
+byte for byte. The installed C++ `Catalogue::GetTable` returned the
+scope note and original table hash. The nightly protocol case
+`CORE-CHEMICAL-DATABASE-001` reported **309 PASS, 0 SKIPPED, 0 FAIL,
+0 ERROR** using
+`python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir <new-directory>`.
+
+The full shared suite reported **349 PASS, 6 SKIPPED, 0 FAIL, 0 ERROR**
+in 89.2 seconds. The six skips required optional sources outside this
+publication. Both explicit r9 checks passed. Reproduce with
+`AMPS_CHECK_CEX_SCATTERING_RELEASE=1`, the r8/r7 real-source selectors,
+and `python3 -B test/chemical_database/run_all_tests.py --database-lock <r9-lock> --output-dir <new-directory>`.
+The results and installed query commands are in `shared-tests/result.json`
+and `installed-queries.json` under the artifact directory.
+
+## 5.52 OH surface-loss and helium excitation sources in shared r10 — 2026-11-24 UTC
+
+The [lab benchmark report](../utility/chemical_database/NATIVE_M3_LAB_BENCHMARKS_SOURCES.md)
+records the database and literature search, both roadmap hashes, native
+identities, permissions, and the exact table extraction. Wang and
+Bruggeman Tables 2–3 give six dry/humid OH flux/loss conditions and
+two spatial-resolution estimates on fused silica in an atmospheric
+helium plasma. The dry β estimates are 0.010–0.011 in Table 2.
+The 1.0 mm humid diffusive flux and β remain blank. The paired
+10 and 50 µm results quantify the effect of measurement resolution.
+Sutton and Kay give three 200 eV ratios relative to He⁺ 4s with
+reported asymmetric or symmetric errors. The visible 4p central
+ratio in the preprint is 16.00. The earlier single-author r8 source
+gives 19 for the same experimental programme and is separately
+retained. Four other leads are catalogued as metadata.
+
+The new snapshot is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r10`.
+Its lock SHA-256 is
+`b685b842cb3549655c4f09596e8c628397d01de9539af7515a2ea41bed63728a`.
+It adds nine source records and three data tables with 11 published
+rows. All 27 prior packets, 949 r9 source entries, 155 table entries,
+21 species, 17 reactions and 14 model definitions were preserved.
+Four older IAEA locator pairs refer to the same hashed data and
+recipes after relocation. The default and r9 locks were verified.
+
+This source package used AMPS revision
+`e5f2978ac0576f42dc510e0da110dcbe0029d69a` with working-source changes.
+The directory `test_output/chemical_database/m3-source-r10-CMOILD/`
+contains authenticated retrieval records, the publication packet
+`packet-reviewed/source_packet.json`, the exact
+`build-reviewed-command.json`, and `r9-preservation.json`.
+No AMPS application build or linked lunar run was needed.
+
+The installer verified 486 files. The three installed CLI CSV exports
+match the reviewed packet byte for byte. An offline replay reproduced
+the packet and its projections byte for byte. The full shared suite gave
+**353 PASS, 6 SKIPPED, 0 FAIL, 0 ERROR** in 92.8 seconds. All four explicit
+r10 checks passed. The six skips required optional sources outside this
+package. Reproduce with `AMPS_CHECK_M3_LAB_RELEASE=1`, the preceding
+r9/r8/r7/r6 real-source selectors and
+`python3 -B test/chemical_database/run_all_tests.py --database-lock <r10-lock> --output-dir <new-directory>`.
+The nightly `CORE-CHEMICAL-DATABASE-001` gave **309 PASS, 0 SKIPPED,
+0 FAIL, 0 ERROR** under
+`python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir <new-directory>`.
+See `installation-r10.json`, `installed-checks.json`, and
+`shared-tests/result.json` in the artifact directory.
+
+I22 still needs a source-qualified OH sticking/accommodation law for
+the lunar surface, joint charged-water breakup products and
+broadband atomic daughter-state weighting. I23 still needs
+energy-dependent excited-state fractions and recoil bounds for the
+configured electron distribution. The I24 sodium rate/state discrepancy
+and the physical angular-data gap remain open. Formal I21–I24 remain
+SKIPPED.
+
+## 5.53 Shared M3 physical inputs and the D119990 figure identification — 2026-11-24 UTC
+
+The r11a shared snapshot adds five source packets, 16 source entries and
+three tables with 814 rows. The explicit lock is
+`/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r11a/database-lock.json`,
+SHA-256 `39ae1187e765e2417fbee9d07afb3b18aac60eaffe7c51e5e6aa2bbd7ba1ef5b`.
+The catalogue now has 61 datasets, 974 sources, 161 tables (133 available),
+21 species, 17 reactions and 14 model definitions.
+
+| Gate | Physical result | Scope |
+|---|---|---|
+| I22, H₂O and OH | Moore–Mapaye give eleven solar-cycle OH/H₂O partial-rate fits, including the three charged-water breakup channels. At 584 Å (21.2 eV), Kronebusch–Berkowitz give OH⁺, H⁺ and O⁺ fractions of 0.29, 0.05 and 0.0009 of total ionization. | Source fits use TIMED/SEE and PHIDRATES. The laboratory detector discriminates against ions above 1 eV. Joint correlated electron–ion–neutral products and continuum state weighting are still open. |
+| I22, atomic states | Laurell's 800 paired Ar peak-center fits give a mean separation of 173.3706 meV, consistent with the published 173 ± 9 meV. | One narrow-band laser experiment. Broadband populated He⁺/Ne⁺/Ar⁺ states remain open. |
+| U24 / I22 surface dependency | Two laboratory ice uptake estimates and the distinct IUPAC evaluation are available. The experiment reports approximately 0.1 initially and 0.03 ± 0.02 after conditioning at 205–230 K. | Uptake includes reactive loss. The incident-OH sticking and translational-energy accommodation coefficients on lunar material remain open. |
+| I23 | Two 200 eV electron-impact emission measurements give (5.6 ± 1.4) and (6.2 ± 1.7) × 10⁻¹⁹ cm² for the 30.4 nm He II line. | Emission is sensitive to cascade feeding. Direct all-state He⁺ production and recoil over a 10 eV Maxwellian still require additional evidence. |
+| I24 | IAEA release member `119990.txt` names Knoop et al. 2004. NIFS CHART 38917 explicitly names their Fig. 2. Its outer-shell capture signal sums over outgoing H states. Reject D119990 as experimental H(1s)-specific evidence. Shingal's 1986 calculation gives 2.2 × 10⁻¹⁷ cm² at 4.0 keV/u. The 1987 larger-basis calculation gives 4.073 × 10⁻¹⁷ cm² at 4.00 keV laboratory energy. | Both are theoretical and have distinct native energy conventions. No uncertainty on the 4 keV ground partial or source-qualified angular law was established. The isotropic option retains experimental status. |
+
+The [photon](../utility/chemical_database/NATIVE_M3_PHOTON_BENCHMARK_SOURCES.md),
+[water](../utility/chemical_database/NATIVE_M3_WATER_BRANCH_SOURCES.md),
+[ice](../utility/chemical_database/NATIVE_M3_OH_ICE_SOURCES.md),
+[helium](../utility/chemical_database/NATIVE_M3_HELIUM_EMISSION_SOURCES.md) and
+[sodium](../utility/chemical_database/NATIVE_M3_SODIUM_BENCHMARK_SOURCES.md)
+reports record the online database search, original files, article locators,
+hashes, rights, scripts, physical interpretations and replay commands.
+The text of the weak water O⁺ measurement was checked independently on the
+original printed page. The historical IAEA data remain byte-identical.
+The catalogue displays the resolved figure and its measurement scope beside
+the retained integral table.
+
+AMPS source revision `e5f2978ac0576f42dc510e0da110dcbe0029d69a` with
+working-source changes. The source roadmap SHA-256 is
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`;
+the validation-root roadmap SHA-256 is
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`.
+The source roadmap permits early M3 verification and clarifies development
+resource limits. The common science criteria govern qualification.
+Formal I21–I24 remain SKIPPED. This change builds the database and tests
+the C++/Python interfaces. It does not require an AMPS application rebuild
+or scoring against lunar observations.
+
+Artifact root `test_output/chemical_database/m3-physical-r11-fS2iFdak/`.
+The preliminary r11 release carried an earlier packet hash in one source
+report. Its scientific data are identical to r11a. The preliminary suite
+reported one test-harness failure because its assertion compared the
+immutable API energy-range tuple against a mutable list. The test now
+checks the published 80–1000 eV range using the API's declared type.
+The original logs are retained. The `final/` subdirectory holds the
+r11a build command, checks of all previous scientific identities,
+installation receipt, export checks and test evidence. The default
+database lock remains pinned to its existing snapshot.
+
+From the checkout, replay the complete installed-source test with a new
+output directory. The retained shell file sets the source selectors for
+all five new packets and the original CEA, CHIANTI, NIST and ExoMol tests.
+
+```bash
+work=test_output/chemical_database/m3-physical-r11-fS2iFdak/final
+bash "$work/test-release.sh" "$work/shared-tests-repeat"
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir "$work/nightly-repeat"
+```
+
+The installed CLI exports of the three CSVs matched their packet bytes.
+The installer verified 523 files and 871 object references. Every previous
+source/table digest passed its preservation check. The native sodium
+cross-section labels and the original 12 numerical knots can be inspected
+alongside the new figure cross-reference. The nightly case passed its
+309 source-independent checks with zero failures, errors or skips.
+
+Two additional archive paths help delimit the atomic evidence gap.
+The CDS Bochsler catalogue tabulates total H, He, O and Ne photoionization
+frequencies at Earth. Heimann et al. measured relative He and Ne satellite
+yields near individual thresholds for outgoing electron energies of 0–1 eV.
+Neither provides a populated-state distribution across the D04 solar spectrum.
+They are recorded here as follow-up references. The r11a numerical addition
+for noble-gas product energies is the Laurell argon workbook.
+[CDS J/ApJS/210/12](https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/210/12)
+[Heimann et al.](https://doi.org/10.1103/PhysRevA.34.3782)
+
+The full C++/Python suite on the installed r11a lock reported **386 PASS,
+0 FAIL, 0 ERROR, 0 SKIPPED** in 107.2 seconds. All 11 new source-specific
+checks passed. The results are in `final/shared-tests/result.json` and
+`final/nightly-core/artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json`
+under the artifact root above.
+
+## 5.54 What other exosphere models use for M3 chemistry — 2026-11-24 UTC
+
+The [model comparison](../utility/chemical_database/NATIVE_M3_MODEL_PRACTICE_SOURCES.md)
+links the original lunar, cometary, heliospheric and Mercury studies and the
+specific code paths behind the approximations. Three new source packets record
+the Poppe–Halekas–Harada lunar 1 au frequencies, water breakup choices, and
+OH return and release models. The original licensed Poppe file contains 25
+species. Its five-row projection preserves 45 numerical inputs verbatim.
+For Na, its median photon rate corresponds to 36.6 h, close to the 36 h
+value adopted by the 2013 lunar AMPS paper. Both draw on the Huebner family
+of compilations. [Poppe dataset](https://doi.org/10.5281/zenodo.6994648)
+[Tenishev et al.](https://doi.org/10.1016/j.icarus.2013.08.021)
+
+Hartle et al. also modeled lunar pickup from a cold stationary neutral gas,
+combining photoionization, charge exchange and electron impact as scalar
+sources. Shen et al. later used the zero-speed approximation with measured
+fields for selected ARTEMIS events. The Mercury hybrid model of Paral et al.
+instead launches Na⁺ from the cell's neutral velocity distribution. A comparison
+of stationary and moving-parent initial conditions with otherwise identical
+forcing can show how much this choice affects the pickup spectrum. [Hartle et al., section 2](https://doi.org/10.1029/2011JA016859)
+[Shen et al.](https://doi.org/10.3847/1538-4357/ad40a4)
+[Paral et al., paragraph 12](https://doi.org/10.1029/2010GL044413)
+
+For I22, the water breakup models supply wavelength-dependent branch choices
+or neutral H/OH speeds. The surface models separately prescribe reactive
+sticking, residence or a launch distribution. For I23, the WarpX
+electron-impact sampler supplies a conservation benchmark. For I24, an
+environmental total Na ion-production rate and an isotropic sensitivity case
+still leave the state-selected 4 keV/u recoil unqualified. Broadband populated
+ion states, joint charged-water and electron-impact daughter distributions,
+and the incident OH sticking/accommodation law on regolith remain open.
+The source changes introduce no production defaults or test ID. Formal
+I21–I24 remain **4 SKIPPED / NOT QUALIFIED** with I13 and M2 still open.
+
+The [I23 runner notes](test/integration-tests/I23/README.md) additionally
+identify the published Turner helium benchmark's equal electron energy
+partition and the incident-energy coverage of the Peterson et al.
+secondary-electron measurements.
+
+The working code revision is `e5f2978ac0576f42dc510e0da110dcbe0029d69a`.
+The roadmap hashes and scientific qualification order in §5.53 still apply.
+This work uses the source-tree early-development exception for a shared
+catalogue. The reviewed database lock SHA-256 is
+`05a4942e7ba115f7c51743fc1cfa6bfa3de4c531d2b5cc7bda3e7d6b8b44c879`.
+The build, checksums, source-specific transcripts and qualification results
+are under `test_output/chemical_database/m3-model-practice-mKGmz860`.
+
+```bash
+w=test_output/chemical_database/m3-model-practice-mKGmz860
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r12
+replay=$(mktemp -d "$w/replay-XXXXXXXX")
+cp "$w/reviewed/build_release.py" "$replay/"
+python3 -B "$replay/build_release.py" \
+  test_output/chemical_database/m3-pickup-precedent-LUM6SwNP/final/source_packet.json \
+  test_output/chemical_database/lunar-oh-precedent-twDfB4/packet/source_packet.json \
+  test_output/chemical_database/water-precedent-Pcq5D0ih/packet/source_packet.json
+bash "$w/test-release.sh" "$w/installed-tests-repeat" "$db"
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir "$w/nightly-repeat"
+```
+
+The build helper and its complete command in `reviewed/build-command.json`
+record this publication. The release has 64 datasets, 986 source
+entries, 162 tables with 134 available through the catalogue, and 36 explicit
+source packets. All 974 previous source entries and 161 previous tables
+passed the preservation comparison. Database software verification uses
+Python 3.14 and g++ 9.4 with the normal native C++ catalogue probe.
+
+The full suite on the installed r12 lock recorded **394 PASS**, including
+all eight new real-source tests, in 106.9 seconds. The nightly core database
+protocol recorded **309 PASS** in 23.4 seconds. Both runs had zero failures,
+errors or skips. The installer checked 542 files and verified 886 object
+references. A fresh installed CLI export of the five-row table reproduced
+SHA-256 `76fb5cdb5181a5a4a6ceb0e9fff40da28fb3069affe107e440644863ed083b61`.
+The default database lock still has SHA-256
+`fdf5311274871d7abe884b3d8aec163bfdc52e8c3295adb09e4c5cd42813d945`.
+[Installed suite](../test_output/chemical_database/m3-model-practice-mKGmz860/reviewed/installed-tests/result.json)
+[Nightly protocol](../test_output/chemical_database/m3-model-practice-mKGmz860/nightly-core/artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json)
+[Receipt](../test_output/chemical_database/m3-model-practice-mKGmz860/reviewed/installation.json)
+
+## 5.55 Lunar model inputs and AMPS reference solutions — 2026-11-24 UTC
+
+The [reference comparison](test/M3_LUNAR_MODEL_REFERENCE_CROSSWALK.md)
+records how to use output from a reviewed AMPS run, the same model at a
+different MPI layout, a sibling exosphere model, and an independent physical
+calculation. Rechecking the retained four-rank run against the actual I04
+baseline gave **PASS, zero diff bytes**. Native fates and times from one and
+eight MPI ranks matched for **384/384** parent/refinement pairs in the I21
+varying-exposure case. Both checks used previously executed runs. The existing
+analytical event comparison provides a separate check of numerical accuracy.
+
+Inspecting the Europa input, its shared transport callback and native Huebner
+arrays established that its three charged water breakup channels match all
+12 frozen D04 quiet/active rate and mean-energy values. The arrays describe
+the available energy for each channel. The transport callback samples each
+species separately. The historical Moon electron-impact estimate was found in
+an archived checkout whose generated configuration disabled the process.
+The lunar source papers and native Julia/Fortran programs supply independent
+model assumptions about neutral loss and water retention. They leave the
+state-resolved and correlated product distributions in §5.54 open.
+
+The shared r13 release adds seven source entries in three packets. The
+reviewed publication ties the Peschel PDF and three-row CSV to the article's
+CC BY 4.0 notice. The Schörghofer and EXOSPHID packets preserve model
+parameters with the version and operating conditions of their origin.
+Read the [database examples](../utility/chemical_database/DATABASE_README.md#19-lunar-neutral-losses-water-coverage-and-noble-gas-product-assumptions)
+for the lock and public queries. All 36 prior packet digests, 986 source
+entries and 162 tables passed the preservation check. The new catalogue
+has 67 datasets, 993 sources and 163 tables, including 135 available tables.
+Lock SHA-256 `6890f21220d6065a19e10f19469210cad66702babcddc083854a6cff7617664a`.
+D04's source CSV was checked against the canonical package manifest,
+SHA-256 `3aa54915a08258371dbe975949e6afb2ab74618164fadca8bceebe876c926847`.
+
+AMPS revision `e5f2978ac0576f42dc510e0da110dcbe0029d69a` with working-tree
+changes. The two roadmap hashes and their respective scopes are recorded
+in §5.53. The only build needed was the shared Python/C++ database suite.
+The original three model packets, explicit release command and independently
+repeatable comparison commands are recorded with the artifacts. I21–I24
+retain their formal **4 SKIPPED** status.
+
+```bash
+w=test_output/chemical_database/lunar-source-comparison-pTDdeg8Y
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r13
+python3 -B "$w/compare_amps_mpi_outputs.py"
+python3 -B "$w/check_europa_d04.py"
+python3 -B srcMoon/test/integration-tests/I04/check_reference.py \
+  --run-dir run_test_Moon --diff-file "$w/i04-recheck/test_Moon.diff" --diffnum share/Scripts/DiffNum.pl
+bash "$w/test-release.sh" "$w/repeat-suite" "$db"
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir "$w/repeat-nightly"
+```
+
+The full staged r13 suite reported **400 PASS** in 111.9 s, including
+six new source-backed tests. The nightly database protocol reported
+**309 PASS** in 23.9 s. Both reported zero failures, errors and skips.
+Installation verified 560 files and 901 object references. Installed CLI
+and API checks reproduced the new table digest and seven source records.
+The default database lock remains the one recorded in §5.54. No new
+AMPS particle generation or observational scoring was performed.
+[Full suite](../test_output/chemical_database/lunar-source-comparison-pTDdeg8Y/stage-tests/result.json)
+[Nightly](../test_output/chemical_database/lunar-source-comparison-pTDdeg8Y/nightly/artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json)
+[Installed checks](../test_output/chemical_database/lunar-source-comparison-pTDdeg8Y/installed-checks.json)
+
+## 5.56 Sodium pickup and ground-product collision reference models — 2026-11-24 UTC
+
+The user approved publishing two distinct reference cases in the shared
+database. The review used the existing Poppe deposit and §2.2 of its paper,
+and the authenticated Shingal 1986 Table 4 benchmark. The r14 publication
+replays all 39 r13 source packets from their SHA-256-pinned originals. It adds
+two software model records and one small source-selector table. Fourteen
+previous model definitions and the payload digests of 162 other tables were
+compared to r13. This work was performed against AMPS revision
+`e5f2978ac0576f42dc510e0da110dcbe0029d69a`.
+
+* `poppe2022-na-pickup-median-v1` selects the original Na median photo,
+  proton-exchange and electron-impact frequencies at 1 au. Charge exchange
+  amounts to 9.4064945% of the three-process total under those conditions.
+  The published pickup source assigns zero newborn ion velocity in the lunar frame.
+* `hplus-na3s-ground-capture-4kev-u-isotropic-v1` selects the theory partial
+  2.2 × 10⁻¹⁷ cm² for H⁺ + Na(3s) → H(1s) + Na⁺(2p⁶) at 4.0 keV/u,
+  the approved isotropic direction in the incoming pair COM, and the shared
+  conservative two-body recoil definition. Other projectile energies and the
+  uncertainty on the theory point are unspecified. Actual Na⁺ energy spectra
+  and return fractions require transport runs.
+
+The source-tree roadmap controls early M3 software work. The common R3.4
+criteria still control formal I24. This data-access work executed no linked
+lunar transport or observational comparison. For the dated differences between
+the roadmaps and their SHA-256s see [roadmap reconciliation](test/ROADMAP_RECONCILIATION.md).
+[Source selections and API commands](../utility/chemical_database/DATABASE_README.md#sodium-pickup-and-binary-charge-exchange-r14)
+
+The full test protocol detected an edit to the citation list during the first
+development run. It recorded **405 PASS and one infrastructure ERROR** because
+the source identity changed during execution. The final snapshot includes the
+Hartle and Shen pickup references. The repeats use a new publication directory
+and a new test result. [Initial run](../test_output/chemical_database/sodium-scenarios-nB2oDjV5/full/result.json)
+
+The following commands reproduce the release checks. Run from the AMPS root and
+use fresh output directories. The recorded build command includes all 39 packet
+paths. The inherited suite script supplies the original-source paths used on
+this machine.
+
+```bash
+w=test_output/chemical_database/sodium-scenarios-nB2oDjV5
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r14
+scratch=$(mktemp -d)
+AMPS_CHECK_NA_REFERENCE_MODELS=1 bash test_output/chemical_database/lunar-source-comparison-pTDdeg8Y/test-release.sh "$scratch/full" "$db"
+python3 -B src/test/run_tests.py --config test/qualification-machine/passion.json --campaign nightly --test CORE-CHEMICAL-DATABASE-001 --output-dir "$scratch/nightly"
+PYTHONPATH="$db/python" python3 -B "$w/check_publication.py" "$db"
+```
+
+Final r14 results were **405 PASS** in the full shared database suite and
+**310 PASS** in the core nightly database protocol. Each reported zero FAIL,
+ERROR and SKIPPED. The installer verified 562 files and 905 object references.
+Rerunning the published CLI and Python example from the installed snapshot
+reproduced the native medians, theory point and model IDs. The r14 lock SHA-256
+is `9fd6272f652fa14e33517f1354d9dc3ee6bf47948a07b3438b3b9f4c7b14f0d8`.
+The canonical top-level lock still identifies the original release.
+[Full suite](../test_output/chemical_database/sodium-scenarios-nB2oDjV5/release-tests/result.json) ·
+[Nightly protocol](../test_output/chemical_database/sodium-scenarios-nB2oDjV5/release-nightly/artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json) ·
+[Installed snapshot checks](../test_output/chemical_database/sodium-scenarios-nB2oDjV5/installed-checks.json) ·
+[Installation receipt](../test_output/chemical_database/sodium-scenarios-nB2oDjV5/installation.json) ·
+[Exact publication command](../test_output/chemical_database/sodium-scenarios-nB2oDjV5/release-command.json)
+
+## 5.57 Linked M3 chemistry development — 2026-11-24 UTC
+
+Source revision `e5f2978ac0576f42dc510e0da110dcbe0029d69a` plus the
+working sources recorded by the clean producer. Source roadmap SHA-256
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`
+governs the early-development and one-hour development exception. Data-root
+roadmap SHA-256
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`
+governs the common scientific criteria and formal predecessor order.
+The global I21–I24 run reported **4 SKIPPED** with zero FAIL or ERROR.
+Its manifests identify the missing same-campaign I13–I20 results and
+capabilities for each test. [Formal aggregate](../test_output/srcMoon/m3-production-aPrmWNe5/formal/run_all_summary.json)
+
+* **I21, Na photoionization.** The fixed illuminated cohort now compares
+  the exact retained native time with an independent 80-digit first-hit
+  calculation. Six original launches, with 43 conversions in each,
+  passed 18 checks and failed the strict refinement check. Maximum
+  normalized errors at 8, 16 and 32 steps were 4.957, 4.957 and 4.972
+  × 10⁻¹⁷. The calculation separates the rounded initial optical depth
+  from time integration and CSV projection. The transport contribution
+  decreases on refinement. The existing varying-exposure case passed its
+  per-cohort tests. The new zero-hazard case checks that the finite
+  particle-to-Sun ray intersects the Moon independently of the production
+  visibility flag. [Numerical method and results](test/sodium_cohort/NUMERICAL_README.md)
+* **I22, photodissociation and photoionization.** The new parent-rest
+  photon/three-body solver conserves momentum and energy for an explicit ion,
+  electron and neutral with source-supplied states, energy partition and
+  directions. Its controls passed 456 checks. Existing two-body photon
+  controls passed 981 and D04 atomic-source preparation passed 70.
+  Complete H₂O/OH source populations and correlated daughter distributions,
+  normal molecular dispatch and U24 remain open. [Charged breakup results](../test_output/srcMoon/m3-i22-i23-E1QrJUHL/charged-photon/result.json)
+* **I23, electron impact.** The stationary-He pilot passed 25 checks with
+  the authenticated D05 coefficients and independent Kim fit. At 10 eV,
+  the 100–2000 eV incident-energy interval in the Peterson measurement
+  covers 0.5321% of the ionizing events predicted by that fit. It cannot
+  establish the error in the bulk of the pilot distribution. The linked
+  approved reduced He reservoir still needs a source-to-state threshold
+  crosswalk, coverage and uncertainty of the incoming collision-weighted
+  moment, a recoil/observable error bound, and normal bath-exposure coupling.
+  Fully differential outgoing electron spectra are optional for this
+  reduced closure. [Pilot result](../test_output/srcMoon/m3-i22-i23-E1QrJUHL/helium-final/result.json)
+* **I24, charge exchange.** The production provider reads the r14 0.22 Å²
+  partial cross section for H⁺ + Na(3s) → H(1s) + Na⁺(2p⁶) at 4.0 keV/u.
+  It uses the approved isotropic pair-COM approximation and source-based
+  mass and formation energies. In the prescribed homogeneous beam the direct
+  rate was 4.8321268971 × 10⁻⁹ s⁻¹. Of 32,768 independent parents, 20,775
+  reacted and 11,993 survived, with identical histories at one and eight
+  ranks and a lifetime error of 0.51%. All 35 ensemble checks passed.
+  The broader charge-exchange family still requires state-resolved products
+  over the selected projectile-energy support and applicable bath
+  conditions. [Ensemble results](../test_output/srcMoon/i24-sodium-audit-J0bii1U5/final/I24/sodium-ground-capture/result.json) ·
+  [Linked run instructions](test/integration-tests/I24/README.md)
+
+The first Na/Na⁺/H full-particle run stopped in the production
+`localTimeStep` callback because it recognized no neutral H. The corrected
+startup requires an explicit cell-crossing speed and H/Na reference-weight
+ratio when H is compiled. The source-bound build uses the normal SPICE
+configure/build path with optimization and debug information, individual
+particle weights and a zero-acceleration test equation. The default
+four-rank `make -j test_Moon` finished with a **0-byte test_Moon.diff**
+against the reviewed I04 reference. [Original startup log](../test_output/srcMoon/m3-production-aPrmWNe5/pic/first-1mpi.log) ·
+[Fresh build](../test_output/srcMoon/m3-production-aPrmWNe5/tracked-h-build-run/result.json) ·
+[Nightly regression](../test_output/srcMoon/m3-production-aPrmWNe5/tracked-h-nightly.log)
+
+The corrected H build then completed the full I24 PIC matrix. First- and
+second-order movers at one and eight ranks all returned identical live
+phase-space records. All **71 individual checks passed**. For a Na packet
+representing 2.625 atoms, Na⁺ and H each carried 2.625 at reference weights
+56 and 0.875. The bath lost 2.625 protons. With 0.0625 s of remaining flight,
+the relative momentum and energy errors were 1.81 × 10⁻¹⁶ and 1.49 × 10⁻¹⁶.
+The first scorer incorrectly interpreted the two integer charge changes
+per *reaction* as packet-weighted moments. The repeated run checked both
+stoichiometry and represented charge against the native packets and the
+signed bath record. Formal I24 remains SKIPPED. [Native PIC matrix](../test_output/srcMoon/m3-production-aPrmWNe5/verified/I24/sodium-pic-ground-capture/result.json) ·
+[Example displacement figure](../test_output/srcMoon/m3-production-aPrmWNe5/verified/I24/sodium-pic-ground-capture/second-8mpi/continuation.png) ·
+[Ensemble and formal result](../test_output/srcMoon/m3-production-aPrmWNe5/verified/I24/result.json)
+
+The maintained Moon configuration runner passed **54** checks, including
+14 for H speed and packet weights. The source-bound build protocol passed
+11 checks. The full shared database rerun with the real source selectors
+and r14 lock passed **405** with zero FAIL, ERROR or SKIPPED. The release
+lock SHA-256 is `9fd6272f652fa14e33517f1354d9dc3ee6bf47948a07b3438b3b9f4c7b14f0d8`.
+The Na/H state inventory SHA-256 is `7c255c05398c9dbaf4d55a8b17550576884dd0c5710773d3f8bfb20cde6f7fa1`.
+[Moon input controls](../test_output/srcMoon/i24-sodium-audit-J0bii1U5/hydrogen-input/result.json) ·
+[Shared database results](../test_output/chemical_database/r14-all-source-selectors-4r6ikioh/suite/result.json)
+
+Reproduce the conditional I24 case with the following commands after creating
+the named three-species producer. The input, native command lines, build
+identity, source hashes, SPICE kernels, root random key and per-rank logs
+are retained in the individual manifests. The four-rank nightly uses its
+separately reviewed regression configuration.
+
+```sh
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261124-r14
+pkg=test_output/srcMoon/m3-production-aPrmWNe5
+/usr/bin/python3 -B srcMoon/test/run_all_test.py --only I24 --skip-build \
+  --mpi-ranks 8 --campaign-mode regression --test-runtime-seconds 1600 \
+  --i24-sodium-lock "$db/database-lock.json" \
+  --i24-pic-refinement --i24-pic-producer "$pkg/closure-capture-build/normal_build_evidence.json" \
+  --output-dir "$(mktemp -d)"
+make -j test_Moon
+```
+
+The [I21 fixture](test/integration-tests/I21/README.md#reproduce-the-lunar-shadow-fixture)
+and [I24 builder](test/source_qualification_build/README.md#build-the-i24-sodium-capture-case)
+give the commands for rebuilding inputs on another working checkout.
+
+A second, clean Na/Na⁺ production build of the current working sources
+replayed the dark I21 fixture. Each of six runs (1/8 MPI ranks, 8/16/32
+steps) retained all 128 originals and produced zero removals and zero bath
+entries. The independent finite segment passed within 9.1431 × 10⁻¹⁰ m of
+the Moon centre for a 1,737,100 m radius. All **25 checks passed**, including
+exact zero numerical error in both rank layouts. The build took 153 s and
+the matrix plus audit took 179 s. [Production build](../test_output/srcMoon/m3-production-aPrmWNe5/dark-current/native-build/result.json) ·
+[Dark cohort audit](../test_output/srcMoon/m3-production-aPrmWNe5/dark-current/aggregate/I21/homogeneous/independent-audit/result.json) ·
+[One shadow geometry receipt](../test_output/srcMoon/m3-production-aPrmWNe5/dark-current/aggregate/I21/homogeneous/independent-audit/lunar_shadow-05.json)
+
+The registered core nightly selection `CORE-CHEMICAL-DATABASE-001` also
+passed. Its child suite reported **310 PASS, 0 FAIL, 0 ERROR, 0 SKIPPED**.
+[Core aggregate](../test_output/srcMoon/m3-production-aPrmWNe5/nightly-database/amps-core-tests.json) ·
+[Database checks](../test_output/srcMoon/m3-production-aPrmWNe5/nightly-database/artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json)
+
+The r14 review identified a reproducible conditional H₂O/OH residence-time
+comparison against Laferrière's prescribed smooth-surface scenario. The
+actual Arrhenius surface kernel passed nine numerical checks. Boundary
+conditions and source data for a complete regolith sticking/accommodation
+and migration calculation are still required for U24. [U24 scope and
+results](../test_output/srcMoon/m3-i22-i23-E1QrJUHL/u24-r14-final/U24/result.json)
+
+
+In the first I24 common-time refinement, the four-step case stopped at a
+valid interior event. A constant positive endpoint rate had been evaluated
+as the sum of two rounded interpolation terms. The independently
+re-evaluated physical rate therefore differed in its last bit. The production
+piecewise-hazard evaluator now returns the identical endpoint rate for an
+exactly constant segment. The strict equality test remains in the event
+controller. The focused regression reproduced 5.18750000000000000043
+from an exact 5.1875 before the fix; the corrected local suite passed 644
+checks. [Failed native launch](../test_output/srcMoon/i24-sodium-audit-J0bii1U5/pic-refinement/second-steps4-1mpi.log) ·
+[Constant-rate unit result](../test_output/srcMoon/i24-sodium-audit-J0bii1U5/constant-rate-unit/result.json)
+
+The I21 precision experiment resolved the illuminated cohort discrepancy with
+an opt-in numerical change. The source draws exactly the same uniform
+variates. The new mode evaluates −ln(U) in extended precision and preserves
+that result in the clock's existing high and low components at birth,
+migration and daughter initialization. The existing default and its reported
+refinement failure are retained. The predeclared experiment produced
+normalized maxima 1.3722 × 10⁻¹⁷, 6.8884 × 10⁻¹⁸ and 3.3138 × 10⁻¹⁸
+at 8, 16 and 32 steps, identically on one and eight ranks. The strict
+decrease and 0.002 fine-level threshold both passed. The keyed physical
+cohort had 43 removals in 128 parents per launch. Select this mode explicitly in the sodium cohort input. A host without
+extended precision cannot execute that selection. [Audited six-run experiment](../test_output/srcMoon/m3-production-aPrmWNe5/i21-opt-in-precision/native-matrix/independent-audit/result.json) ·
+[Mode selection and scorer](test/sodium_cohort/NUMERICAL_README.md)
+
+### Final integrated charge-exchange and nightly results
+
+After the constant-rate and optical-clock changes, a clean SPICE build
+completed in 178 s. The registered I24 development run finished in 211 s
+and reported both supporting children PASS. The ensemble passed 35 checks.
+The live PIC matrix passed **227 checks in 12 cases**, using both movers,
+1 and 8 ranks, 1/2/4 common steps and 1/½/¼ reference-weight scales.
+The physical beam, keyed original, step horizon and 2.625 represented atoms
+were identical across the matrix. The maximum absolute event-epoch error
+was 4.47 × 10⁻⁸ s (bound 9.54 × 10⁻⁷ s), the largest component position
+error was 0.00305 m, and the largest relative momentum and energy errors
+were 1.81 × 10⁻¹⁶ and 1.49 × 10⁻¹⁶. The registered owner retains formal I24
+as SKIPPED. [Global I24 result](../test_output/srcMoon/m3-production-aPrmWNe5/final-i24/I24/result.json) ·
+[12-case table](../test_output/srcMoon/m3-production-aPrmWNe5/final-i24/I24/sodium-pic-ground-capture/refinement.csv) ·
+[Eight-rank four-step comparison](../test_output/srcMoon/m3-production-aPrmWNe5/final-i24/I24/sodium-pic-ground-capture/second-steps4-8mpi/continuation.png) ·
+[Source-bound build](../test_output/srcMoon/m3-production-aPrmWNe5/closure-capture-build/normal_build_evidence.json)
+
+The final default `make -j test_Moon` returned the reviewed I04 digest
+`ed875cefc604e4ae3580fb89b8c528146929b6b9be099b41b61697faee7f0080` and
+a zero-byte diff. The separate global qualification-mode check recorded
+**U14 PASS, I21/I22/I23/I24 SKIPPED**. Its per-ID results list the required
+predecessors and outstanding family or forcing evidence. [Nightly reference receipt](../test_output/srcMoon/m3-production-aPrmWNe5/closure-nightly-reference.json) ·
+[Qualification-mode summary](../test_output/srcMoon/m3-production-aPrmWNe5/qualification/run_all_summary.json)
+
+On the integrated current tree the Na/Na⁺ clean build took 177 s and the
+six illuminated native launches plus audit took 250 s. All six launches and
+all **19 independent checks passed** with the same three timing errors given
+above. The historical default-mode comparison still records its actual
+failure. Larger predeclared statistical families, physical source-model
+qualification and the same-campaign predecessors remain open.
+[Current-source audit](../test_output/srcMoon/m3-production-aPrmWNe5/i21-current-precision/native-matrix/independent-audit/result.json) ·
+[Exact inputs, build and run evidence](../test_output/srcMoon/m3-production-aPrmWNe5/i21-current-precision/README.md)
+
+U15's registered owner passed all 27 supporting groups when run from its
+matched source checkout with the authentic dependencies. Formal U15 remains
+SKIPPED for incomplete product mapping/dispatch and U25. U16 passed its
+302 checks. U17 passed four supporting services and remains SKIPPED for
+the broader charge-exchange product/branch contract. These results identify
+which local gates still block the formal I-series runs. [U15](../test_output/srcMoon/m3-i22-i23-E1QrJUHL/u15-complete-packages/U15/result.json) ·
+[U16](../test_output/srcMoon/m3-i22-i23-E1QrJUHL/u16/U16/result.json) ·
+[U17](../test_output/srcMoon/m3-production-aPrmWNe5/local-u14-u17/U17/result.json)
+
+Two compatibility campaigns then ran against the final same Na/Na⁺ producer.
+The checked-in shadow fixture passed **25/25** across 1/8 MPI and 8/16/32
+steps. The moving, illuminated case using the new precision mode passed
+**19/19** over the same matrix. At +256 m/s along LSO x, all six launches
+produced 51 removals and 77 survivors. Normalized event-time errors fell
+from 9.96 × 10⁻¹¹ to 2.47 × 10⁻¹¹ to 6.14 × 10⁻¹². The maximum
+position error fell from 1.67 mm to 0.103 mm. The latter campaign took
+169 s and peaked at 28.4 GB. [Checked-in shadow replay](../test_output/srcMoon/m3-production-aPrmWNe5/final-shadow/aggregate/I21/homogeneous/independent-audit/result.json) ·
+[Moving cohort summary](../test_output/srcMoon/m3-production-aPrmWNe5/i21-current-trajectory/summary.json) ·
+[Timing comparison figure](../test_output/srcMoon/m3-production-aPrmWNe5/i21-current-trajectory/campaign/I21/trajectory/independent-audit/numerical_comparison.png)

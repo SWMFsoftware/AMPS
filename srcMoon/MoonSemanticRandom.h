@@ -12,6 +12,9 @@ struct Configuration {
   std::uint64_t seed=0;
   std::string cohort;
   std::size_t genealogyCapacity=0; // Explicit storage admission, NOT physics cap.
+  // Stored in the opaque configuration fingerprint, never in the random key.
+  // Changing log precision therefore preserves every parent/channel draw.
+  Species::ReactionExecution::OpticalDepthPrecision clockPrecision=Species::ReactionExecution::OpticalDepthPrecision::Binary64Log;
 };
 struct State {
   std::uint64_t originalParent=0;

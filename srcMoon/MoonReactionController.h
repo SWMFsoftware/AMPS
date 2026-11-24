@@ -96,6 +96,9 @@ struct Configuration {
   ExposureHistoryProvider exposureHistory=nullptr;
   std::string exposureProviderIdentity;
   Species::PiecewiseHazard::NumericControls exposureControls{0};
+  // Process configuration only. Keeping this option last preserves source
+  // compatibility for callers which use positional aggregate initialization.
+  R::OpticalDepthPrecision clockPrecision=R::OpticalDepthPrecision::Binary64Log;
 };
 
 // Installation is explicit, once, on every participating rank, before particle

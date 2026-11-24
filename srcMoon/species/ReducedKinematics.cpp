@@ -124,7 +124,8 @@ bool AddInteger(std::int64_t a,std::int64_t b,std::int64_t* result) {
       (b<0&&a<std::numeric_limits<std::int64_t>::min()-b))return false;
   *result=a+b;return true;
 }
-bool Material(const ResolvedState& parent,const std::array<ResolvedState,2>& products,std::string* error) {
+template<std::size_t N>
+bool Material(const ResolvedState& parent,const std::array<ResolvedState,N>& products,std::string* error) {
   std::map<std::string,std::int64_t> incoming,outgoing;std::int64_t charge=0;
   for(const auto& n:parent.definition().nuclei)incoming[n.identity]=n.count;
   for(const auto& s:products) {
@@ -260,22 +261,28 @@ bool IsotropicDirectionFromOpenUniforms(Real polar,Real azimuthUniform,
   *output=value;if(error)error->clear();return true;
 }
 
-bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::string* error) {
+namespace {
+// Both photon kernels compute exactly the same source threshold, state Q
+// and incident photon momentum. Only the decomposition of available COM
+// energy among the products depends on the selected channel.
+template<std::size_t N,typename Solver>
+bool ParentRestPhoton(const ParentRestPhotonInput<N>& input,const Solver& solve,
+                      FinalState* output,std::string* error) {
   if(!output||!Controls(input.context,input.controls,error)||!StateValid(input.parent,error)||
       !VectorFinite(input.parentMomentumKgMS)||Norm(input.parentMomentumKgMS)!=0||
       !Unit(input.photonDirection,input.controls.unitVectorTolerance,error)||
-      !EnergyValid(input.channelThreshold,true,error)||!EnergyValid(input.meanExcess,true,error)||
-      !(input.polarOpenUniform>0&&input.polarOpenUniform<1)||!(input.azimuthOpenUniform>0&&input.azimuthOpenUniform<1))
-    return Fail("photon model requires parent-rest momentum, explicit source energies/direction and open supplied uniforms",error);
+      !EnergyValid(input.channelThreshold,true,error)||!EnergyValid(input.meanExcess,true,error))
+    return Fail("photon model requires parent-rest momentum and explicit source energies and direction",error);
   try {
     for(const auto& s:input.products)if(!StateValid(s,error)||s.referenceInventoryIdentity()!=input.parent.referenceInventoryIdentity())
       return Fail("photon products require the same explicit reference inventory as the parent",error);
     if(!Material(input.parent,input.products,error))return false;
-    const Real mass=input.products[0].referenceMassKg()+input.products[1].referenceMassKg();
+    Real mass=0;
+    for(const auto& state:input.products)mass+=state.referenceMassKg();
     if(!Close(mass-input.parent.referenceMassKg(),std::max(mass,input.parent.referenceMassKg()),input.controls.referenceMassKg))
       return Fail("photon reference material mass is inconsistent; no artificial bath mass is supplied",error);
     FormationBalance formation;
-    if(!FormationQ({input.parent},{input.products[0],input.products[1]},&formation,error))return false;
+    if(!FormationQ({input.parent},std::vector<ResolvedState>(input.products.begin(),input.products.end()),&formation,error))return false;
     if(input.energyPolicy!=PhotonEnergyPolicy::SourceEqualsState&&
        input.energyPolicy!=PhotonEnergyPolicy::SourceEffectivePhoton)
       return Fail("unsupported explicit photon energy policy",error);
@@ -302,14 +309,8 @@ bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::strin
     const Real stateAvailable=sourceAvailable.Value();
     const Real available=stateAvailable-com;
     if(!Finite(available)||available<0)return Fail("photon/state energies leave negative or unrepresentable COM translation; no clipping is allowed",error);
-    TwoBodyInput final;final.products=input.products;final.totalMomentumKgMS=p;
-    if(!IsotropicDirectionFromOpenUniforms(input.polarOpenUniform,input.azimuthOpenUniform,
-        &final.relativeDirection,error))return false;
-    final.availableCOMKineticJ=available;final.context=input.context;final.controls=input.controls;
-    FinalState value;if(!GeneralTwoBodyFinalState(final,&value,error))return false;
-    value.modelIdentity=input.energyPolicy==PhotonEnergyPolicy::SourceEqualsState?
-      "source-mean-isotropic-parent-rest-photon-two-body":
-      "source-effective-mean-isotropic-parent-rest-photon-two-body";
+    FinalState value;
+    if(!solve(p,available,&value))return false;
     value.photonIncluded=true;
     value.photonEnergyJ=photon;value.photonMomentumKgMS=p;value.stateQJ=formation.qJ;
     value.channelThresholdJ=input.channelThreshold.joules;value.sourceMeanExcessJ=input.meanExcess.joules;
@@ -324,6 +325,119 @@ bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::strin
     *output=std::move(value);if(error)error->clear();return true;
   }
   catch(const std::exception& exception){return Fail(std::string("photon staging failed: ")+exception.what(),error);}
+}
+} // namespace
+
+bool PhotonTwoBody(const PhotonTwoBodyInput& input,FinalState* output,std::string* error) {
+  auto solve=[&](const Vector3& p,Real available,FinalState* value) {
+    TwoBodyInput final;final.products=input.products;final.totalMomentumKgMS=p;
+    if(!IsotropicDirectionFromOpenUniforms(input.polarOpenUniform,input.azimuthOpenUniform,
+        &final.relativeDirection,error))return false;
+    final.availableCOMKineticJ=available;final.context=input.context;final.controls=input.controls;
+    if(!GeneralTwoBodyFinalState(final,value,error))return false;
+    value->modelIdentity=input.energyPolicy==PhotonEnergyPolicy::SourceEqualsState?
+      "source-mean-isotropic-parent-rest-photon-two-body":
+      "source-effective-mean-isotropic-parent-rest-photon-two-body";
+    return true;
+  };
+  return ParentRestPhoton<2>(input,solve,output,error);
+}
+
+bool PhotonChargedBreakup(const PhotonChargedBreakupInput& input,FinalState* output,std::string* error) {
+  auto solve=[&](const Vector3& p,Real available,FinalState* value) {
+    ChargedBreakupInput final;
+    static_cast<ChargedPartition&>(final)=input.partition;
+    final.electron=input.products[0];final.ion=input.products[1];final.neutral=input.products[2];
+    final.totalMomentumKgMS=p;final.availableCOMKineticJ=available;
+    final.context=input.context;final.controls=input.controls;
+    if(!ChargedBreakupFinalState(final,value,error))return false;
+    value->modelIdentity=input.energyPolicy==PhotonEnergyPolicy::SourceEqualsState?
+      "source-mean-parent-rest-photon-charged-breakup":"source-effective-mean-parent-rest-photon-charged-breakup";
+    return true;
+  };
+  return ParentRestPhoton<3>(input,solve,output,error);
+}
+
+bool ChargedBreakupFinalState(const ChargedBreakupInput& input,FinalState* output,std::string* error) {
+  if(!output||!Controls(input.context,input.controls,error)||input.partitionSourceIdentity.empty()||
+     !VectorFinite(input.totalMomentumKgMS)||!Finite(input.availableCOMKineticJ)||input.availableCOMKineticJ<0||
+     !Finite(input.electronRelativeEnergyFraction)||input.electronRelativeEnergyFraction<0||
+     input.electronRelativeEnergyFraction>1)
+    return Fail("charged breakup requires explicit finite momentum, COM energy, frame and sourced fraction in [0,1]",error);
+  try {
+    const std::vector<ResolvedState> states{input.electron,input.ion,input.neutral};
+    for(const auto& state:states)
+      if(!StateValid(state,error)||state.referenceInventoryIdentity()!=input.electron.referenceInventoryIdentity())
+        return Fail("charged breakup products must share a resolved reference inventory",error);
+    const auto& electron=input.electron.definition();
+    const auto& ion=input.ion.definition();
+    const auto& neutral=input.neutral.definition();
+    if(electron.elementaryCharge!=-1||!electron.nuclei.empty()||ion.elementaryCharge!=1||ion.nuclei.empty()||
+       neutral.elementaryCharge!=0||neutral.nuclei.empty())
+      return Fail("charged breakup requires ordered electron, singly charged nuclear ion and neutral fragment",error);
+
+    const Real me=input.electron.referenceMassKg(),mi=input.ion.referenceMassKg(),mn=input.neutral.referenceMassKg();
+    const Real pair=mi+mn,total=pair+me;
+    if(!Positive(total))return Fail("charged breakup total mass is unrepresentable",error);
+    const Real fraction=input.electronRelativeEnergyFraction;
+
+    // Jacobi relative momentum has magnitude sqrt(2 mu K f). Keep the square
+    // roots separate, so a small fraction multiplied by a small K cannot
+    // silently remove a representable relative momentum. At zero mode energy
+    // there is no distinguished direction and a finite zero vector is valid.
+    auto modeMomentum=[&](Real first,Real second,Real share,const Vector3& direction,Vector3& p) {
+      if(!VectorFinite(direction))return Fail("nonfinite charged-breakup mode direction",error);
+      if(share==0||input.availableCOMKineticJ==0)return true;
+      if(!Unit(direction,input.controls.unitVectorTolerance,error))return false;
+      const Real mu=std::min(first,second)*(std::max(first,second)/(first+second));
+      const Real magnitude=std::sqrt(mu)*std::sqrt(input.availableCOMKineticJ)*std::sqrt(2*share);
+      if(!Positive(magnitude))return Fail("charged-breakup mode momentum is unrepresentable",error);
+      const Real directionNorm=Norm(direction);
+      for(int d=0;d<3;++d)p[d]=magnitude*(direction[d]/directionNorm);
+      return true;
+    };
+    Vector3 eRelative{},heavyRelative{};
+    if(!modeMomentum(me,pair,fraction,input.electronRelativeToPair,eRelative)||
+       !modeMomentum(mi,mn,1-fraction,input.ionRelativeToNeutral,heavyRelative))return false;
+    std::vector<Vector3> momenta(3);
+    for(int d=0;d<3;++d) {
+      // The heavy-pair COM carries the electron's opposite momentum in the
+      // total COM. Share that COM momentum by mass, then add equal and
+      // opposite ion–neutral recoil. All three also receive the bulk boost.
+      momenta[0][d]=(me/total)*input.totalMomentumKgMS[d]+eRelative[d];
+      const Real pairMomentum=(pair/total)*input.totalMomentumKgMS[d]-eRelative[d];
+      momenta[1][d]=(mi/pair)*pairMomentum+heavyRelative[d];
+      momenta[2][d]=(mn/pair)*pairMomentum-heavyRelative[d];
+    }
+    FinalState staged;
+    if(!Finalize(states,momenta,input.totalMomentumKgMS,input.availableCOMKineticJ,input.context,
+                 input.controls,"charged-breakup-explicit-jacobi", &staged,error))return false;
+    // A small individual mode can disappear in a large boost even though
+    // the *total* energy and momentum pass. Verify both modes independently
+    // from the delivered velocities before publishing any product.
+    const auto& ve=staged.products[0].velocityMS;
+    const auto& vi=staged.products[1].velocityMS;
+    const auto& vn=staged.products[2].velocityMS;
+    const Real electronMu=std::min(me,pair)*(std::max(me,pair)/total);
+    const Real heavyMu=std::min(mi,mn)*(std::max(mi,mn)/pair);
+    Vector3 electronError{},heavyError{};
+    for(int d=0;d<3;++d) {
+      const Real pairVelocity=(mi/pair)*vi[d]+(mn/pair)*vn[d];
+      electronError[d]=electronMu*(ve[d]-pairVelocity)-eRelative[d];
+      heavyError[d]=heavyMu*(vi[d]-vn[d])-heavyRelative[d];
+    }
+    // At exactly zero mode energy there is no angle or fractional scale.
+    // Its roundoff scale is the largest delivered material momentum.
+    const Real scale=std::max({Norm(momenta[0]),Norm(momenta[1]),Norm(momenta[2])});
+    if(!Close(Norm(electronError),Norm(eRelative)>0?Norm(eRelative):scale,input.controls.momentumKgMS)||
+       !Close(Norm(heavyError),Norm(heavyRelative)>0?Norm(heavyRelative):scale,input.controls.momentumKgMS))
+      return Fail("charged-breakup mode momentum was lost at the requested precision",error);
+    staged.sourceIdentities.push_back(input.partitionSourceIdentity);
+    *output=std::move(staged);
+    if(error)error->clear();
+    return true;
+  }
+  catch(const std::exception& exception){return Fail(std::string("charged breakup staging failed: ")+exception.what(),error);}
 }
 
 bool ThreeNeutralMicrocanonical(const ThreeBodyInput& input,FinalState* output,std::string* error) {

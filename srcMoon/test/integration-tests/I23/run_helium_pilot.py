@@ -79,12 +79,39 @@ def kim_model_comparison(pdf, profile, reference_coefficient, reference_mean_j, 
     result_coefficient=factor*moments[0][0]
     result_mean_ev=moments[1][0]/moments[0][0]
     result_mean_j=result_mean_ev*elementary_charge
+    # Peterson et al. report discrete incident electron energies within
+    # [100, 2000] eV. Only calculate the fraction that could be compared by
+    # energy. Neither continuous angular coverage nor a ground-ion fraction
+    # follows from these limits. Ionization weighting includes v*sigma(E),
+    # so integrating the Maxwellian number distribution alone would be wrong.
+    window_low,window_high=100,2000
+    boundaries=(fit_threshold,window_low,window_high,energy_max_ev)
+    bands=[]
+    for lower,upper in zip(boundaries,boundaries[1:]):
+        z_low,z_high=(lower-fit_threshold)/temp_ev,(upper-fit_threshold)/temp_ev
+        # Subdivide the long exponential tail in dimensionless units, using
+        # relative error for even the very small above-window contribution.
+        # The whole-domain integration above uses different quadrature panels.
+        panels=[z_low,*(z_low+s for s in (5,25,100) if z_low+s<z_high),z_high]
+        pieces=[quad(moment_integrand,lo,hi,args=(0,),epsabs=0,epsrel=1e-11)
+                for lo,hi in zip(panels,panels[1:])]
+        integral,error=(math.fsum(piece[i] for piece in pieces) for i in (0,1))
+        bands.append({'incident_interval_eV':[lower,upper],'fraction':integral/moments[0][0],
+                      'raw_integral':integral,'estimated_absolute_quadrature_error':error})
+    residual=abs(math.fsum(band['raw_integral'] for band in bands)-moments[0][0])
+    error_budget=moments[0][1]+math.fsum(band['estimated_absolute_quadrature_error'] for band in bands)
     return {
         'scope':'finite-support fit-to-fit diagnostic only; no activation or source-error bound',
         'source_url':KIM_SOURCE,'source_sha256':KIM_SHA256,
         'locator':'printed p. 690, Table 1 neutral-He row and equation (2)',
         'source_coefficients':dict(zip(('threshold_eV','A','B','C','D'),rows[0])),
         'thermal_energy_eV':temp_ev,'integration_range_eV':[fit_threshold,energy_max_ev],
+        'laboratory_incident_energy_coverage':{
+            'study':'https://doi.org/10.1103/PhysRevA.5.712','locator':'Abstract, incident beam energy range',
+            'source_interval_eV':[window_low,window_high],'bands':bands,
+            'fraction_in_studied_energy_interval':bands[1]['fraction'],
+            'absolute_integral_closure_error':residual,'estimated_numerical_error_budget':error_budget,
+            'interpretation':'Conditional on ionization within the Kim fit domain. The collision fraction counts all incident energies between the experimental endpoints. It is an upper bound on coverage by energy in this model, not a measured fraction or a model error bound.'},
         'raw_moments_and_estimated_absolute_quadrature_errors':moments,
         'kim_rate_coefficient_m3_s':result_coefficient,
         'voronov_rate_coefficient_m3_s':float(reference_coefficient),
@@ -198,6 +225,12 @@ def run(profile_path, expected_sha, output, data_root, kim_pdf=None):
         if kim_pdf is not None:
             diagnostic=kim_model_comparison(kim_pdf,profile,coefficient,mean,manifest)
             (output/'kim_model_comparison.json').write_text(json.dumps(diagnostic,indent=2,allow_nan=False)+'\n')
+            coverage=diagnostic['laboratory_incident_energy_coverage']
+            closed=coverage['absolute_integral_closure_error']<=coverage['estimated_numerical_error_budget']
+            valid=all(0<=band['fraction']<=1 for band in coverage['bands'])
+            checks.append({'check':'Kim-incident-energy-window-partition','status':'PASS' if closed and valid else 'FAIL',
+                           'absolute_integral_closure_error':coverage['absolute_integral_closure_error'],
+                           'estimated_numerical_error_budget':coverage['estimated_numerical_error_budget']})
         result_status='FAIL' if any(row['status']=='FAIL' for row in checks) else 'PASS'
     except (MissingPrerequisite,ImportError) as error:
         result_status='SKIPPED'

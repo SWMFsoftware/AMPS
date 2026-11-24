@@ -184,6 +184,52 @@ def run(output, compiler="g++"):
                 compare(name+"/source-mean", events[name][6], mean)
                 compare(name+"/source-available", events[name][7], mean)
             normals = [[Decimal(x) for x in values] for values in [(1, 2, -1), (2, -1, ".5"), ("-.2", ".7", -2)]]
+            # Solve for *velocities* from a prescribed relative speed in each
+            # mode, independently of the native momentum construction. The
+            # electron and the ion each use their own direction in the same
+            # axes. A nonzero boost tests that neither local axis is applied
+            # to a velocity in a different frame.
+            charged_masses = [Decimal(".001"), Decimal(".999"), Decimal(2)]
+            electron_mass, ion_mass, neutral_mass = charged_masses
+            pair_mass = ion_mass + neutral_mass
+            total_mass = electron_mass + pair_mass
+            for name, fraction, kinetic, p in (
+                    ("charged-rest", ".25", 4, (0, 0, 0)),
+                    ("charged-drift", ".25", 4, (3, -2, 1)),
+                    ("charged-heavy-only", "0", 4, (3, -2, 1)),
+                    ("charged-electron-only", "1", 4, (3, -2, 1)),
+                    ("charged-at-threshold", "1", 0, (3, -2, 1)),
+                    ("charged-photon", ".25", 4-(12/c)**2/(2*total_mass), (12/c, 0, 0))):
+                electron_k = Decimal(fraction) * kinetic
+                heavy_k = kinetic - electron_k
+                e_speed = (2 * electron_k * (1/electron_mass + 1/pair_mass)).sqrt()
+                heavy_speed = (2 * heavy_k * (1/ion_mass + 1/neutral_mass)).sqrt()
+                e_rel = [Decimal(0), e_speed, Decimal(0)]
+                ion_rel = [Decimal(".6") * heavy_speed, Decimal(0), Decimal(".8") * heavy_speed]
+                pair_v = [(p[d] - electron_mass * e_rel[d])/total_mass for d in range(3)]
+                velocities = [[pair_v[d] + e_rel[d] for d in range(3)],
+                              [pair_v[d] + neutral_mass/pair_mass * ion_rel[d] for d in range(3)],
+                              [pair_v[d] - ion_mass/pair_mass * ion_rel[d] for d in range(3)]]
+                momenta = [[m * v for v in vector] for m, vector in zip(charged_masses, velocities)]
+                references[name] = (charged_masses, momenta, velocities)
+                if name not in events or set(products.get(name, {})) != {0, 1, 2}:
+                    check(name+"/three-product-receipt", False)
+                    continue
+                if name == "charged-photon":
+                    compare(name+"/source-mean-photon-energy",events[name][3],12)
+                    compare(name+"/ordered-formation-Q",events[name][4],-8)
+                    compare(name+"/outgoing-lab-kinetic-energy",events[name][2],4)
+                compare(name+"/COM-energy", events[name][1], Decimal(kinetic),
+                        Decimal(kinetic) if kinetic else sum(Decimal(x)**2 for x in p) / (2*total_mass))
+                ve, vi, vn = (products[name][i][4:] for i in range(3))
+                pair_actual = [(ion_mass*a+neutral_mass*b)/pair_mass for a, b in zip(vi, vn)]
+                relative_energy = norm([a-b for a,b in zip(ve, pair_actual)])**2/(2*(1/electron_mass+1/pair_mass))
+                heavy_energy = norm([a-b for a,b in zip(vi, vn)])**2/(2*(1/ion_mass+1/neutral_mass))
+                # For a zero mode the residual scales with the finite boosted
+                # total energy, while a positive mode is checked on its own scale.
+                lab_energy = kinetic + sum(Decimal(x)**2 for x in p)/(2*total_mass)
+                compare(name+"/electron-pair-relative-energy",relative_energy,electron_k,electron_k or lab_energy)
+                compare(name+"/ion-neutral-relative-energy",heavy_energy,heavy_k,heavy_k or lab_energy)
             for name, masses, energy in (("microcanonical-deterministic", [Decimal(16), Decimal(1), Decimal(1)], Decimal(1)),
                     ("extreme-mass-energy-scales", [Decimal("1e100"), Decimal("1e-100"), Decimal("1e-100")], Decimal("1e-200"))):
                 if name == "extreme-mass-energy-scales" and platform[2] < 1400:

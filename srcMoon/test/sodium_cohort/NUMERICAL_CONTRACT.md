@@ -44,9 +44,31 @@ reconstructed from actual committed-child and photon/electron reservoir records.
 All source/input/executable/build identities, stdout/stderr, result/manifest,
 parent/event CSV, numerical and ledger comparisons and PNG/EPS diagnostics are
 retained. Supporting software fixtures are analytical and never observations.
+For explicitly selected compensated extended-log cohorts, require the native
+receipt to match the prepared clock mode across all six runs. Score the same
+independent physical first-hit times and exact native bits under either mode.
+Preserve historical plans and source clocks with their original numerical
+convention. This choice changes the initial arithmetic precision only.
 Consumed native files must match their ORIGINAL completed owner artifact map
 and pinned owner manifest/result, rather than merely being rehashed at scoring.
 One frozen cohort result is not closure of the whole I21 matrix, I21-I24 or M3.
 The enclosing executor uses one original <=3600s clock, including all native
 phases, audits and plotting, and the existing aggregate resource guards. Larger
 cohorts require a separately declared cluster campaign, never fewer trials.
+
+## Fixed lunar shadow
+
+For a stationary point in a frozen, Moon-centred LSO spherical geometry, the
+zero-hazard I21 audit must independently prove that the finite segment joining
+the launch point and the Sun crosses the lunar sphere. The initial visibility
+bit comes from the native production rate calculation, so it cannot prove its
+own correctness. Authenticate the application input and the lunar radius in the
+compiled producer's planetary constants. Minimize the squared distance to the
+lunar centre along the closed segment, clamping the projection to its two
+endpoints. The oracle uses exact rational arithmetic on the reported SI
+coordinates. A strict interior crossing and a dark native visibility bit are
+required. Exact tangency has no robust strict classification and stays SKIPPED.
+The fixed-position native owner enforces zero initial velocity, zero
+acceleration and a frozen SPICE basis. Terrain or other occultors need a
+separate oracle when the Moon alone cannot prove darkness. Preserve per-launch
+geometry, all original-parent histories and empty event ledgers.

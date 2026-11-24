@@ -1046,6 +1046,18 @@ def run_one(
         result = run_lola_geometry(acceptance, build_dir, output_root)
     elif kind == "argon-source-partial":
         result = run_argon_source(acceptance, build_dir, output_root)
+    elif kind == "water-residence-partial":
+        # This conditional model starts with an adsorbed molecule. Its
+        # arithmetic cannot decide gas-phase sticking or qualify the coupled
+        # surface hops, chemical branches and H/O conservation required by U24.
+        if str(TEST_ROOT) not in sys.path:
+            sys.path.insert(0,str(TEST_ROOT))
+        from U24_water_chemistry.residence import run as run_residence
+        child=run_residence(output_root/test_id)
+        result={"status":child["status"] if child["status"] in ("FAIL","ERROR") else "SKIPPED",
+                "reason":child["reason"] if child["status"] in ("FAIL","ERROR") else acceptance["skip_reason"],
+                "missing_capability":acceptance["missing_capability"],"formal_scope":"not-qualified",
+                "supporting_checks":[child],"supporting_counts":{s:int(s==child["status"]) for s in STATUS_EXIT}}
     elif kind == "maxwellian-voronov-probe":
         # U16 compiles the maintained pure production coefficient service,
         # so it does not require a particular AMPS generated species tree.

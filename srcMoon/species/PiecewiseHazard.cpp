@@ -261,6 +261,14 @@ Range Area(const Segment& s,Real a,Real b,Real* value) {
   return PositiveSum(terms,value);
 }
 Range Rate(const Segment& s,const Channel& c,Real time,Real* value) {
+  // Equal endpoints describe the same instantaneous physical rate throughout
+  // the segment. Evaluating two weighted terms can round their sum away
+  // from that value at an interior event. The reaction owner independently
+  // re-evaluates the beam at that event and checks its rate identity.
+  if (c.beginRateS==c.endRateS) {
+    *value=c.beginRateS;
+    return Range::Finite;
+  }
   return PositiveSum({Product(c.beginRateS,1,s.endS-time,s.endS-s.beginS,false),
       Product(c.endRateS,1,time-s.beginS,s.endS-s.beginS,false)},value);
 }

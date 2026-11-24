@@ -213,6 +213,33 @@ bool OpticalDepthClock::FromOpenUniform(double uniform,OpticalDepthClock* output
   *output=value;if (error) error->clear();
   return true;
 }
+bool OpticalDepthClock::FromOpenUniform(double uniform,OpticalDepthClock* output,
+    std::string* error,OpticalDepthPrecision precision) {
+  if (precision==OpticalDepthPrecision::Binary64Log) return FromOpenUniform(uniform,output,error);
+  if (precision!=OpticalDepthPrecision::CompensatedExtendedLog)
+    return Fail("unsupported optical-depth precision",error);
+  if (!output || !Open(uniform)) return Fail("optical-depth draw requires strictly 0<u<1",error);
+  // On this numerical path preserve every significant bit of libm's result
+  // in the existing two binary64 words. A platform with a binary64 long
+  // double cannot improve the clock. A wider-than-double-double result cannot
+  // generally fit. Report either limitation without publishing a rounded or partially initialized clock.
+  constexpr int bits=std::numeric_limits<long double>::digits;
+  constexpr int componentBits=std::numeric_limits<double>::digits;
+  if (std::numeric_limits<long double>::radix!=2 || bits<=componentBits || bits>2*componentBits)
+    return Fail("compensated-extended-log requires a binary long double with more than 53 and at most 106 significand bits; use a qualifying build for this clock mode",error);
+  const long double depth=-std::log(static_cast<long double>(uniform));
+  if (!std::isfinite(depth) || !(depth>0)) return Fail("nonfinite/zero extended log result",error);
+  OpticalDepthClock value;value.remaining_=static_cast<double>(depth);
+  // The stored value is high - compensation, including immediately at birth.
+  // Refuse a representation which cannot retain the entire evaluated depth.
+  value.compensation_=static_cast<double>(static_cast<long double>(value.remaining_)-depth);
+  if (static_cast<long double>(value.remaining_)-value.compensation_!=depth)
+    return Fail("optical depth cannot be represented in the native pair",error);
+  if (!Positive(value.remaining_)) return Fail("optical depth is not finite positive",error);
+  value.valid_=true;value.fresh_=true;
+  *output=value;if (error) error->clear();
+  return true;
+}
 bool OpticalDepthClock::valid() const {
   if (!valid_ || !Finite(remaining_) || !Finite(compensation_)) return false;
   if (consumed_) return remaining_==0 && compensation_==0 && !fresh_;

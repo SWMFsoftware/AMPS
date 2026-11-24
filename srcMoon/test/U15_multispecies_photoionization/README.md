@@ -23,6 +23,14 @@ per family, frozen seed/stream construction and 99% familywise binomial bounds.
 CSV/PNG/EPS comparisons and data/source hashes remain in the photon child.
 See [the photon selection contract](../common/m3_rates/PHOTON_SELECTION_CONTRACT.md).
 
+The reduced-kinematics child also checks conditional electron, ion and neutral
+momenta for a photon absorbed by a molecule initially at rest. Its analytical
+fixtures supply both relative directions and the fraction of available energy
+in electron motion relative to the heavy fragments. The child reconstructs all
+three velocities and both relative energies independently from those inputs.
+Solar-weighted product states and distributions for actual H₂O channels remain
+prerequisites for I22. [Reduced-kinematics contract](../reduced_kinematics/CONTRACT.md)
+
 Use a new artifact directory without reconfiguring the application:
 
 ```sh

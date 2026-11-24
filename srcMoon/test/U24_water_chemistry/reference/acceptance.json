@@ -20,7 +20,7 @@
   "predecessor_gates": ["U11", "U12", "U13", "U15"],
   "artifacts": ["result.json", "distribution_metrics.json", "budget.json", "data_hashes.json"],
   "status_semantics": "SKIPPED; ready photochemistry data do not imply a water/OH model.",
-  "implementation": "not-implemented",
+  "implementation": "water-residence-partial",
   "skip_reason": "H2O and OH are not production species and no migration/chemistry path exists.",
   "missing_capability": "Production H2O/OH surface and chemistry implementation."
 }

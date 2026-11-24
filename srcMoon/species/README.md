@@ -172,3 +172,14 @@ Isotope/state applicability, omitted-transition bounds, alignment and quenching
 remain unresolved; physical lifetimes and normalized branches stay null and
 no cascade is installed in the particle controller. State-source QA and
 transport qualification are reported separately.
+
+For H₂O dissociative ionization, `ReducedKinematics::PhotonChargedBreakup`
+takes explicit source/state energies and a conditional partition. It checks
+photon momentum, formation Q, both Jacobi momenta, total kinetic energy,
+isotope and charge conservation before returning the electron, ion and
+neutral. The standalone `ChargedBreakupFinalState` takes an already established
+total momentum and available COM kinetic energy for the same three products.
+The two product directions share one Cartesian basis. Each event carries its
+partition source identity. Missing solar-weighted branching into states and
+partition distributions currently limit use to prescribed numerical controls.
+[Interface and test contract](../test/integration-tests/I22/README.md#conditional-products-for-charged-water-breakup)
