@@ -217,6 +217,14 @@ int main(int argc,char **argv) {
     SEP::Testing::ExecutionContext testContext;
     testContext.inputPath = cli_options.testInputPath;
     testContext.artifactDirectory = cli_options.testArtifactDirectory;
+    // The legacy CME test prepares its own event in the run directory before
+    // entering MPI. Resolve these defaults before the test runner changes
+    // to rank-local scratch. Explicit reviewed paths use the normal CLI.
+    if (selectedComponentTests.size() == 1 && selectedComponentTests.front()->id == "CME" &&
+        testContext.inputPath.empty()) {
+      testContext.inputPath = "prepared.event";
+      testContext.artifactDirectory = "shock-trace";
+    }
     SEP::Testing::SetExecutionContext(testContext);
     std::string campaignError;
     if(!ConfigureComponentTestCampaign(cli_options,&campaignError)) {

@@ -225,6 +225,7 @@ MAINLIBOBJ += util/sep_cli.o
 # PIC ABI or worker-count header can leave old template instantiations in
 # main.a even though every library/mover object has rebuilt successfully.
 MAINOBJ = main.o debug/sep_debug_fieldline_datum.o util/sep_stage13_validation.o
+MAINLIBOBJ += util/sep_cme_shock_evolution.o
 
 # Bootstrap dependency files once for objects left by an older configured tree.
 # This preserves generated configuration while preventing stale header consumers
@@ -309,6 +310,11 @@ adapters/swcme3d_spherical_material_adapter.o: adapters/swcme3d_spherical_materi
 	$(CXX) $(SWCME_CONSUMER_CXXFLAGS) -I$(SEP_CORONA_SWCME_DIR)/include/sep_corona_swcme -c -o $@ $<
 
 util/sep_stage13_validation.o: util/sep_stage13_validation.cpp
+	$(CXX) $(SWCME_CONSUMER_CXXFLAGS) -c -o $@ $<
+
+# Link the same production front and upstream headers used by the reduced
+# provider. The test itself uses no MPI/PIC types or compiled model clock.
+util/sep_cme_shock_evolution.o: util/sep_cme_shock_evolution.cpp
 	$(CXX) $(SWCME_CONSUMER_CXXFLAGS) -c -o $@ $<
 
 # The linked bridge test owns no MPI/PIC state. Compile with the same private

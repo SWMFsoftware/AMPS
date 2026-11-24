@@ -561,6 +561,40 @@ Check=
 
 
 #>
+Name=SEP--CME-shock-evolution
+Family=sep
+Time=2
+
+Compile=
+>>>@echo "test_SEP--CME-shock-evolution_compile..." > test_SEP--CME-shock-evolution.diff
+>>>./Config.pl -application=test/sep_parker_spiral__field_line -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP--CME-shock-evolution_compile... done" >> test_SEP--CME-shock-evolution.diff
+
+Run=
+>>>@echo "test_SEP--CME-shock-evolution_run..." >> test_SEP--CME-shock-evolution.diff
+>>>@# The prepared event contains a fit in HCI/SI. The native CLI test computes the trace independently of Python.
+>>>@rm -f "$(TESTSEP--CME-shock-evolutionDIR)/shock-trace.completed" "$(TESTSEP--CME-shock-evolutionDIR)/observed-2020-11-29.json"
+>>>@# Materialize documented FITS cutouts so the preview runs without archive access on the test host.
+>>>@PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/preview_fixture.py prepare "$(TESTSEP--CME-shock-evolutionDIR)/preview-input"
+>>>@PREVIEW="$(TESTSEP--CME-shock-evolutionDIR)/preview-input"; PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/preview_observations.py --sources "$$PREVIEW/sources.json" --archive-dir "$$PREVIEW" --picks "$$PREVIEW/picks.csv" --output-dir "$(TESTSEP--CME-shock-evolutionDIR)/preview" --save-panel-data
+>>>@OBS=srcSEP/test/cme_shock_evolution/observed_2020_11_29; PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/pack_observations.py --sources "$$OBS/sources.json" --picks "$$OBS/picks.csv" --output "$(TESTSEP--CME-shock-evolutionDIR)/packed-observations.json"
+>>>@# Exercise the same fitter on archive rays. This event tests refusal of a fit on the SSE width boundary.
+>>>@OBS=srcSEP/test/cme_shock_evolution/observed_2020_11_29; PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/regression.py check-archived-observations "$(TESTSEP--CME-shock-evolutionDIR)/observed-2020-11-29.json" --data "$(TESTSEP--CME-shock-evolutionDIR)/packed-observations.json" --sources "$$OBS/sources.json" --reference "$$OBS/observations.json" --issue 2026-11-24T12:00:00Z
+>>>@PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/regression.py prepare "$(TESTSEP--CME-shock-evolutionDIR)/prepared.event" --data srcSEP/test/cme_shock_evolution/observations.json --issue 2026-10-06T03:10:00Z --legacy
+>>>cd "$(TESTSEP--CME-shock-evolutionDIR)" && $(MPIRUN) ./amps --test CME
+>>>@touch "$(TESTSEP--CME-shock-evolutionDIR)/shock-trace.completed"
+>>>@echo "test_SEP--CME-shock-evolution_run... done" >> test_SEP--CME-shock-evolution.diff
+
+Check=
+>>>@test -f "$(TESTSEP--CME-shock-evolutionDIR)/shock-trace.completed" || { echo 'CME shock trace did not complete' > test_SEP--CME-shock-evolution.diff; exit 1; }
+>>>@test -s "$(TESTSEP--CME-shock-evolutionDIR)/observed-2020-11-29.json" || { echo 'CME archived observation check did not complete' > test_SEP--CME-shock-evolution.diff; exit 1; }
+>>>@PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/preview_fixture.py check "$(TESTSEP--CME-shock-evolutionDIR)/preview" > test_SEP--CME-shock-evolution.diff 2>&1
+>>>@PYTHONDONTWRITEBYTECODE=1 "$${AMPS_CME_PYTHON:-/usr/bin/python3}" srcSEP/test/cme_shock_evolution/regression.py check "$(TESTSEP--CME-shock-evolutionDIR)/shock-trace" >> test_SEP--CME-shock-evolution.diff 2>&1
+>>>@echo Test SEP--CME-shock-evolution has finished: `date`
+<#
+
+#>
 Name=SEP--Parker_spiral--ParkerEq 
 Family=sep
 Time=4

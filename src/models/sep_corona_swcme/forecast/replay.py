@@ -98,6 +98,16 @@ def projection(parameters, hours, observers, sightlines):
     return np.arctan2(lateral_norm, scalar) - np.arcsin(sine), outward, domain
 
 
+class FitBoundaryError(ValueError):
+    """The least-squares solution requires a parameter at its admissible limit."""
+
+    def __init__(self, limits, angular):
+        self.limits = limits
+        self.rms_angular_rad = float(np.sqrt(np.mean(angular**2)))
+        detail = ', '.join(f'{name} ({limit["side"]})' for name, limit in limits.items())
+        super().__init__(f'no regular advancing fit on the leading SSE cap: bound active for {detail}')
+
+
 def fit_tracks(event, issue, withheld):
     tracks = []
     rejected = Counter()
@@ -163,9 +173,19 @@ def fit_tracks(event, issue, withheld):
     angular, outward, domain = projection(center, hours, observers, sightlines)
     limits = np.array([hours.min(), hours.max()])
     radii, speeds = kinematics(center, limits)
-    if (not solution.success or np.any(solution.active_mask) or np.min(outward) < -1e-8
+    if (not solution.success or np.min(outward) < -1e-8
             or np.min(domain) <= 0 or np.min(speeds) <= 0 or np.min(radii) <= 1):
         raise ValueError('no regular advancing fit on the leading SSE cap')
+    if np.any(solution.active_mask):
+        # A bound-constrained minimum cannot be used as an interior
+        # Gaussian estimate or as a frozen shock model. Distinguish it
+        # from nonconvergence and invalid surface tangencies so archived
+        # events record why the fit was rejected.
+        labels = ('radius', 'speed', 'acceleration', 'longitude', 'latitude', 'half_width')
+        raise FitBoundaryError({
+            labels[i]: {'side': 'upper' if flag > 0 else 'lower', 'value': float(center[i])}
+            for i, flag in zip(active, solution.active_mask) if flag
+        }, angular)
 
     # Only genuine measurements contribute to the information matrix. An
     # active domain penalty cannot make an otherwise unidentifiable fit look

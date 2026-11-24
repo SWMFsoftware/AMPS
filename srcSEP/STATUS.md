@@ -1,6 +1,6 @@
 # srcSEP development status
 
-Last updated: **2026-11-23**. This file tracks the active implementation of
+Last updated: **2026-11-24**. This file tracks the active implementation of
 both DOCX plans and their corrective proposal. **The full development and
 validation program is not complete.** A passing software or isolated-physics
 test does not qualify an unimplemented production path.
@@ -13,6 +13,91 @@ primary requirement inventory is
 the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
+
+## Legacy CME shock evolution regression, 2026-11-24
+
+The Table now runs the `preview_observations.py` and
+`pack_observations.py` command-line programs with their own frozen
+references. The preview uses three small pairs of FITS cutouts from
+archived LASCO C2/C3 and SECCHI COR2 images. Its independent rational
+reference checks all 351 filtered pixels, axes, stretch and marks. The
+checker also verifies that the marks appear in all three PNGs. The
+packer regenerates all 59 calibrated tracks and must reproduce the
+original archived JSON byte for byte before the fitter reads it.
+Both steps run offline. The
+[reference and provenance guide](test/cme_shock_evolution/observed_2020_11_29/README.md#offline-script-regression-and-references)
+documents the assets, tolerances and reproduction commands.
+
+Direct CLI verification passed for both scripts. Regenerating both
+preview fixture files from the archived FITS reproduced them byte for
+byte. A changed image value, a PNG with the orange mark removed and a
+changed packed sight line were each rejected independently. The full
+`make test_SEP--CME-shock-evolution TESTCOMPILEJOBS=16` target passed with
+the new references in an isolated Open MPI singleton. The preview had a
+maximum absolute pixel error of `1.81e-16`, the legacy diff was empty and
+the native five-hour output matched its reference byte for byte.
+Evidence is in `/data/vtenishe/TEST/sep-cme-preview-regression.MMd9K6/`.
+
+The legacy Table now loads the
+[29 November 2020 observation package](test/cme_shock_evolution/observed_2020_11_29/README.md)
+before the manufactured five-hour trace. NASA SECCHI/COR2-A and SOHO
+LASCO/C2/C3 FITS supplied 59 manual outer compression-edge picks on seven
+images. The fitter uses 37 picks from four exposures. Three other exposures
+remain reserved for a future qualified evaluation. Archive hashes,
+pointing and HCI epoch conversion reproduce the frozen input byte for
+byte. An independent JPL Horizons position check differs from the COR2
+headers by up to 345 km.
+
+The shared SSE fitter reaches its upper half-width bound (`π/2 - 10⁻⁴`
+rad). The trial RMS image residual is 489.3 arcsec. The legacy observation
+check verifies rejection and produces an admission report. The normal
+`prepare --data` path gives the same reason and refuses to create a native
+receipt. A corrupted packed ray fails the input reproduction check. The
+five-hour observational trace remains unqualified pending an admissible
+front geometry, dated upstream plasma and coverage or a justified
+continuation.
+
+The regenerated `make test_SEP--CME-shock-evolution TESTCOMPILEJOBS=16`
+target passed compile, rundir, run and check in an isolated Open MPI
+singleton. The native case also passed with two MPI ranks. Both
+`shock-18000.csv` files match the original reference byte for byte and
+the legacy numerical diff is empty. All eight standalone forecast tests
+passed. The full build emitted the existing format-truncation warning
+in `turbulence_wave_number_resolved.cpp:1580`. Evidence is in
+`/data/vtenishe/TEST/sep-cme-real-20261124.Thv8Ef/`.
+
+Event preparation now requires `--data PATH --issue UTC`. The legacy Table
+passes the checked-in manufactured [observations.json](test/cme_shock_evolution/observations.json)
+directly to Python with the frozen issue cutoff. The Table run and check
+reproduced the original five-hour CSV byte for byte. The
+[event-input contract](test/cme_shock_evolution/EVENT_INPUT.md)
+documents calibrated picks, paths and asset ownership, UTC and frame
+conventions, and the prepared C++ receipt. Two-rank user-event tests covered
+relative upstream paths with spaces, a displaced observation UTC origin, an
+explicit ambient-member selection, a later start with drag, and a five-hour
+fitted-only trace with custom rays. Independent trajectory checks passed.
+The preparer rejected an unavailable member and a pre-observation start.
+Evidence is in `/data/vtenishe/TEST/sep-cme-event-input-20261124.ERDXGP/`.
+
+`SEP--CME-shock-evolution` is registered in the legacy Table under the SEP
+family. Python prepares an HCI/SI fit from 332 manufactured calibrated
+picks. `./amps --test CME` loads that event and uses the shared C++ geometry,
+upstream, drag and MHD jump kernels at fixed 1200 s query intervals. The
+initial frame and all fifteen steps carry 49 rays each. The final reference
+at 18000 s has 37 solved fast shocks and 12 subfast rays. The
+[case guide](test/cme_shock_evolution/README.md) describes the reference,
+independent geometry and ODE oracle, and acceptance limits.
+
+The generated legacy manifest contains the test and the full compile,
+rundir, run and check target completed with an empty numerical diff in
+isolated Open MPI singleton mode. The descriptive CLI alias passed with
+two MPI ranks and reproduced the five-hour reference byte for byte.
+The checker rejected a missing epoch, a
+payload with a mismatched checksum, and a changed final Mach number even
+after its checksum was recomputed. The generated legacy Check target also
+failed the changed final Mach number. All 8 standalone forecast tests, 57
+reduced-shock checks and 12 linked production CLI cases passed. Evidence is
+in `/data/vtenishe/TEST/sep-cme-legacy-20261124.Ptm30X/`.
 
 ## Observation-driven shock replay prototype, 2026-11-23
 

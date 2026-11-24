@@ -518,6 +518,8 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  " << exe << " --run-test-manager\n"
       << "  " << exe << " --list-tests\n"
       << "  " << exe << " --test DXX01 --test=TURB01\n"
+      << "  " << exe << " --test CME --test-input prepared.event --test-output-dir shock-trace\n"
+      << "    cme-shock-evolution is the descriptive alias for CME.\n"
       << "  " << exe << " --test-group parker\n"
       << "  " << exe << " --all-tests --test-json results.json --test-junit results.xml\n"
       << "  " << exe << " --test CV01 --test-input CV01-native.args --test-output-dir evidence/CV01\n"
@@ -687,7 +689,12 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         return false;
       }
 
-      if (option_name == "--test") options.testIds.push_back(selector);
+      if (option_name == "--test") {
+        // Normalize the descriptive alias to the one authoritative ID before
+        // registry selection. It can share the same prepared-input contract.
+        if (ToLower(selector) == "cme-shock-evolution") selector = "CME";
+        options.testIds.push_back(selector);
+      }
       else if(option_name=="--test-group")options.testGroups.push_back(selector);
       else options.testExpressions.push_back(selector);
       continue;

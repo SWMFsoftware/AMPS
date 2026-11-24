@@ -1,5 +1,17 @@
 # srcSEP standalone component tests
 
+## CME shock evolution regression
+
+Legacy case `SEP--CME-shock-evolution` checks the Python fitter's rejection
+of the archived 29 November 2020 CME at the spherical model's width bound.
+It runs both the observation preview and packing scripts with their own
+offline references before the native test.
+It also runs the linked `./amps --test CME` on the manufactured event. The
+checker uses an independent trajectory oracle for the initial shock map
+and fifteen 20-minute outputs, with a frozen five-hour numerical reference.
+See the [case guide](cme_shock_evolution/README.md) and
+[observation package](cme_shock_evolution/observed_2020_11_29/README.md).
+
 ## Stage 13 spherical SWCME3D
 
 `make -C srcSEP test-stage13-cases SEP_EXECUTABLE=/absolute/build/amps`

@@ -1,5 +1,14 @@
 # srcSEP field-line solar energetic particle transport
 
+## CME shock evolution regression
+
+`make test_SEP--CME-shock-evolution` checks the shared fitter using archival
+STEREO-A and SOHO observations from 29 November 2020. The same target runs
+`./amps --test CME` on the manufactured benchmark and writes the shock
+evolution every 20 minutes for five hours. See the
+[regression guide](test/cme_shock_evolution/README.md) and
+[archive preparation guide](test/cme_shock_evolution/observed_2020_11_29/README.md).
+
 ## Spherical SWCME3D Stage 13 cases
 
 Build the shared proton field-line executable with `./Config.pl

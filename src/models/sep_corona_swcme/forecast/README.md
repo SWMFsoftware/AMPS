@@ -31,6 +31,9 @@ core validation. A failed fit exits with a diagnostic.
 ## Input contract
 
 The JSON fields below define `shock-front-replay-v1`.
+The [CME event input guide](../../../../srcSEP/test/cme_shock_evolution/EVENT_INPUT.md)
+describes the full observation data contract and preparing a five-hour native
+srcSEP diagnostic from the same file.
 
 | Field | Meaning |
 | --- | --- |

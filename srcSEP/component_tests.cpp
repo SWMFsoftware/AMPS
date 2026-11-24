@@ -28,6 +28,7 @@
 #include "util/sep_source_native_validation.h"
 #include "util/sep_maxwellian_native_validation.h"
 #include "util/sep_cli_campaign_validation.h"
+#include "util/sep_cme_shock_evolution.h"
 #include "util/sep_production_cli_validation.h"
 #include "util/sep_scientific_validation.h"
 #include "util/sep_swcme_validation.h"
@@ -1076,6 +1077,26 @@ const SEP::Testing::Registry& ComponentTestRegistry() {
         SEP::Testing::SwcmeImprovementDescriptors();
     descriptors.insert(descriptors.end(), swcme_descriptors.begin(),
                        swcme_descriptors.end());
+    // The legacy Table prepares this input with Python before choosing CME.
+    // Keep the prepared-input case explicit in the native catalog. Only the
+    // designated MPI writer touches shared evidence. Registry reduction owns
+    // the final status, so a failed root callback fails every participant.
+    SEP::Testing::Descriptor cme;
+    cme.id = "CME";
+    cme.name = "CME shock evolution";
+    cme.group = "cme-shock-evolution";
+    cme.description = "Trace a Python-prepared CME shock at 20-minute epochs through five hours.";
+    cme.supportedBuildModes = "standalone srcSEP";
+    cme.runtime = SEP::Testing::RuntimeClass::Extended;
+    cme.seedPolicy = "deterministic geometry and plasma";
+    cme.stateIsolation = "local upstream and shock state, rank-zero artifact writer";
+    cme.callback = []() {
+      if (PIC::ThisThread == 0) return SEP::Testing::RunCmeShockEvolution();
+      SEP::Testing::Result result;
+      result.status = SEP::Testing::Status::Pass;
+      return result;
+    };
+    descriptors.push_back(std::move(cme));
     // These AMPS-independent callbacks are linked into the production catalog
     // as routine tests, so `test/run_tests.py --all` discovers and executes
     // the same INIT01-INIT03 gates as the focused source-only build.
