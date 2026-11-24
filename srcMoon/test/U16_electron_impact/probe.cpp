@@ -55,9 +55,13 @@ int main(int argc,char** argv) {
   const bool coefficientOk=table.RateCoefficientM3S(species,temperature,&coefficient,&error);
   const std::string coefficientError=error;
   const bool rateOk=table.IonizationRateS(species,temperature,density,&rate,&error);
-  std::cout << "coefficient_m3_s=" << coefficient << "\nrate_s=" << rate << '\n';
-  if (!coefficientOk || !rateOk) {
-    std::cerr << coefficientError << '\n' << error << '\n';return 4;
+  const std::string rateError=error;
+  double slope=-789;
+  const bool slopeOk=table.LogTemperatureDerivative(species,temperature,&slope,&error);
+  std::cout << "coefficient_m3_s=" << coefficient << "\nrate_s=" << rate
+            << "\nlog_temperature_derivative=" << slope << '\n';
+  if (!coefficientOk || !rateOk || !slopeOk) {
+    std::cerr << coefficientError << '\n' << rateError << '\n' << error << '\n';return 4;
   }
   if (!table.GetCoefficient(species,&row,&error)) return 4;
   std::cout << "atomic_number=" << row.atomicNumber << "\nelectron_count=" << row.electronCount

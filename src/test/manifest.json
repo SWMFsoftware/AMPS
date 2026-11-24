@@ -1905,7 +1905,7 @@
       "level": "system",
       "tiers": ["extended", "application-smoke"],
       "runner": "tests/applications/moon_regression/run_test.py",
-      "description": "Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips",
+      "description": "Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I24 regression outcomes with typed scientific skips",
       "requires": {
         "tools": ["python", "make", "mpiexec"],
         "paths": ["Config.pl", "srcMoon/test/run_all_test.py"],

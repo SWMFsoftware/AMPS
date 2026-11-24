@@ -669,6 +669,8 @@ def run_test(
     test_runtime_seconds: float = 3600.0,
     m2_cluster_execute: bool = False,
     m3_input: Path | None = None,
+    i21_cohort_plan: Path | None = None,
+    i21_cohort_plan_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -709,6 +711,10 @@ def run_test(
         if test_id=="I19":
             command.extend(["--test-runtime-seconds",str(test_runtime_seconds)])
             if m2_cluster_execute:command.append("--m2-cluster-execute")
+        if test_id=="I21" and i21_cohort_plan is not None:
+            command.extend(["--i21-cohort-plan",str(i21_cohort_plan),
+                "--i21-cohort-plan-sha256",i21_cohort_plan_sha256,
+                "--test-runtime-seconds",str(test_runtime_seconds)])
     else:
         command = [
             sys.executable,
@@ -785,6 +791,9 @@ def main() -> int:
     )
     parser.add_argument("--m3-input",type=Path,default=DEFAULT_M3_INPUT,
         help="explicit M3 input/provenance for I21-I24; rate services do not activate product kinetics")
+    parser.add_argument("--i21-cohort-plan",type=Path,
+        help="explicit frozen I21 fixed-position or development trajectory cohort plan")
+    parser.add_argument("--i21-cohort-plan-sha256",help="SHA-256 of the explicit I21 cohort plan")
     parser.add_argument(
         "--campaign-mode",
         choices=("regression", "qualification"),
@@ -802,7 +811,7 @@ def main() -> int:
     parser.add_argument("--i11-parallel-levels", type=int, choices=(1, 2, 4), default=1,
                         help="concurrent I11 meshes, with --mpi-ranks per mesh")
     parser.add_argument("--test-runtime-seconds", type=float, default=3600,
-                        help="parallel I11 launch budget; interrupted children are ERROR")
+                        help="bounded I11, I19 or explicit I21 run allowance; interrupted children are ERROR")
     parser.add_argument("--m2-cluster-execute",action="store_true",
                         help="opt in to reviewed I19 long execution; defaults to deferred/import-only")
     parser.add_argument(
@@ -844,6 +853,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.mpi_ranks < 1:
         parser.error("--mpi-ranks must be a positive integer")
+    if (args.i21_cohort_plan is None)!=(args.i21_cohort_plan_sha256 is None):
+        parser.error("--i21-cohort-plan and --i21-cohort-plan-sha256 are required together")
 
     registry_errors = validate_registry()
     if registry_errors:
@@ -863,6 +874,8 @@ def main() -> int:
         parser.error("unknown test ID(s): " + ", ".join(unknown))
     if len(selected) != len(set(selected)):
         parser.error("a test ID may be selected only once")
+    if args.i21_cohort_plan is not None and "I21" not in selected:
+        parser.error("an explicit I21 cohort plan requires selecting I21")
 
     output_root = (
         args.output_dir.resolve()
@@ -985,7 +998,7 @@ def main() -> int:
             amps, m1_input, m2_input, args.campaign_mode, args.mpi_ranks,
             m2_amps, args.i11_parallel_levels, args.test_runtime_seconds,
             args.m2_cluster_execute,
-            m3_input,
+            m3_input, args.i21_cohort_plan, args.i21_cohort_plan_sha256,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)

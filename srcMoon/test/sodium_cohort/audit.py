@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 from pathlib import Path
 import sys
 import traceback
@@ -68,15 +69,29 @@ def authenticate_launch(launch):
     return native
 
 
-def run(plan_path,runs_path,output):
+def run(plan_path,runs_path,output,*,development=False):
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=False)
     records=[];manifest={'scope':'actual cohort audits, NOT whole I21-I24/M3 qualification',
+        'development':development,
         'source_revision':None,'input_sha256':{str(Path(plan_path).resolve()):q.sha(plan_path),
             str(Path(runs_path).resolve()):q.sha(runs_path)}}
     try:
         plan=q.strict_object(plan_path);q.validate_plan(plan)
         launches=json.loads(Path(runs_path).read_text())
         if not isinstance(launches,list) or not launches:raise ValueError('actual native launch registry required')
+        # The independent audit must score the entire frozen matrix. An
+        # otherwise authentic run from a different level or input cannot
+        # substitute for a failed trial that was part of this plan.
+        frozen = plan['native_adapter']['runs']
+        def launch_identity(record):
+            return (record['mpi_ranks'],record['physical_steps'],
+                    str(Path(record['input']['path']).resolve()),record['input']['sha256'])
+        if list(map(launch_identity,launches))!=list(map(launch_identity,frozen)):
+            raise ValueError('actual launch registry differs from the complete frozen case matrix')
+        varying=plan.get('test_kind')=='trajectory-integrated-hazard'
+        if varying and not development:
+            raise ValueError('straight-line trajectory scoring is a numerical development scope')
+        verified_runs=[]
         profile=Path(plan['source_profile']['path'])
         if not profile.is_absolute():profile=Path(plan_path).resolve().parent/profile
         if q.sha(profile)!=plan['source_profile']['sha256']:raise ValueError('frozen physical profile changed')
@@ -93,6 +108,7 @@ def run(plan_path,runs_path,output):
             paths=[native/('event_metrics.rank%d.hex.csv'%rank) for rank in range(launch['mpi_ranks'])]
             actual_events=ledger.read_events(paths)
             if set(actual_events)!=reacted:raise ValueError('actual per-rank event ledgers omit/add original parent removals')
+            verified_runs.append((native,launch['mpi_ranks'],actual_events))
             time_links=numerical.event_time_links(actual_events,parents,receipt['transport_origin_et_s'])
             (output/('event_time_links-%02d.json'%index)).write_text(json.dumps(time_links,indent=2)+'\n')
             records.append({'name':'actual-parent-native-time-links-%02d'%index,'status':time_links['status']})
@@ -103,7 +119,12 @@ def run(plan_path,runs_path,output):
                 raise ValueError('native state selections differ from frozen mapping')
             reference=numerical.reference_receipt(receipt)
             reference_rate,channel=numerical.source_rate(reference,manifest['input_sha256'])
-            inverse_square=numerical.inverse_square_checks(actual_events,reference_rate)
+            motion=numerical.StraightLineExposure(plan,receipt,reference_rate) if varying else None
+            inverse_square=numerical.inverse_square_checks(actual_events,motion.point_rate if motion else reference_rate)
+            if not actual_events and reference_rate > 0:
+                # An exposed reference still needs actual accepted-event rate
+                # evidence. An empty set only proves the zero-rate identity.
+                inverse_square.update(status='SKIPPED',reason='no accepted events for positive source rate')
             (output/('inverse_square-%02d.json'%index)).write_text(json.dumps(inverse_square,indent=2)+'\n')
             records.append({'name':'fixed-I21-inverse-square-%02d'%index,'status':inverse_square['status']})
             base=numerical.D04/'processed/phidrates'
@@ -117,10 +138,26 @@ def run(plan_path,runs_path,output):
             reconstructed=ledger.verify(paths,profile,mapping,bounds)
             ledger.write_artifacts(reconstructed,output/('ledger-%02d'%index))
             records.append({'name':'actual-ledger-%02d'%index,'status':reconstructed['status']})
-            score=q.score_cohort(parent_path,plan)
+            if development:
+                # Small, explicitly selected development cohorts diagnose the
+                # clock and ledger. The observed endpoint fraction is retained
+                # without applying a statistical gate to an underpowered run.
+                survivors=len(parents)-len(reacted)
+                score={'status':'NOT_EVALUATED','original_parents':len(parents),
+                       'survivors':survivors,'first_removals':len(reacted),
+                       'observed_survival_fraction':survivors/len(parents)}
+                if motion:
+                    score['reference_survival_probability_interval']=[
+                        math.exp(-float(motion.end_depth_upper)),math.exp(-float(motion.end_depth_lower))]
+                    score['reference_end_optical_depth_interval']=[
+                        str(motion.end_depth_lower),str(motion.end_depth_upper)]
+                else:
+                    score['reference_survival_probability']=math.exp(-float(reference_rate)*float(plan['horizon_s']))
+            else:
+                score=q.score_cohort(parent_path,plan)
+                records.append({'name':'independent-statistics-%02d'%index,'status':score['status']})
             (output/('statistics-%02d.json'%index)).write_text(json.dumps(score,indent=2)+'\n')
-            records.append({'name':'independent-statistics-%02d'%index,'status':score['status']})
-        convergence=numerical.verify([(Path(r['output']),r['mpi_ranks']) for r in launches],plan)
+        convergence=numerical.verify(verified_runs,plan)
         (output/'numerical.json').write_text(json.dumps(convergence,indent=2)+'\n')
         comparisons=convergence['comparisons']
         if comparisons:
@@ -146,6 +183,7 @@ def run(plan_path,runs_path,output):
     status=next(s for s in ('ERROR','FAIL','SKIPPED','PASS') if counts[s])
     result={'schema':'srcMoon-M3-actual-cohort-audit-v1','status':status,'checks':records,'counts':counts,
         'reason':'actual cohort source/budget/statistical/numerical checks evaluated where available',
+        'statistical_acceptance':'NOT_EVALUATED' if development else 'SEE_PER_LAUNCH_RESULTS',
         'formal_M3_status':'NOT QUALIFIED BY ONE COHORT; complete frozen protocol matrix remains',
         'observational_scoring':False}
     manifest['source_revision']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=q.TEST.parents[1],text=True).strip()
@@ -158,5 +196,8 @@ def run(plan_path,runs_path,output):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan',required=True,type=Path);parser.add_argument('--runs',required=True,type=Path)
-    parser.add_argument('--output-dir',required=True,type=Path);args=parser.parse_args()
-    result=run(args.plan,args.runs,args.output_dir);print(json.dumps(result,indent=2));raise SystemExit(EXIT[result['status']])
+    parser.add_argument('--output-dir',required=True,type=Path)
+    parser.add_argument('--development',action='store_true',help='evaluate clock and ledger with diagnostic survival only')
+    args=parser.parse_args()
+    result=run(args.plan,args.runs,args.output_dir,development=args.development)
+    print(json.dumps(result,indent=2));raise SystemExit(EXIT[result['status']])

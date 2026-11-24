@@ -116,6 +116,16 @@ def reference(row,temperature):
         t=Decimal(str(temperature));u=row['energy']/t
         return row['a']*(1+row['p']*u.sqrt())/(row['x']+u)*(row['k']*u.ln()).exp()*(-u).exp()*Decimal('1e-6')
 
+def reference_log_slope(row, temperature):
+    """Independent log-difference of the direct expression, with Decimal headroom."""
+    with localcontext() as context:
+        context.prec=70
+        t=Decimal(temperature)
+        delta=Decimal('1e-18')
+        # This evaluates the reference expression analytically across each
+        # boundary. The actual production query still obeys the native range.
+        return (reference(row,t*delta.exp()).ln()-reference(row,t*(-delta).exp()).ln())/(2*delta)
+
 def grid(row):
     with localcontext() as context:
         context.prec=70
@@ -243,6 +253,11 @@ def run_u16(build_dir,output_root):
                 mapping=int(actual['atomic_number'])==row['z']==int(actual['electron_count'])
                 check(f'{name}-{index:02d}',error<=RELATIVE_TOLERANCE and rate_error<=RELATIVE_TOLERANCE and mapping,
                       {'coefficient_relative_error':error,'rate_relative_error':rate_error,'log':rec['stdout']})
+                slope=float(actual['log_temperature_derivative'])
+                expected_slope=float(reference_log_slope(row,text))
+                slope_error=abs(slope-expected_slope)/max(1,abs(expected_slope))
+                check(f'log-temperature-slope-{name}-{index:02d}',slope_error<=RELATIVE_TOLERANCE,
+                      {'actual':slope,'reference':expected_slope,'error':slope_error,'log':rec['stdout']})
                 comparisons.append(dict(species=name,temperature_ev=text,density_m3=1e6,
                     production_coefficient_m3_s=coefficient,independent_coefficient_m3_s=expected,
                     production_rate_s=rate,coefficient_relative_error=error,rate_relative_error=rate_error))
@@ -292,7 +307,8 @@ def run_u16(build_dir,output_root):
                   (a.get('rate_s','-456')=='-456'),rec)
         for mode in ('uninitialized','enum-invalid'):
             p,a,rec=query(mode,raw,'He',10,1,'control-'+mode)
-            check(mode,p.returncode==4 and a.get('coefficient_m3_s')=='-123' and a.get('rate_s')=='-456',rec)
+            check(mode,p.returncode==4 and a.get('coefficient_m3_s')=='-123' and a.get('rate_s')=='-456'
+                  and a.get('log_temperature_derivative')=='-789',rec)
         for index,temperature in enumerate((11604.518121550082,0,-1,'nan','inf')):
             p,rec=run_command([str(executable),'temperature-k',str(temperature)],work,'kelvin-'+str(index))
             a=values(p.stdout)

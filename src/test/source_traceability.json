@@ -830,16 +830,16 @@
         "MOON-I05", "MOON-I06", "MOON-I07", "MOON-I08", "MOON-I09",
         "MOON-I10", "MOON-I11", "MOON-I12", "MOON-I13", "MOON-I14",
         "MOON-I15", "MOON-I16", "MOON-I17", "MOON-I18", "MOON-I19",
-        "MOON-I20"
+        "MOON-I20", "MOON-I21", "MOON-I22", "MOON-I23", "MOON-I24"
       ],
       "local_registries": [
         "srcMoon/test/run_all_test.py",
         "srcMoon/test/run_integration_tests.py"
       ],
-      "reason": "The global application owner imports every U01-U26/I11-I20 regression outcome after an exclusive compliant Moon/SPICE build and keeps the separate I01-I10 M0 identities visible with typed non-execution evidence.",
+      "reason": "The global application owner imports every U01-U26/I11-I24 regression outcome after an exclusive compliant Moon/SPICE build and keeps the separate I01-I10 M0 identities visible with typed non-execution evidence.",
       "gaps": [
         "preflight-compliant execution/import of the multi-build I01-I10 M0 campaign",
-        "M1/M2 qualification-mode execution",
+        "full M1/M2/M3 qualification-mode execution",
         "external validation packages unavailable on a generic worker"
       ]
     },

@@ -1,6 +1,15 @@
 # `srcMoon` development and validation status
 
-**Status date:** 2026-11-19 UTC
+**Status date:** 2026-11-24 UTC
+
+**Latest development — I21 homogeneous native execution, ground-ion profiles,
+and I23 fit slope.** The Moon aggregate accepts an explicit pinned I21 cohort
+plan and preserves the formal predecessor decision. The scoped 8/16/32-step
+Na run at 1 and 8 MPI ranks exercised real event conversion and independent
+auditing. Its rate, chronology and ledger checks passed. Its strict timing
+refinement requirement failed at the arithmetic floor. Native ⁴He, ²⁰Ne and
+⁴⁰Ar profiles and the U16 fit-slope controls passed. See section 5.43 for the
+open physics requirements and run evidence. Formal M3 remains unqualified.
 
 **Latest completed package — measurement and community-model literature follow-up:**
 The new [evidence review](test/M3_PHYSICS_LITERATURE_20261119.md) resolves several
@@ -4790,3 +4799,209 @@ membership or roadmap was changed. Source/data roadmap hashes remain
 Their scoped development/resource amendments control execution order; the
 scientific/data/predecessor contracts control qualification. Formal M1/M2/M3
 status is unchanged. Nothing was staged, committed or pushed.
+
+## 5.43 I21 homogeneous execution and I22/I23 preparation — 2026-11-24 UTC
+
+Source revision `267fdc25fba6f9b510143425f390958801a64cd1` plus the recorded
+changes. The work package is under
+`test_output/srcMoon/m3-i21-execution-606xjgOZ/`. The two governing roadmap
+SHA-256 values are recorded in the
+[I21 execution contract](test/integration-tests/I21/EXECUTION_CONTRACT.md).
+The source roadmap supplies the approved early M3 development/resource
+exception. The common scientific roadmap supplies the frozen gates and data
+semantics.
+
+### Implemented scope
+
+- `integration_m3.py` and the Moon aggregate accept one frozen I21 homogeneous
+  cohort plan and its expected digest. The existing `m3_qualification_executor`
+  selects the matching private source build and preserves the nested native
+  artifacts. A qualification-candidate cohort requires U14 and same-campaign
+  I13–I20 PASS. A development cohort retains those statuses and runs with
+  diagnostic endpoint survival. The whole I21 gate remains SKIPPED.
+- `I21/prepare_cohort.py` stages the existing sodium production owner at
+  8/16/32 dyadic steps and both ranks. The same 65,536 s, 128 original parents,
+  weight 2.625, seed 731993 and quiet fixed-point geometry from the commissioned
+  case are used at all six levels. D04 source, geometry receipt, actual producer
+  and the ordered set of eight SPICE kernels are pinned in the final plan.
+- `prepare_atomic_family.py` builds independent ground-ion references for
+  ⁴He, ²⁰Ne and ⁴⁰Ar and checks them with the actual production state resolver.
+  The original isotope ledger and PDFs, tested base profile and D04 inputs are
+  hash-bound. The derived threshold differences and original uncertainties are
+  retained. I22 still needs the explicit photon product-state/energy policy.
+- The shared Voronov fit exposes the analytic `d ln k / d ln Te` on its native
+  domain. U16 independently checks 132 points using a high-precision difference
+  of the direct rate expression. I23 still needs the source-to-state threshold,
+  applicable bath and model-error scope, and production event wiring. The
+  existing Maxwellian rates and frozen acceptance criteria are preserved.
+
+### Retained execution and open gates
+
+The first I21 matrix produced six completed native runs. Its independent
+audit reports **18 PASS, 1 FAIL, 0 ERROR, 0 SKIPPED**. Source rates, chronology
+and event ledgers passed. There were 85 survivors and 43 reactions in each
+matched launch. These are the same parent histories across the six launches.
+The observed endpoint fraction is diagnostic. The separate P02 audit reports
+**6048 PASS** on those six realizations (258 repeated event records).
+
+The single independent numerical check failed at both MPI layouts. The
+maximum normalized errors are `7.3782e-17`, `7.3782e-17` and `9.0911e-17` at
+8, 16 and 32 steps, respectively. These are well below `0.002` and do not
+decrease monotonically. Inspecting the exact hexadecimal native event times
+gives `4.9572e-17`, `4.9572e-17` and `4.9725e-17`. The plateau persists before
+the parent CSV's binary64 projection. The frozen scorer remains strict. An
+independent varying-hazard case is still needed to test the step-dependent
+exposure error separately from this constant-hazard clock diagnostic.
+
+The standalone results are **70 PASS** for the native atomic profiles,
+**302 PASS** for U16, **37 PASS** for the timing/executor controls and
+**306 PASS** for the shared core chemical-database protocol. The U16 rate
+error stays below `1.6e-15` and the largest normalized slope error is
+`2.14e-16`. The isolated final `make -j test_Moon TESTCOMPILEJOBS=16` passes
+with a zero-byte `test_Moon.diff`. The no-plan I21–I24 aggregate is 4 SKIPPED.
+The explicit I21 qualification request skips before launch when prerequisites
+are missing. A deliberately wrong plan digest produces the expected ERROR.
+
+The first final-source build attempt reported a source mismatch on the
+updated U16 probe. Its test-control source had been omitted when copying the
+private checkout. The refusal is retained under `final-native/`. The rerun in
+`final-native-retry/` includes both shared source edits and the updated probe.
+The final source-matched rerun reproduced all six native completions, the
+same **18 PASS / 1 FAIL** audit, and **6048 PASS** in the separate P02 audit.
+The final matrix took 388.10 seconds and peaked at 42,933,399,552 bytes of
+sampled process-tree RAM. The zero-byte nightly diff and both independent
+attempts remain available. `completion.json` indexes the final results and
+commands, including the precise native plan and source-data hashes.
+Build and run commands, exact input hashes, compiler/ABI provenance and
+resource logs are retained alongside each result.
+
+Formal M3 still requires I13–I20 and the complete linked I21–I24 cases. The
+frozen distance/shadow, force, weight and statistical cases remain open for
+I21. I22 still needs the molecular reference-state and charged-partition
+choices plus the U24 dependencies. I23 still needs source-supported bounds
+for the reduced reservoir. I24 still needs documented product-state and
+angular support for its selected channel. No new U/I ID, scientific criterion,
+chemical-database installation or reference baseline was introduced.
+
+## 5.44 Remaining M3 work proposal — 2026-11-24 UTC
+
+The [M3 completion follow-up](test/M3_COMPLETION_FOLLOWUP_20261124.md) proposes
+an independent varying-hazard case for I21, atomic and state-defined molecular
+I22 cases, a controlled ⁴He I23 pilot, and a ranked evidence-acquisition plan
+for I24. It retains the I21 constant-hazard numerical FAIL and gives separate
+source-admission, linked numerical and statistical gates. The proposal also
+records the applicable M1/M2 predecessors, the one-hour development budgets
+and the separate powered cluster campaign.
+
+This is a documentation package against revision
+`267fdc25fba6f9b510143425f390958801a64cd1` with the section 5.43 work in the
+working tree. Proposed case and physical-model choices are pending review.
+Formal I21–I24 remain SKIPPED. See the proposal for both governing roadmap
+hashes and exact data lock. No build or campaign was run for the proposal.
+
+## 5.45 M3 follow-up implementation and verification — 2026-11-24 UTC
+
+The work follows the [approved completion proposal](test/M3_COMPLETION_FOLLOWUP_20261124.md)
+on revision `267fdc25fba6f9b510143425f390958801a64cd1` plus the recorded
+working-source hashes. Artifacts are under
+`test_output/srcMoon/m3-followup-MfThQfny/`. Source roadmap SHA-256
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17` supplies
+the development and resource exception. The canonical roadmap SHA-256
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`
+controls the shared scientific criteria and predecessor gates.
+
+### I21 varying-hazard case
+
+`prepare_cohort.py`, the existing aggregate owner and the independent sodium
+auditor now support an explicit straight-line trajectory plan. The native
+adapter retains launch velocity, zero-force evidence and spherical occultors.
+The independent oracle proves full finite-ray visibility, brackets the
+transverse Sun offset, locates parent-keyed first hits and checks event
+position, source/event rates and the committed ledgers. The varying plan
+uses integrated exposure; the homogeneous statistical scorer refuses it.
+
+The prescribed radial fixture reports **44 PASS**. Its normalized first-hit
+errors at 8, 16 and 32 steps are `7.70281e-4, 1.96110e-4, 4.96111e-5`.
+The linked compact case reports **19 PASS** after six actual normal source-
+bound launches at the same time levels and 1/8 MPI, OMP1. Exact native time
+errors at both layouts are `9.95673e-11, 2.47282e-11, 6.14480e-12` normalized
+by the 65,536 s horizon. The largest event-position discrepancy was
+0.00168 m. The scope uses 128 initial histories and seed 731993. Each
+matched launch retained 77 survivors and 51 reactions. The additional
+independent mechanical audit reports **7,152 PASS**. The development
+statistics are diagnostic. Re-auditing the original constant case gives
+**18 PASS / 1 FAIL** with its original roundoff-plateau result.
+
+The first attempt encountered restricted local MPI sockets. The second
+attempt with MPI access stopped at the host available-memory reserve. The
+retained retry increased near/far/angular/polar AMR target sizes eightfold
+for this straight-line test only. It preserved the physical sphere,
+ephemeris, forces, transport horizon and source-data identities. The AMR
+tree dropped from 11,684 to 792 blocks. The final six launches and audit
+took 190.39 s and peaked at 28,427,436,032 bytes of sampled process-tree
+RSS. See the [case contract](test/integration-tests/I21/VARYING_EXPOSURE_CONTRACT.md)
+and `trajectory_compact_command.json`, the exact native/build manifests
+and CSV/PNG/EPS under the successful compact result.
+
+### I22, I23 and I24 source and implementation scope
+
+- The I22 ground-ion family re-ran with **70 PASS** and emitted six candidate
+  effective-photon rows from exact D04 quiet/active data and validated
+  state profiles. The rows record the source and physical thresholds
+  separately. Atomic photon event admission still needs a supported
+  mapping or bounded reduced closure. Full I22 also needs the three
+  charged molecular breakup laws, populated states and U24 surface closure.
+- The compiled I23 helium provider connects the actual D05 coefficient
+  and analytic fit slope to the shared Maxwellian moment and signed
+  electron-bath planner. It requires a stationary target and zero drift
+  at 10 eV. Composition checks authenticated model-error and state
+  evidence and uses the accepted interval and original represented
+  weight. The probe reports **24 PASS** for independent rate/mean/threshold
+  comparisons and admission guards. Its coefficient is
+  `7.760630099173217e-16 m³/s`. Its model incident mean is
+  45.41818 eV. No actual helium event was admitted in this pilot.
+- The optional I23 source comparison extracted the neutral helium row
+  from [Kim's NIST paper](https://doi.org/10.6028/jres.097.032), PDF SHA-256
+  `b777277069851715e5810c17f36ad8fcbaf005fd6c0071c2b9baba28082be961`.
+  Integrating the paper's fit over its stated finite range gives a
+  coefficient 6.35% below the prescribed Voronov value and a conditional
+  mean 1.20030 eV higher. This is a fit-to-fit sensitivity. It leaves
+  the D05 coefficient reference, actual source-uncertainty bounds and
+  residual-ion population evidence as distinct obligations.
+- The [I24 source review](test/integration-tests/I24/SOURCE_ADMISSION_20261124.md)
+  verified the already archived r5 D119990 typed and extracted bytes
+  and found state-resolved Na/He leads. It produced zero new numerical
+  collision records. The preferred Na channel still lacks primary
+  provenance and angular support. Finite proton–He lab angle plots are
+  candidates for source data recovery, with no claimed physical angle
+  cap. No new chemical-database installation was made.
+
+### Registry, provenance and remaining gates
+
+The global extended Moon suite includes U01–U26 and I11–I24 (**40 cases**).
+The nightly Moon U-series selection retains its 26 cases. The catalogue
+generator and traceability validator pass. The focused chemical-database
+core suite passes all **306** selected shared protocol controls. The
+cohort qualification suite passes **31** checks. A no-plan aggregate
+selecting all four M3 IDs gives **0 PASS / 0 FAIL / 0 ERROR / 4 SKIPPED**.
+The global adapter's unavailable-SPICE control reported all four exact
+I21–I24 IDs with typed SKIP.
+
+The source-qualified SPICE build completed in 181.18 s in a disposable
+checkout from a clean generated tree. Compiler, ABI, source, input,
+D04/D05 and SPICE kernel hashes are in the corresponding manifests.
+The clean isolated `make -j test_Moon TESTCOMPILEJOBS=16` run returned
+zero in 185.18 s and produced the zero-byte `nightly-final/test_Moon.diff`.
+The earlier attempt that reached the host memory reserve is retained
+under `nightly-clean/`.
+The optional NIST source and source-database r5 identities are retained
+alongside the corresponding calculations. No original observation,
+acceptance criterion, reference, or permanent U/I identity changed.
+The package's `completion.json` indexes the evaluated outcomes and exact
+command, manifest and plot files.
+
+M3 remains open. Complete the rest of I21 (solar endpoints/distances,
+shadow, both movers, weight and powered survival cases), the pending
+physical source packages and I22–I24 production activation and
+qualification. I13–I20 remain same-campaign prerequisites. The
+development numerical PASS does not supersede the constant-clock FAIL.

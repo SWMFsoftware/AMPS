@@ -3,6 +3,7 @@
 import argparse
 import csv
 from datetime import datetime,timezone
+from decimal import Decimal, localcontext
 import hashlib
 import json
 import math
@@ -13,11 +14,16 @@ import subprocess
 import sys
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'srcMoon/test'))
+from m3_qualification import score_refinement
+
 FILES=['srcMoon/species/TrajectoryExposure.h','srcMoon/species/TrajectoryExposure.cpp',
  'srcMoon/species/PiecewiseHazard.h','srcMoon/species/PiecewiseHazard.cpp',
  'srcMoon/species/TrajectoryIntervals.h','srcMoon/test/trajectory_exposure/probe.cpp',
  'srcMoon/test/trajectory_exposure/README.md','srcMoon/test/M3_TRAJECTORY_EXPOSURE_CONTRACT.md',
- 'srcMoon/test/test_m3_trajectory_exposure.py']
+ 'srcMoon/test/test_m3_trajectory_exposure.py',
+ 'srcMoon/test/integration-tests/I21/VARYING_EXPOSURE_CONTRACT.md',
+ 'srcMoon/test/m3_qualification.py','srcMoon/test/M3_QUALIFICATION_ADDENDUM_20261118.json']
 
 def run(output):
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=False)
@@ -27,7 +33,7 @@ def run(output):
         'source_revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'source_hashes':{p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in FILES},
         'external_data':[],'seed':None,'MPI':'none','OpenMP':'none','comparison_rounding_relative':256*sys.float_info.epsilon}
-    comparisons=[]
+    comparisons=[];radial=[]
     try:
         compiler=shutil.which('g++')
         if not compiler:
@@ -49,6 +55,29 @@ def run(output):
             return json.loads(r.stdout)
         def check(name,passed,**details):
             result['results'].append({'name':name,'status':'PASS' if passed else 'FAIL',**details})
+        # H(t)=3*t/(4+t); solve H(t)=1/2 independently of the native
+        # interpolation and exact binary clock. Decimal retains the output
+        # error below binary64 projection, as in the original I21 auditor.
+        with localcontext() as context:
+            context.prec=80
+            for steps in (8,16,32):
+                values=query(f'radial-{steps}')
+                depth=Decimal(values['depth'])
+                depth_error=abs(depth-1)
+                rounding=Decimal(256)*Decimal(2)**-52
+                check(f'radial-{steps}-depth-envelope',
+                      depth_error<=Decimal(values['bound'])+rounding,
+                      absolute_depth_error=str(depth_error),declared_bound=values['bound'])
+                check(f'radial-{steps}-event-and-survivor',
+                      values['steps']==steps and Decimal(values['accepted_rate_s'])>0
+                      and values['survivor_clock_updated'])
+                radial.append({'steps':steps,'actual':values['event_s'],'reference':'0.8','scale':'2',
+                               'actual_depth':values['depth'],'reference_depth':'1',
+                               'normalized_time_error':str(abs(Decimal(values['event_s'])-Decimal('0.8'))/2),
+                               'segments':values['segments']})
+        score=score_refinement('I21',radial)
+        result['radial_refinement']=score
+        check('radial-independent-first-hit-refinement',score['status']=='PASS')
         expected={'constant':2.3,'linear':200*(1/9-1/10)+.3,
             'accelerated':200*(1/(2*10*9.5)+math.atanh(math.sqrt(.5/10))/(2*10*math.sqrt(5)))+.3,
             'constants':.3}
@@ -122,6 +151,16 @@ def run(output):
         axes[1].legend(framealpha=1);fig.suptitle('Analytical numerical fixtures — no physical validation');fig.tight_layout()
         for extension in ('png','eps'):fig.savefig(output/('comparison.'+extension))
         plt.close(fig)
+        fig,axis=plt.subplots(figsize=(7,4))
+        axis.loglog([row['steps'] for row in radial],[float(row['normalized_time_error']) for row in radial],
+                    'o-',label='independent first-hit error')
+        axis.axhline(.002,color='black',linestyle='--',label='approved I21 numerical ceiling')
+        axis.set_xlabel('Equal steps in the 2 s horizon')
+        axis.set_ylabel('Absolute time error / horizon')
+        axis.legend(framealpha=1)
+        fig.tight_layout()
+        for extension in ('png','eps'):fig.savefig(output/('radial_refinement.'+extension))
+        plt.close(fig)
     except ImportError as error:
         result.update(status='SKIPPED',reason='required plotting dependency unavailable: '+str(error));result['counts']['SKIPPED']+=1
     except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error:
@@ -130,6 +169,9 @@ def run(output):
         if comparisons:
             with (output/'comparison.csv').open('w',newline='') as stream:
                 writer=csv.DictWriter(stream,fieldnames=list(comparisons[0]));writer.writeheader();writer.writerows(comparisons)
+        if radial:
+            with (output/'radial_refinement.csv').open('w',newline='') as stream:
+                writer=csv.DictWriter(stream,fieldnames=list(radial[0]));writer.writeheader();writer.writerows(radial)
         (output/'run_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         (output/'result.json').write_text(json.dumps(result,indent=2)+'\n')
     return result

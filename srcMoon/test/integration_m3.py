@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Own the existing I21--I24 formal gates and retain their actual scope.
 
-The rate and transactional supporting services are executable; full physical
-daughter policies/combined event dispatch remain unavailable. This owner
-preserves the individual contract, nearest predecessor outcomes, actual input
-and capability evidence. It never manufactures a survival run or interprets
-a parser/rate/native-storage PASS as a qualified particle-chemistry result.
+The I21 owner can execute an explicitly pinned fixed or moving cohort. The owner
+preserves the formal prerequisites and reports supporting execution separately
+from whole-I21 coverage. I22-I24 still report their missing capabilities.
 """
 from __future__ import annotations
 import argparse
@@ -17,7 +15,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from m3_qualification import MissingPrerequisite
+import time
+from m3_qualification import MissingPrerequisite, digest_syntax, strict_object
 
 ROOT=Path(__file__).resolve().parents[2]
 TEST=Path(__file__).resolve().parent
@@ -30,13 +29,15 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def run(test_id,amps,application,output,mpi_ranks=8,mode='regression'):
+def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
+        i21_plan=None,i21_plan_sha256=None,wall_seconds=3600):
     """Evaluate explicit prerequisites and produce an honest formal result.
 
     No native receipt is emitted when execution is not possible. The aggregate
     recognizes manifest execution=not-run and preserves absence rather than
     requiring a fabricated receipt.txt or copying another test's output.
     """
+    started=time.monotonic()
     output=Path(output).resolve();directory=output/test_id
     directory.mkdir(parents=True,exist_ok=False)
     stdout=directory/'stdout.log';stderr=directory/'stderr.log'
@@ -53,6 +54,10 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression'):
     result={'id':test_id,'name':test_id,'status':'ERROR','scope':'formal-M3-qualification',
         'metrics':{},'criteria_evaluated':False,'blocking_reasons':[]}
     try:
+        if not math.isfinite(wall_seconds) or not 0 < wall_seconds <= 3600:
+            raise ValueError('one total development allowance in (0, 3600] seconds required')
+        if (i21_plan is None) != (i21_plan_sha256 is None) or (i21_plan is not None and test_id!='I21'):
+            raise ValueError('explicit plan and SHA-256 must be supplied together for I21 only')
         contract_path=TEST/'integration-tests'/test_id/'reference/acceptance.json'
         contract=json.loads(contract_path.read_text());result['name']=contract['name']
         manifest['acceptance']={'path':str(contract_path),'sha256':sha(contract_path)}
@@ -115,18 +120,75 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression'):
             # production executor/kinematics and cannot open a PASS path.
             raise ValueError('capability register claims completion without an installed formal execution protocol')
         result.update(status='SKIPPED',reason='; '.join(result['blocking_reasons']))
-        stdout.write_text('SKIPPED '+test_id+': '+result['reason']+'\n'
-            'No particle run, lifetime fit, branch score or observation comparison was performed.\n')
+        if i21_plan is None or not manifest['input_snapshot_available']:
+            stdout.write_text('SKIPPED '+test_id+': '+result['reason']+'\n'
+                'No particle run, lifetime fit, branch score or observation comparison was performed.\n')
+        else:
+            from m3_qualification_executor import run as run_cohort
+            plan=Path(i21_plan).resolve()
+            if not digest_syntax(i21_plan_sha256):
+                raise ValueError('I21 plan needs its explicit lowercase SHA-256')
+            if not plan.is_file():
+                raise MissingPrerequisite('I21 cohort plan unavailable: '+str(plan))
+            if sha(plan)!=i21_plan_sha256:
+                raise ValueError('I21 cohort plan SHA-256 mismatch')
+            planned=strict_object(plan)
+            if planned.get('test_id')!='I21':
+                raise ValueError('the I21 owner requires an I21 cohort plan')
+            case_name='trajectory' if planned.get('test_kind')=='trajectory-integrated-hazard' else 'homogeneous'
+            mode_name='development' if mode=='regression' else 'qualification-candidate'
+            child=directory/case_name
+            manifest['i21_cohort']={'mode':mode_name,'plan':str(plan),
+                'plan_sha256':i21_plan_sha256,'result':str(child/'result.json')}
+            remaining=wall_seconds-(time.monotonic()-started)
+            if remaining<=0:raise RuntimeError('I21 owner exhausted its original wall allowance during preflight')
+            # The explicit development selection can exercise one numerical
+            # matrix under the approved early-M3 exception. The candidate
+            # qualification selection still checks U14 and I13-I20 before any
+            # launch. Neither selection covers the complete I21 family.
+            value=run_cohort(plan,output,child,development=mode=='regression',wall_seconds=remaining,
+                application=application,expected_plan_sha256=i21_plan_sha256)
+            if sha(plan)!=i21_plan_sha256:
+                raise ValueError('I21 cohort plan changed during execution')
+            child_status=value['status']
+            manifest['i21_cohort'].update(execution=value['execution'],result_sha256=sha(child/'result.json'),
+                manifest_sha256=sha(child/'run_manifest.json'))
+            result.update(formal_status='SKIPPED / NOT QUALIFIED',
+                supporting_checks=[{'check':'I21 '+case_name+' '+mode_name,'status':child_status,
+                    'runner':str(TEST/'m3_qualification_executor.py'),'log':str(child/'stdout.log'),
+                    'reason':value['reason']}],
+                supporting_counts={status:int(child_status==status) for status in STATUSES})
+            if child_status in ('FAIL','ERROR'):
+                # Preserve the stronger supporting result in the aggregate.
+                # The per-ID formal status still identifies an incomplete gate.
+                failed=[entry['name'] for entry in value.get('checks',[])
+                        if entry['status'] in ('FAIL','ERROR')]
+                reason=(case_name+' I21 check failed: '+', '.join(failed) if failed else value['reason'])
+                result.update(status=child_status,reason=reason)
+                if child_status=='FAIL':
+                    registry=child/'native_runs.json'
+                    if not registry.is_file():
+                        raise ValueError('evaluated I21 cohort failure has no retained native launch registry')
+                    # The receipt indexes the actual completed native runs. It
+                    # never exists for prerequisite-only or failed launches.
+                    shutil.copyfile(registry,directory/'receipt.txt')
+            else:
+                reason=('one '+case_name+' cohort completed; full I21 coverage remains open'
+                    if child_status=='PASS' else value['reason'])
+                result['reason']=reason
+            stdout.write_text((child/'stdout.log').read_text())
+            stderr.write_text((child/'stderr.log').read_text())
     except MissingPrerequisite as error:
         result.update(status='SKIPPED',reason=str(error))
         stdout.write_text('SKIPPED '+test_id+': '+str(error)+'\nNo native execution was performed.\n')
-    except (OSError,ValueError,KeyError,TypeError) as error:
+    except (OSError,ValueError,KeyError,TypeError,RuntimeError) as error:
         result.update(status='ERROR',reason=str(error))
         stderr.write_text(str(error)+'\n')
     result['artifacts']={'stdout':str(stdout),'stderr':str(stderr),
         'run_manifest':str(directory/'run_manifest.json')}
     if manifest['input_snapshot_available']:
         result['artifacts']['input_snapshot']=str(directory/'application.in')
+    if (directory/'receipt.txt').is_file():result['artifacts']['receipt']=str(directory/'receipt.txt')
     (directory/'run_manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     (directory/'result.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
@@ -141,9 +203,14 @@ def main():
     parser.add_argument('--output-dir',type=Path,required=True)
     parser.add_argument('--mpi-ranks',type=int,default=8)
     parser.add_argument('--campaign-mode',choices=('regression','qualification'),default='regression')
+    parser.add_argument('--i21-cohort-plan',type=Path)
+    parser.add_argument('--i21-cohort-plan-sha256')
+    parser.add_argument('--test-runtime-seconds',type=float,default=3600)
     args=parser.parse_args()
     if args.mpi_ranks<1:parser.error('MPI ranks must be positive')
-    value=run(args.test_id,args.amps,args.input,args.output_dir,args.mpi_ranks,args.campaign_mode)
+    value=run(args.test_id,args.amps,args.input,args.output_dir,args.mpi_ranks,args.campaign_mode,
+        i21_plan=args.i21_cohort_plan,i21_plan_sha256=args.i21_cohort_plan_sha256,
+        wall_seconds=args.test_runtime_seconds)
     print(json.dumps(value,indent=2))
     return {'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}[value['status']]
 

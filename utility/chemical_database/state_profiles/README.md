@@ -171,3 +171,26 @@ shared mass kernel, exact CSV/source identities, signed crosswalk, independent
 Decimal arithmetic, old unavailable states, corruption/no-output refusal and
 read-only source invariants. Result/status/count/log/source/resource manifests
 are retained. A supporting PASS leaves formal M3 SKIPPED/NOT QUALIFIED.
+
+## Helium, neon and argon ground-ion profiles
+
+The [source and resolver contract](ATOMIC_FAMILY_CONTRACT.md) describes the
+additive ⁴He, ²⁰Ne, and ⁴⁰Ar ground-ion extension. Use the reviewed atomic-family
+research ledger and the original source PDFs at the paths it records. Supply
+the existing base profile and its retained digest. The routine preserves the
+old unresolved states and writes a new source-only profile after its native
+resolver checks pass.
+
+```sh
+/usr/bin/python3 -B utility/chemical_database/state_profiles/prepare_atomic_family.py \
+  --base-profile "$BASE_PROFILE" --base-profile-sha256 "$BASE_PROFILE_SHA256" \
+  --threshold-ledger "$ATOMIC_FAMILY_SOURCE_LEDGER" \
+  --d04 /data/vtenishe/moon_validation_data/photochemistry \
+  --output-dir "$NEW_ATOMIC_FAMILY_DIR"
+```
+
+`ground_ion_crosswalk.json` retains the physical and D04 source thresholds,
+both source rate endpoints and the original uncertainty conventions. The
+production state loader checks `states.csv` and reports its results in
+`result.json`. `run_manifest.json` binds the source, compiler and executable.
+This profile leaves photon product yields and I22/I23 event admission open.

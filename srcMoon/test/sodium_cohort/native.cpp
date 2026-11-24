@@ -146,6 +146,27 @@ void InputReceipt(const Input& c,const fs::path& out,bool sourceOnly,const Moon:
   const auto* transport=Moon::GetCommonTransportClock();if(!transport)throw std::runtime_error("actual native common transport clock unavailable after normal startup");
   f<<",\n  \"transport_origin_et_s\": \""<<transport->originEtS()<<"\"";
   f<<",\n  \"geometry_basis_et_s\": \""<<geometry->frozenGeometryEpochS<<"\",\n  \"sun_position_lso_m\": [\""<<geometry->sunPositionM[0]<<"\",\""<<geometry->sunPositionM[1]<<"\",\""<<geometry->sunPositionM[2]<<"\"],\n  \"source_position_lso_m\": [\""<<c.position[0]<<"\",\""<<c.position[1]<<"\",\""<<c.position[2]<<"\"],\n  \"actual_source_distance_m\": \""<<std::hypot(geometry->sunPositionM[0]-c.position[0],geometry->sunPositionM[1]-c.position[1],geometry->sunPositionM[2]-c.position[2])<<"\",\n  \"total_acceleration_macro\": "<<Json(NativeAccelerationMacro);
+  if(c.caseKind=="trajectory-integrated-hazard"){
+    // A straight-line audit needs actual launch velocity and actual
+    // occultors. A point-visibility flag alone says nothing about the rest
+    // of a flight. Report geometry without interpreting its visibility.
+    bool zeroForce=false;
+#if defined(_MOON_COHORT_ZERO_FORCE_REFERENCE_) && _MOON_COHORT_ZERO_FORCE_REFERENCE_ == 1
+    zeroForce=PIC::Mover::ForceCutSurface::Acceleration==nullptr &&
+      Moon::SodiumCohortInput::ExactZeroAccelerationMacro(NativeAccelerationMacro);
+#endif
+    f<<",\n  \"trajectory_reference\": {\"zero_force\":"<<(zeroForce?"true":"false")
+      <<",\"source_velocity_lso_ms\":[\""<<c.velocity[0]<<"\",\""<<c.velocity[1]<<"\",\""<<c.velocity[2]
+      <<"\"],\"terrain_faces\":"<<geometry->terrainFaces.size()<<",\"opaque_spheres\":[";
+    bool firstSphere=true;
+    for(const auto& sphere:geometry->opaqueSpheres){
+      if(!firstSphere)f<<',';
+      firstSphere=false;
+      f<<"{\"centre_lso_m\":[\""<<sphere.centreM[0]<<"\",\""<<sphere.centreM[1]<<"\",\""<<sphere.centreM[2]
+        <<"\"],\"radius_m\":\""<<sphere.radiusM<<"\"}";
+    }
+    f<<"]}";
+  }
   f<<",\n  \"solar_endpoint\": "<<Json(c.source.controls.solar==Moon::Species::Photochemistry::SolarCase::Quiet?"quiet":"active")<<",\n  \"source_channels\": [";
   const auto* source=Moon::Runtime::GetPhotochemistryRegistry();std::vector<Moon::Species::Photochemistry::Channel> channels;std::string error;
   if(!source||!source->ChannelsForParent("Na",&channels,&error))throw std::runtime_error(error);

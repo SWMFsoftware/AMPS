@@ -14,8 +14,8 @@ python3 src/test/generate_test_catalog.py
 python3 src/test/generate_test_catalog.py --check
 ```
 
-Registry summary: **67 suites / 1328 cases**. Registry SHA-256: `2ef097fa22e15419a1def2abbe6b597055ace303d14a58ff991c746b508881af`.
-Description provenance: **800 maintained source descriptions / 528 stable-ID fallbacks**.
+Registry summary: **67 suites / 1332 cases**. Registry SHA-256: `51542bad69dad439d6e8521191b01a50bc5fb7871acb25da2e7a0387ef96c658`.
+Description provenance: **800 maintained source descriptions / 532 stable-ID fallbacks**.
 
 ## Suite index
 
@@ -86,7 +86,7 @@ Description provenance: **800 maintained source descriptions / 528 stable-ID fal
 | `APPLICATION-ENCELADUS-FORWARD-001` | `srcEnceladus` | integration | extended, application-smoke | 43 | nonexclusive | Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign | [runner](tests/applications/enceladus/run_test.py) |
 | `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` | `srcEnceladus` | system | extended, application-smoke | 6 | exclusive | Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates | [runner](tests/applications/enceladus_native/run_test.py) |
 | `APPLICATION-ENCELADUS-E3-001` | `srcEnceladus` | system | extended | 13 | exclusive | Capability-gated clean build and 10,000-step E3 process, transport-ledger, and flyby-product campaign | [runner](tests/applications/enceladus_e3/run_test.py) |
-| `APPLICATION-MOON-REGRESSION-001` | `srcMoon` | system | extended, application-smoke | 36 | exclusive | Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips | [runner](tests/applications/moon_regression/run_test.py) |
+| `APPLICATION-MOON-REGRESSION-001` | `srcMoon` | system | extended, application-smoke | 40 | exclusive | Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I24 regression outcomes with typed scientific skips | [runner](tests/applications/moon_regression/run_test.py) |
 | `APPLICATION-MOON-M0-001` | `srcMoon` | system | extended, application-smoke | 10 | nonexclusive | Complete Moon I01-I10 M0 registry with explicit non-execution until its multi-build workflow satisfies the mandatory native preflight | [runner](tests/applications/moon_m0/run_test.py) |
 
 ## Individual cases
@@ -1830,7 +1830,7 @@ Capability-gated clean build and 10,000-step E3 process, transport-ledger, and f
 
 ### 66. `APPLICATION-MOON-REGRESSION-001`
 
-Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression outcomes with typed scientific skips **36 cases.** Runs behind an exclusive checkout barrier.
+Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I24 regression outcomes with typed scientific skips **40 cases.** Runs behind an exclusive checkout barrier.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -1870,6 +1870,10 @@ Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I20 regression ou
 | `MOON-I18` | Moon i18 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 | `MOON-I19` | Moon i19 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 | `MOON-I20` | Moon i20 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
+| `MOON-I21` | Moon i21 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
+| `MOON-I22` | Moon i22 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
+| `MOON-I23` | Moon i23 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
+| `MOON-I24` | Moon i24 | system; serialized configuration owner; tools python, make, mpiexec | partial coverage evidence for `srcMoon`; preserves this contract as an exact global result | [srcMoon](../../srcMoon); [adapter](tests/applications/moon_regression/run_test.py) |
 
 ### 67. `APPLICATION-MOON-M0-001`
 

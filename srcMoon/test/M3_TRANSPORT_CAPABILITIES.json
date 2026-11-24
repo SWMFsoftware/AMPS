@@ -12,10 +12,10 @@
         "normal-path constant-history controller and source boundary dispatch",
         "actual PIC daughter continuation including internal-AMR endpoint events",
         "authenticated partial physical-state profile and compiled-species recipe with explicit unavailable states",
-        "source-bound experimental moving-parent Na photon composer with signed photon/electron moments; real state/threshold admission still unavailable",
+        "source-bound experimental moving-parent Na photon composer with signed photon/electron moments and commissioned ground-state Na admission",
         "accepted-trajectory inverse-square and point-shadow exposure with exact compensated clocks",
         "normal pre-buffer registration, explicit source charge and complete semantic daughter streams",
-        "conditional actual-cohort owner with independent original-parent statistics, exact event ledger and numerical/provenance audits"
+        "opt-in homogeneous and straight-line I21 production cohorts with independent rate, clock, ledger and provenance audits"
       ],
       "missing_formal_capabilities": [
         "qualified Na photoelectron/recoil and mass-energy policy",
@@ -25,30 +25,31 @@
     },
     "I22": {
       "implemented_support": [
-        "complete 15-channel D04 registry",
-        "explicit quiet/active endpoints",
+        "complete 15-channel D04 registry and separate source-bound He/Ne/Ar ground-ion reference profiles",
+        "explicit quiet/active endpoints and isotope-specific effective-photon preparation worksheet",
         "integer product/state inventory",
         "conservative packet/event services",
         "normal-path constant-history conservative packet dispatch; analytical native scope only"
       ],
       "missing_formal_capabilities": [
         "qualified atomic product kinetic policies",
-        "full molecular joint daughter/state distributions and cascade dispatch",
+        "source-bound molecular product-state populations, correlated breakup policy and cascade dispatch",
         "authoritative molecular threshold/tail interpretation",
         "reviewed U24 chemistry/surface dependency closure"
       ]
     },
     "I23": {
       "implemented_support": [
-        "Maxwellian Voronov atomic coefficient service",
+        "Maxwellian Voronov atomic coefficient and analytic log-temperature slope service",
         "explicit prescribed electron bath",
         "combined-hazard primitives",
         "conservative packet transaction adapter",
-        "normal-path constant-history controller; analytical native scope only"
+        "normal-path constant-history controller; analytical native scope only",
+        "stationary 4He 10 eV source-bound coefficient, conditional moment and guarded signed-bath packet composer"
       ],
       "missing_formal_capabilities": [
         "qualified ion/secondary-electron recoil and bath mass-energy policy",
-        "collision-conditioned physical electron event sampler and bath-dependent exposure coupling",
+        "source/state/temperature and observable-error admission for the reduced reservoir and actual bath-dependent event exposure coupling",
         "measured event forcing when claimed requires R4.1/D06"
       ]
     },
@@ -58,7 +59,8 @@
         "explicit Na source-knot log-log model",
         "strict energy-domain refusal",
         "monoenergetic rate service",
-        "actual PIC constant-history controller and complete-packet continuation; no physical CEX law activated"
+        "actual PIC constant-history controller and complete-packet continuation; no physical CEX law activated",
+        "reviewed I24 Na and He first-channel source candidates with explicit differential admission limits"
       ],
       "missing_formal_capabilities": [
         "qualified state/Q/differential product kinematics over the selected energy support",
@@ -129,7 +131,7 @@
     "randomness": "MoonSemanticRandom; full semantic genealogy and per-purpose accepted counters in opaque native records; ownership clones preserve bytes and staged daughters use their prospective clock/key once",
     "native_publication": "MoonReactionAdapter; explicit source charge constant, matching actual compiled species, and actual PIC initial-child validation before atomic commit",
     "conditional_I21_owner": "run_m3_sodium_cohort.py and m3_qualification_executor.py; real source/preflight/run modes, frozen complete input graph, original-parent statistics and independent ledger/first-hit convergence audits",
-    "current_real_Na_admission": "SKIPPED: Na+ state/rest-mass/source-threshold crosswalk is unavailable; no ion state is generated from a rate table",
+    "current_real_Na_admission": "Controlled ground-state Na/Na+ commissioning with the physical rest-mass/source-threshold crosswalk and approved P02 bounds has executed. Source-mean/isotropic model error and the full I21 matrix remain open.",
     "unsupported_physical_channels": [
       "molecular state/Q/population and correlated daughter mappings",
       "source-consistent collision-biased electron-impact joint products",

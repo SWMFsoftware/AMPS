@@ -25,7 +25,7 @@ MAINLIBOBJ += species/IonCollector.o species/HeliumSilicaChargeSurvival.o
 # Source-bound M3 completion services. These objects provide the same profile,
 # event, exposure and keyed-random kernels used by qualification adapters.
 # Linking them does not admit a missing physical source/state crosswalk.
-MAINLIBOBJ += species/PhysicalStateProfile.o species/PhysicalReactionEvents.o
+MAINLIBOBJ += species/PhysicalStateProfile.o species/PhysicalReactionEvents.o species/HeliumElectronImpact.o
 MAINLIBOBJ += species/QualificationRandom.o species/TrajectoryExposure.o MoonTrajectoryExposure.o
 MAINOBJ = main.o
 

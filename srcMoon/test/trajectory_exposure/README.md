@@ -14,6 +14,12 @@ query's stdout/stderr, and writes `result.json`, `run_manifest.json` and
 analytical numerical fixtures, not observations or full I21–I24 qualification.
 The global Moon supporting runner registers this group as `trajectory-exposure`.
 
+The prescribed radial refinement writes separate `radial_refinement.csv`,
+PNG and EPS files. It compares the production clock against an analytical
+first hit at 0.8 s at 8, 16 and 32 steps and checks a surviving threshold
+on the same 2 s horizon.
+[I21 varying-exposure contract](../integration-tests/I21/VARYING_EXPOSURE_CONTRACT.md)
+
 Linear and accelerated radial arcs have independent elementary inverse-square
 integrals. Finite-distance opaque-sphere shadow entry/exit is derived from the
 line/sphere tangency equation; the short-shadow case has two visible endpoints

@@ -44,6 +44,19 @@ bool Index(NeutralSpecies species,std::size_t* index) {
 }
 
 bool Positive(double value) { return std::isfinite(value) && value>0.0; }
+
+bool TemperatureInDomain(NeutralSpecies species,const Coefficient& row,
+                         double temperatureEv,std::string* error) {
+  if (Positive(temperatureEv) && temperatureEv>=row.temperatureMinEv &&
+      temperatureEv<=row.temperatureMaxEv) return true;
+  std::ostringstream message;
+  message << std::setprecision(17)
+          << "electron temperature [eV] must be finite and in native inclusive ["
+          << row.temperatureMinEv << ',' << row.temperatureMaxEv << "] for "
+          << NeutralSpeciesName(species) << "; no Voronov extrapolation is allowed";
+  *error=message.str();
+  return false;
+}
 } // namespace
 
 const char* NeutralSpeciesName(NeutralSpecies species) {
@@ -152,15 +165,7 @@ bool MaxwellianVoronovTable::RateCoefficientM3S(NeutralSpecies species,
     double temperatureEv,double* coefficientM3S,std::string* error) const {
   if (coefficientM3S==nullptr || error==nullptr) return false;
   Coefficient row;
-  if (!GetCoefficient(species,&row,error)) return false;
-  if (!Positive(temperatureEv) || temperatureEv<row.temperatureMinEv ||
-      temperatureEv>row.temperatureMaxEv) {
-    std::ostringstream message;message << std::setprecision(17)
-        << "electron temperature [eV] must be finite and in native inclusive ["
-        << row.temperatureMinEv << ',' << row.temperatureMaxEv << "] for "
-        << NeutralSpeciesName(species) << "; no Voronov extrapolation is allowed";
-    *error=message.str();return false;
-  }
+  if (!GetCoefficient(species,&row,error) || !TemperatureInDomain(species,row,temperatureEv,error)) return false;
   const long double u=static_cast<long double>(row.ionizationEnergyEv)/temperatureEv;
   // The published expression is evaluated once, in log space. In particular
   // the legacy single-precision cfit.f U>80 cutoff is not a physical boundary:
@@ -173,6 +178,26 @@ bool MaxwellianVoronovTable::RateCoefficientM3S(NeutralSpecies species,
     *error="Voronov coefficient is not representable as finite nonnegative m^3/s";return false;
   }
   *coefficientM3S=static_cast<double>(value);return true;
+}
+
+bool MaxwellianVoronovTable::LogTemperatureDerivative(NeutralSpecies species,
+    double temperatureEv,double* derivative,std::string* error) const {
+  if (derivative==nullptr || error==nullptr) return false;
+  Coefficient row;
+  if (!GetCoefficient(species,&row,error) || !TemperatureInDomain(species,row,temperatureEv,error)) return false;
+  const long double u=static_cast<long double>(row.ionizationEnergyEv)/temperatureEv;
+  const long double pRootU=row.p*std::sqrt(u);
+  // dU/dln(Te)=-U. Differentiate the four U-dependent log terms in
+  // RateCoefficientM3S; the A normalization and cm^3-to-m^3 factor drop out.
+  // This is the derivative of the fit even when the evaluated rate rounds
+  // to zero. A finite slope alone cannot admit a positive production hazard.
+  const long double slope=u-row.k+u/(row.x+u)-0.5L*pRootU/(1+pRootU);
+  if (!std::isfinite(slope) || std::fabs(slope)>std::numeric_limits<double>::max()) {
+    *error="Voronov logarithmic temperature slope is not representable";
+    return false;
+  }
+  *derivative=static_cast<double>(slope);
+  return true;
 }
 
 bool MaxwellianVoronovTable::IonizationRateS(NeutralSpecies species,double temperatureEv,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the registered Moon U01--U26 and linked I11--I20 aggregate campaign.
+"""Run the registered Moon U01--U26 and linked I11--I24 aggregate campaign.
 
 This adapter owns only global orchestration and status translation.  The Moon
 individual runners retain their physical oracles and artifacts.  Because Moon
@@ -32,7 +32,7 @@ from lib.runner_support import (  # noqa: E402
 
 
 LOCAL_IDS = (["U{:02d}".format(index) for index in range(1, 27)] +
-             ["I{:02d}".format(index) for index in range(11, 21)])
+             ["I{:02d}".format(index) for index in range(11, 25)])
 EXPECTED_CASES = ["MOON-{}".format(identifier) for identifier in LOCAL_IDS]
 STATUS_MAP = {"PASS": "PASS", "FAIL": "FAIL", "SKIPPED": "SKIP", "ERROR": "ERROR"}
 
@@ -166,10 +166,12 @@ def main() -> int:
             (removed.stdout or "") + (configured.stdout or "") + (built.stdout or ""),
             encoding="utf-8")
         if configured.returncode != 0 or built.returncode != 0 or not (repo / "amps").is_file():
-            rows = [case(identifier, "FAIL", "Moon native configuration/build failed")
+            # No science criterion was evaluated if configuration/build
+            # failed. Keep infrastructure failure distinct from a mismatch.
+            rows = [case(identifier, "ERROR", "Moon native configuration/build failed")
                     for identifier in requested]
             return write_result(
-                context, "FAIL", "Moon native configuration/build failed",
+                context, "ERROR", "Moon native configuration/build failed",
                 cases=rows, evidence=[str(build_transcript)])
 
         retained = artifacts / "amps-moon"

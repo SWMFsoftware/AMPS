@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent first-hit timing audit of actual homogeneous native cohorts.
+"""Independent first-hit timing audit of actual native Na cohorts.
 
 No production RNG, rate, chemistry or exposure implementation is called. Real
 D04 native data and QA remain authoritative; semantic HMAC and Decimal logs
@@ -92,14 +92,17 @@ def inverse_square_checks(events,reference_rate):
     with localcontext() as context:
         context.prec=80
         for parent,event in events.items():
+            # For a moving case the verifier supplies the independent
+            # inverse-square reference at this *actual* event position.
+            point_rate=reference_rate(event) if callable(reference_rate) else reference_rate
             for key in ('source_rate_event_s','accepted_rate_s'):
                 if key not in event:raise ValueError('actual native point-source rate metric unavailable: '+key)
                 value=event[key]
                 actual=Decimal(value.numerator)/Decimal(value.denominator)
-                relative=None if reference_rate==0 else abs(actual-reference_rate)/reference_rate
+                relative=None if point_rate==0 else abs(actual-point_rate)/point_rate
                 passed=(actual==0) if relative is None else relative<=I21_INVERSE_SQUARE_RELATIVE_LIMIT
                 checks.append({'original_parent_id':parent,'quantity':key,'actual_s':str(actual),
-                    'independent_s':str(reference_rate),'relative_error':None if relative is None else str(relative),
+                    'independent_s':str(point_rate),'relative_error':None if relative is None else str(relative),
                     'relative_limit':str(I21_INVERSE_SQUARE_RELATIVE_LIMIT),'status':'PASS' if passed else 'FAIL'})
     return {'status':'FAIL' if any(r['status']=='FAIL' for r in checks) else 'PASS','checks':checks,
         'events_evaluated':len(events),'scope':'existing fixed I21 inverse-square criterion; empty set is only a bookkeeping identity'}
@@ -198,6 +201,107 @@ def source_rate(reference,identities):
     return rate,row['reaction_id']
 
 
+def frozen_reference(plan):
+    """Authenticate the optional reference snapshot produced by plan preparation.
+
+    Older explicit plans carry the independently calculated rate without a
+    reference snapshot. New prepared plans also freeze the geometry basis and
+    every D04 dependency, so equal rates cannot hide a changed source point.
+    """
+    binding=plan.get('reference_binding')
+    if binding is None:return None,{}
+    receipt=binding['receipt'];path=Path(receipt['path'])
+    if not path.is_file():raise q.MissingPrerequisite('frozen geometry receipt unavailable: '+str(path))
+    digest=q.sha(path)
+    if digest!=receipt['sha256']:raise ValueError('frozen geometry receipt identity changed')
+    reference=reference_receipt(q.strict_object(path))
+    identities={}
+    source_rate(reference,identities)
+    if identities!=binding['data_sha256']:
+        raise ValueError('D04 identities differ from the frozen cohort reference')
+    for record in binding.get('spice_files',[]):
+        kernel=Path(record['path'])
+        if not kernel.is_file():raise q.MissingPrerequisite('frozen SPICE input unavailable: '+str(kernel))
+        digest=q.sha(kernel)
+        if digest!=record['sha256']:raise ValueError('frozen SPICE input identity changed: '+str(kernel))
+        identities[str(kernel)]=digest
+    identities[str(path)]=receipt['sha256']
+    return reference,identities
+
+
+class StraightLineExposure:
+    """Independent frozen-geometry oracle with an analytic transverse bound.
+
+    The declared particle moves along x. Its distance squared from the Sun
+    is d(t)^2+b^2 with d(t)>0 and fixed transverse b. Integrating the axial
+    problem gives an upper bound on H; dividing by 1+b^2/min(d)^2 gives a
+    lower bound. The same two functions bracket the optical-depth root.
+    """
+    def __init__(self,plan,receipt,initial_rate):
+        wanted=plan.get('trajectory_reference',{})
+        actual=receipt.get('trajectory_reference',{})
+        if wanted.get('oracle')!='illuminated-zero-force-lso-x-axis-v1':
+            raise ValueError('explicit frozen straight-line oracle identity required')
+        if actual.get('zero_force') is not True or actual.get('terrain_faces')!=0:
+            raise ValueError('numerical oracle requires actual zero-force motion and no terrain faces')
+        self.start=self.vector(receipt['source_position_lso_m'])
+        self.sun=self.vector(receipt['sun_position_lso_m'])
+        self.velocity=self.vector(actual['source_velocity_lso_ms'])
+        if self.velocity!=self.vector(wanted['source_velocity_lso_ms']) or not self.velocity[0] or any(self.velocity[1:]):
+            raise ValueError('actual and declared nonzero x-only velocity must match')
+        self.horizon=Decimal.from_float(float(plan['horizon_s']))
+        with localcontext() as ctx:
+            ctx.prec=80
+            end=self.start[0]+self.velocity[0]*self.horizon
+            self.d0=self.sun[0]-self.start[0]
+            minimum=self.sun[0]-max(self.start[0],end)
+            if minimum<=0 or initial_rate<=0:
+                raise ValueError('straight-line reference requires a positive distance and rate throughout')
+            # Independent sufficient proof for each reference ray segment:
+            # all x coordinates of its endpoints exceed the sphere's xmax.
+            # The whole segment is then on the same strictly separated side.
+            ray_min=min(self.start[0],end,self.sun[0])
+            spheres=actual['opaque_spheres']
+            if not isinstance(spheres,list) or not spheres:
+                raise ValueError('native Moon opacity is required in the linked spherical fixture')
+            for sphere in spheres:
+                centre=self.vector(sphere['centre_lso_m'])
+                radius=Decimal.from_float(q.finite(sphere['radius_m'],'sphere radius',True))
+                if ray_min<=centre[0]+radius:
+                    raise q.MissingPrerequisite('straight-line oracle cannot prove full finite-ray visibility')
+            transverse=sum((a-b)**2 for a,b in zip(self.sun[1:],self.start[1:]))
+            self.relative_projection_bound=transverse/minimum**2
+            self.strength=initial_rate*(self.d0**2+transverse)
+            self.end_depth_upper=self.axial_depth(self.horizon)
+            self.end_depth_lower=self.end_depth_upper/(1+self.relative_projection_bound)
+
+    @staticmethod
+    def vector(values):
+        if not isinstance(values,list) or len(values)!=3:
+            raise ValueError('explicit SI three-vector required')
+        return tuple(Decimal.from_float(q.finite(v,'SI component')) for v in values)
+
+    def point_rate(self,event):
+        positions=(event[f'parent_event_x{i}'] for i in range(3))
+        squared=sum((sun-Decimal(x.numerator)/Decimal(x.denominator))**2
+                    for sun,x in zip(self.sun,positions))
+        if squared<=0:
+            raise ValueError('native event hit the singular point source')
+        return self.strength/squared
+
+    def axial_depth(self,t):
+        return self.strength*t/(self.d0*(self.d0-self.velocity[0]*t))
+
+    def first_hit(self,threshold):
+        if threshold>self.end_depth_upper:
+            return None
+        if threshold>self.end_depth_lower:
+            raise q.MissingPrerequisite('transverse analytical envelope cannot classify this parent')
+        def root(depth):
+            return depth*self.d0**2/(self.strength+depth*self.d0*self.velocity[0])
+        return root(threshold),root(threshold*(1+self.relative_projection_bound))
+
+
 def verify(runs,plan):
     """Audit native-output directories for frozen increasing common steps.
 
@@ -205,20 +309,24 @@ def verify(runs,plan):
     a per-cohort numerical proof, not global I21 qualification. All membership,
     source and horizon checks precede timing scores; corrupt CSV is ERROR.
     """
-    q.validate_plan(plan);identities={};comparisons=[];levels={1:[],8:[]}
+    q.validate_plan(plan);reference_basis,identities=frozen_reference(plan);comparisons=[];levels={1:[],8:[]}
     baseline=None
-    for directory,ranks in runs:
+    varying=plan.get('test_kind')=='trajectory-integrated-hazard'
+    expected_kind='trajectory-integrated-hazard' if varying else 'homogeneous-fixed-position'
+    for directory,ranks,events in runs:
         if type(ranks) is not int or ranks not in levels:raise ValueError('explicit1/8MPI layouts required')
         directory=Path(directory);receipt_path=directory/'input_receipt.json'
         receipt=q.strict_object(receipt_path);identities[str(receipt_path)]=q.sha(receipt_path)
-        if receipt['case_kind']!='homogeneous-fixed-position':raise ValueError('variable exposure cannot enter constant-hazard cohort scoring')
+        if receipt['case_kind']!=expected_kind:raise ValueError('actual transport case does not match frozen plan')
         for actual,expected,label in ((receipt['original_parents'],plan['original_parents'],'parent count'),
                 (receipt['seed'],plan['seed'],'seed'),(receipt['cohort_id'],plan['cohort_id'],'semantic cohort'),
                 (float(receipt['physical_horizon_s']),float(plan['horizon_s']),'common horizon'),
                 (float(receipt['initial_represented_number']),float(plan['initial_represented_number']),'represented number')):
             if actual!=expected:raise ValueError('actual native input contradicts frozen '+label)
         reference=reference_receipt(receipt);rate,channel=source_rate(reference,identities)
-        geometry=json.dumps(reference,sort_keys=True)
+        if reference_basis is not None and reference!=reference_basis:
+            raise ValueError('actual geometry, endpoint or zero-force binding differs from the frozen reference')
+        geometry=json.dumps([reference,receipt.get('trajectory_reference')],sort_keys=True)
         if baseline is None:baseline=geometry
         elif baseline!=geometry:raise ValueError('geometry/source/force convention differs between matched refinements')
         if len(plan['source_channel_rates_s'])!=1 or plan['source_channel_rates_s'][0]['id']!=channel:
@@ -233,20 +341,35 @@ def verify(runs,plan):
         identities[str(path)]=q.sha(path)
         if {int(r['original_parent_id']) for r in rows}!=set(range(plan['original_parents'])):
             raise ValueError('actual cohort must retain every frozen global original-parent ID')
+        motion=StraightLineExposure(plan,receipt,rate) if varying else None
         maximum=Decimal(0);horizon=Decimal.from_float(float(plan['horizon_s']))
         with localcontext() as context:
             context.prec=80
             for row in rows:
                 parent=int(row['original_parent_id']);u=Decimal.from_float(source_uniform(plan['seed'],plan['cohort_id'],parent))
-                event=None if rate==0 else -u.ln()/rate
+                root_interval=motion.first_hit(-u.ln()) if motion else None
+                event=(sum(root_interval)/2 if root_interval is not None else None) if motion else (None if rate==0 else -u.ln()/rate)
                 expected='REACTED' if event is not None and event<=horizon else 'SURVIVED'
                 if row['status']!=expected:
                     raise ArithmeticError('native first-removal membership differs from independent clock: parent'+str(parent))
-                error=Decimal(0) if event is None or expected=='SURVIVED' else abs(Decimal(row['relative_event_time_s'])-event)/horizon
+                actual_time=row['relative_event_time_s']
+                position_error=None
+                if motion is not None and expected=='REACTED':
+                    native=events[row['original_parent_id']]
+                    exact_time=native['relative_event_time_s']
+                    actual_time=Decimal(exact_time.numerator)/Decimal(exact_time.denominator)
+                    positions=[native[f'parent_event_x{i}'] for i in range(3)]
+                    actual_position=[Decimal(x.numerator)/Decimal(x.denominator) for x in positions]
+                    position_error=max(abs(x-x0-v*event) for x,x0,v in zip(actual_position,motion.start,motion.velocity))
+                    if position_error>Decimal(str(q.NUMERICAL_LIMIT['I21']))*abs(motion.velocity[0])*horizon:
+                        raise ArithmeticError('native straight-line event position exceeds I21 numerical allocation')
+                error=Decimal(0) if event is None or expected=='SURVIVED' else abs(Decimal(actual_time)-event)/horizon
                 maximum=max(maximum,error)
                 comparisons.append({'mpi_ranks':ranks,'steps':receipt['physical_steps'],'original_parent_id':parent,
                     'expected_status':expected,'actual_status':row['status'],'reference_event_s':None if event is None else str(event),
-                    'actual_event_s':row['relative_event_time_s'],'normalized_error':str(error)})
+                    'actual_event_s':str(actual_time),'normalized_error':str(error),
+                    'reference_root_width_s':None if root_interval is None else str(root_interval[1]-root_interval[0]),
+                    'position_error_m':None if position_error is None else str(position_error)})
         levels[ranks].append({'steps':receipt['physical_steps'],'actual':str(maximum),'reference':'0','scale':'1'})
     scores={}
     for ranks,rows in levels.items():
@@ -261,6 +384,7 @@ def verify(runs,plan):
     # This retained support/tail diagnostic is not a substitute for numerical
     # refinement, PRF/statistical checks or a physical model-error bound.
     finite_resolution=q.finite_grid_tail_bound(5*plan['original_parents']*len(runs))
-    return {'schema':'srcMoon-M3-independent-homogeneous-numerics-v1','status':status,'scores':scores,
+    return {'schema':'srcMoon-M3-independent-'+('trajectory' if varying else 'homogeneous')+'-numerics-v1',
+        'status':status,'scores':scores,
         'comparisons':comparisons,'input_sha256':identities,'finite_uniform_resolution':finite_resolution,
         'scope':'actual per-cohort source-clock timing; no observational or full I21 qualification'}

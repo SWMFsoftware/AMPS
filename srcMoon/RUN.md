@@ -1023,3 +1023,29 @@ criteria in CSV/JSON and an audit log. The survival curve is an analytical
 source-law comparison, with no observational data. Refinement and statistical
 qualification remain NOT_EVALUATED; formal M3 remains NOT QUALIFIED. Unsupported
 physical source/state/bath/surface selections keep their ordinary data gates.
+
+### I21 matched timestep and MPI development cohort
+
+Use the same retained source-bound producer and a hash-pinned commissioning
+geometry receipt to freeze and run a six-launch cohort. The exact preparation
+and `run_all_test.py --only I21` commands are in the [I21 runner README](test/integration-tests/I21/README.md).
+Look under `I21/homogeneous/` or `I21/trajectory/` in the chosen output directory for the native
+run manifests, parent and event records, and CSV/PNG/EPS timing comparisons.
+The outer result retains formal I21 status and reports any supporting test
+failure. An ordinary aggregate run without a cohort plan stays lightweight.
+
+### I23 stationary helium pilot
+
+Use the profile and exact hash from the atomic-family preparation. From the
+AMPS root the [I23 runner](test/integration-tests/I23/README.md) compiles the
+helium reservoir provider and writes coefficient, conditional-moment and
+admission-control comparisons under the chosen output directory:
+
+```bash
+/usr/bin/python3 -B srcMoon/test/integration-tests/I23/run_helium_pilot.py \
+  --profile /path/to/profile.json --profile-sha256 PROFILE_SHA256 \
+  --output-dir test_output/srcMoon/i23-helium-NEW
+```
+
+See `result.json`, `comparison.csv`, the exact profile snapshot and the
+separate build/native logs. This controlled run has no measured plasma input.

@@ -52,6 +52,19 @@ have U<=24.6, so a separately labeled altered-byte arithmetic fixture, never
 physical evidence, exercises the deep-underflow path. Domain bounds still
 apply; no extrapolation is permitted.
 
+The reduced I23 reservoir preparation also needs the dimensionless derivative
+`d ln k / d ln Te` of this same fit. The table returns it for the same four
+species and inclusive native temperature domain. It supplies the analytic
+slope of the fitted rate. Using it to infer a collision-conditioned mean
+requires an explicitly declared unshifted Maxwellian, source/state threshold
+crosswalk, and independent model error allowance, as described in
+`M3_RESERVOIR_PRODUCTS_CONTRACT.md`. No daughter event or bath is activated by
+the slope API. U16 compares the native slope with a 70-digit symmetric
+log-temperature difference of the independent direct fit at the existing
+temperature grid. The arithmetic check uses the existing `1e-12` scale with
+unit scale at a zero crossing. Its outcome is separate from the frozen
+coefficient/rate criterion and the I23 ensemble gate.
+
 ## Procedure, independent oracle and controls
 
 The thin standalone C++ adapter calls this exact production kernel, compiled

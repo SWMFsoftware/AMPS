@@ -18,6 +18,17 @@ using the same registered tests, cases, scientific criteria and authentic data.
 
 ## M3 completion proposal — November 17
 
+The [November 24 follow-up](M3_COMPLETION_FOLLOWUP_20261124.md) sets out the
+recommended order, physical model choices and qualification packages after
+the first linked I21 sodium matrix. It records the remaining decisions and
+source evidence for I22–I24 and the same-campaign M1/M2 predecessors.
+
+The [I21 trajectory case](integration-tests/I21/VARYING_EXPOSURE_CONTRACT.md)
+uses the existing I21 owner. The [I23 helium pilot](integration-tests/I23/README.md)
+is opt-in and retains its supporting rate and event-admission results.
+The global extended adapter selects 40 U/I cases including I21–I24. The
+nightly `app-moon` family continues to select U01–U26.
+
 [M3_COMPLETION_PROPOSAL.md](M3_COMPLETION_PROPOSAL.md) specifies the recommended
 remaining R3.1–R3.4 work: conservative reaction packets, actual force-aware mover
 wiring, photon/electron/charge-exchange/molecular contracts, existing I21–I24
@@ -1184,6 +1195,15 @@ STATUS.md section 5.42 records the archive evidence, fresh CORE execution and
 remaining source/release/linked coverage gaps.
 
 ## Source-bound M3 profiles, trajectories and conditional cohorts
+
+The [I21 owner](integration-tests/I21/README.md) accepts an explicit plan and
+its SHA-256 through this aggregate. It runs the same native Na owner from
+the producer checkout. The existing registry still uses literal I21, with
+its homogeneous development results and formal status reported separately.
+Its candidate qualification mode enforces the existing U14 and I13–I20 gates.
+The [He/Ne/Ar state-profile preparation](../../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)
+and [U16 fit slope](U16_electron_impact/README.md) provide inputs to subsequent
+I22/I23 provider integration.
 
 The U15 supporting namespace also runs source-state profiles, moving-parent
 photon composition, accepted-trajectory exposure, exact compensated clocks,

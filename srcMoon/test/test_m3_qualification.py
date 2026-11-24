@@ -226,6 +226,20 @@ class StatisticalControls(unittest.TestCase):
             copied=dict(self.plan);copied[key]=value
             with self.assertRaises(ValueError):q.validate_plan(copied)
 
+    def test_varying_exposure_cannot_use_homogeneous_estimator(self):
+        # Administrative plan controls only. A moving-path first-hit oracle
+        # can consume the original-parent schema, but endpoint fraction
+        # over a changing rate does not estimate a constant lifetime.
+        new=dict(self.plan,test_id='I21',test_kind='trajectory-integrated-hazard',
+                 primary_estimator='integrated-exposure')
+        self.assertIs(q.validate_plan(new),new)
+        with self.assertRaises(ValueError):
+            q.score_cohort(self.path,new)
+        with self.assertRaises(ValueError):
+            q.validate_plan(dict(new,primary_estimator='lifetime'))
+        with self.assertRaises(ValueError):
+            q.validate_plan(dict(new,test_id='I23'))
+
     def test_empty_or_all_surviving_endpoint_is_evaluated_fail(self):
         for survived in (0,self.plan['original_parents']):
             write_cohort(self.path,self.plan,survived)

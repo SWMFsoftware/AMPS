@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Fail-closed M3 cohort preparation and conditional normal producer boundary.
 
-The installed I21 adapter can execute only when source/state, normal compiled
-producer, explicit inputs and predecessors actually exist. Current Na+ source
-data remain incomplete. I22-I24 have no complete daughter provider. No guessed
-CLI, Boolean activation, cached result or fixture can substitute for these.
+The installed I21 adapter binds the source/state, compiled producer and explicit
+inputs. Formal readiness also requires the predecessor results. An opt-in
+development run retains their statuses while exercising the homogeneous path.
 """
 from __future__ import annotations
 import argparse
@@ -29,10 +28,11 @@ LOCAL={'I21':('U14',),'I22':('U15','U24'),'I23':('U16',),'I24':('U17',)}
 PHYSICAL_PRODUCERS={'I21':'normal-source-bound-sodium-cohort-v1'}
 ARTIFACT_ROLES=('run_manifest','parent_records','event_ledger','numerical_evidence',
     'budget_evidence','executable','build_manifest','input_snapshot')
+NATIVE_RUNNER = Path('srcMoon/test/run_m3_sodium_cohort.py')
 
 
 def native_request(plan,base):
-    """Authenticate a frozen six-or-more-launch homogeneous experiment.
+    """Authenticate a frozen six-or-more-launch sodium experiment.
 
     The request carries paths/hashes, not executable shell text or arbitrary
     activation flags. Both MPI layouts use the same predeclared >=3 increasing
@@ -70,7 +70,34 @@ def native_request(plan,base):
         layouts[ranks].append(steps);resolved.append({**run,'input_path':main_input,'document_paths':paths})
     if any(len(s)!=len(set(s)) or len(s)<3 for s in layouts.values()) or sorted(layouts[1])!=sorted(layouts[8]):
         raise ValueError('native matched layouts require the same distinct >=3 frozen refinements')
-    return {'producer':producer,'mapping':mapping,'runs':resolved,'identities':identities}
+    return {'producer':producer,'producer_sha256':value['producer_manifest']['sha256'],
+            'mapping':mapping,'runs':resolved,'identities':identities}
+
+
+def native_runner(request):
+    """Resolve the wrapper from the exact checkout that produced the library.
+
+    The existing wrapper verifies the archive, generated ABI, and that tree's
+    compiled source identity. Compare against this tree as well, so an old
+    private producer cannot silently become evidence for current production.
+    """
+    producer = q.strict_object(request['producer'])
+    if producer.get('status') != 'PASS':
+        raise q.MissingPrerequisite('the pinned native producer build did not pass')
+    checkout = Path(producer['source_root']).resolve()
+    runner = checkout / NATIVE_RUNNER
+    if not runner.is_file() or not Path(producer['library']['path']).is_file():
+        raise q.MissingPrerequisite('the retained producer checkout or library is unavailable')
+    if runner.resolve() != runner or q.sha(runner) != q.sha(ROOT / NATIVE_RUNNER):
+        raise ValueError('producer checkout does not contain the maintained sodium wrapper')
+    from build_m2_qualification import production_source_identity
+    from run_m3_moon_force_tracers import native_sources
+    if native_sources(producer['production_source_hashes']) != native_sources(production_source_identity()):
+        raise ValueError('pinned native producer does not match the current production source')
+    native_source = Path('srcMoon/test/sodium_cohort/native.cpp')
+    if q.sha(checkout / native_source) != q.sha(ROOT / native_source):
+        raise ValueError('producer checkout contains a different native sodium adapter')
+    return runner
 
 
 def bind_native_evidence(path,expected_sha256,plan,plan_sha256):
@@ -122,7 +149,8 @@ def bind_native_evidence(path,expected_sha256,plan,plan_sha256):
         'scope':'artifact identity only; named production provider/model verifiers still required'}
 
 
-def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha256=None):
+def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha256=None,
+              *, development=False,application=None):
     """Read-only actual prerequisite assessment, preserving corrupt evidence."""
     plan_path=Path(plan_path).resolve();campaign_root=Path(campaign_root).resolve()
     protocol=q.approved_protocol()
@@ -154,6 +182,15 @@ def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha
     if identity in PHYSICAL_PRODUCERS:
         try:
             request=native_request(plan,plan_path.parent);identities+=request['identities']
+            if application is not None:
+                from sodium_cohort.prepare_physical_case import application_documents
+                _, documents = application_documents(application)
+                required = {(row['path'], row['sha256']) for row in documents}
+                for launch in request['runs']:
+                    pinned = {(str(path), item['sha256']) for path, item in
+                              zip(launch['document_paths'], launch['input_documents'])}
+                    if not required.issubset(pinned):
+                        raise ValueError('I21 application/include graph differs from the frozen launch plan')
             # Independent source inspection precedes any costly compilation or
             # launch. It cannot infer an unavailable Na+ state or physical mass.
             if path:
@@ -169,7 +206,7 @@ def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha
             evidence=bind_native_evidence(native_evidence,expected_evidence_sha256,plan,q.sha(plan_path))
             identities+=evidence['identities'];blocks+=evidence['missing']
         except q.MissingPrerequisite as error:blocks.append(str(error))
-    predecessors=[]
+    predecessors=[];predecessor_blocks=[]
     for predecessor in tuple('I%02d'%i for i in range(13,21))+LOCAL[identity]:
         target=campaign_root/predecessor/'result.json'
         entry={'id':predecessor,'path':str(target),'status':'UNAVAILABLE'}
@@ -177,8 +214,9 @@ def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha
             value=q.strict_object(target);status=value.get('status')
             if status not in ('PASS','FAIL','ERROR','SKIPPED'):raise ValueError('invalid actual predecessor status: '+str(target))
             entry.update(status=status,sha256=q.sha(target))
-        if entry['status']!='PASS':blocks.append(predecessor+' has not qualified in this campaign')
+        if entry['status']!='PASS':predecessor_blocks.append(predecessor+' has not qualified in this campaign')
         predecessors.append(entry)
+    if not development:blocks.extend(predecessor_blocks)
     # All-green administrative predecessor fixtures CANNOT create a native
     # physical producer. Actual state/Q/kinetic/numerical/ledger evidence is
     # still required and no aggregate source/profile metadata closes it.
@@ -188,11 +226,12 @@ def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha
         'test_id':identity,'execution':'not-run','criteria_evaluated':False,
         'approved_addendum_sha256':q.APPROVED_SHA256,'plan_sha256':q.sha(plan_path),
         'identities':identities,'predecessors':predecessors,'blocking_reasons':blocks,
+        'formal_predecessor_blocks':predecessor_blocks,
         'formal_M3_status':'SKIPPED / NOT QUALIFIED','observational_scoring':False,
         'resource_policy':protocol['execution']}
 
 
-def execute_cohort(plan_path,plan,output,remaining_seconds):
+def execute_cohort(plan_path,plan,output,remaining_seconds,*,development=False):
     """Run actual installed native owner and independent auditors under ONE clock.
 
     Normal-source matching/build identities are rechecked by the maintained
@@ -203,33 +242,44 @@ def execute_cohort(plan_path,plan,output,remaining_seconds):
     from campaign_budget import CampaignBudget
     budget=CampaignBudget(remaining_seconds,min(120,remaining_seconds*.1))
     request=native_request(plan,Path(plan_path).parent);frozen_plan_sha=q.sha(plan_path)
-    records=[];commands=[];started=time.monotonic()
+    from sodium_cohort.verify_numerical import frozen_reference
+    reference,_=frozen_reference(plan)
+    if plan.get('test_kind')=='trajectory-integrated-hazard':
+        if not development:
+            raise q.MissingPrerequisite('trajectory oracle is admitted for development; formal I21 needs full reviewed scope')
+        if reference is None:
+            raise ValueError('varying-exposure plan needs an authenticated pre-launch geometry reference')
+    runner=native_runner(request)
+    producer_root=runner.parents[2]
+    records=[];commands=[]
     journal=output/'execution_journal.json'
     def retain_progress():
         # This durable attempted-launch receipt survives exceptions/timeouts.
         # It records only actual commands, never fabricated science outcomes.
         journal.write_text(json.dumps({'execution':'native-attempted','native_runs':records,
             'commands':commands,'mpi_openmp':'declared1/8MPI,OMP1','plan_sha256':q.sha(plan_path)},indent=2)+'\n')
-    def launch(argv,label,cores):
+    def launch(argv,label,cores,cwd=ROOT):
         directory=output/(label+'-resources');directory.mkdir()
-        commands.append({'label':label,'command':argv,'state':'launched'})
+        commands.append({'label':label,'command':argv,'cwd':str(cwd),'state':'launched'})
         retain_progress()
-        result=budget.run(argv,ROOT,output/(label+'.log'),output=directory,allocated_cores=cores,
+        result=budget.run(argv,cwd,output/(label+'.log'),output=directory,allocated_cores=cores,
             environment=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',PYTHONDONTWRITEBYTECODE='1'))
         commands[-1].update(state='completed',receipt=result);retain_progress()
         if result.get('reason'):raise RuntimeError('cohort resource termination: '+str(result['reason']))
         return result
     for index,run in enumerate(request['runs']):
         if q.sha(plan_path)!=frozen_plan_sha:raise ValueError('frozen cohort plan changed before native launch')
+        if q.sha(request['producer']) != request['producer_sha256']:
+            raise ValueError('frozen producer manifest changed before native launch')
         for path,item in zip(run['document_paths'],run['input_documents']):
             if q.sha(path)!=item['sha256']:raise ValueError('frozen input document changed before native launch')
-        elapsed=time.monotonic()-started;available=remaining_seconds-elapsed-30
+        available=budget.remaining()
         if available<=0:raise RuntimeError('original cohort deadline exhausted before next native launch; declare a cluster package')
         target=output/('native-%02d'%index)
-        command=[sys.executable,'-B',str(q.TEST/'run_m3_sodium_cohort.py'),'--output-dir',str(target),
+        command=[sys.executable,'-B',str(runner),'--output-dir',str(target),
             '--producer-manifest',str(request['producer']),'--input',str(run['input_path']),
             '--mode','run','--mpi-ranks',str(run['mpi_ranks']),'--wall-seconds',str(available)]
-        completion=launch(command,'launch-%02d'%index,run['mpi_ranks'])
+        completion=launch(command,'launch-%02d'%index,run['mpi_ranks'],producer_root)
         result=q.strict_object(target/'result.json');status=result.get('status')
         expected={'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}
         if status not in expected or completion['returncode']!=expected[status]:raise ValueError('native owner status/exit contradiction')
@@ -242,17 +292,21 @@ def execute_cohort(plan_path,plan,output,remaining_seconds):
         if status!='PASS':return {'status':status,'reason':result.get('reason'),'execution':'native-attempted',
             'criteria_evaluated':False,'native_runs':records,'commands':commands}
     registry=output/'native_runs.json';registry.write_text(json.dumps(records,indent=2)+'\n')
-    audited=launch([sys.executable,'-B',str(q.TEST/'sodium_cohort/audit.py'),'--plan',str(plan_path),
-        '--runs',str(registry),'--output-dir',str(output/'independent-audit')],'independent-audit',1)
+    audit_command=[sys.executable,'-B',str(q.TEST/'sodium_cohort/audit.py'),'--plan',str(plan_path),
+        '--runs',str(registry),'--output-dir',str(output/'independent-audit')]
+    if development:audit_command.append('--development')
+    audited=launch(audit_command,'independent-audit',1)
     result=q.strict_object(output/'independent-audit/result.json')
     if q.sha(plan_path)!=frozen_plan_sha:raise ValueError('frozen cohort plan changed during native execution/audit')
     if audited['returncode']!={'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}.get(result.get('status')):
         raise ValueError('independent auditor status/exit contradiction')
-    return {**result,'execution':'actual-native-cohort-and-independent-audit','criteria_evaluated':True,
+    return {**result,'execution':'actual-native-cohort-and-independent-audit',
+        'criteria_evaluated':any(check['status'] in ('PASS','FAIL') for check in result['checks']),
         'native_runs':records,'commands':commands,'formal_M3_status':'NOT QUALIFIED BY ONE COHORT; full frozen I21-I24 matrix remains'}
 
 
-def run(plan_path,campaign_root,output,amps=None,native_evidence=None,expected_evidence_sha256=None):
+def run(plan_path,campaign_root,output,amps=None,native_evidence=None,expected_evidence_sha256=None,
+        *,development=False,wall_seconds=3600,application=None,expected_plan_sha256=None):
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=False)
     started=time.monotonic();plan_path=Path(plan_path).resolve()
     manifest={'schema':'srcMoon-M3-qualification-attempt-v1','created_utc':datetime.now(timezone.utc).isoformat(),
@@ -266,17 +320,24 @@ def run(plan_path,campaign_root,output,amps=None,native_evidence=None,expected_e
     if amps is not None:
         path=Path(amps).resolve();manifest['executable']={'path':str(path),'sha256':q.sha(path) if path.is_file() else None}
     try:
+        if not 0 < wall_seconds <= 3600:
+            raise ValueError('one total development allowance in (0, 3600] seconds required')
         if not plan_path.is_file():raise q.MissingPrerequisite('explicit frozen cohort plan is unavailable')
         shutil.copyfile(plan_path,output/'cohort_plan.json');manifest['plan_sha256']=q.sha(plan_path)
-        value=readiness(plan_path,campaign_root,native_evidence,expected_evidence_sha256)
+        if expected_plan_sha256 is not None and manifest['plan_sha256']!=expected_plan_sha256:
+            raise ValueError('frozen I21 cohort plan differs from the caller SHA-256')
+        options={'development':True} if development else {}
+        binding={'application':application} if application is not None else {}
+        value=readiness(plan_path,campaign_root,native_evidence,expected_evidence_sha256,**options,**binding)
         if q.sha(plan_path)!=q.sha(output/'cohort_plan.json'):
             raise ValueError('frozen cohort plan changed during readiness assessment')
         manifest['source_data_identities']=value['identities']
+        manifest['formal_predecessors']=value.get('predecessors',[])
         value['reason']='; '.join(value['blocking_reasons'])
         if value['status']=='PASS':
             elapsed=time.monotonic()-started
-            if elapsed>=3600:raise RuntimeError('original cohort budget exhausted during prerequisite assessment')
-            value=execute_cohort(plan_path,q.strict_object(plan_path),output,3600-elapsed)
+            if elapsed>=wall_seconds:raise RuntimeError('original cohort budget exhausted during prerequisite assessment')
+            value=execute_cohort(plan_path,q.strict_object(plan_path),output,wall_seconds-elapsed,**options)
     except q.MissingPrerequisite as error:
         value={'status':'SKIPPED','reason':str(error),'execution':'not-run','criteria_evaluated':False}
     except (OSError,ValueError,TypeError,KeyError,ArithmeticError,RuntimeError) as error:

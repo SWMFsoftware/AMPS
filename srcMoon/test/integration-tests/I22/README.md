@@ -1,5 +1,12 @@
 # I22 — Photoionization for He, Ne, Ar, and future H2O/OH
 
+The [atomic-family preparer](../../../../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)
+emits six explicit source-effective photon candidates, one for each
+isotope and source endpoint. Each retains the D04 printed threshold and
+mean, physical ground-ion energy and native row identity. The worksheet
+supports source/state review before recoil or ground-ion yields are selected.
+The U15/U24 and full linked I22 gates remain applicable.
+
 The complete specification is [reference/acceptance.json](reference/acceptance.json).
 Original acceptance: Ensemble rate error <=2%; linked branching statistically consistent at95% confidence; complete declared family sums to1 within numerical precision. U15 separately retains99% intervals and source-precision transcription.
 

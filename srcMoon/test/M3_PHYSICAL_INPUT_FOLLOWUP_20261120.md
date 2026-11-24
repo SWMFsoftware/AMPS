@@ -73,3 +73,17 @@ and a limited reference-model run cannot substitute for those gates.
 
 No application physics, input default, scientific threshold, calibration/
 hold-out membership or permanent U/I identifier changes in this search package.
+
+## Implementation follow-up — 2026-11-23
+
+The [ground-ion profile preparation](../../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)
+now derives and verifies explicit ⁴He, ²⁰Ne, and ⁴⁰Ar reference states from
+the retained originals. The profile records both the physical and D04
+thresholds. Ground-state product yields and the appropriate effective photon
+energy convention still need review before I22 uses those states for events.
+
+The [Voronov derivative](U16_electron_impact/README.md) now supplies the
+mathematical input needed to evaluate the fitted Maxwellian conditional mean
+in the existing reservoir service. An I23 source profile must still establish
+the admissible bath/target frame, state/threshold crosswalk, and maximum
+observable discrepancies for the selected species and temperature domain.

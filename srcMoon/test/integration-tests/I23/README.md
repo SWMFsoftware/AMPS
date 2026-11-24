@@ -37,3 +37,30 @@ The owner now retains `protocol_preparation.json`, binding the concrete
 identities and a structural preparation PASS do not launch particle chemistry
 or change this formal gate. Missing inputs remain SKIPPED; corrupt identities
 are ERROR. Full source-family, product and predecessor requirements remain.
+
+## Stationary helium pilot
+
+Use a successful [atomic-family preparation](../../../../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)
+and its output `profile.json`.
+
+```bash
+/usr/bin/python3 -B srcMoon/test/integration-tests/I23/run_helium_pilot.py \
+  --profile /path/to/profile.json --profile-sha256 PROFILE_SHA256 \
+  --output-dir test_output/srcMoon/i23-helium-NEW
+```
+
+The runner compiles the production helium provider, authenticates D05 and
+the physical state records, and compares the coefficient, density response,
+fit slope, incident mean and thresholds at 10 eV. It writes
+`comparison.csv`, the profile snapshot, logs, `run_manifest.json` and
+`result.json`. The guarded composer is included in the verification.
+Linked I23 still needs authenticated model-error evidence before a
+helium event can commit. [Pilot contract](HELIUM_PILOT_CONTRACT.md)
+
+Add `--kim-1992-pdf /path/to/jresv97n6p689_A1b.pdf` to run the optional
+independent fit comparison. The runner verifies the exact PDF digest and
+extracts its Table 1 neutral-helium row using `pdftotext`. SciPy integrates
+the published fit over its finite range and records the result separately
+in `kim_model_comparison.json`. It compares the predicted rate and incident
+mean, with numerical quadrature errors distinct from physical data and
+fit uncertainty. [Kim, 1992](https://doi.org/10.6028/jres.097.032)

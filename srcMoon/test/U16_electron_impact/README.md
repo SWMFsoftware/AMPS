@@ -97,3 +97,13 @@ Local U16 PASS establishes formula/rate-service correctness only. I23 still
 requires actual linked dispatch, conservative particle-event/product behavior
 and its separate 2% coefficient/3% lifetime gates. Formal M3 and measured plasma
 claims remain unavailable until their own predecessors and capabilities pass.
+
+## Voronov fit slope for I23 preparation
+
+`MaxwellianVoronovTable::LogTemperatureDerivative` supplies the dimensionless
+analytic `d ln k / d ln Te` on the same native domain as the rate. U16 verifies
+132 slopes against an independent Decimal log difference at the existing grid
+and retains the results alongside the coefficient and lifetime-rate controls.
+This is an input to the proposed source-bound Maxwellian reservoir moment.
+I23 still requires the source-to-state threshold convention, explicit bath
+domain, model-error bounds and linked event dispatch.

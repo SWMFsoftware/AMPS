@@ -1464,3 +1464,20 @@ Reference-state/spin, missing printed molecular-threshold conventions and
 charged three-body partitions remain explicit before their dependent channels
 can run. Neither a full outgoing-electron PDF nor a universal ion-regolith
 law is added as a blanket requirement for the approved reference scopes.
+
+The I21 [homogeneous cohort runner](test/integration-tests/I21/README.md) now
+exercises the production Na photoionization path across matched time steps
+and MPI layouts. The same campaign retains an independent timing, source-rate
+and event ledger audit. New He/Ne/Ar ground-ion reference profiles and the
+analytic Voronov temperature slope support subsequent I22/I23 integration.
+See [STATUS.md](STATUS.md) for the evaluated results and open qualification gates.
+
+The [I21 varying-exposure control](test/integration-tests/I21/VARYING_EXPOSURE_CONTRACT.md)
+uses a stable analytical clock for the prescribed radial problem and a
+separate finite-ray oracle for the linked Sun-distance drift. The
+[I23 helium pilot](test/integration-tests/I23/HELIUM_PILOT_CONTRACT.md) connects
+the source rate and slope to the shared signed electron-bath composer with
+an authenticated evidence gate before committing a physical event.
+The [I22 atomic worksheet](../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)
+and [I24 source admission](test/integration-tests/I24/SOURCE_ADMISSION_20261124.md)
+track the remaining source choices.

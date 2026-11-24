@@ -9,8 +9,60 @@
 #include <string>
 namespace T=Moon::Species::TrajectoryExposure;
 namespace P=Moon::Species::PiecewiseHazard;
+
+// A predeclared zero-force radial flight keeps the quadrature error separate
+// from any mover, occultation, source table or physical recoil uncertainty.
+// Step boundaries are exactly representable and every panel calls the same
+// production photon integrator as the native chemistry controller.
+int RadialRefinement(int steps){
+  constexpr double horizon=2.0;
+  const double dt=horizon/steps;
+  T::Field field;
+  field.frame="ANALYTICAL-CARTESIAN";
+  field.referenceDistanceM=4;
+  const T::Controls controls{1e-12,1e-3L,0,1000,1000};
+  std::vector<P::Segment> segments;
+  long double depthBound=0;
+  std::string error;
+  for(int step=0;step<steps;++step){
+    const double start=step*dt;
+    T::Arc arc;
+    arc.positionM[0]=4+start;
+    arc.velocityMS[0]=1;
+    T::History panel;
+    if(!T::BuildPhotonHistory(arc,dt,field,{{7,.75}},{},controls,&panel,&error)){
+      std::cerr<<error<<'\n';
+      return 2;
+    }
+    for(auto& segment:panel.segments){
+      segment.beginS+=start;
+      segment.endS+=start;
+      segments.push_back(std::move(segment));
+    }
+    depthBound+=panel.interpolationDepthErrorBound+panel.shadowBoundaryDepthErrorBound;
+  }
+  P::Exposure full;
+  P::EventLocation hit,survivor;
+  const P::NumericControls clockControls{128};
+  if(P::Integrate(segments,0,horizon,&full,&error)!=P::Status::Complete ||
+     P::LocateEvent(segments,0,horizon,P::CompensatedDepth{.5,0},clockControls,&hit,&error)!=P::Status::Event ||
+     P::LocateEvent(segments,0,horizon,P::CompensatedDepth{1.125,0},clockControls,&survivor,&error)!=P::Status::Complete){
+    std::cerr<<error<<'\n';
+    return 2;
+  }
+  std::cout<<std::setprecision(std::numeric_limits<long double>::max_digits10)
+    <<"{\"steps\":"<<steps<<",\"depth\":\""<<full.integratedHazard<<"\",\"bound\":\""<<depthBound
+    <<"\",\"event_s\":\""<<hit.eventTimeS<<"\",\"accepted_rate_s\":\""<<hit.totalInstantaneousRateS
+    <<"\",\"survivor_clock_updated\":"<<(survivor.clockUpdate.valid()&&!survivor.clockUpdate.event()?"true":"false")
+    <<",\"segments\":"<<segments.size()<<"}\n";
+  return 0;
+}
+
 int main(int argc,char**argv){
   const std::string mode=argc>1?argv[1]:"linear";
+  if(mode=="radial-8")return RadialRefinement(8);
+  if(mode=="radial-16")return RadialRefinement(16);
+  if(mode=="radial-32")return RadialRefinement(32);
   T::Arc a;T::Field f;f.frame="ANALYTICAL-CARTESIAN";f.sunPositionM={{10,0,0}};f.referenceDistanceM=10;
   T::Controls c;c.rootTimeToleranceS=1e-12;c.absoluteDepthTolerance=1e-10L;c.relativeDepthTolerance=1e-8L;c.maximumSegments=100000;c.maximumGeometryIntervals=1000000;
   std::vector<T::PhotonChannel> photons{{7,2}};std::vector<T::ConstantChannel> constants{{9,.3}};

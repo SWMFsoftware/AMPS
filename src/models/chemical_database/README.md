@@ -128,6 +128,12 @@ source mutation in this component.
 
 ## Explicit reservoir products
 
+`MaxwellianVoronovTable::LogTemperatureDerivative` returns the analytic
+dimensionless slope of the loaded fit on its native temperature domain.
+The slope can supply a fit-derived incident mean in an explicitly admitted
+isotropic Maxwellian reservoir. Source state, physical cross-section and
+model-error evidence still control that admission.
+
 [ReservoirProducts.h](ReservoirProducts.h) adds reusable, header-only C++17
 services for the approved limited heavy-ion/reservoir models; its full API,
 units, evidence and refusal contract is in [ReservoirProducts.md](ReservoirProducts.md).

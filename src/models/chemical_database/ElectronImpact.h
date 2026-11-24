@@ -49,6 +49,11 @@ class MaxwellianVoronovTable {
                        std::string* error) const;
   bool RateCoefficientM3S(NeutralSpecies species,double electronTemperatureEv,
                           double* coefficientM3S,std::string* error) const;
+  // Dimensionless d ln(k)/d ln(Te) of the published fit on its native domain.
+  // This supplies a model slope for an explicitly configured reservoir. Its
+  // caller owns the cross-section, bath, state, and model-error admissions.
+  bool LogTemperatureDerivative(NeutralSpecies species,double electronTemperatureEv,
+                                double* derivative,std::string* error) const;
   bool IonizationRateS(NeutralSpecies species,double electronTemperatureEv,
                         double electronDensityM3,double* rateS,
                         std::string* error) const;

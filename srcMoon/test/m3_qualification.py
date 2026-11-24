@@ -286,7 +286,7 @@ def complete_cohort_plan(test_id,rate_s,horizon_s,branch_probabilities,rate_comp
 
 
 def validate_plan(plan):
-    """Validate an explicit complete homogeneous original-parent cohort."""
+    """Validate an explicit original-parent cohort and its permitted estimator."""
     approved_protocol()
     if not isinstance(plan,dict) or plan.get('schema')!='srcMoon-M3-cohort-plan-v1':raise ValueError('unsupported M3 cohort plan')
     if plan.get('approved_addendum_sha256')!=APPROVED_SHA256:raise ValueError('cohort plan is not bound to the approved protocol')
@@ -295,7 +295,16 @@ def validate_plan(plan):
     integer(plan.get('original_parents'),'original independent parent count')
     finite(plan.get('initial_represented_number'),'initial represented number',True)
     finite(plan.get('horizon_s'),'common physical horizon',True)
-    zero=plan.get('test_kind')=='zero-hazard-invariant'
+    # The original v1 format omitted this field for the homogeneous case.
+    # Preserve that receipt contract while requiring explicit opt-in to a
+    # different estimator and treating unknown declared kinds as an error.
+    kind=plan.get('test_kind','homogeneous-fixed-position')
+    if kind not in ('zero-hazard-invariant','homogeneous-fixed-position','trajectory-integrated-hazard'):
+        raise ValueError('unsupported cohort test_kind')
+    zero=kind=='zero-hazard-invariant'
+    varying=kind=='trajectory-integrated-hazard'
+    if varying and identity!='I21':
+        raise ValueError('the explicit straight-line exposure oracle belongs to I21')
     total=finite(plan.get('reference_total_rate_s'),'independent total rate',not zero)
     if zero and total!=0:raise ValueError('zero-hazard invariant requires exactly zero reference rate')
     integer(plan.get('branch_claims'),'whole frozen branch family count')
@@ -312,9 +321,9 @@ def validate_plan(plan):
     if len(identifiers)!=len(set(identifiers)):raise ValueError('duplicate source channel IDs')
     if math.fsum(rates)!=total:raise ValueError('source partial rates do not sum exactly to declared fsum total; no renormalization allowed')
     if plan['branch_claims']<len(channels):raise ValueError('whole branch claim family smaller than declared source family')
-    expected='zero-hazard' if zero else 'rate' if identity=='I22' else 'lifetime'
+    expected='integrated-exposure' if varying else 'zero-hazard' if zero else 'rate' if identity=='I22' else 'lifetime'
     if plan.get('primary_estimator')!=expected:raise ValueError('primary estimator differs from preapproved per-ID choice')
-    if not zero:
+    if not zero and not varying:
         cumulative=total*float(plan['horizon_s'])
         if not math.isfinite(cumulative) or cumulative<=0 or not 0<math.exp(-cumulative)<1:
             raise ValueError('declared rate/horizon cannot resolve a nontrivial endpoint survival; explicitly choose a representable physical horizon')
@@ -349,6 +358,8 @@ def read_original_parents(path,plan):
 
 def score_cohort(path,plan):
     """Independent endpoint/branch statistics; NEVER a standalone formal PASS."""
+    if plan.get('test_kind')=='trajectory-integrated-hazard':
+        raise ValueError('a spatially varying exposure cannot be scored as a constant lifetime')
     rows=read_original_parents(path,plan)
     n=len(rows);survivors=sum(r['status']=='SURVIVED' for r in rows);removed=n-survivors
     horizon=float(plan['horizon_s']);reference=float(plan['reference_total_rate_s'])

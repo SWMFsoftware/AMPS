@@ -37,3 +37,9 @@ The owner now retains `protocol_preparation.json`, binding the concrete
 identities and a structural preparation PASS do not launch particle chemistry
 or change this formal gate. Missing inputs remain SKIPPED; corrupt identities
 are ERROR. Full source-family, product and predecessor requirements remain.
+
+The [first-channel source review](SOURCE_ADMISSION_20261124.md) identifies
+the retained D119990 gaps, the state-resolved Na calculation candidates
+and a higher-energy proton–He alternative with documented lab-frame angle
+measurements. A source-matched angular law or independently bounded
+approximation is required for linked transport.

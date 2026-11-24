@@ -1,7 +1,7 @@
 # Moon regression global adapter
 
 This exclusive suite integrates the complete registry in
-`srcMoon/test/run_all_test.py`: U01–U26 and linked I11–I20. It performs a
+`srcMoon/test/run_all_test.py`: U01–U26 and linked I11–I24 (40 cases). It performs a
 clean Moon/SPICE build using the repository-mandated native preflight, then
 invokes the application aggregate with `--skip-build`. Every local
 PASS/FAIL/SKIPPED/ERROR becomes an exact global PASS/FAIL/SKIP/ERROR case;
@@ -15,7 +15,9 @@ The separate canonical `make test_Moon` target still selects nightly mode ON.
 
 The default local mode is the bounded regression campaign. I11 and I13 remain
 intentional non-execution SKIPs there, and dependent M2 cases may also SKIP.
-Those statuses are preserved. This suite does not claim M1/M2 qualification.
+Those statuses are preserved. I21–I24 also report typed skips when the adapter
+has no frozen linked qualification package. This extended-suite registry is
+separate from the nightly `app-moon` selection of 26 U cases.
 
 Machine-specific SPICE locations are configuration data. Create an overlay
 like this (outside the repository is allowed):
