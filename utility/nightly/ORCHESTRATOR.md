@@ -158,7 +158,7 @@ cases_total, cases_failed, log}`.
 
 | reader | runner, report | mapping |
 |---|---|---|
-| `src-test-json` | run_tests.py `--json` | one row per suite (`results[]`), case counts from `cases[]`. FAIL → FAILED; ERROR → FAILED with "harness: " before the message; SKIP → SKIPPED. Stage from the message: "did not build" → build; "timed out" → run; else check. |
+| `src-test-json` | run_tests.py `--json` | one row per suite (`results[]`), case counts from `cases[]`. FAIL → FAILED; ERROR → FAILED with "harness: " before the message; SKIP → SKIPPED. Stage from the message: "did not build" → build; "timed out" → run; else check. Suites in `readers.NESTED_CHECKS` also give one row per nested check (see below). |
 | `sep-orchestrator-json` | tools/sep_test_orchestrator.py `run_all_test.json` | one row per record; `kind: check` → stage build; per-test log from `log`/`line` |
 | `earth-report` | test_runner.py `<prefix>.json` | one row per list entry; name from the command and list line; reason from the last FAIL line of its log. Entries the list expects to fail stay FAILED, with reason "expected to fail (srcEarth/test/list)". |
 | `moon-summary` | srcMoon `summary.json` (+ `U*/result.json`) | one row per U-test; SKIPPED keeps its reason |
@@ -167,6 +167,25 @@ cases_total, cases_failed, log}`.
 | `exit-code` | anything | one row: PASS if the exit code is 0 |
 | `amps-results` | a runner that writes our `results.jsonl` itself | taken as is; the recommended format for new runners |
 | `makefile` | built in | the Makefile.test tests (§5.2) |
+
+**Nested checks.** Some `src/test` suites register one case that runs a whole nested suite; its own
+receipt lists every check. `readers.NESTED_CHECKS` names these suites, the receipt path (relative to the
+suite's `artifact_dir`), the receipt `schema` and the family of the check rows. At present it lists one
+suite: `CORE-CHEMICAL-DATABASE-001`, whose `shared-protocol/result.json` checks are shown in family
+`core-chemical-database` ("Core: chemical database").
+
+- **The suite's own row** keeps the suite's verdict. The check rows only make the individual checks
+  visible, each with its own history.
+- **Each check record** (`tests[]`) becomes one row: PASS → PASS; FAIL → FAILED; ERROR → FAILED with
+  "error: " before the reason; SKIPPED keeps its reason. The row points at the check's log.
+- **Each ID in `outside_selected_scope`** becomes a SKIPPED row, with the reason that the nightly's
+  `--protocol-only` selection leaves it out.
+- **When no receipt is expected:** if the suite was skipped or ended in a harness ERROR, a missing
+  receipt adds no row, because the suite row already says why.
+- **When the receipt is bad:** one FAILED row, `<suite> checks`, says why. This covers a receipt that is
+  missing (in any other case), unreadable, of another schema, internally inconsistent (counts or
+  `executed` disagree with the check list), or that has an empty or repeated check name. The page
+  therefore never shows fewer checks without saying so.
 
 **Rules that apply to every runner**, so that a failure can never look green:
 

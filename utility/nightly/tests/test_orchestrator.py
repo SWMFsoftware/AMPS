@@ -125,6 +125,87 @@ class Readers(unittest.TestCase):
         self.assertEqual((b["status"], b["stage"], b["reason"]), ("FAILED", "run", "harness: runner timed out"))
         self.assertEqual((c["stage"], c["cases_total"], c["cases_failed"]), ("build", 2, 1))
 
+    # --- nested checks (readers.NESTED_CHECKS): CORE-CHEMICAL-DATABASE-001 runs a whole nested suite
+    SCHEMA = "amps-chemical-database-software-tests-v1"
+    FAMILY = "core-chemical-database"
+
+    def receipt(self, tests, excluded=(), **override):
+        counts = {s: sum(1 for t in tests if t["status"] == s) for s in ("PASS", "FAIL", "ERROR", "SKIPPED")}
+        data = {"schema": self.SCHEMA, "tests": list(tests), "counts": counts, "executed": len(tests),
+                "outside_selected_scope": list(excluded)}
+        data.update(override)
+        return data
+
+    def read_nested(self, status, receipt):
+        """src-test-json rows for one CORE-CHEMICAL-DATABASE-001 suite; receipt None = not written."""
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp, "run", "artifacts", "CORE-CHEMICAL-DATABASE-001")
+            if receipt is not None:
+                (artifact / "shared-protocol").mkdir(parents=True)
+                (artifact / "shared-protocol" / "result.json").write_text(
+                    receipt if isinstance(receipt, str) else json.dumps(receipt))
+            report = Path(tmp, "report.json")
+            report.write_text(json.dumps({"output_directory": str(Path(tmp, "run")), "results": [
+                {"id": "CORE-CHEMICAL-DATABASE-001", "status": status, "message": "m",
+                 "cases": [{"status": status}], "artifact_dir": str(artifact)}]}))
+            return readers.READERS["src-test-json"](readers.ReadContext("core", str(report), Path(tmp), 0))
+
+    def test_nested_checks_become_rows_with_out_of_scope_skips(self):
+        rows = self.read_nested("PASS", self.receipt(
+            [{"test": "m.C.test_a", "status": "PASS", "reason": None, "log": "/x/unittest.log"},
+             {"test": "m.C.test_b", "status": "PASS", "reason": None, "log": "/x/unittest.log"}],
+            ["m.Source.test_real", "test_protocol.PythonProduction.test_release"]))
+        suite, *checks = rows
+        self.assertEqual((suite["test"], suite["status"], suite["cases_total"]), ("CORE-CHEMICAL-DATABASE-001", "PASS", 1))
+        self.assertNotIn("family", suite)                       # the suite row is placed by suite_prefixes
+        self.assertEqual([(r["test"], r["status"], r["family"]) for r in checks],
+                         [("m.C.test_a", "PASS", self.FAMILY), ("m.C.test_b", "PASS", self.FAMILY),
+                          ("m.Source.test_real", "SKIPPED", self.FAMILY),
+                          ("test_protocol.PythonProduction.test_release", "SKIPPED", self.FAMILY)])
+        self.assertEqual(checks[0]["log_src"], "/x/unittest.log")
+        self.assertIn("--protocol-only", checks[2]["reason"])
+        self.assertIn("--database-lock", checks[3]["reason"])
+
+    def test_nested_check_failures_keep_their_reasons(self):
+        rows = self.read_nested("ERROR", self.receipt(
+            [{"test": "m.C.test_a", "status": "FAIL", "reason": "AssertionError: 1 != 2"},
+             {"test": "m.C.test_b", "status": "ERROR", "reason": "RuntimeError: boom"},
+             {"test": "m.C.test_c", "status": "SKIPPED", "reason": "g++ unavailable"}]))
+        self.assertEqual([(r["test"], r["status"], r["reason"]) for r in rows[1:]],
+                         [("m.C.test_a", "FAILED", "AssertionError: 1 != 2"),
+                          ("m.C.test_b", "FAILED", "error: RuntimeError: boom"),
+                          ("m.C.test_c", "SKIPPED", "g++ unavailable")])
+
+    def test_missing_or_bad_nested_receipt_is_reported(self):
+        good = [{"test": "m.C.test_a", "status": "PASS"}]
+        for status, receipt, why in (
+                ("PASS", None, "no receipt"),
+                ("FAIL", None, "no receipt"),
+                ("PASS", "{not json", "cannot read"),
+                ("PASS", self.receipt(good, schema="other"), "is not a"),
+                ("PASS", self.receipt(good, counts={"PASS": 2, "FAIL": 0, "ERROR": 0, "SKIPPED": 0}), "contradict"),
+                ("PASS", self.receipt(good, executed=5), "contradict"),
+                ("PASS", self.receipt(good, ["m.C.test_a"]), "repeated"),
+                ("PASS", self.receipt(good, outside_selected_scope="m.C.test_x"), "lacks")):
+            with self.subTest(status=status, why=why):
+                rows = self.read_nested(status, receipt)
+                self.assertEqual(len(rows), 2)
+                self.assertEqual((rows[1]["test"], rows[1]["status"], rows[1]["family"]),
+                                 ("CORE-CHEMICAL-DATABASE-001 checks", "FAILED", self.FAMILY))
+                self.assertIn(why, rows[1]["reason"])
+
+    def test_skipped_or_harness_error_suite_needs_no_nested_receipt(self):
+        for status in ("SKIP", "ERROR"):
+            with self.subTest(status=status):
+                self.assertEqual([r["test"] for r in self.read_nested(status, None)], ["CORE-CHEMICAL-DATABASE-001"])
+
+    def test_repository_families_place_the_chemical_database_suite(self):
+        registry = Registry.load()
+        self.assertEqual(registry.family_for_suite("CORE-CHEMICAL-DATABASE-001"), self.FAMILY)
+        self.assertEqual(registry.family_for_suite("CORE-CHEMICAL-SOLVER-001"), "core-models")
+        for spec in readers.NESTED_CHECKS.values():
+            self.assertIsNotNone(registry.family(spec["family"]))
+
     def test_earth_report_marks_expected_failures(self):
         rows = self.read("earth-report", [
             {"command": "srcEarth/test/C5/run_C5.py --x", "line_no": 80, "expected": "F", "actual": "F",

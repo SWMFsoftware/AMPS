@@ -24,6 +24,8 @@
      "suite_prefixes": ["CORE-HARNESS-", "CORE-GENERAL-", "CORE-UNITS-", "CORE-T12-", "CORE-LEGACY-"]},
     {"id": "core-pic", "group": "core", "title": "Core: PIC", "suite_prefixes": ["CORE-PIC-", "CORE-ECSIM-"]},
     {"id": "core-mesh", "group": "core", "title": "Core: AMR mesh", "suite_prefixes": ["CORE-MESH-"]},
+    {"id": "core-chemical-database", "group": "core", "title": "Core: chemical database",
+     "suite_prefixes": ["CORE-CHEMICAL-DATABASE-"]},
     {"id": "core-models", "group": "core", "title": "Core: physics models", "suite_prefixes": ["CORE-"]},
 
     {"id": "app-sep", "group": "app", "title": "srcSEP (field-line SEP model)", "runner": "srcSEP/test/run_tests.py"},

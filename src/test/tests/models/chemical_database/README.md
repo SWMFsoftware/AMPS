@@ -29,6 +29,11 @@ under the case artifact directory's `shared-protocol`. Missing dependencies
 remain SKIP, evaluated disagreement FAIL, corrupt/missing/contradictory results
 or build/runtime failures ERROR. The full exact child registry/counts must
 match its declared status/exit; an available PASS cannot hide a required SKIP.
+The nightly web page reads this child `result.json` and lists each child
+method, and each `outside_selected_scope` ID as SKIPPED, in the group
+"Core: chemical database"
+(`utility/nightly/amps_nightly/readers.py`, `NESTED_CHECKS`). The CORE
+registry still has exactly one case here.
 
 Real-release row/source agreement and installed SDK relocation remain separate
 explicit `--database-lock` work; physical model validity, CUDA, source-rights

@@ -88,9 +88,84 @@ def _last_line(path: Any, words: tuple = ("FAIL", "ERROR", "Error", "error:")) -
     return ""
 
 
+# ----------------------------------------------------------------------------- nested checks
+# src/test suites whose one registered case runs a whole nested suite. Its receipt lists every check,
+# and each check becomes a row of its own family. The suite's own row keeps the suite's verdict; these
+# rows only make the individual checks visible, with their own history.
+#   receipt               path of the nested receipt, relative to the suite's artifact_dir
+#   schema                the receipt's "schema" value; anything else is reported, never guessed at
+#   family                family of the check rows (registered in families.json)
+#   out_of_scope_reason   reason shown for each ID the receipt lists in outside_selected_scope
+NESTED_CHECKS: Dict[str, Dict[str, str]] = {
+    "CORE-CHEMICAL-DATABASE-001": {
+        "receipt": "shared-protocol/result.json",
+        "schema": "amps-chemical-database-software-tests-v1",
+        "family": "core-chemical-database",
+        "out_of_scope_reason": "not run by the nightly: --protocol-only leaves out the checks that need a pinned "
+                               "database release (--database-lock) or the original source files; see "
+                               "test/chemical_database/README.md",
+    },
+}
+_CHILD_STATUSES = ("PASS", "FAIL", "ERROR", "SKIPPED")
+
+
+def nested_check_rows(suite: Dict[str, Any], spec: Dict[str, str], base: Path) -> List[Row]:
+    """Rows of the checks listed in a suite's nested receipt (see NESTED_CHECKS).
+
+    base is the report's output directory, for a relative artifact_dir. No receipt is expected when the
+    suite was skipped or the harness reported ERROR, since its own row already says why. Otherwise a
+    missing, unreadable or self-contradictory receipt gives one FAILED row "<suite> checks", so the page
+    never shows fewer checks without saying so.
+    """
+    suite_id = str(suite.get("id"))
+    family = spec["family"]
+    raw = str(suite.get("status", "")).upper()
+
+    def unavailable(why: str) -> List[Row]:
+        return [row(suite_id + " checks", "FAILED", "nested check results unavailable: " + why,
+                    stage="check", family=family)]
+
+    artifact = Path(str(suite.get("artifact_dir") or ""))
+    receipt = (artifact if artifact.is_absolute() else base / artifact) / spec["receipt"]
+    if not suite.get("artifact_dir") or not receipt.is_file():
+        return [] if raw in ("SKIP", "SKIPPED", "ERROR") else unavailable("no receipt {}".format(receipt))
+    try:
+        data = json.loads(receipt.read_text())
+    except (OSError, ValueError) as error:
+        return unavailable("cannot read {}: {}".format(receipt, error))
+    if not isinstance(data, dict) or data.get("schema") != spec["schema"]:
+        return unavailable("{} is not a {} receipt".format(receipt, spec["schema"]))
+    records, counts = data.get("tests"), data.get("counts")
+    excluded = data.get("outside_selected_scope", [])
+    if (not isinstance(records, list) or not all(isinstance(r, dict) for r in records)
+            or not isinstance(counts, dict) or not isinstance(excluded, list)
+            or not all(isinstance(e, str) and e for e in excluded)):
+        return unavailable("{} lacks its check list, counts or out-of-scope list".format(receipt))
+    tally = {s: sum(1 for r in records if r.get("status") == s) for s in _CHILD_STATUSES}
+    if (any(r.get("status") not in _CHILD_STATUSES for r in records) or tally != counts
+            or data.get("executed") != len(records)):
+        return unavailable("{}: check records contradict its counts".format(receipt))
+    names = [str(r.get("test") or "") for r in records] + excluded
+    if not all(names) or len(set(names)) != len(names):
+        return unavailable("{}: a check name is empty or repeated".format(receipt))
+    rows = []
+    for record in records:
+        status = str(record["status"])
+        reason = record.get("reason") or ""
+        if status == "ERROR":
+            reason = "error: " + str(reason or "check reported ERROR")
+        rows.append(row(str(record["test"]), status_of(status), reason, log_src=record.get("log") or "",
+                        family=family))
+    rows += [row(name, "SKIPPED", spec["out_of_scope_reason"], family=family) for name in excluded]
+    return rows
+
+
 # ----------------------------------------------------------------------------- readers
 def src_test_json(ctx: ReadContext) -> List[Row]:
-    """src/test/run_tests.py --json: one row per suite, with its case counts."""
+    """src/test/run_tests.py --json: one row per suite, with its case counts.
+
+    Suites in NESTED_CHECKS also give one row per nested check (nested_check_rows).
+    """
     data = _json(Path(ctx.file))
     base = Path(data.get("output_directory") or Path(ctx.file).parent)
     rows = []
@@ -104,6 +179,9 @@ def src_test_json(ctx: ReadContext) -> List[Row]:
         rows.append(row(str(suite.get("id")), status_of(raw), reason, duration=suite.get("seconds"),
                         cases_total=len(cases) or None, cases_failed=failed if cases else None,
                         log_src=(log if not log or Path(log).is_absolute() else base / log)))
+        spec = NESTED_CHECKS.get(str(suite.get("id")))
+        if spec:
+            rows += nested_check_rows(suite, spec, base)
     for item in data.get("not_executed_suites", []) or []:
         sid = item.get("id") if isinstance(item, dict) else str(item)
         rows.append(row(sid, "FAILED", "not executed by run_tests.py", stage="run"))

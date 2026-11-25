@@ -32,6 +32,32 @@ class RunnerSelection(unittest.TestCase):
         self.assertEqual(selected.countTestCases(), 1)
         self.assertEqual(excluded, [])
 
+    def test_protocol_scope_records_unselected_production_owner(self):
+        class Native(unittest.TestCase):
+            def test_native(self):
+                pass
+
+        class PythonApi(unittest.TestCase):
+            def test_api(self):
+                pass
+
+        class Production(unittest.TestCase):
+            def test_release_a(self):
+                pass
+
+            def test_release_b(self):
+                pass
+
+        owners = (Native, PythonApi, Production)
+        excluded = []
+        selected = runner.select_owner_suites(owners, True, excluded)
+        self.assertEqual(selected.countTestCases(), 2)
+        self.assertEqual(excluded, [Production('test_release_a').id(), Production('test_release_b').id()])
+        excluded = []
+        selected = runner.select_owner_suites(owners, False, excluded)
+        self.assertEqual(selected.countTestCases(), 4)
+        self.assertEqual(excluded, [])
+
     def test_declared_source_classes_are_marked_consistently(self):
         from test_native_cea import ActualSource
         from test_native_exomol import ExoMolRealSource

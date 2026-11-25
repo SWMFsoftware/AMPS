@@ -156,6 +156,27 @@ def select_additional_tests(loaded, protocol_only, excluded):
     return selected
 
 
+def select_owner_suites(owners, protocol_only, excluded):
+    """Load the protocol owner classes for the declared scope, never by outcome.
+
+    ``owners`` is the ordered (NativeProtocol, PythonProtocol, PythonProduction)
+    triple. PythonProduction needs a real staged/installed release
+    (--database-lock), so --protocol-only does not run it. Its method IDs are
+    recorded in ``excluded`` (the receipt's outside_selected_scope), like the
+    authoritative-source classes, so the receipt names every registered method
+    that this scope leaves out.
+    """
+    native, python_protocol, production = owners
+    loader = unittest.defaultTestLoader
+    suite = unittest.TestSuite(loader.loadTestsFromTestCase(owner) for owner in (native, python_protocol))
+    production_tests = loader.loadTestsFromTestCase(production)
+    if protocol_only:
+        excluded.extend(test.id() for test in production_tests)
+    else:
+        suite.addTest(production_tests)
+    return suite
+
+
 def main():
     global OUTPUT
     parser=argparse.ArgumentParser(description=__doc__)
@@ -174,9 +195,8 @@ def main():
         context=Context(OUTPUT,args.database_lock,cxx)
         tests.CONTEXT=context
         with (OUTPUT/'unittest.log').open('w') as log:
-            suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(owner)
-                for owner in ((tests.NativeProtocol,tests.PythonProtocol) if args.protocol_only else
-                              (tests.NativeProtocol,tests.PythonProtocol,tests.PythonProduction)))
+            suite=select_owner_suites((tests.NativeProtocol,tests.PythonProtocol,tests.PythonProduction),
+                                      args.protocol_only,excluded)
             # These registered parser/source-reproduction controls extend the
             # existing shared database case; they do not allocate a lunar U/I ID
             # or make missing source files/physical providers pass.

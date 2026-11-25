@@ -33,10 +33,24 @@ Nightly execution is owned by `CORE-CHEMICAL-DATABASE-001` in
 [`src/test/manifest.json`](../../src/test/manifest.json), which belongs to the
 `nightly` campaign. The `core` entry in
 [`utility/nightly/runners.json`](../../utility/nightly/runners.json) selects
-that campaign. The report shows one CORE suite/case; its nested
+that campaign. The core report has one CORE suite/case; its nested
 `artifacts/CORE-CHEMICAL-DATABASE-001/shared-protocol/result.json` and suite log
 retain every child method and its counts. These checks are separate from the
 26 lunar U-series rows displayed by the nightly `moon` runner.
+
+On the nightly web page (since 2026-11-25) the suite and its checks form the
+group "Core: chemical database":
+
+- The suite row keeps the CORE verdict.
+- Each executed child method is a row with its own status, reason and log.
+- Each `outside_selected_scope` ID is a SKIPPED row saying that the nightly's
+  `--protocol-only` selection leaves it out.
+- A missing or inconsistent receipt shows as a FAILED row
+  `CORE-CHEMICAL-DATABASE-001 checks`.
+
+The nightly reader is `utility/nightly/amps_nightly/readers.py`
+(`NESTED_CHECKS`). These rows only display the receipt: they add no CORE case
+and no test-count contract.
 
 To repeat the actual nightly adapter without running other CORE suites:
 
@@ -51,8 +65,9 @@ To repeat the actual nightly adapter without running other CORE suites:
 `requires_authoritative_source=True` and the four `PythonProduction` methods.
 It therefore does **not** run the explicit real-source, pinned-release,
 installed/relocated SDK, or full acquired-release audits described below.
-Excluded source-method IDs appear in `outside_selected_scope`, rather than
-being reported as executed or passed. Supply the documented original-file
+Excluded source-method IDs, and since 2026-11-25 the four `PythonProduction`
+method IDs, appear in `outside_selected_scope`, rather than being reported as
+executed or passed. Supply the documented original-file
 selectors and lock to the full runner for that separate scope. The scheduled
 nightly tests a committed `master` checkout; uncommitted tests in another
 working tree are not included until published. The November 23 audit and
