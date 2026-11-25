@@ -22,6 +22,24 @@ governance only, not physical qualification.
 The current inventory has 30 explicit component areas: 2 covered and 28 partial;
 the truthful strict completeness failure remains required.
 
+## Moon M3 registry extension (2026-11-25)
+
+Commit e5f2978 extended `APPLICATION-MOON-REGRESSION-001` from U01-U26/I11-I20
+(36 cases) to U01-U26/I11-I24 (40 cases). The local srcMoon registry already
+owned I21-I24. The pin was not updated in that commit, so nightly
+20261125T0200Z correctly reported HARNESS-SELECTION-001 FAIL: it expected
+`[1220, 62, 46]` and found `[1220, 62, 50]`.
+
+- The new declared totals are CORE 62/1220 (unchanged), Enceladus 3/62
+  (unchanged) and Moon 2/50.
+- The Moon pin also fixes each owner's exact IDs from the roadmap's frozen
+  ranges: regression owns MOON-U01-U26 and MOON-I11-I24, and M0 owns
+  MOON-I01-I10. A count alone would accept one ID being exchanged for another.
+- The count assertions now report the observed values when they fail.
+- Campaign membership sets, thresholds and the strict-coverage control are
+  unchanged.
+- Verification is the real 13-case harness.
+
 ## Run the owner or the new coverage case
 
 From the AMPS root:

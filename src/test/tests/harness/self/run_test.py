@@ -345,9 +345,30 @@ def test_selection_contract(context: Dict) -> None:
     # Stage 11 adds the twenty-case immutable material contract owner.
     # Stage 12 adds ten upstream cases to SWCME, and Stage 14 adds ten
     # background-assembly cases to the existing coronal-CME owner.
-    assert [len(item["tests"]) for item in streams] == [62, 3, 2]
-    assert [sum(len(test["selected_cases"]) for _, test in item["tests"])
-            for item in streams] == [1220, 62, 46]
+    # Moon M3 (e5f2978, 2026-11-23) makes the regression owner import the
+    # linked I21-I24 outcomes that srcMoon/test/run_all_test.py already
+    # registers: srcMoon grows from 36 + 10 = 46 to 40 + 10 = 50 cases.
+    suite_counts = [len(item["tests"]) for item in streams]
+    assert suite_counts == [62, 3, 2], "suites per stream: %r" % suite_counts
+    case_counts = [sum(len(test["selected_cases"]) for _, test in item["tests"])
+                   for item in streams]
+    assert case_counts == [1220, 62, 50], "cases per stream: %r" % case_counts
+    # srcMoon test IDs are frozen by its roadmap (U01-U26 stand-alone,
+    # I01-I46 linked). Pin each owner's exact identities from those ranges,
+    # not only their number, so exchanging one ID for another or moving an
+    # ID between the regression and M0 owners cannot pass unnoticed.
+    moon_cases = {test["id"]: set(test["selected_cases"])
+                  for _, test in streams[2]["tests"]}
+    expected_moon_cases = {
+        "APPLICATION-MOON-REGRESSION-001":
+            {"MOON-U%02d" % index for index in range(1, 27)} |
+            {"MOON-I%02d" % index for index in range(11, 25)},
+        "APPLICATION-MOON-M0-001":
+            {"MOON-I%02d" % index for index in range(1, 11)},
+    }
+    assert moon_cases == expected_moon_cases, "srcMoon ownership differs: %r" % {
+        owner: sorted(moon_cases.get(owner, set()) ^ expected)
+        for owner, expected in expected_moon_cases.items()}
     listed = io.StringIO()
     with contextlib.redirect_stdout(listed):
         module.print_tests(
