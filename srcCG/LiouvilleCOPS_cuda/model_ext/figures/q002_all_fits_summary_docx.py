@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/q002_all_fits_summary_docx.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/q002_all_fits_summary_docx.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: c001e300ec5f6e6857f2e6edecc8cc551c6c7ab4fd3462b26e757288ed798253
+# SHA256 of the run copy = SHA256 of this file without these header lines: e610f02aabec5e384d0132424033ca0f4b44e69b47fdceaff0177673f4fdd213
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: ONE Word document summarizing all fits of the new-law round (H2O q_min 0.02 q_max): runs table, A18 summary, overview, per-run and full-set clusters, inspection, old-law appendix (2026-11-20)
 # RUN: separate venv cops_output/tools/docx_venv; check / build / validate in Slurm jobs (HOW-TO-RERUN.md of figures_cluster/12M/q002_all_fits_summary/)
+# CHANGED: 2026-11-21 user decisions 1b / 2b (FINDINGS A21)
 # ==== end of header ====
 """ONE Word document summarizing all fits of the new-law round (H2O q_min = 0.02 q_max), 2026-11-20.
 
@@ -55,7 +56,7 @@ PREV_DOCS = [ROOT + "/stage2_q002_comparison/12M_stage2_q002_comparison.docx",
              ROOT + "/full_sets_stage2_comparison/12M_stage2_full_sets_comparison.docx"]
 NUMTOK = re.compile(r"(?<![A-Za-z_\d.])\d+(?:[.,]\d+)*(?:e[+-]?\d+)?")
 DOC_NAME = "12M_q002_all_fits_summary.docx"
-DOC_DATE = "2026-11-20"
+DOC_DATE = "2026-11-22"
 NEW_LAW = "new law q_min = 0.02 q_max"
 OLD_LAW = "old law q_min = 0.2 q_max"
 NO_LAW = "fit-independent, independent of the H2O law"
@@ -106,6 +107,29 @@ SETS = {}      # run -> full-set folder (or None)
 STEMS = {}     # run -> model_data file stem
 OBS = {}       # cluster id -> observation text
 MISSING_INPUTS = []
+
+
+# switched-off surface, user decision 1b of 2026-11-21 (q002_active_area.py; FINDINGS A21)
+AA = "/data001/highresolu_vt/cops_output/figures_cluster/12M/q002_decisions_20261121/active_area.json"
+
+
+MS_REP = "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/slopetest_q002_f10_pm0.01_tploff_20261122T044019Z/report_137981/slopetest.json"     # multi-start and control fits (FINDINGS A22)
+MS_STA = "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/multistart_q002_f10_pm0.01_tploff_20261122T065041Z/stationarity_137980/stationarity.json"
+
+
+def aa_key(run):
+    key = os.path.basename(SETS[run].rstrip("/")).replace("full_set_q002_", "")
+    return "D2_q002_warm" if key == "D2" else key + "_q002_reg"
+
+
+def offv(run, field="off_T"):
+    return jload(AA)["runs"][aa_key(run)][field]
+
+
+def off(run, field="off_T"):
+    k = aa_key(run)
+    return N.add(run, "share of the seen area switched off (decision 1b): %s" % field, 100.0 * offv(run, field), AA,
+                 "active_area.json:runs/%s/%s" % (k, field), pct)
 
 
 # ------------------------------------------------------------------------------------------------ numbers registry
@@ -651,7 +675,7 @@ def readmes():
 def gsrc(g):
     caps = [caption_of(p) for p in g["paths"].values() if p]
     caps = [c for c in caps if c and os.path.exists(c)]
-    return caps + readmes() + [FINDINGS, OUTVIS]
+    return caps + readmes() + [FINDINGS, OUTVIS, AA]
 
 
 def fig_fallback(g):
@@ -661,7 +685,7 @@ def fig_fallback(g):
 
 
 def front_sources():
-    return readmes() + [MV + "/CAPTIONS.md", FINDINGS, OUTVIS]
+    return readmes() + [MV + "/CAPTIONS.md", FINDINGS, OUTVIS, AA]
 
 
 # ------------------------------------------------------------------------------------------------ document
@@ -883,6 +907,20 @@ def build_doc(out, groups, img, args):
          "every run. Full figure sets found at the build: %d of 10 (%s). Images: downscaled copies (%s); originals "
          "(300 dpi PNG and EPS) with SHA-256 in Appendix B." % (len(have_sets), ", ".join(have_sets) or "none",
                                                                args.img_note), bold_lead="How to read it.")
+    para("The version of 2026-11-20 measured switched-off surface by activity exactly zero. That showed the option-C fits "
+         "as active everywhere, which is wrong: their bounded solver leaves switched-off activity at tiny positive "
+         "values. The numbers now follow the user's decision 1b of 2026-11-21 (FINDINGS A21; Section 2). The map images "
+         "are unchanged: light green in them means exactly zero, and switched-off terrain of the C fits and the imposed "
+         "background of B appear in colour. The statement that the overhang dominance of NG at touchdown is not "
+         "required by the data is also corrected, and the slope statements now name the lower bound of the multipliers.",
+         bold_lead="Correction (2026-11-21).")
+    para("The option-C fit with templates off (C f10/0.01 off) is one local minimum of its problem, not its best solution, "
+         "although it ended on ftol. From other starts the same model has four further solutions with lower objective and "
+         "lower data cost, each with nearly all the seen production on another slope class. Its row, figures and maps "
+         "describe that one solution. Its change against the old law compares two different solutions and is not an "
+         "effect of the law, and the shift of the multipliers with the law is not established either (Section 2, "
+         "'Several solutions'; FINDINGS A22). The other runs were not tested for other solutions.",
+         bold_lead="Correction (2026-11-22).")
 
     # ---------------- runs table
     N.ctx = "2. runs table"
@@ -937,14 +975,14 @@ def build_doc(out, groups, img, args):
     if have_sets:
         para("Facts of the full figure sets (checks/facts.json of each set, full_set_facts.py; n/a: set or value not "
              "present):", size=8.5, bold_lead="")
-        hdr = ["run", "A = 0 on seen area", "Q_H2O 10:33:10 [s^-1]", "from unseen facets", "seen production from >= 60 deg",
+        hdr = ["run", "seen area switched off (decision 1b)", "Q_H2O 10:33:10 [s^-1]", "from unseen facets", "seen production from >= 60 deg",
                "P50 NG union [m^2]", "small lobe late NG / RG (median)", "90-180 deg at last obs. NG / RG"]
         rows = []
         for r in RK:
             if not SETS.get(r):
                 rows.append([r, "no full set"] + [""] * 6)
                 continue
-            rows.append([r, safe(fx, r, ["A_zero", "seen_area"], "share of the seen area with A = 0", pct, 100.0),
+            rows.append([r, safe(off, r, what="switched off (decision 1b)"),
                          safe(fx, r, ["production_seen_unseen", "10:33:10", "Q_H2O_from_vtu"], "Q_H2O total 10:33:10", e2),
                          safe(fx, r, ["production_seen_unseen", "10:33:10", "unseen_share"], "unseen share of Q_H2O", pct,
                               100.0),
@@ -996,8 +1034,9 @@ def build_doc(out, groups, img, args):
          "A18)." % ("%s ... %s" % (min(q.values())[1], max(q.values())[1]), order_text(q), order_text(qs),
                     order_text(ss, reverse=True), order_text(dk, reverse=True), order_text(dks, reverse=True)),
          bold_lead="Source rates.")
-    para("The slope multipliers move with the law in every model with free multipliers (A18): which slope bins carry "
-         "extra activity is not robust to the night-side law. Last fits, new law [old law]:", bold_lead="Multiplier shift.")
+    para("The slope bins with extra activity differ between the old-law and the new-law fit in every model with free "
+         "multipliers (A18). This is not evidence of an effect of the law: one model has several local minima that differ "
+         "in exactly this (A22). Last fits, new law [old law]:", bold_lead="Multiplier shift.")
     rows = []
     for r in RK:
         if sval(r, "mult_40_50") == "":
@@ -1027,10 +1066,56 @@ def build_doc(out, groups, img, args):
         para("Before the late window the big lobe (body) gives a median %s of the modelled NG; in the late window the small "
              "lobe (head) gives NG %s and RG %s. The P50 source-area union of the 95 post-gap NG observations covers %s "
              "m^2. At the last observation (5.5 m) the 90-180 deg (overhang) bin gives %s of the modelled NG and %s of RG: "
-             "FINDINGS A18 reads the NG overhang dominance at touchdown as a property of models with activity on overhangs "
-             "(multiplier or template), not required by the data (checks/facts.json of each set)." % (
+             "the NG overhang dominance at touchdown appears in the models with activity on overhangs (multiplier or "
+             "template); the run without templates has none and also misses the observed NG rise at the end, so the data "
+             "do not show that it is unnecessary (FINDINGS A18, corrected by A21; checks/facts.json of each set)." % (
                  order_text(big, reverse=True), order_text(sml), order_text(smr), order_text(p50), order_text(ovn, reverse=True),
                  order_text(ovr, reverse=True)), bold_lead="Full figure sets.")
+    if have_sets:
+        para("A facet is active if its activity, not counting an imposed floor, exceeds T, the threshold of the project's "
+             "reports: T = %s (a hundredth of the median srcCG activity of the seen facets). A fit fails if more than half "
+             "of the seen area is switched off (user decision 1b, 2026-11-21; FINDINGS A21). The only imposed floor is "
+             "option B's background. Only A and D pass, and they have the two highest data costs of the round." % (
+                 N.add("all", "switched-off threshold T", jload(AA)["T"], AA, "active_area.json:T", "%.4g")),
+             bold_lead="Switched-off surface.")
+        data_table(["run", "switched off (decision 1b)", "with the floor counted", "at T/10", "at 10 T", "result"],
+                   [[r, safe(off, r), safe(off, r, "off_T_floor_counted"), safe(off, r, "off_T0p1"),
+                     safe(off, r, "off_T10"), "pass" if offv(r, "passes") else "fail"] for r in RK if SETS.get(r)],
+                   [1.1, 1.2, 1.2, 1.0, 1.0, 0.8], size=7.5)
+        para("The slope multipliers of every model that has them are bounded below by one (user decision 2026-11-12). "
+             "No slope class can therefore be less active than flat terrain with the same underlying activity. A "
+             "multiplier at or near that bound is not evidence that the class is as active as flat terrain, and a "
+             "small production share of cliffs is not evidence that active cliffs are unnecessary: these fits did not "
+             "test either.", bold_lead="Slopes.")
+        msr = {r["variant"]: r for r in jload(MS_REP)["rows"]}
+        mst = jload(MS_STA)
+        para("Option C, f 10, P_m 0.01, templates off, was refitted from other starts (user decisions of 2026-11-21 and "
+             "2026-11-22). Five solutions with all multipliers free and bounded below by one were found, and each puts "
+             "nearly all the seen production on a different slope class, so the slope class is not measured. The run of "
+             "this document is the one with the highest objective and data cost of the five. All five switch off most "
+             "of the seen surface; with every multiplier held at one the same model does not, at a data cost below A and "
+             "D. Whether cliffs are less active than flat terrain is still open: the fit with a lower bound below one "
+             "did not reach its minimum.", bold_lead="Several solutions (FINDINGS A22).")
+        rows = []
+        for key, sk, lab in (("reference", "reference", "40-50 deg (this document's run)"),
+                             ("ms_only_50_60", "ms_50_60", "50-60 deg"), ("ms_only_60_70", "ms_60_70", "60-70 deg"),
+                             ("ms_only_70_80", "ms_70_80", "70-80 deg (lowest objective)"),
+                             ("ms_only_80_90", "ms_80_90", "80-90 deg (lowest data cost)"),
+                             ("none", "none", "all multipliers held at 1")):
+            rr = msr[key]
+
+            def num(field, fmt, scale=1.0):
+                return N.add("C f10/0.01 off: " + key, "multi-start: " + field, rr[field] * scale, MS_REP,
+                             "slopetest.json:rows[variant=%s]/%s" % (key, field), fmt)
+
+            rows.append([lab, num("objective", e4), num("data_cost", e4),
+                         num("top_class_share_of_seen_production", pct, 100.0) if key != "none" else "-",
+                         "%s %s" % (num("off_seen_1b", pct, 100.0), "pass" if rr["passes_1b"] else "fail"),
+                         num("Q_103310", e2), num("Q_seen_share", pct, 100.0), num("Q_share_over_F_E", pct, 100.0),
+                         "local minimum" if mst[sk]["local_minimum"] else "nearly a minimum"])
+        data_table(["slope class with the seen production", "objective", "data cost", "its share of seen production",
+                    "seen area off (decision 1b)", "Q_H2O 10:33:10 [s^-1]", "seen share of Q", "Q above the energy limit",
+                    "minimum test"], rows, [1.7, 0.85, 0.85, 0.9, 0.9, 0.9, 0.8, 0.9, 1.0], size=7)
     bullet("Not converged: the last fits of %s stopped at max_nfev; reaching max_nfev is not convergence." % ", ".join(maxn),
            lead="Caveats.")
     bullet("kappa at its lower bound in every run (summary.csv kappa_at_bound): the fits prefer the H2O law for the whole "
@@ -1223,7 +1308,8 @@ SECTION_INTRO = {
                   "refitted D2 with the same law as the reference curve (README Notes of each set; in D2's own set both "
                   "curves are the same state).",
     "activity": "The fitted H2O activity factor A of each new-law final state on the seen facets (log classes per panel "
-                "and run; light green = seen with A = 0; grey = not seen during the fit), with the fit-independent "
+                "and run; light green = seen with A exactly 0, which is not the switched-off measure; grey = not seen "
+                "during the fit), with the fit-independent "
                 "effective gravitational slope and cliff templates. In each full set activity/ is a SHA-256-identical copy "
                 "of source_rate_q002/<run>/activity/ (COPIED_FROM_source_rate_q002.txt); each run's figure is shown once.",
     "production_rate": "The H2O production rate F_H2O = q_H2O A per facet with the NEW law (q_min = 0.02 q_max on night "
@@ -1238,11 +1324,15 @@ SECTION_INTRO = {
                             "snapshots and as phase means, with the 50 % / 90 % source-area outlines; log colour range per "
                             "map; facets on overhangs or under other surface layers are not drawn in the lon/lat maps.",
     "cliffs": "How each state uses the effective-gravitational-slope bins of its multipliers (area, multipliers, "
-              "production shares) and the share of the modelled surface pressure from each bin along the descent.",
+              "production shares) and the share of the modelled surface pressure from each bin along the descent. The "
+              "multipliers are bounded below by one, so these fits cannot show a class to be less active than flat "
+              "terrain (Section 2, Slopes).",
     "regions": "Share of the modelled surface pressure from the small lobe (head, with the touchdown point) and the big "
                "lobe (body), and from distance shells around the touchdown point, along the descent.",
     "visibility": "Fit-independent figures (late-visibility templates, effective slope, cliff templates, ground track and "
-                  "impact point); shown once where the PNGs are byte-identical in every set.",
+                  "impact point); shown once where the PNGs are byte-identical in every set. Correction 2026-11-21: the "
+                  "late-visibility templates belong to an earlier base with another gauge position and do not show which "
+                  "facets each gauge saw in these fits (FINDINGS A20).",
     "inspection": "Per run and time: (a, b) the new-law F_H2O and (c, d) the old-law counterpart's F_H2O on ONE set of "
                   "colour classes (so the colours compare directly), (e, f) the new law's illumination factor q/q_max on "
                   "the whole surface. Not for C f10/1e-4 (no old-law maps). The full sets' inspection/ folders are "
@@ -1689,7 +1779,7 @@ def map_about(g):
             if os.path.exists(caption_of(g["paths"][r]))}
     same = len(set(seen.values())) == 1
     law = " F_H2O = q_H2O A with the NEW law q_min = 0.02 q_max (captions)." if g["q"] != "activity" else ""
-    return (first + ". Colour only on the facets seen during the fit (%s%s); light green: seen with %s = 0; grey: not "
+    return (first + ". Colour only on the facets seen during the fit (%s%s); light green: seen with %s exactly 0 (not the switched-off measure); grey: not "
             "seen. Classes scanned per panel and per run (captions; checks/*_class_tables.txt), so the colour scales "
             "differ between the runs.%s" % (list(seen.values())[0] if seen else "n/a",
                                              ", the same in all runs" if same else "; differs between runs",
@@ -1699,7 +1789,7 @@ def map_about(g):
 def map_numbers(g):
     hdr = ["run"]
     if g["q"] == "activity":
-        hdr += ["A = 0 on seen area (facts)", "active seen area (inspection)"]
+        hdr += ["switched off, seen area (decision 1b)", "the same, floor counted"]
     else:
         hdr += ["Q_H2O total [s^-1] (caption)", "seen share of Q", "night + shadow share of Q / of seen Q"]
     for k, panel in g["panels"]:
@@ -1713,10 +1803,8 @@ def map_numbers(g):
             continue
         row = [r]
         if g["q"] == "activity":
-            row.append(safe(fx, r, ["A_zero", "seen_area"], "share of the seen area with A = 0", pct, 100.0))
-            a = ix(r, "103310", ["new", "active_area_fraction_seen"], "active area fraction (seen) 10:33:10 inspection",
-                   pct, 100.0)
-            row.append(a if a else "n/a (no inspection)")
+            row.append(safe(off, r, what="switched off (decision 1b)"))
+            row.append(safe(off, r, "off_T_floor_counted", what="switched off, floor counted"))
         else:
             row.append(safe(qcap, r, g))
             s = ix(r, g["t"], ["new", "seen_share_of_Q"], "seen share of Q_H2O at %s" % tt(g), pct, 100.0)
@@ -1745,12 +1833,12 @@ def map_compare(g):
         az = {}
         for r in hv:
             try:
-                az[r] = (fxv(r, ["A_zero", "seen_area"]), fx(r, ["A_zero", "seen_area"], "share of the seen area with A = 0",
-                                                             pct, 100.0))
+                az[r] = (offv(r), off(r))
             except (KeyError, OSError):
                 pass
         if az:
-            out.append("Share of the seen area with A = 0 (light green; facts.json): %s." % order_text(az, reverse=True))
+            out.append("Share of the seen area switched off (decision 1b; the light green of the maps is exact zero only): %s."
+                       % order_text(az, reverse=True))
     else:
         q = {}
         for r in hv:

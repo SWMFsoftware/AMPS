@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-20, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/full_set_q002.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/full_set_q002.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 3619181a95904ef96dfdf96153d919411ed944f960ac2540d0ce3aad291ac374
+# SHA256 of the run copy = SHA256 of this file without these header lines: 5c5eb5cf6c893efb4022ce345b2bd10894ad828263fd1279e0b516b12028344e
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: full figure sets of the ten new-law (H2O q_min = 0.02 q_max) states: spec, publication figures and copies of
 #   the source-rate products (prepare), submission (full_set_submit.sh), finish and docs (2026-11-20)
 # RUN: full_set_q002.py spec | prepare (srun CPU) | submit | finish (jobs/full_set_q002_finish.sbatch) | docs
+# CHANGED: 2026-11-23 full set of the all-held candidate: --spec; the publication HOW-TO date and reason from the spec
 # ==== end of header ====
 """Full figure sets of the ten NEW-LAW states (H2O q_min = 0.02 q_max; 2026-11-20, lead; user: "prepare the full set of
 plots for the last round of fits with the fixed surface source distribution"). The sets are made exactly like the
@@ -236,11 +237,14 @@ def prepare(spec, keys):
                 shutil.copy2(S / f, pub / "code" / f)
             subprocess.run(["bash", "-c", "cd '%s' && sha256sum * > SHA256SUMS" % (pub / "code")], check=True)
             (pub / "HOW-TO-RERUN.md").write_text(
-                "# How to rerun: publication figure, COPS and %s NG / RG vs altitude\n\nWritten 2026-11-20 (CST) for "
-                "../full_set_%s/ (lead 2026-11-20: full sets of the new-law states). Same figure style and scripts as "
+                "# How to rerun: publication figure, COPS and %s NG / RG vs altitude\n\nWritten %s for "
+                "../full_set_%s/ (%s). Same figure style and scripts as "
                 "../publication_stage2_softplus_reg/ (unchanged). Law: %s. State: %s.\n\n```bash\ncd %s\n%s -W ignore %s "
                 "%s %s\nMPLBACKEND=Agg %s -W ignore %s --table %s --out %s\n```\n\nCode: code/ (SHA256SUMS).\n" % (
-                    sp["model_name"].split(",")[0], k, LAW, sp["state"], APP, PY, S / "positive_table.py", ftdir,
+                    # 2026-11-23: date and reason from the spec (optional "written", "pub_reason"; absent: the 2026-11-20 texts)
+                    sp["model_name"].split(",")[0], sp.get("written", "2026-11-20 (CST)"), k,
+                    sp.get("pub_reason", "lead 2026-11-20: full sets of the new-law states"), LAW, sp["state"], APP, PY,
+                    S / "positive_table.py", ftdir,
                     pub / e["PUBTABLE"], PY, S / "pub_ng_rg_altitude.py", pub / e["PUBTABLE"], pub / e["PUBSTEM"]))
         O = F12 / ("full_set_%s" % k)
         src = F12 / "source_rate_q002" / sp["srkey"]
@@ -300,6 +304,8 @@ def main():
     ap.add_argument("--key", default=None)
     ap.add_argument("--job-set4", default=None)
     ap.add_argument("--dry-run", action="store_true")
+    # 2026-11-23 (all-held candidate's full set): another spec file (a new dated file; the 2026-11-20 one is not edited)
+    ap.add_argument("--spec", default=str(SPEC))
     a = ap.parse_args()
     if a.cmd == "spec":
         if SPEC.exists():
@@ -310,7 +316,7 @@ def main():
                                     "sets": sets}, indent=1) + "\n")
         print("wrote %s (%d sets)" % (SPEC, len(sets)))
         return 0
-    spec = json.load(open(SPEC))
+    spec = json.load(open(a.spec))
     keys = a.keys.split(",") if a.keys else list(spec["sets"])
     if a.cmd == "prepare":
         prepare(spec, keys)
@@ -322,7 +328,7 @@ def main():
         e["JOB_SET4"] = a.job_set4
         sh(["bash", str(J / "finish_full_set.sh")], env=e)
     elif a.cmd == "docs":
-        sh([PY, str(S / "full_set_docs.py"), "--spec", str(SPEC), "--key", a.key])
+        sh([PY, str(S / "full_set_docs.py"), "--spec", str(a.spec), "--key", a.key])
     return 0
 
 

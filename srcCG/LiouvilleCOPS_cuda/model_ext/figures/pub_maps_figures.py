@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/pub_maps_figures.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/pub_maps_figures.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 38ab4904bc80ba8e87fa3290e990bf6ba1760ac869b510f540f5952f03df2ba1
+# SHA256 of the run copy = SHA256 of this file without these header lines: 7057d0cf1c594344d469bb066624efb1106d29be3a2d584e4d275b6222ac2dfa
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: full / version-2 maps helper; 2026-11-17: bin_edges_from_meta and multiplier_bounds (exports of option C and
 #   D2; nonneg fits unchanged); 2026-11-18: H2O night-side fix (q_min/q_max 0.2 -> 0.02 as srcCG): caption q_min,H2O /
@@ -10,6 +10,7 @@
 #   unchanged, tested)
 # RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh); the new-law source-
 #   rate sets (jobs/source_rate_q002.sbatch)
+# CHANGED: 2026-11-23 full set of the all-held candidate: multipliers held by the slope test are not listed as free
 # ==== end of header ====
 """Publication template and ground-track figures of ONE fitted state with the surface coloured by its H2O activity
 or by its production rate (H2O, CO2, total) instead of the late-visibility (NG-only / RG-only) facets.
@@ -170,7 +171,11 @@ def multiplier_bounds(fit_dir):
     if "multipliers" in man and "slope_mult_min" in man:
         with np.load(Path(fit_dir) / "nonneg_facets.npz", allow_pickle=False) as z:
             bn = json.loads(str(z["meta_json"]))["bin_names"]
-        return [("c_" + bn[k], float(man["multipliers"][k]), float(man["slope_mult_min"])) for k in range(1, len(bn))]
+        # 2026-11-23 (full set of the all-held candidate): multipliers held by --slope-test --hold-mult are not free
+        st = man.get("slope_test") or {}
+        held = set(st.get("held_at_1", [])) | set(st.get("held_values", {}))
+        return [("c_" + bn[k], float(man["multipliers"][k]), float(man["slope_mult_min"])) for k in range(1, len(bn))
+                if bn[k] not in held]
     return []
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/model_ext/localnn_fit.py (on Voyager: /data001/highresolu_vt/cops_output/model_ext/localnn_fit.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: e553bcd74384cf83fcbcb372a08edfb65de65945058a9ea2e470825098531092
+# SHA256 of the run copy = SHA256 of this file without these header lines: fe4b6c5e24c04558dfa50aa427a3a794cafbd2a3be84401975978b8e3b880bf8
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: driver (option C): verify (D2 and c9 reproduced), start (NNLS projection of D2 or --start state: another
 #   fit's end point; lambda rule), fit (scipy TRF, segments with wall-time stop / exit 75, products fit_result.txt,
@@ -16,6 +16,8 @@
 #   of 2026-11-15..17 failed test_localnn check 5 at the D2-projection start (6.0e-3 / 9.4e-3), the analytic
 #   Jacobian is unchanged and right.
 # RUN 2026-11-18: localnn_s2jc3_20261118T081235Z, localnn_s2law_20261118T081952Z; tests 136504, 136507.
+# CHANGED: 2026-11-21 opt-in --slope-test (user decision 3c); default path unchanged
+# CHANGED: 2026-11-22 --hold-mult BIN=V (cliff test); without it unchanged
 # ==== end of header ====
 """Option C (local non-negative basis, user 2026-11-14): driver. CPU only; the model and the cost are in
 localnn_problem.py, the design matrices come from localnn_design.py, the grid from localnn_mesh.py.
@@ -303,6 +305,61 @@ def cmd_start(args):
 
 
 # ------------------------------------------------------------------------------------------------ fit
+def slope_test_setup(args, P, x_start):
+    """2026-11-21, user decision 3c (does the fit need the slope multipliers?): (record, indices of the held
+    multipliers). --slope-test only; without it (None, []) and the fit is the previous one.
+    2026-11-22, cliff test (user "prepare the cliff test"): BIN=V holds at V, 0 < V <= 1, instead of 1. The start may
+    have 1 or V there; V is imposed on the start (x_start is changed in place) and becomes that bin's lower bound."""
+    if not getattr(args, "slope_test", False):
+        return None, []
+    names, value = [], {}
+    for item in (n for n in (args.hold_mult or "").split(",") if n):
+        name, eq, text = item.partition("=")
+        try:
+            v = float(text) if eq else 1.0
+        except ValueError:
+            v = 0.0
+        if not 0.0 < v <= 1.0:
+            raise SystemExit("--hold-mult %s: the held value must be in (0, 1]" % item)
+        names.append(name)
+        value[name] = v
+    free_bins = list(lp.BIN_NAMES[1:])
+    bad = sorted(set(n for n in names if n not in free_bins or names.count(n) > 1))
+    if bad:
+        raise SystemExit("--hold-mult: %s; the bins are %s, each once" % (bad, free_bins))
+    idx = sorted(P.im.start + free_bins.index(n) for n in names)
+    vals = [value[free_bins[k - P.im.start]] for k in idx]
+    if any(x_start[k] not in (1.0, v) for k, v in zip(idx, vals)):
+        raise SystemExit("--hold-mult: the start has neither 1 nor the held value there")
+    rec = {"decision": "user 2026-11-21, 3c", "held_at_1": [n for n in free_bins if value.get(n) == 1.0],
+           "slope_mult_min": float(args.slope_mult_min)}
+    if any(v != 1.0 for v in vals):
+        rec["held_values"] = {n: value[n] for n in free_bins if n in names and value[n] != 1.0}
+        rec["decision"] = "user 2026-11-22, cliff test"
+        P.hold_values = np.array(vals)
+        x_start[idx] = P.hold_values
+        P.lo[idx] = P.hold_values
+    return rec, idx
+
+
+def reduced_problem(P, x0, hold):
+    """(fun, jac, x0, bounds, expand) over the parameters that are not held; hold [] = the problem itself."""
+    if not hold:
+        return P.fun, P.jac, x0, (P.lo, P.hi), lambda y: y
+    free = np.ones(len(x0), bool)
+    free[hold] = False
+    full = np.array(x0, float)
+    full[hold] = getattr(P, "hold_values", 1.0)
+
+    def expand(y):
+        x = full.copy()
+        x[free] = y
+        return x
+
+    return ((lambda y: P.fun(expand(y))), (lambda y: P.jac(expand(y))[:, free]), full[free],
+            (P.lo[free], P.hi[free]), expand)
+
+
 def cmd_fit(args):
     t0 = time.time()
     out = Path(args.out)
@@ -336,6 +393,8 @@ def cmd_fit(args):
                             "rule_sha256": lp.sha256_file(args.smooth_rule_file), "rule_record": rule})
     design, D = common(args)
     P, grid = make_problem(args, design, D, templates, lam)
+    stest, hold = slope_test_setup(args, P, x_start)
+    P.hold_mult = hold
     if list(st_meta.get("data", {}).get("late_layout", {}).items()) and st_meta["data"]["t_end_et"] != D.et_end:
         raise SystemExit("the start's data layout differs")
     segs = sorted(int(m.group(1)) for m in (re.match(r"^seg(\d\d)$", p.name) for p in out.iterdir()) if m)
@@ -355,6 +414,8 @@ def cmd_fit(args):
                 raise SystemExit("resume: %s differs from %s" % (key, prev))
         if float((pm.get("mult_penalty") or {}).get("f_m", 0.0)) != float(args.mult_penalty_f):
             raise SystemExit("resume: --mult-penalty-f differs from %s" % prev)
+        if pm.get("slope_test") != stest:
+            raise SystemExit("resume: --slope-test / --hold-mult / the bound differ from %s" % prev)
         if (pm.get("held") or {}).get("sha256") != (P.held_record or {}).get("sha256"):
             raise SystemExit("resume: the held term differs from %s" % prev)
         nfev_used = int(pm["nfev_total"])
@@ -362,6 +423,8 @@ def cmd_fit(args):
     settings_key = {"lambda_C": lam, "templates": args.templates, "mult_penalty_f": float(args.mult_penalty_f),
                     "start_file": str(Path(args.start_file).resolve()),
                     "held_sha256": (P.held_record or {}).get("sha256"), "max_nfev": args.max_nfev}
+    if stest is not None:
+        settings_key["slope_test"] = stest
     ckpath = out / "checkpoint.npz"
     resumed_ck = None
     if ckpath.exists():
@@ -401,6 +464,11 @@ def cmd_fit(args):
             raise SystemExit("Jacobian check failed")
     else:
         chk = None
+    if stest is not None:
+        say("slope test (3c): held at 1: %s%s; lower bound of the others %g; %d parameters free" % (
+            ",".join(stest["held_at_1"]) or "none",
+            "".join("; held at %g: %s" % (v, n) for n, v in stest.get("held_values", {}).items()),
+            args.slope_mult_min, len(x0) - len(hold)))
     P.deadline = (t0 + args.wall_time) if args.wall_time else None
     dev_rec = None
     if getattr(args, "device", "cpu") == "gpu":
@@ -417,10 +485,11 @@ def cmd_fit(args):
         P.checkpoint = {"every": int(args.checkpoint_every), "write": write_ck}
     stop, res = None, None
     t1 = time.time()
+    fun, jac, y0, bounds, expand = reduced_problem(P, x0, hold)
     try:
-        res = least_squares(P.fun, x0, jac=P.jac, bounds=(P.lo, P.hi), x_scale="jac", method="trf",
+        res = least_squares(fun, y0, jac=jac, bounds=bounds, x_scale="jac", method="trf",
                             tr_solver="exact", ftol=lp.TOL, xtol=lp.TOL, gtol=lp.TOL, max_nfev=budget, verbose=0)
-        x = res.x
+        x = expand(res.x)
         stop = "optimizer"
     except lp.WallTime:
         x = P.best[1]
@@ -451,6 +520,8 @@ def cmd_fit(args):
                                                            "mult_penalty") if k in c_start},
             "cost_at_segment_start": {k: c_seg0[k] for k in ("data_cost", "crossing_cost", "penalty", "objective",
                                                               "mult_penalty") if k in c_seg0}}
+    if stest is not None:
+        info["slope_test"] = stest
     if P.held_record is not None:
         info["held"] = P.held_record
     if dev_rec is not None:
@@ -580,7 +651,8 @@ def write_products(stage, args, P, D, design, grid, x, cst, rows, info, template
     tol = 1e-8
     act_bounds = {"c_at_lower_bound": int(np.sum(x[P.ic] - P.lo[P.ic] <= tol)),
                   "multipliers_at_lower_bound": [lp.BIN_NAMES[1 + k] for k in range(lp.NBINS - 1)
-                                                 if x[P.im][k] - P.lo[P.im][k] <= tol * max(1.0, P.lo[P.im][k])],
+                                                 if P.im.start + k not in getattr(P, "hold_mult", ())
+                                                 and x[P.im][k] - P.lo[P.im][k] <= tol * max(1.0, P.lo[P.im][k])],
                   "kappa_at_0": bool(x[P.ik] <= tol), "grain_A_at_0": bool(x[P.iA] <= tol),
                   "grain_B_at_0": bool(x[P.iB] <= tol)}
     if np.any(x < P.lo) or np.any(x > P.hi):
@@ -673,11 +745,18 @@ def write_tables(stage, args, D, rows, x, meta):
 
 def write_result(stage, args, P, D, x, cst, meta):
     c, m, kappa, A, B = P.unpack(x)
+    hold = getattr(P, "hold_mult", [])
+    mdef = "six free >= %g" % args.slope_mult_min
+    if hold:
+        mdef = "also held at 1 (slope test 3c): %s%s; %d free >= %g" % (
+            ", ".join(meta["slope_test"]["held_at_1"]),
+            "".join("; held at %g (cliff test): %s" % (v, n) for n, v in meta["slope_test"].get("held_values", {}).items()),
+            lp.NBINS - 1 - len(hold), args.slope_mult_min)
     L = ["# LiouvilleCOPS local non-negative basis fit (option C; model_ext/localnn_fit.py, %s)" % lp.PARAMETERIZATION,
          "# run: %s" % Path(args.base).resolve(),
          "# A_e = m_b(e) (sum_j c_j phi_j(e) + TS_e), c_j >= 0; %d hat functions (grid %s); templates %s; multipliers: "
-         "slope_00_40 held at 1, six free >= %g; T held %s; kappa >= 0; grain A, B >= 0; crossing weight %g; W10x5 from %s" % (
-             P.n, meta["grid"]["path"], args.templates, args.slope_mult_min, list(lp.USER_T0), lp.CROSSING_WEIGHT,
+         "slope_00_40 held at 1, %s; T held %s; kappa >= 0; grain A, B >= 0; crossing weight %g; W10x5 from %s" % (
+             P.n, meta["grid"]["path"], args.templates, mdef, list(lp.USER_T0), lp.CROSSING_WEIGHT,
              lp.pp.LATE_START_UTC),
          "# data: %d NG, %d RG points; misfit: log residuals, equal weight per gauge (fit_cops); costs = 0.5 sum r^2" % (
              D.NNG, D.NRG),
@@ -708,7 +787,7 @@ def write_result(stage, args, P, D, x, cst, meta):
          "# parameter  start  fitted  lower_bound"]
     xs = np.asarray(np.load(Path(args.start_file) / "start.npz")["x0"])
     for k in list(range(P.im.start, len(x))):
-        L.append("%-22s %+.9e %+.9e %g" % (P.names[k], xs[k], x[k], P.lo[k]))
+        L.append("%-22s %+.9e %+.9e %s" % (P.names[k], xs[k], x[k], "held" if k in hold else "%g" % P.lo[k]))
     L.append("# c_j (activity units, = A_s x_c): sum %.6e, max %.6e, nodes > 0: %d of %d" % (
         float(np.sum(c)), float(np.max(c)), int(np.sum(x[P.ic] > 1e-8)), P.n))
     L += ["Tmax %.6f" % lp.USER_T0[0], "T75 %.6f" % lp.USER_T0[1], "Tmin %.6f" % lp.USER_T0[2], "kappa %.6e" % kappa]
@@ -808,10 +887,25 @@ def main(argv=None):
     pf.add_argument("--device", choices=("cpu", "gpu"), default="cpu",
                     help="gpu (lead / user 2026-11-15 'option 3'): the design products and TRF's SVD on one GPU "
                          "(localnn_gpu_solver.py, CuPy FP64); cpu (default) = the previous path, bitwise")
+    pf.add_argument("--slope-test", action="store_true",
+                    help="slope-effect control fit (user 2026-11-21, decision 3c): allows --hold-mult, or "
+                         "--slope-mult-min in (0, 1]; not both, and CPU only. Not for production fits")
+    pf.add_argument("--hold-mult", help="with --slope-test: comma list of slope bins (slope_40_50, ...) held at 1, or "
+                    "BIN=V held at V in (0, 1] (cliff test, 2026-11-22)")
     pf.add_argument("--gpu-svd-mode", choices=("qr", "gesvd"), default="qr",
                     help="with --device gpu: SVD of J_augmented as QR + SVD(R) (qr) or cuSOLVER gesvd directly")
     args = ap.parse_args(argv)
-    if getattr(args, "slope_mult_min", 1.0) != 1.0:
+    if getattr(args, "slope_test", False):
+        # 2026-11-21, user decision 3c: control fits only; everything else keeps the bound 1 below
+        if not 0.0 < args.slope_mult_min <= 1.0:
+            raise SystemExit("--slope-test: --slope-mult-min must be in (0, 1] (P_m needs ln m)")
+        if args.hold_mult and args.slope_mult_min != 1.0:
+            raise SystemExit("--slope-test: either --hold-mult or a lower bound below 1, not both")
+        if args.device != "cpu":
+            raise SystemExit("--slope-test: CPU only (tested there)")
+    elif getattr(args, "hold_mult", None):
+        raise SystemExit("--hold-mult needs --slope-test (user 2026-11-21, decision 3c)")
+    elif getattr(args, "slope_mult_min", 1.0) != 1.0:
         raise SystemExit("--slope-mult-min: the decision is 1 (user 2026-11-12 / the lead 2026-11-14)")
     return {"verify": cmd_verify, "start": cmd_start, "fit": cmd_fit}[args.cmd](args)
 

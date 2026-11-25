@@ -1,0 +1,93 @@
+{
+ "doc": "Runs of the new H2O law (q_min = 0.02 q_max, 2026-11-18) for the source-rate figure sets (source_rate_q002_submit.py). maps = the run's final maps (the chain posts write maps_c5 / c5/maps_ft); old_maps = the old-law counterpart's maps (q_min = 0.2 q_max) for the inspection figure. model_texts: the activity model's description in the captions (null = the softplus text of pub_maps_figures.model_text); {multipliers} is replaced by the fitted slope-bin multipliers. 2026-11-23: + run C_f10_allheld_q002 (the all-held candidate, FINDINGS A23) and model text localnn_allheld.",
+ "law_note": "new H2O law q_min 0.02 q_max (srcCG's value, the night-side fix of 2026-11-18); every fit and figure before 2026-11-18 used q_min 0.2 q_max (not intended)",
+ "model_texts": {
+  "softplus": null,
+  "clipped": "Its H2O activity factor is the clipped linear activity A = max(0, Y a + A_s sum_k c_k T_k): Y a the spherical-harmonic expansion (25 coefficients, degree <= 4), T_k the cliff template (slope >= 60 deg; its coefficient c_cliff fitted, >= 0) and the six fine-tuning correction templates ft_c1..ft_c6 of earlier fits (held at 1), A_s the enhancement scale; no slope multipliers and no fine tuning (the D2 export gives the tools this A with multipliers 1). The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+  "sos": "Its H2O activity factor is the sum-of-squares model (option A) A = m_b (|L^T y|^2 / A_s + A_s T) exp(h): y the 25 real spherical harmonics (degree <= 4), L a 25 x 3 lower-trapezoidal coefficient matrix (rank 3), A_s D2's enhancement scale, T the sum of the six held correction templates, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+  "background": "Its H2O activity factor is the background model (option B) A = m_b (A_bg A_orig + s ln(1 + exp(L/s))) exp(h): A_orig the srcCG activity map, A_bg the fitted background level (lower bound 1e-2), L = Y a + A_s T (the spherical-harmonic expansion, 25 coefficients, plus the six held correction templates times D2's enhancement scale A_s), s = 1e-5 A_orig, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+  "logspread": "Its H2O activity factor is the log-spread model (option D) A = m_b (A_orig exp(u) + A_s T) exp(h): A_orig the srcCG activity map, u = Y a / A_s the spherical-harmonic expansion (25 coefficients) over D2's enhancement scale A_s (spread penalty f 0.1), T the sum of the six held correction templates, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+  "localnn_tplon": "Its H2O activity factor is the local non-negative basis (option C) A = m_b (sum_j c_j phi_j + A_s sum_k ft_ck) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), ft_ck the six held correction templates times D2's enhancement scale A_s, m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+  "localnn_tploff": "Its H2O activity factor is the local non-negative basis (option C, templates off) A = m_b (sum_j c_j phi_j) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f, multiplier penalty f_m), m_b the multiplier of the facet's effective-gravitational-slope bin ({multipliers}), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A.",
+  "localnn_allheld": "Its H2O activity factor is the local non-negative basis (option C, templates off) with every slope multiplier held at 1, A = (sum_j c_j phi_j) exp(h): phi_j piecewise-linear hat functions of a coarse triangulation of the surface with coefficients c_j >= 0 (smoothness penalty f 10; no slope dependence and no multiplier penalty), h the accumulated per-facet fine-tuning term. The emitted H2O flux is F_H2O = q_H2O A; the code gives units only to F (m^-2 s^-1), not separately to q and A."
+ },
+ "runs": {
+  "D2_q002_warm": {
+   "model": "clipped",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2_q002_warm/maps",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/clip_refit/D2/maps",
+   "model_name": "the clipped activity model D2 refitted with the new H2O law (q_min 0.02 q_max; D2_q002_warm: warm start from D2, one segment of 4000 evaluations, stopped at max_nfev, not converged; the earlier D2 fit and its figures used q_min 0.2 q_max)",
+   "old_name": "the old-law D2 (the clipped activity model refitted on the lategrid base with q_min 0.2 q_max; figures_cluster/12M/full_set_D2)"
+  },
+  "softplus_q002_reg": {
+   "model": "softplus",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_q002_smm1_20261118T193956Z/maps_c5",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/softplus/stage2r_smm1_20261116T160802Z/maps_c5",
+   "model_name": "the softplus activity model refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain stage2r_q002_smm1, final state after 5 fit and fine-tuning cycles (the earlier chain and its figures used q_min 0.2 q_max)",
+   "old_name": "the old-law softplus regularized stage-2 chain (q_min 0.2 q_max; figures_cluster/12M/full_set_stage2_softplus_reg)"
+  },
+  "A_q002_reg": {
+   "model": "sos",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_q002_r3_20261118T193956Z/maps_c5",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/sos/stage2r_r3_20261116T160802Z/maps_c5",
+   "model_name": "the sum-of-squares activity model (option A, rank 3) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain stage2r_q002_r3, final state after 5 fit and fine-tuning cycles (the earlier chain and its figures used q_min 0.2 q_max)",
+   "old_name": "the old-law option A regularized stage-2 chain (q_min 0.2 q_max; figures_cluster/12M/full_set_stage2_A_reg)"
+  },
+  "B_q002_reg": {
+   "model": "background",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z/maps_c5",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/background/stage2r_bg1e-2_20261116T160802Z/maps_c5",
+   "model_name": "the background activity model (option B, A_bg >= 1e-2) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain stage2r_q002_bg1e-2, final state after 5 fit and fine-tuning cycles (the earlier chain and its figures used q_min 0.2 q_max)",
+   "old_name": "the old-law option B regularized stage-2 chain (q_min 0.2 q_max; figures_cluster/12M/full_set_stage2_B_reg)"
+  },
+  "D_q002_reg": {
+   "model": "logspread",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_q002_f0.1_20261118T193956Z/maps_c5",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/logspread/stage2r_f0.1_20261116T160802Z/maps_c5",
+   "model_name": "the log-spread activity model (option D, f 0.1) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain stage2r_q002_f0.1, final state after 5 fit and fine-tuning cycles (the earlier chain and its figures used q_min 0.2 q_max)",
+   "old_name": "the old-law option D regularized stage-2 chain (q_min 0.2 q_max; figures_cluster/12M/full_set_stage2_D_reg)"
+  },
+  "C_f1_pm1em4_q002_reg": {
+   "model": "localnn_tplon",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm1e-4_tplon_20261116T055923Z/c5/maps_ft",
+   "model_name": "the local non-negative basis model (option C, f 1, multiplier penalty f_m 1e-4, templates on) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles (the earlier chain and its figures used q_min 0.2 q_max)",
+   "old_name": "the old-law option C (f 1, f_m 1e-4) regularized stage-2 chain (q_min 0.2 q_max; figures_cluster/12M/full_set_stage2_C_f1_pm1em4_reg)"
+  },
+  "C_f10_pm1em4_q002_reg": {
+   "model": "localnn_tplon",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm1e-4_tplon_20261118T162407Z/c5/maps_ft",
+   "old_maps": null,
+   "model_name": "the local non-negative basis model (option C, f 10, multiplier penalty f_m 1e-4, templates on) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles (the earlier chain used q_min 0.2 q_max; it has no maps)",
+   "old_name": null
+  },
+  "C_f10_pm0p01_q002_reg": {
+   "model": "localnn_tplon",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f10_pm0.01_tplon_20261116T044825Z/c5/maps_ft",
+   "model_name": "the local non-negative basis model (option C, f 10, multiplier penalty f_m 0.01, templates on) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles (the earlier chain and its maps used q_min 0.2 q_max)",
+   "old_name": "the old-law option C (f 10, f_m 0.01) regularized stage-2 chain (q_min 0.2 q_max)"
+  },
+  "C_f1_pm0p01_q002_reg": {
+   "model": "localnn_tplon",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f1_pm0.01_tplon_20261118T162407Z/c5/maps_ft",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f1_pm0.01_tplon_20261116T055923Z/c5/maps_ft",
+   "model_name": "the local non-negative basis model (option C, f 1, multiplier penalty f_m 0.01, templates on) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles (the earlier chain and its maps used q_min 0.2 q_max)",
+   "old_name": "the old-law option C (f 1, f_m 0.01) regularized stage-2 chain (q_min 0.2 q_max)"
+  },
+  "C_f10_pm0p01_tploff_q002_reg": {
+   "model": "localnn_tploff",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_q002_f10_pm0.01_tploff_20261118T162407Z/c5/maps_ft",
+   "old_maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/stage2r_f10_pm0.01_tploff_20261116T044825Z/c5/maps_ft",
+   "model_name": "the local non-negative basis model (option C, f 10, multiplier penalty f_m 0.01, templates off) refitted with the new H2O law (q_min 0.02 q_max), regularized stage-2 chain, final state after 5 fit and fine-tuning cycles (the earlier chain and its maps used q_min 0.2 q_max)",
+   "old_name": "the old-law option C (f 10, f_m 0.01, templates off) regularized stage-2 chain (q_min 0.2 q_max)"
+  },
+  "C_f10_allheld_q002": {
+   "model": "localnn_allheld",
+   "maps": "/data001/highresolu_vt/cops_output/runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/slopetest_c_q002_f10_pm0.01_tploff_20261122T195607Z/chain/c5/maps_ft",
+   "old_maps": null,
+   "model_name": "the local non-negative basis model with all slope multipliers held at 1 (option C, f 10, templates off; the candidate of FINDINGS A23: the same solution from seven starts), new H2O law (q_min 0.02 q_max), chain of 5 fit and fine-tuning cycles, final state",
+   "old_name": null
+  }
+ }
+}

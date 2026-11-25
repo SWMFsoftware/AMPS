@@ -737,6 +737,62 @@ srun -p normal128cores -c 4 --mem=16G -t 00:10:00 $P -I $S check --observations 
 srun -p normal128cores -c 8 --mem=32G -t 00:30:00 bash -c "$P -I $S build --out $OUT --observations $OBS --jobs 8 && $P -I $S validate --out $OUT"
 ```
 
+### 3.20 Plausibility metrics and the Word document on the five most plausible fits (2026-11-21)
+
+* `figures_cluster/12M/q002_plausibility/` (user: "analyze of the fitting cases and range them by physicall plasuablity
+  ..."): `plausibility_q002_metrics.py` (version-controlled copy `figures/`, job `jobs/plausibility_q002_metrics.sbatch`,
+  CPU, 1-2 min) writes `metrics.{json,csv}` (zero / graded active area, effective area, f50/f90, Gini, share of Q_H2O at
+  10:33:10 above the energy limit S0/(r_h^2 dH)); the ranking is in that folder's README.md (FINDINGS A19). No figure.
+* `figures_cluster/12M/q002_top5_models/` (user: "prepare a summary word doc for the 5 models in the table ..."):
+  `q002_top5_figures.py` (job `jobs/q002_top5_figures.sbatch`, CPU, < 1 min) draws, for ranks 1-5, the model/data
+  figures and log residuals with the unchanged `model_obs_figures.py` / `options_residual_figure.py` from the comparison
+  set's model tables (3.16), plus `12M_q002_top5_criteria` (six criteria panels) and `12M_q002_top5_convergence`
+  (data cost per cycle), and writes `numbers.json`; `q002_top5_docx.py` + `q002_top5_content.py` (method text with its
+  sources) build `12M_q002_top5_models.docx` (summary, 2 tables, figures 1-5, the five fits' activity and 10:33:10
+  production-rate maps from their full sets (3.18), methods: forward model and assumptions, what is minimized, the
+  activity models and their numerical differences, results, plausibility). Section 4 (added the same day, user: "enhance the
+  summary: that also should include ground tracks, source rates, quntification of the contribution of different area to
+  the onservations, importance of the cliffs, etc"): `q002_top5_sources_figures.py` (JSON inputs only: the full sets'
+  facts.json and the source_rate_q002 inspection numbers; seconds) writes `figures_sources/` (12M_q002_top5_Q_time,
+  _slope_production, _slope_pressure, _regions_sources, _illumination) and `numbers_sources.json`; the document adds
+  the ground-track / visibility maps (once; identical in all sets), the per-fit late contribution-density and source-area
+  union maps (2-column grids), lobe and slope-bin pressure fractions along the descent, and tables of Q, areas and
+  production per unit area by slope bin. Schema check with the docx skill's
+  `validate.py`; no PDF (no LibreOffice on Voyager). Colours: Okabe-Ito order of `cops_cuda/figures.PALETTE`.
+```bash
+sbatch jobs/plausibility_q002_metrics.sbatch          # out: figures_cluster/12M/q002_plausibility (move old files aside first)
+sbatch jobs/q002_top5_figures.sbatch                  # out: figures_cluster/12M/q002_top5_models/{figures,numbers.json}
+P=/data001/highresolu_vt/cops_output/tools/docx_venv/bin/python
+$P -I figures_cluster/scripts/q002_top5_docx.py --out figures_cluster/12M/q002_top5_models   # or jobs/q002_top5_docx.sbatch
+```
+
+### 3.21 Touchdown source-rate maps and activity against the angle to gravity (2026-11-21)
+
+`figures_cluster/12M/q002_top5_models/slope_activity/` (Section 4.7 of 12M_q002_top5_models.docx). Order:
+```bash
+sbatch jobs/q002_seen_gauges.sbatch            # seen_gauges.npz: per gauge, same row, lit (190 GB pass, 2 min)
+sbatch jobs/q002_slope_activity_pass2.sbatch   # pass2/: statistics per slope class and visibility class, figures
+sbatch jobs/q002_touchdown_maps.sbatch         # maps_fixed/: 400 m x 400 m, slope class + source rate of each fit
+sbatch jobs/q002_slope_matched.sbatch          # matched/: proposed metric, slope_statistics.csv; also remakes 3.20's figures
+sbatch jobs/q002_top5_docx.sbatch              # the document
+```
+Switched off = user decision 1b of 2026-11-21 (FINDINGS A21): activity without the imposed floor <= 1 % of the srcCG median
+of the seen facets; never A == 0, no longer A < k A_u. Redo after a change of fits or of the measure:
+```bash
+sbatch jobs/q002_active_area.sbatch             # 12M/q002_decisions_20261121/active_area.{json,csv}: read by both documents
+sbatch jobs/q002_top5_figures.sbatch            # criteria figure, numbers.json (move the old ones aside first)
+sbatch jobs/q002_top5_docx.sbatch               # five-fit document (move the old one aside first)
+sbatch jobs/q002_all_fits_summary_docx.sbatch   # all-fits document (the job needs a new folder)
+```
+Full set of the all-held candidate (2026-11-23): `figures_cluster/12M/full_set_q002_C_f10_allheld/` (README.txt and HOW-TO-RERUN.md there;
+84 captions, no inspection/ as there is no old-law counterpart; switched-off share by 1b in checks/switched_off_1b.txt).
+Plausibility and ranking of every new-law fit (2026-11-23): `sbatch jobs/plausibility_q002_v2.sbatch` (-> `12M/q002_plausibility/v2_<job>/`),
+the ranking table from its json (README.md of that folder). Cliff test: table, minimum test and verdict `sbatch --export=ALL,RUNROOT=<run root>,TOOLS=<frozen cliff folder>,CONTROLS_C=<c run root> jobs/localnn_cliff_check.sbatch`.
+Follow-up a + c (2026-11-22): table and minimum test `sbatch --export=ALL,RUNROOT=<run root>,TOOLS=<frozen ac folder> jobs/localnn_ac_check.sbatch`
+(-> `<run root>/report_<job>/followup.{csv,json}`). Control fits of decision 3c, results table: `sbatch --export=ALL,RUNROOT=<slopetest run root> jobs/q002_slopetest_report.sbatch`
+(-> `<run root>/report_<job>/slopetest.{csv,json}`; add `,MULTISTART=<multistart run root>` for the refits). A multiplier at its lower bound 1 is not evidence that a class is as active as flat terrain. Slope means
+leave out the 275 template / fine-tuned facets. The touchdown facet is the one nearest the lon/lat ray in the outer layer.
+
 ### 3.6 Other analysis figures and tables
 
 * `figures_cluster/scripts/positive_table.py`, `positive_cycles_table.py`, `finetune_table.py`, `scan_summary.py`:
@@ -1023,3 +1079,6 @@ srun -p normal128cores -c 8 --mem=32G -t 00:30:00 bash -c "$P -I $S build --out 
 * 2026-11-19 (CST): 3.17 Word document clustering the plots of the ten new-law runs (`q002_comparison_docx.py`, separate venv `tools/docx_venv`; `stage2_q002_comparison/`).
 * 2026-11-20 (CST): 3.18 full figure sets of the new-law states (`full_set_q002.py`, `full_set_q002_finish.sbatch`, job-script overrides, `full_set_docs.py` spec fields); §5 decision.
 * 2026-11-20 (CST): 3.19 ONE Word document summarizing all fits of the new-law round (`q002_all_fits_summary_docx.py`, `q002_all_fits_sheets.py`, `figures/data/q002_all_fits_observations_20261120.json`; `q002_all_fits_summary/`).
+* 2026-11-21: 3.20 plausibility metrics (q002_plausibility) and the Word document on the five most plausible fits (q002_top5_models).
+* 2026-11-21: 3.20 section 4 of 12M_q002_top5_models.docx (comet and sources; q002_top5_sources_figures.py).
+* 2026-11-21: 3.21 touchdown source-rate maps, slope / illumination statistics; 3.20's criteria panel (c) corrected.

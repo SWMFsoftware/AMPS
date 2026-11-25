@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-13, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/full_set_facts.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/full_set_facts.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 38453c8a2e17f927ce05fb667d2a0c56e8e78a5526390f548e30000f28ea77d2
+# SHA256 of the run copy = SHA256 of this file without these header lines: 6cade3330572490d2977798a07a443c6ce23211833527e359cd2ffbd31492913
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: Facts of one full figure set computed from its data (2026-11-17)
 # RUN: the full sets of the stage-2 states (jobs/full_set_submit.sh, jobs/finish_full_set.sh)
+# CHANGED: 2026-11-23 full set of the all-held candidate: the sentence for a state with all multipliers held
 # ==== end of header ====
 """Facts of ONE full figure set, computed from its data (2026-11-17, full sets of the stage-2 states; the "Facts" section
 of the c9 set's README.txt was computed by hand from the same products). CPU (reads the final A of the state: srun).
@@ -83,7 +84,11 @@ def main():
             "%s %.4g%s" % (n.replace("c_slope_", "").replace("_", "-"), x, " (at its bound %g)" % lo
                            if x - lo <= 1e-9 * max(1.0, abs(lo)) else "") for n, x, lo in mb) + ".")
     else:
-        L.append("* No slope multipliers (all bins 1).")
+        # 2026-11-23 (full set of the all-held candidate): multipliers held by the slope test are named as such
+        held = (json.load(open(Path(fit) / "fit_manifest.json")).get("slope_test") or {}).get("held_at_1", []) if (
+            Path(fit) / "fit_manifest.json").exists() else []
+        L.append("* Slope multipliers: all %d held at 1 (slope test; none free)." % len(held) if held else
+                 "* No slope multipliers (all bins 1).")
     L.append("* kappa (CO2 scale on the srcCG CO2 map; lower bound 0) = %.3e: at its lower bound (the fits prefer the H2O "
              "law for the whole signal; total pressure only, so this does not measure CO2 as absent)." % kappa)
     # A = 0

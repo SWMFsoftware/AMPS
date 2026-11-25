@@ -10,6 +10,241 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
 
 ## A. Findings
 
+### A25. Plausibility ranking of all new-law fits: the all-held candidate first, A second, D third; every other fit switches off most of the seen surface (2026-11-23)
+
+* **Request** (user 2026-11-23): "update the analysys physical plasuability of each of the fit and range it". 17 fits, one
+  method (job 138119, q002_plausibility/v2_138119/; the ten agree with the map-based numbers to 4e-16).
+* **Rule (proposal):** tiers by the user's criterion 1b and the energy limit (<= 1 % of Q above F_E; the 1 % is mine),
+  then the data cost. Flags only: convergence, old-law templates, unseen share of Q, Q over the day, uniqueness.
+* **Ranking:** 1 all-held candidate (7.62e-3; 35.5 % off; max F 0.004 F_E; 95 % of Q seen; one solution from 7 starts);
+  2 A (9.64e-3; 1.9 % off; 0.35 % of Q above F_E on 4 template facets; 80 % of Q unseen; not converged); 3 D (8.28e-3;
+  14.7 % off, 50.2 % at 10 T; 24 % of Q above F_E); then the fits that fail 1b: within the energy limit the templates-off
+  solutions 70-80, 60-70, 50-60 deg, D2, the 40-50 deg solution; over it C P_m 1e-4 (f10, f1), C f10, the 80-90 deg
+  solution, C f1, softplus, B. Cliff-test fits listed apart (not candidate models).
+* **Meaning.** Keeping the seen surface active costs fit: the candidate's data cost is 3 x the best of the round and its
+  late NG misfit (0.209) the worst of the ranked fits. With a strict energy limit (no facet above F_E) it is the only
+  fit in the first tier. No significance (no noise model); only the candidate and the templates-off model were tested
+  for other solutions.
+* **Evidence.** figures_cluster/12M/q002_plausibility/README.md (UPDATE 2026-11-23), v2_138119/{plausibility_v2.json,
+  ranking_table.md, ranking.json}.
+
+### A24. Cliff test: switching cliffs off costs 4.2 % in data cost, less than switching off the moderate slopes (6.7 %): UNDECIDED by the rules fixed beforehand (2026-11-22)
+
+* **Fits** (user "submit cliff test"; plan PLAN_cliff.md, rules written 14:03 CST before any evaluation): the all-held
+  option C of A23 (f 10, templates off, f_m 0 as all multipliers are held) with the cliff classes (60-180 deg) held at
+  0.01, and as the control the moderate slopes (40-60 deg) held at 0.01; two starts each (the all-held baseline, D2).
+  Jobs 138062-138074, none failed; both starts of each set end at the same state (objective equal to 1e-10), each a local
+  minimum by the second-order test.
+
+  | | data cost | change | objective | rms ln NG / RG | late NG / RG | seen off (1b) | Q [1/s], seen share | cliffs: share of seen production, NG / RG signal |
+  |---|---|---|---|---|---|---|---|---|
+  | baseline (all at 1) | 7.6201e-3 | - | 8.2409e-3 | 0.0998 / 0.0726 | 0.2087 / 0.0607 | 35.5 % | 5.66e24, 94.5 % | 13.3 %, 10.0 / 8.7 % |
+  | cliffs off | 7.9373e-3 | +4.16 % | 8.5785e-3 | 0.1018 / 0.0743 | 0.2085 / 0.0599 | 36.1 % | 5.25e24, 96.4 % | 0.16 %, 0.11 / 0.09 % |
+  | moderate slopes off (control) | 8.1280e-3 | +6.67 % | 8.8509e-3 | 0.1035 / 0.0745 | 0.2116 / 0.0564 | 37.1 % | 5.48e24, 95.4 % | 16.1 %, 12.1 / 10.5 % |
+
+* **By the rules: valid (the held cliffs give 0.16 % < 1 %), UNDECIDED (1 % < 4.16 % < 5 %).** The data cost rises when
+  cliffs are switched off, but by less than when about as much moderate-slope terrain is (40-60 deg gives 16.5 % of the
+  baseline's seen production, the cliffs 13.3 %): nothing in this test shows that cliffs matter more than other terrain.
+  The late misfit hardly changes (late NG 0.2087 to 0.2085): cliffs do not explain the late NG rise in this model.
+* **Limits.** One model (no templates, no slope preference, f 10); no noise model, so the 1 % and 5 % are conventions.
+  The flat terrain of the same 150-m patches takes over part of the cliffs' production (Q -7 %).
+* **Evidence.** runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/clifftest_q002_f10_tploff_20261122T233834Z/ (report_138074/, stationarity_138074/).
+
+### A23. Without slope multipliers option C has one solution from every start tried, also through the chain: a stable candidate that keeps the seen surface active (follow-up c, 2026-11-22)
+
+* **Runs** (user "submit c"; plan PLAN_ac.md): option C f 10, templates off, all multipliers held at 1, SHAP8 12M, new law:
+  six starts (activity maps of the five solutions of A22 with m = 1, and a uniform map; start objectives 0.07 ... 0.49)
+  and the existing fit from D2; then five cycles of fit + fine tuning. Jobs 138027-138047, none failed.
+* **All seven end at the same solution:** objective 8.2408685e-3 (spread 3e-11 relative), data cost 7.6201e-3 (5e-8);
+  coefficients c_j equal to 1e-7 (median) and <= 0.14 % (every c_j above 1e-3 of the largest); ftol or gtol after 30-68
+  evaluations; each a local minimum by the second-order test. The six new starts shared kappa, grain and seen production;
+  the D2 start did not. Seven starts are no proof that the minimum is global.
+* **Chain:** unchanged through five cycles (max |h| 4.8e-4; fits 2-5: 1-3 evaluations).
+* **The state:** 35.5 % of the seen area off (passes 1b; 33.1 ... 43.1 % from T/10 to 10 T), Q 5.657e24 1/s at 10:33:10
+  (94.5 % seen), max F / F_E 0.004, rms ln NG / RG 0.0998 / 0.0726, late 0.2087 / 0.0607. Cliffs (>= 60 deg, 14.6 % of
+  the seen area) give 13.3 % of the seen production and 10.0 / 8.7 % of the modelled NG / RG signal (median row).
+* **By the plan's rules: stable, and a candidate model.** Limits: late NG is its weak point; no templates; smoothness f 10
+  and the temperature law held, other settings not varied; no slope dependence by construction.
+* **Evidence.** runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/slopetest_c_q002_f10_pm0.01_tploff_20261122T195607Z/ (report_138047/, stationarity_138047/, chain/).
+  Full figure set (2026-11-23): figures_cluster/12M/full_set_q002_C_f10_allheld/. Its facts: before the late window NG 93 % from
+  the big lobe; late window small lobe NG 41 %, RG 67 %; P50 source-area union NG 6.2e5 m^2, RG 4.4e5 m^2; >= 60 deg 9 % of
+  the late NG, 6 % of the late RG; overhangs 0 %.
+
+### A22. Option C without templates has five solutions, one per slope class from 40 to 90 deg: the fits do not determine the slope class; without slope multipliers it keeps most of the seen surface active (3c + multi-start, final 2026-11-22)
+
+* **Question and fits** (user decisions 3c with L = 0.01, 2026-11-21, and "multi-start when ready", 2026-11-22). Option C,
+  f 10, P_m 0.01, templates off, new law; reference = the cycle-1 fit of the round (start D2). Eight control fits (all six
+  multipliers held at 1; one class free at a time; all free >= 0.01) and four all-free (>= 1) refits from their end
+  states that were better than the reference (two candidates skipped by the approved rule).
+* **Five solutions of the same problem (six multipliers free, >= 1):**
+
+  | class with the seen production | objective | data cost | m | share of seen production | rms ln NG / RG | late NG / RG | seen off (1b) | Q [1/s], seen share | max F / F_E (share of Q above) | minimum test |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | 40-50 deg (reference) | 6.9499e-3 | 5.6734e-3 | x102 | 92.1 % | 0.0821 / 0.0679 | 0.1879 / 0.1191 | 65.8 % fail | 7.41e24, 90.9 % | 0.172 (0 %) | local minimum |
+  | 50-60 deg | 6.3746e-3 | 4.7846e-3 | x226 | 94.8 % | 0.0753 / 0.0625 | 0.1727 / 0.0952 | 69.4 % fail | 9.00e24, 88.8 % | 0.265 (0 %) | local minimum |
+  | 60-70 deg | 6.1586e-3 | 4.5172e-3 | x242 | 94.2 % | 0.0722 / 0.0618 | 0.1606 / 0.0913 | 62.9 % fail | 9.05e24, 93.4 % | 0.337 (0 %) | local minimum |
+  | 70-80 deg (lowest objective) | 5.9560e-3 | 3.9123e-3 | x614 | 95.9 % | 0.0674 / 0.0573 | 0.1528 / 0.0734 | 67.6 % fail | 1.138e25, 88.0 % | 0.748 (0 %) | local minimum |
+  | 80-90 deg (lowest data cost) | 6.5102e-3 | 3.7569e-3 | x2166 | 97.9 % | 0.0681 / 0.0537 | 0.1630 / 0.0478 | 72.3 % fail | 1.707e25, 76.1 % | 2.78 (23.2 %) | nearly: 4e-8 of the objective left, curvature positive |
+
+  Minimum test (job 137980): no descent on the bounded Gauss-Newton step (<= 1e-10 of the objective) and a positive
+  smallest eigenvalue of the exact Hessian on the free set (checked against differences to 2e-10). All five fail 1b at
+  every threshold from T/10 to 10 T (59.6 ... 82.0 % off). The seen production spans 6.7e24 ... 1.30e25 (x1.9), the total
+  x2.3. The optimizer's ftol says nothing about which of the five it found. Other minima may exist.
+* **What the multipliers buy, against all held at 1** (objective 8.2409e-3, data cost 7.6201e-3): data cost -25.5 %
+  (40-50 deg), -37.2 % (50-60), -40.7 % (60-70), -48.7 % (70-80), -50.7 % (80-90, above the energy limit), -0.05 %
+  (90-180; m 1.20; one start). Any of five classes can take the role, so the class is not measured. Which one has the
+  lowest objective depends on the penalty (the lowest data cost is another one). No significance: no noise model, the
+  shuffled-label test (3d) was not run.
+* **All held at 1: passes 1b.** 35.5 % off (33.1 ... 43.1 % from T/10 to 10 T), a local minimum of its own problem, data
+  cost below A (9.6401e-3) and D (8.2770e-3), Q 5.66e24 (94.5 % seen), max F / F_E 0.004; its late NG fit is worse
+  (0.2087), its late RG fit better (0.0607). One start, no fine tuning, no templates [A23: seven starts and the chain give the same].
+* **Lower bound 0.01: INCONCLUSIVE.** free_min stopped at max_nfev in the 50-60 deg solution (not a minimum; 40-50 deg at
+  0.954) at objective 6.3823e-3, above three of the five solutions, which are feasible for it: it did not find its
+  minimum. The bound 1 is active: in every solution with 40-50 deg at the bound, and in the two with 50-60 deg at the
+  bound (60-70, 70-80), the gradient pushes it below 1.
+* **How far (preview, job 138026: one bounded Gauss-Newton step with the bound 0.01 at each solution, no fit).** 40-50 deg
+  solution: no change (already a minimum with the lower bound). 50-60: m(40-50) 0.95. 60-70: m(40-50) 0.85, m(50-60) 0.99.
+  70-80: m(40-50) 0.79, m(50-60) 0.96. 80-90: m(40-50) 0.91. Decrease available: <= 2.8e-4 of the objective, data cost
+  <= 0.1 %; the promised decrease is available at 0.75-1 of the step, so this previews the minima nearby. No class at
+  60 deg or steeper goes below 1 (those not dominant sit at 1.002-1.03). So a bound below 1 changes little IN THESE FIVE
+  solutions and says nothing about inactive cliffs: there almost all production comes from one class and the others
+  hardly affect the data. That question needs a fit with the cliffs held inactive.
+* **Fine-tuning leverage on the all-held fit (job 138026):** the 271 late facets give 2.2e-4 (mean; max 2.9e-3) of the late
+  NG surface pressure, so a chain is not expected to change its late NG misfit.
+* **Old law against new law, templates off: not a law effect.** The old-law fit (data cost 3.6519e-3, +55.4 % to the new
+  one) sat in the 80-90 deg solution (x1300), the new one in the 40-50 deg one. In the same class the change is +2.9 %
+  (3.7569e-3). The same may hold for f10 (70-80 to 50-60 deg, +12.1 %) and f1 (70-80 to 40-50 deg, +23.5 %) with
+  templates and for the 'multiplier shift' of A18: not tested.
+* **Not converged:** only_40_50, only_50_60, only_80_90 and free_min (max_nfev 4000; 6e-5 ... 2e-3 of the objective still
+  available on one step); only_70_80 has 9e-7 left.
+* **What was wrong in the interim reports (2026-11-21/22):** the reference was taken as the model's solution; "the six
+  multipliers lower the data cost by 25.5 %" and "they raise the switched-off share from 35.5 to 65.8 %" described that
+  solution; "nothing suggests less active cliffs" rested on the unfinished free_min fit. Not a code error: the
+  reference's frozen code and direct facet sums reproduce the better states (jobs 137918, 137980; 2e-16).
+* **Scope.** The other option C fits (templates on, P_m 1e-4), A, B and D were not tested for other minima (one start each).
+* **Evidence.** runs/shap8_012m_lategrid_dz1.5/nonneg/localnn/slopetest_q002_f10_pm0.01_tploff_20261122T044019Z/
+  (report_137981/, state_check_only_80_90_137918/) and multistart_q002_f10_pm0.01_tploff_20261122T065041Z/
+  (stationarity_137980/).
+
+### A21. Switched-off surface by decision 1b: only A and D pass; the fits did not test whether cliffs are less active (correction of A20, A19 and A18's wording; 2026-11-21)
+
+* **Decision (user, 2026-11-21: "as recommended: 1b, 2b, 3c").** A facet is active if its activity, not counting an
+  imposed floor, exceeds T = 2.114e15 = 1 % of the median srcCG AH2O of the seen facets (one value per facet; the threshold
+  of localnn_report.py and nonneg_alt_summary.py since 2026-11-14). More than 50 % of the seen area switched off fails. The
+  only imposed floor is B's m_b A_bg A_orig exp(h) (A_bg = 0.01 = its lower bound). D's spread penalty (no lower bound)
+  and the held templates (0.001 % of the seen area) are not floors.
+* **Seen area switched off:**
+
+  | fit | data cost [1e-3] | off (1b) | floor counted | at T/10 | at 10 T | result |
+  |---|---|---|---|---|---|---|
+  | A | 9.640 | 1.9 % | 1.9 % | 0.1 % | 20.8 % | pass |
+  | D | 8.277 | 14.7 % | 14.7 % | 3.3 % | 50.2 % | pass (on the line at 10 T) |
+  | B | 5.646 | 96.2 % | 44.1 % | 96.2 % | 96.2 % | fail |
+  | C f10/0.01, templates off | 5.673 | 65.8 % | 65.8 % | 63.7 % | 74.4 % | fail |
+  | C f10/0.01 | 3.586 | 80.0 % | 80.0 % | 77.3 % | 87.3 % | fail |
+  | C f1/0.01 | 4.173 | 81.1 % | 81.1 % | 80.2 % | 84.6 % | fail |
+  | C f1/1e-4 | 2.500 | 92.3 % | 92.3 % | 89.1 % | 96.9 % | fail |
+  | C f10/1e-4 | 2.499 | 93.6 % | 93.6 % | 89.0 % | 98.1 % | fail |
+  | D2 | 5.671 | 93.6 % | 93.6 % | 93.6 % | 93.6 % | fail |
+  | softplus | 5.216 | 96.5 % | 96.5 % | 96.5 % | 96.5 % | fail |
+
+* **Consequence.** The two fits that pass have the two highest data costs. D has 24 % of Q above the energy limit (98
+  facets); A exceeds it on the 4 template facets only (0.35 % of Q), is not converged and has 80 % of Q from unseen
+  terrain. B's floor is the only activity above T on 96 % of the seen area and gives about 3 % of the seen production.
+* **What was wrong.** (1) A19 counted exact zeros, although the C reports already gave the active seen area with this
+  threshold (0.20 / 0.19 / 0.34 for f10, f1, templates off). (2) A20's A < k A_u was ad hoc; with it B seemed to pass at
+  k = 1e-6. (3) A20's "60-80 deg = 1.00-1.07 in all five" is the imposed bound m_b >= 1 (user 2026-11-12) or within 7 %
+  of it. Neither "active cliffs are not required by the data" (A19) nor "cliffs are as active as flat terrain" follows:
+  no fit of this round could make a slope class less active than 0-40 deg terrain nearby. (4) A18's "NG overhang
+  dominance at touchdown ... not required by the data" goes too far: the fit without templates has none, and it does
+  not reproduce the NG rise of the last ~20 m.
+* **Evidence.** figures_cluster/12M/q002_decisions_20261121/active_area.{json,csv} (job 137886; B rebuilt from its terms
+  to 5e-16; the C and D2 shares equal the reports'); threshold_options.json (job 137884).
+* **Open (decision 3c).** Control refits of C f10 / 0.01 with the templates off: all multipliers at 1; one class free at a
+  time; all free with the lower bound 0.01 (user 2026-11-21). Done 2026-11-22: A22.
+
+### A20. [THRESHOLD AND CLIFF STATEMENT SUPERSEDED, see A21] CORRECTION of A19, and activity against the angle to gravity: the C fits switch off 63-80 % of the seen surface; the slope effect in the fits equals the fitted multipliers (2026-11-21)
+
+* **Correction of A19.** "Area with A = 0" does not measure switched-off surface: the bounded TRF leaves option C's
+  switched-off coefficients slightly positive. Seen area with A < 1e-6 A_u (< 0.01 A_u; A_u = the uniform activity with
+  the fit's own seen production at 10:33:10): A 0 (3) %, D 1 (29) %, B 1 (58) %, C f10/0.01 off 63 (67) %, C f10/0.01
+  76 (82) %, C f1/0.01 80 (82) %, C P_m 1e-4 86-87 (96-97) %, D2 94 %, softplus 96 %. **The ranking of A19 is
+  withdrawn:** its tier 1 fails the user's criterion; only A passes at every threshold tested [A21: A and D pass, B fails] (worst data cost, not
+  converged). "Active cliffs are not required by the data" (A19 addendum) is withdrawn too. The "A = 0" figures of
+  option C in q002_all_fits_summary and in the full sets' facts.json have the same limitation.
+* **Visibility** (pass over all 4.74e9 kernel records, job 137865). Seen by >= 1 gauge 66.457 % of the area, by NG
+  66.419 %, by RG 66.457 %, by both in the same observation 66.419 %; by both only at different times: none. 99.4 % of
+  the seen area is seen sunlit at least once. The "5,924 NG-only / 29,210 RG-only" late facets of the visibility figures
+  belong to an earlier base and do not hold for base_q002 (late window: 2 / 7 facets).
+* **Angle to gravity, illumination removed** (A = F/q; each slope class against 0-40 deg in the same 150-m patch and
+  diurnal-exposure quintile; 275 template / fine-tuned facets out). Matched ratio = fitted multiplier to ~2 %, A/m_b =
+  0.99-1.02 in every class: C f10 x454 at 50-60, C f1 x99 and C off x102 at 40-50, A x2.34 at 40-50, B x6.7 at 50-60,
+  x8.2 at 80-90, x13 overhangs. 60-80 deg = 1.00-1.07 in all five [at or near the imposed bound 1, not a measurement: A21]. F/cos SZA gives the same when matched; unmatched it
+  departs by up to x1.7 (samples lit facets only, 38 % of the seen area). Same for all visibility classes.
+* **Consequence.** These fits cannot give independent evidence of a slope effect: their only freedom within 150 m is
+  the multiplier. Class and factor differ between fits. A test needs refits against controls (m = 1; one free class;
+  shuffled slope labels): not run, the user's decision.
+* **Template facets.** 275 facets (367 m2) hold 11-39 % of the seen activity of the fits with templates and make the
+  overhang means look x10-270 the flat terrain (x1-8 without them).
+* **Evidence.** figures_cluster/12M/q002_top5_models/slope_activity/ (jobs 137865, 137869, 137870, 137877; matched/,
+  pass2/, maps_fixed/, shutdown_check/).
+
+### A19. [RANKING AND "SURFACE SHUT DOWN" WITHDRAWN, see A20] Physical plausibility of the ten new-law fits: every fit but one exceeds the energy limit somewhere; the best-fitting fits (C, P_m 1e-4) put 83-90 % of Q on impossible fluxes, D2 and softplus switch off >90 % of the surface (2026-11-21)
+
+* **Question** (user 2026-11-21): rank the fits by physical plausibility, with consistency with the observations and
+  "not shutting down most of the surface" as criteria, plus other relevant criteria.
+* **Energy limit (new criterion).** No facet can sublimate more water than the absorbed sunlight pays for:
+  F_E = S0 / (r_h^2 dH) = 1.09e21 m^-2 s^-1 at r_h = 3.833 AU (S0 = 1361 W m^-2, dH = 51.0 kJ/mol, zero albedo, normal
+  incidence, no thermal emission: an upper bound; free sublimation of exposed ice at the subsolar point is 3.7e20,
+  0.34 F_E, with albedo 0.05, emissivity 0.9 and the Murphy & Koop vapour pressure). From the flux maps at 10:33:10:
+  max F_H2O / F_E = 30 (D2), 1230-1590 (softplus, A, B, all C with templates), 5790 (D), 0.17 (C f10 / P_m 0.01 with
+  the templates off, the only fit within the limit everywhere). Share of Q_H2O above F_E: 0 (templates off), 0.12 % (D2),
+  0.35 % (A), 1.1-1.6 % (B, C P_m 0.01), 3.6 % (softplus; 332 m^2), 24 % (D; 511 m^2, overhang multiplier 87),
+  83 % / 90 % (C f10 / f1, P_m 1e-4; 1.2e5 / 1.6e5 m^2, steep-slope multipliers 1e4-1e5).
+* **Template spikes.** The largest activity of every fit with templates sits on the same two facets (11213754,
+  12232930): A = 8e23-1.5e26, 10^5-10^7 x the mean; flux above F_E on 4 facets (1.1 m^2). With the templates off these
+  facets have A = 2e16 and 10. The physical activity templates therefore carry fluxes ~1000 x the energy limit.
+* **Surface shut down.** Area with A = 0: softplus 94 % (softplus underflow), D2 91 %, B and D 0.7 %, others 0. Area with
+  A >= 10 % of the trimmed mean (mean without the most active 1 % of the area), whole surface: A 41 %, C templates off
+  37 %, C f1 / 0.01 28 %, C f10 / 0.01 23 %, D 20 %, D2 8 %, B 7 %, softplus 5.5 %, C P_m 1e-4 2-4 %; B has 84 % of the
+  surface below 1 % of that level.
+* **Other criteria.** Seen share of Q: C P_m 0.01 88-92 %, D 41 %, D2 28 %, B 25 %, A 20 %, softplus 19 %, C P_m 1e-4
+  3-4 % (Q 4.8-6.7e26 s^-1). Q max/min over the 13 map times: C P_m 0.01 1.9-2.3, A 2.8, D 3.1, C P_m 1e-4 6.5-7.1, D2
+  7.9, B 11.8, softplus 15. Kappa is zero in all ten (not discriminating).
+* **Proposed ranking** (figures_cluster/12M/q002_plausibility/README.md; criteria and weights are the user's decision):
+  tier 1 C f10 / P_m 0.01 (data cost 3.59e-3), C f1 / P_m 0.01 (4.17e-3), C f10 / P_m 0.01 templates off (5.67e-3; the
+  only energy-clean fit, but its chain did not move over five cycles); tier 2 A (widest activity, worst fit 9.64e-3, not
+  converged), B (5.65e-3, activity concentrated, Q x11.8); tier 3 (fail a hard test) D2, softplus (surface off), D, and
+  the two C P_m 1e-4 fits (best data cost 2.50e-3, but 83-90 % of Q above the energy limit).
+* **Evidence.** figures_cluster/12M/q002_plausibility/: metrics.json / metrics.csv (job 137799, tool
+  figures_cluster/scripts/plausibility_q002_metrics.py), spike_check (job 137800); fit numbers from
+  model_vs_observations_nonneg_options_stage2_q002/summary.csv; seen shares and Q over the day from
+  full_set_q002_<run>/checks/facts.json.
+* **Caveats.** F_E is a hard bound for steady sublimation driven by the instantaneous sunlight; stored heat or other
+  energy sources are not considered. The trimmed-mean thresholds are a choice (1 % and 10 %). A, B, D2 and C f1 / 1e-4
+  stopped at max_nfev. No independent Q_H2O for 2016-09-30 was used.
+* **Addendum 2026-11-21 (Word document on the five most plausible fits, figures_cluster/12M/q002_top5_models/).**
+  Why the C f10 / P_m 0.01 chain with the templates off did not move after cycle 1 (data cost 5.6734e-3 in every cycle;
+  fine tuning changed it by 1.4e-9, max |delta| 1.05e-3; fits 2-5 stopped after 3 evaluations): without the templates
+  the 271 late-only facets carry only the smooth 150-m field, 2.8e-5 (NG) / 6.8e-5 (RG) of the mean late-window modelled
+  pressure (templates on: 2.3-2.6 % / 3.9-4.2 %; computed for the document with the frozen localnn_problem /
+  localnn_late functions, not in a run file). Even the cap (x100) on all of them would cost P_delta ~ 10 x 4.27e-3 x
+  4.6^2 ~ 0.9, about 160 x the data cost, so the optimum delta is ~0. Its final NG does not follow the observed rise in
+  the last ~20 m. In the C fits the multiplier penalty is the largest penalty (P_m / data cost 0.45, 0.22, 0.16 for
+  f10 on, f1 on, off; c5/fit/final/fit_result.txt); each C fit puts one slope bin far above 1 (x456 at 50-60 deg,
+  x99 and x102 at 40-50 deg). Free fit parameters: A 81, B 35, C 2754 (2745 nodes), D2 29.
+* **Addendum 2026-11-21 (sources of the five most plausible fits, q002_top5_models section 4, numbers_sources.json from the
+  full sets' facts.json).** Robust across C f10 / 0.01 on, C f1 / 0.01 on, C f10 / 0.01 off, A, B: seen production at
+  10:33:10 6.22e24-1.05e25 s^-1 (factor 1.7) while the totals span 7.4e24-4.3e25 (x5.8); NG before the late window
+  ~91-93 % from the big lobe; late window small lobe 26-44 % of NG, 58-69 % of RG, 30-100 m from touchdown 10-18 % /
+  20-32 %; production per unit seen area enhanced on 40-60 deg slopes in every fit (x2.1 A at 40-50, x5.1 B at 50-60,
+  x13 C f10 at 50-60, x10 C f1 and off at 40-50) but the bin is model-dependent; cliffs >= 60 deg (14.6 % of the seen
+  area) give 1.4-3.4 % of the seen production and 0.2-2.7 % of the modelled signal in the C fits, 13 % / 4-9 % in A,
+  28 % / 14-22 % in B (per unit area below average except B x1.9): active cliffs are not required by the data [WITHDRAWN, A20 and A21: not tested]. In the
+  C fits 81-96 % of the pre-gap and late modelled signal comes from the one slope bin with the large multiplier. Dark
+  (night + shadow) share of Q at 10:33:10: C 9.5-10.7 %, A 51 %, B 68 % (69.7 % of the area is dark). P50 source-area
+  union (NG, late): C 1.0-2.9e4 m^2, B 3.9e4, A 7.1e5. Caveat: model results with held old-law templates.
+
 ### A18. CORRECTION: every result so far used H2O q_min = 0.2 q_max; with the intended 0.02 (srcCG) and the activity held fixed every final state misfits, data cost x3.3 to x53 (2026-11-18)
 
 * **Correction notice.** The H2O night-side / cast-shadow production of EVERY fit, map, figure and finding so far
@@ -90,20 +325,22 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   inspect_103310.txt; chains stage2r_q002_f1_pm1e-4_tplon_20261118T162407Z and logspread/stage2r_q002_f0.1_20261118T193956Z):
   C f1 final data cost 2.5005e-3 (+2.7 % vs old law 2.4358e-3); Q_H2O(10:33:10) 6.69e26 (old 3.32e27), seen 2.14e25 =
   3.2 % of Q; night + shadow only 3.7 % of Q (27 % old) and 13.4 % of the seen Q (44 %): C's total is lit unseen steep
-  terrain times the undetermined multipliers, not dark facets; A > 0 on 100 % of the surface. D: every fit ftol, data cost
+  terrain times the undetermined multipliers, not dark facets; A > 0 on 100 % of the surface [A21: exact zeros do not measure switched-off surface]. D: every fit ftol, data cost
   8.388 / 8.359 / 8.307 / 8.283 / 8.277e-3 (+2 % vs old law 8.119e-3). D source rates at 10:33:10 (source_rate_q002/
   D_q002_reg): Q_H2O 3.25e25 (old 2.70e26), seen 41.1 % of Q (5.7 %); night + shadow 80.1 % of Q (97.6 %) and 52.9 % of
   the seen Q (67.6 %): unlike D2, softplus and C, D keeps half of its seen production on dark facets (its activity is
   A_orig exp(u), tied to the srcCG map); D is also the worst fit of the new-law runs so far (data cost 8.28e-3).
   Option C with P_m 0.01, new law (lead 2026-11-18 22:40 CST; chains stage2r_q002_*_pm0.01_*_20261118T162407Z, final
   c5/ft data cost): f10 templates on 3.5863e-3 (old law 3.1996e-3, +12 %), f1 templates on 4.1726e-3 (3.3779e-3, +24 %),
-  f10 templates off 5.6734e-3 (3.6519e-3, +55 %; equal to the new D2, 5.671e-3). So with the stronger multiplier
+  f10 templates off 5.6734e-3 (3.6519e-3, +55 %; equal to the new D2, 5.671e-3) [A22: NOT a law effect, two different
+  minima; +2.9 % within the same slope class]. So with the stronger multiplier
   penalty the law change costs 12-55 %, while with P_m 1e-4 option C absorbs it (+2-3 %) through the steep multipliers.
   Their source rates at 10:33:10 (source_rate_q002/C_*_pm0p01_*/inspection/checks/inspect_103310.txt; new law, old law in
   brackets): f10 on Q_H2O 9.71e24 (1.51e25), seen 88.4 % of Q, dark 9.6 % of Q / 6.1 % of the seen Q (43.6 / 40.8 %);
   f1 on 7.36e24 (1.52e25), seen 92.5 %, dark 10.7 / 7.0 %; f10 off 7.41e24 (1.98e25), seen 90.9 %, dark 9.9 / 5.5 %.
   So with P_m 0.01 option C's total production is ~90 % the production the gauges see, mostly lit: the one family of
-  fits whose total Q (0.74-0.97e25 s^-1) is constrained by the data. D2, softplus, D and C with P_m 1e-4 put 59-97 % of
+  fits whose total Q (0.74-0.97e25 s^-1) is constrained by the data [A22: the templates-off model alone spans
+  0.74-1.71e25 over its five solutions]. D2, softplus, D and C with P_m 1e-4 put 59-97 % of
   Q on unseen terrain (totals 3.1e25 ... 6.7e26). The seen production of all runs is 0.68-2.1e25 s^-1.
   Option B (background bg-min 1e-2) with the new law (lead 2026-11-19 01:25 CST; chain
   nonneg/background/stage2r_q002_bg1e-2_20261118T193956Z; c5 fit max_nfev, not converged; source_rate_q002/B_q002_reg):
@@ -126,7 +363,8 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   10.1]; C f1 / P_m 0.01 99.3 / 1.07 / 1.07 / 1.04 / 1.01 / 1.60 [1 / 1 / 1.02 / 290 / 1.01 / 1.66]; C f10 / P_m 0.01
   1 / 456 / 1.01 / 1.01 / 1.00 / 1.51 [1 / 1 / 1.01 / 759 / 1.00 / 1.50]; C P_m 1e-4 keep their large 70-80 / 80-90
   factors (f10 5.5e4 / 1.8e5, f1 2.5e4 / 8.1e4). So which slope bins carry extra activity (A16) is not robust to the
-  night-side law: the bins with a factor > 1 change in every model with free multipliers. Caveats: several last fits at
+  night-side law: the bins with a factor > 1 change in every model with free multipliers [A22: can equally be different
+  local minima; the law was not isolated]. Caveats: several last fits at
   max_nfev (A, B, C f1 / 1e-4); the multipliers of C at P_m 1e-4 are undetermined (A12); bin factors trade off against the
   harmonic map and the fine tuning.
   Full figure sets of the ten new-law states (2026-11-20, figures_cluster/12M/full_set_q002_<key>/checks/facts.json; old-law
@@ -136,7 +374,8 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   90-180 deg (overhang) bin gives 63-86 % of NG at the last observation (5.5 m) in softplus, A, B, D and C with templates
   [59-80 %], but only 7 % for the refitted D2 [38 %] and 0 % for C f10 / P_m 0.01 with the templates off; RG 0-1 % in all.
   So the NG overhang dominance at touchdown is a property of models with activity on overhangs (multiplier or template), not
-  required by the data. Caveats: A, B, D2 and C f1 / 1e-4 stopped at max_nfev; ft templates held from old-law fits; the
+  required by the data [TOO STRONG, A21: the fit without templates also misses the NG rise of the last ~20 m].
+  Caveats: A, B, D2 and C f1 / 1e-4 stopped at max_nfev; ft templates held from old-law fits; the
   C 1e-4 multipliers are undetermined.
 
 ### A17. Night and cast shadow lower the modelled production by up to x5, and at the map times most of the production is dark (2026-11-18)
@@ -208,7 +447,7 @@ relative to `COPS_OUTPUT_ROOT=/data001/highresolu_vt/cops_output` unless absolut
   >= 60 deg there (the large undetermined 70-80 / 80-90 deg multipliers, 7.9e4 / 3.3e5, times the smoothness extension of
   the c-field), whereas the multiplier penalty f_m 0.01 keeps the unseen part small. Q_H2O is therefore not constrained by
   COPS; the seen production is. (The seen share does not depend on whether the seen surface is mostly switched off - A = 0
-  on 96.4 % / 94.7 % of the seen area in softplus / D2 - or active everywhere - A, B, D: A = 0 on <= 0.9 %.)
+  on 96.4 % / 94.7 % of the seen area in softplus / D2 - or active everywhere - A, B, D: A = 0 on <= 0.9 %.) [A21: exact zeros do not measure switched-off surface.]
 * **Robust across the six:** before the late window the big lobe (body) gives a median 87-91 % of the modelled NG; at the
   last observation (5.5 m) the 90-180 deg (overhang) bin gives 38 % (D2) to 80 % (D) of NG but only 1-2 % of RG (NG sees
   through the shield onto facets behind the gauge; A1, A11).
@@ -728,6 +967,11 @@ Data cost (lower is better; all on the lategrid base with the gauge +1.5 m and t
 
 ## D. Change log of this file
 
+* 2026-11-21 (21:10 CST): A20: correction of A19 (switched-off surface, ranking, cliffs); visibility by gauge; activity vs slope with illumination removed.
+* 2026-11-21 (21:30 CST): A21: switched-off surface by the user's decision 1b; cliff wording of A20, A19 and the overhang wording of A18 corrected.
+* 2026-11-21 (17:50 CST): A19 addendum: sources of the five most plausible fits (robust vs model-dependent).
+* 2026-11-21 (15:15 CST): A19 addendum: why the templates-off C chain did not move; C penalty shares; parameter counts. A19: C f1 share above F_E 1.6 % (was 1.7 %, rounding).
+* 2026-11-21 (14:40 CST): A19: plausibility of the ten new-law fits (energy limit, active area, seen share, ranking).
 * 2026-11-20 (16:00 CST): A18: the full figure sets of the ten new-law states (lobe, shell, P50 and overhang shares vs the old law).
 * 2026-11-19 (17:30 CST): A18: the slope multipliers of the new-law fits vs the old law (comparison set stage2_q002).
 * 2026-11-19 (14:40 CST): A18 addendum: option A with the new law and the campaign summary of all ten new-law states.

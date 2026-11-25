@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/figures_cluster/scripts/source_rate_q002_submit.py (on Voyager: /data001/highresolu_vt/cops_output/figures_cluster/scripts/source_rate_q002_submit.py)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 3d167b0e9ae83b3d4fb7504aadad04848b5ddff6c7e622d1f63d401aac68f4cc
+# SHA256 of the run copy = SHA256 of this file without these header lines: cb248fd920cdc5183b27a5a4979a599012381a786d3f06deb8d1aa5707ffe091
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: submits jobs/source_rate_q002.sbatch for one completed new-law run, inputs from its maps manifest and the
 #   runs spec (2026-11-18)
 # RUN: login node: source_rate_q002_submit.py --run <key> [--node gpu001] [--dry-run]
+# CHANGED: 2026-11-23 full set of the all-held candidate: --runs
 # ==== end of header ====
 """Submit jobs/source_rate_q002.sbatch for one completed new-law run (2026-11-18; user: "prepare the surface source rate
 maps for completed runs for inspection of the source rate"). Every input of the new-law state is taken from its maps'
@@ -58,8 +59,10 @@ def main():
     ap.add_argument("--node", default="gpu001")
     ap.add_argument("--time", default="00:45:00")
     ap.add_argument("--dry-run", action="store_true")
+    # 2026-11-23 (all-held candidate's full set): another runs spec (a new dated file; the 2026-11-18 one is not edited)
+    ap.add_argument("--runs", default=str(RUNS))
     a = ap.parse_args()
-    runs = json.load(open(RUNS))
+    runs = json.load(open(a.runs))
     r = runs["runs"][a.run]
     maps = Path(r["maps"])
     if not (maps / "maps_manifest.json").exists():

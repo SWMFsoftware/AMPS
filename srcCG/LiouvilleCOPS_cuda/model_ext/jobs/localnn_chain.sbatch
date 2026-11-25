@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==== version-controlled copy: header added 2026-11-18, not part of the code that ran ====
 # Run copy: $COPS_OUTPUT_ROOT/jobs/localnn_chain.sbatch (on Voyager: /data001/highresolu_vt/cops_output/jobs/localnn_chain.sbatch)
-# SHA256 of the run copy = SHA256 of this file without these header lines: 7922b42267be9db735e7f52e7c0445321ff90ba0dce23dd7481a23b59349d6bd
+# SHA256 of the run copy = SHA256 of this file without these header lines: 8bb6f3e7c7987678bd2ecb7d695418d73269f10d325ba09f9becba5f159c2110
 # Cluster paths, partition and account are as run (Voyager); change them to run elsewhere (README.md).
 # WHAT: job script (CPU or 1 GPU, option C stage 2): ONE 5-cycle fit / fine-tuning chain (fit with checkpoints and
 #   the wall-time guard (exit 75), direct check, CPU fine tuning (late_only, WINDOW_MIN 5, MAXNFEV 500,
@@ -10,6 +10,7 @@
 #   D2_DIR, C1_START=d2 (cycle 1 from the D2 projection), DESIGN_DIR / CONTRIB / LATE / NONNEG_CODE defaults of the
 #   0.02 law.
 # RUN 2026-11-18: planned: the q002 option C chains (model_ext/logs/plan_q002_stage2r_C.md).
+# CHANGED: 2026-11-22 opt-in HOLD_ALL_MULT (user decision c); default unchanged
 # ==== end of header ====
 # Option C stage 2 (user / lead 2026-11-15): ONE fit / fine-tuning chain of the local non-negative basis, cycles 1..CYCLES,
 # the layout of the nonneg chains: <CHAIN>/c<k>/fit (localnn_fit.py: segNN, final; checkpoints) and <CHAIN>/c<k>/ft
@@ -39,6 +40,8 @@
 #SBATCH --mem=96G
 #SBATCH --time=12:00:00
 #SBATCH --output=/data001/highresolu_vt/cops_output/jobs/logs/cops_localnn_chain-%j.out
+# 2026-11-22 (user "as recommended: a, c"): HOLD_ALL_MULT=1 holds all six slope multipliers at 1 in every cycle's fit
+#   (localnn_fit.py --slope-test --hold-mult; needs MODEL_EXT with that option). Unset: the driver as before.
 set -uo pipefail
 # 2026-11-18 (H2O night law q_min = 0.02 q_max): the products of the current law by default (DESIGN_DIR, CONTRIB, LATE,
 # NONNEG_CODE); the loads refuse a design / late kernels of another law (localnn_problem.law_check)
@@ -71,6 +74,7 @@ C1_FROM=${C1_FROM:-}; C1_FIT=${C1_FIT:-}
 # arguments of the cycle-1 start, e.g. --state-drop-templates), FT_EXTRA (extra arguments of every fine tuning, e.g. the
 # regularization --delta-penalty-f 10 --delta-cref 4.2688066575e-03 --delta-cap 4.605170185988092), NONNEG_CODE (the
 # frozen nonneg_finetune snapshot of localnn_ft.py: LOCALNN_NONNEG_CODE)
+FITX=(); [ "${HOLD_ALL_MULT:-0}" = 1 ] && FITX=(--slope-test --hold-mult slope_40_50,slope_50_60,slope_60_70,slope_70_80,slope_80_90,slope_90_180)
 TEMPLATES=${TEMPLATES:-on}; C1_START_EXTRA=${C1_START_EXTRA:-}; FT_EXTRA=${FT_EXTRA:-}
 NONNEG_CODE=${NONNEG_CODE:-$COPS_OUTPUT_ROOT/model_ext_frozen/nonneg_20261118T072729Z}
 export LOCALNN_NONNEG_CODE=$(readlink -f "$NONNEG_CODE")
@@ -180,7 +184,7 @@ for k in $(seq 1 "$CYCLES"); do
     stamp "c$k fit (wall $WALL s)"
     JC=(); [ "$CHECK" = 1 ] && ! ls -d "$FIT"/seg[0-9][0-9] >/dev/null 2>&1 && [ ! -e "$FIT/checkpoint.npz" ] && JC=(--check-jacobian)
     run heavy "$PY" -W ignore "$MODEL_EXT/localnn_fit.py" fit "${COM[@]}" --grid "$GRID_DIR" --templates "$TEMPLATES" --slope-mult-min 1 \
-      --start-file "$FIT/start" --smooth-lambda "$LAMBDA" --smooth-rule-file "$RULE" --mult-penalty-f "$FM" "${HELD[@]}" \
+      --start-file "$FIT/start" --smooth-lambda "$LAMBDA" --smooth-rule-file "$RULE" --mult-penalty-f "$FM" "${HELD[@]}" "${FITX[@]}" \
       --max-nfev "$NFEV" --wall-time "$WALL" --checkpoint-every "$CHECKPOINT" "${DEVOPT[@]}" "${JC[@]}" --out "$FIT" \
       >> "$P/c${k}_fit.log" 2>&1; rc=$?
     event "c${k}fit" $rc; tail -n 3 "$P/c${k}_fit.log" | cut -c1-300
