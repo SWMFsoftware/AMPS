@@ -437,6 +437,8 @@ def cmd_report(args: argparse.Namespace) -> int:
                                declared=declared_columns(machines) if machines else None)
     print("wrote {} ({} columns, {} families, {} family pages)".format(
         www / "index.html", len(summary["columns"]), len(summary["families"]), summary["family_pages"]))
+    print("wrote {}; updated the previous/next links of {} night pages".format(
+        www / "archive" / "index.html", summary["night_pages_updated"]))
     if summary["waiting"]:
         print("no results yet for:", ", ".join(summary["waiting"]))
     if summary["hidden"]:

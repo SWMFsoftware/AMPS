@@ -188,8 +188,10 @@ incoming/   <run_id>.tar.gz from `pack` (hidden names are still arriving); run d
 rejected/   uploads that failed validation, with REJECTED.txt
 results.db  SQLite store of every run and result
 www/        index.html, family/, assets/, archive/   (open www/index.html in a browser)
+www/archive/index.html   every stored night of every column, newest first, linked from "All nights"
 www/archive/YYYY/MM/DD/<machine>-<config>/   one night of one column, like the legacy AMPS_TEST_RESULTS:
-            index.html (night summary), run.json, results.jsonl, runners.json, logs/<runner>/...
+            index.html (night summary, with links to the previous and next night of the column),
+            nav.json (those links), run.json, results.jsonl, runners.json, logs/<runner>/...
 ```
 
 On passion, Firefox runs under an AppArmor profile that lets it read files under `$HOME` and `/tmp`

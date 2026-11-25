@@ -348,6 +348,17 @@ column and night:
 - **Report:**
   - A failed test's "log" link opens its own log, or else its runner's log.
   - The column header links to the night's `index.html`, which plays the role of the legacy `test_amps.html`.
+  - **All nights:** the column header, each family page and each night page link to
+    `www/archive/index.html`. It lists every stored run of every column, newest first, with its night,
+    finish time, commit, failed/skipped/passed result rows and whether its logs are plain, compressed
+    or absent. Columns appear in order of their latest run, so the active ones come first.
+  - **Previous and next night:** each night page links to the previous and next night of its column,
+    ordered by finish time.
+    - The links are kept in the night folder's `nav.json`, so every writer of the page (ingest, prune,
+      relocate) keeps them.
+    - `amps-nightly report` rewrites `nav.json` and the page only for nights whose neighbours changed.
+      Usually that is the new night and the one before it. The first report after this change writes
+      all 639 pages, in about 2 s.
 - **Legacy archive:** `AMPS_TEST_RESULTS` stays where it is as the read-only history before the switch.
 
 ## 7. Phase 2: running runners concurrently

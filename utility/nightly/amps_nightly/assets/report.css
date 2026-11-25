@@ -85,6 +85,9 @@ h2{margin:0;font-size:15px;font-weight:600}
 .back:hover{background:#F7F9FC;text-decoration:none}
 .back svg{width:16px;height:16px}
 .bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.nightnav{display:flex;flex-wrap:wrap;gap:8px}
+.back.off{color:var(--muted);opacity:.55;cursor:default}
+.back.off:hover{background:var(--surface)}
 .fhead{display:flex;flex-direction:column;gap:6px}
 .fhead h1{font-size:30px}
 .fhead .src{margin:0;font-size:14px;color:var(--ink-2)}

@@ -2,6 +2,9 @@
 
     <www>/index.html                         test families x columns (machine + compiler)
     <www>/family/<family>/<column>.html      tests of one family in one column
+    <www>/archive/index.html                 every stored night of every column, newest first
+    <www>/archive/<YYYY/MM/DD>/<column>/index.html   one night: runners, failed tests, logs, and links to
+                                             the previous and next night of the column (from nav.json)
     <www>/assets/report.css, report.js
 
 Pages are plain HTML that work without a server; report.js only adds the status filter buttons.
@@ -31,7 +34,9 @@ ICON = {
     "SKIPPED": '<svg {} stroke-width="2.4"><path d="M4 8h8"/></svg>'.format(_SVG),
     "WARN": '<svg {} stroke-width="1.8"><path d="M8 1.8l6.6 11.6H1.4z"/><path d="M8 6.3v3.2M8 11.6v.2"/></svg>'.format(_SVG),
     "BACK": '<svg {} stroke-width="2"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>'.format(_SVG),
+    "NEXT": '<svg {} stroke-width="2"><path d="M6 3.5L10.5 8 6 12.5"/></svg>'.format(_SVG),
 }
+NAV_FILE = "nav.json"           # in each night folder: links to the previous and next night of its column
 _PILL = {"PASS": "st-pass", "FAILED": "st-fail", "SKIPPED": "st-skip"}
 _FILL = {"PASS": "fill-pass", "FAILED": "fill-fail", "SKIPPED": "fill-skip"}
 
@@ -376,11 +381,15 @@ def _family_page(registry: Registry, fid: str, col: Column, columns: List[Column
 
 
 def _night_link(col: Any, up: str) -> str:
-    """Link to the night's summary page in the archive, when there is one."""
+    """Links to the night's summary page in the archive, when there is one, and to the archive index."""
+    if col.www is None:
+        return ""
+    links = []
     path = col.run["path"] if col.run else ""
-    if path and col.www is not None and (Path(col.www) / path / "index.html").is_file():
-        return '<span><a href="{}{}/index.html">Night summary and logs</a></span>'.format(up, esc(path))
-    return ""
+    if path and (Path(col.www) / path / "index.html").is_file():
+        links.append('<a href="{}{}/index.html">Night summary and logs</a>'.format(up, esc(path)))
+    links.append('<a href="{}archive/index.html">All nights</a>'.format(up))
+    return "<span>{}</span>".format(" · ".join(links))
 
 
 def log_href(www: Optional[Path], run_path: str, log: str) -> str:
@@ -390,8 +399,44 @@ def log_href(www: Optional[Path], run_path: str, log: str) -> str:
     return log
 
 
+def _read_nav(directory: Path) -> Dict[str, Any]:
+    """The night's nav.json (written by refresh_night_navigation), or {} when it is absent or unreadable."""
+    try:
+        nav = json.loads((Path(directory) / NAV_FILE).read_text())
+    except (OSError, ValueError):
+        return {}
+    return nav if isinstance(nav, dict) else {}
+
+
+def _nav_bar(nav: Dict[str, Any]) -> str:
+    """Back to the families, and (with a nav.json) previous night, all nights and next night."""
+    back = '<a class="back" href="../../../../../index.html">{}All test families</a>'.format(ICON["BACK"])
+    if not nav:
+        return '<div class="bar">{}</div>'.format(back)
+
+    def step(key: str, rel: str) -> str:
+        """Link to the previous or next night; a faded label at the first or last night."""
+        target = nav.get(key)
+        if isinstance(target, dict) and target.get("href"):
+            text = esc("{} night · {}".format(key.capitalize(), target.get("night", "")))
+        else:
+            text = "No {} night".format(key)
+        inner = ICON["BACK"] + text if key == "previous" else text + ICON["NEXT"]
+        if isinstance(target, dict) and target.get("href"):
+            return '<a class="back" rel="{}" href="{}">{}</a>'.format(rel, esc(target["href"]), inner)
+        return '<span class="back off" aria-disabled="true">{}</span>'.format(inner)
+
+    nights = '<a class="back" href="{}">All nights</a>'.format(esc(nav.get("all") or "../../../../index.html"))
+    return ('<div class="bar">{}<nav class="nightnav" aria-label="Nights of this column">{}{}{}</nav></div>'
+            .format(back, step("previous", "prev"), nights, step("next", "next")))
+
+
 def write_run_index(directory: Path) -> Path:
-    """index.html of one archived night of one column: runners, failed tests and links to every log."""
+    """index.html of one archived night of one column: runners, failed tests and links to every log.
+
+    The previous/next night links come from the folder's nav.json, so every writer of this page (ingest,
+    prune, relocate, refresh_night_navigation) keeps them.
+    """
     directory = Path(directory)
     run = json.loads((directory / "run.json").read_text())
     rows = [json.loads(l) for l in (directory / "results.jsonl").read_text().splitlines() if l.strip()]
@@ -407,8 +452,7 @@ def write_run_index(directory: Path) -> Path:
         return sum(1 for r in rows if r["status"] == status and (not source or r.get("source") == source))
 
     sha = run.get("commit", "")
-    head = ['<div class="page tight">',
-            '<div class="bar"><a class="back" href="../../../../../index.html">{}All test families</a></div>'.format(ICON["BACK"]),
+    head = ['<div class="page tight">', _nav_bar(_read_nav(directory)),
             '<header class="fhead"><p class="eyebrow">Night of {} · {} · {}</p><h1>{}-{}</h1>'
             '<p class="src">Commit {} · started {} · finished {} · {} pass, {} failed, {} skipped{}</p></header>'.format(
                 esc(night_of(run)), esc(run["machine"]), esc(run.get("compiler", "")),
@@ -458,11 +502,120 @@ def col_label(col: Column) -> str:
     return col.label + (" · " + col.run["toolchain"] if col.run["toolchain"] else "")
 
 
+# ----------------------------------------------------------------------------- archive navigation
+def _night_label(run: Dict[str, Any]) -> str:
+    """Night of a stored run as its archive folder names it (archive/YYYY/MM/DD/<column>[.N])."""
+    parts = Path(run["path"] or "").parts
+    if len(parts) == 5 and parts[0] == "archive" and all(p.isdigit() for p in parts[1:4]):
+        extra = parts[4][len(run["column_id"]):]
+        return "-".join(parts[1:4]) + (" (run {})".format(extra[1:]) if extra.startswith(".") else "")
+    return night_of(run)
+
+
+def _href(from_dir: str, to_file: str) -> str:
+    """Relative link between two paths under www."""
+    return os.path.relpath(to_file, from_dir).replace(os.sep, "/")
+
+
+def _archived(www: Path, run: Dict[str, Any]) -> bool:
+    """The run has an archive folder with a night page source (run.json)."""
+    return bool(run["path"]) and (Path(www) / run["path"] / "run.json").is_file()
+
+
+def refresh_night_navigation(store: Store, www: Path) -> int:
+    """Write nav.json and the night page of every archived night whose previous or next night changed.
+
+    Neighbours are the archived runs of the same column, ordered by finish time. Usually only the newest
+    night and the one before it change; the first refresh after an upgrade writes every night once.
+    Returns the number of night pages rewritten.
+    """
+    www = Path(www)
+    by_column: Dict[str, List[Dict[str, Any]]] = {}
+    for run in store.all_runs():
+        if _archived(www, run):
+            by_column.setdefault(run["column_id"], []).append(run)
+    written = 0
+    for runs in by_column.values():
+        for i, run in enumerate(runs):
+            def target(other: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+                if other is None:
+                    return None
+                return {"href": _href(run["path"], other["path"] + "/index.html"), "night": _night_label(other)}
+            nav = {"previous": target(runs[i - 1] if i else None),
+                   "next": target(runs[i + 1] if i + 1 < len(runs) else None),
+                   "all": _href(run["path"], "archive/index.html")}
+            directory = www / run["path"]
+            if _read_nav(directory) == nav and (directory / "index.html").is_file():
+                continue
+            (directory / NAV_FILE).write_text(json.dumps(nav, indent=1, sort_keys=True) + "\n")
+            write_run_index(directory)
+            written += 1
+    return written
+
+
+def _logs_state(www: Path, run: Dict[str, Any]) -> str:
+    """'logs', 'logs (compressed)' or '—', from the night's orchestrator log."""
+    logs = Path(www) / run["path"] / "logs" if run["path"] else None
+    if logs is None or not logs.is_dir():
+        return "—"
+    return "logs (compressed)" if (logs / "orchestrator.log.gz").is_file() else "logs"
+
+
+def write_archive_index(store: Store, www: Path, tz: Optional[dt.tzinfo], generated: str) -> Path:
+    """www/archive/index.html: every stored night of every column, newest first, with its counts."""
+    www = Path(www)
+    counts = store.status_counts()
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for run in store.all_runs():
+        grouped.setdefault(run["column_id"], []).append(run)
+    # the column with the most recent run first: the active ones above the retired ones
+    columns = dict(sorted(grouped.items(), key=lambda item: item[1][-1]["finished"], reverse=True))
+    total = sum(len(runs) for runs in columns.values())
+    out = ['<div class="page tight">',
+           '<div class="bar"><a class="back" href="../index.html">{}All test families</a></div>'.format(ICON["BACK"]),
+           '<header class="fhead"><p class="eyebrow">AMPS · SWMFsoftware/AMPS</p><h1>All nights</h1>'
+           '<p class="src">{:,} stored run{} in {} column{}, newest first. The counts are result rows, as on each '
+           'night\'s page. Nights imported from the legacy nightly have results but no logs.</p></header>'
+           .format(total, "" if total == 1 else "s", len(columns), "" if len(columns) == 1 else "s")]
+    for column_id, runs in columns.items():
+        newest = runs[-1]
+        label = (newest["compiler"] or newest["config"].upper()) + (" · " + newest["toolchain"] if newest["toolchain"] else "")
+        out.append('<section class="card night" id="{}"><h2>{} · {} <span class="sub">{} run{}</span></h2>'
+                   '<table class="tbl"><tr><th>Night</th><th>Finished</th><th>Commit</th><th>Failed</th>'
+                   '<th>Skipped</th><th>Passed</th><th>Logs</th><th>Note</th></tr>'.format(
+                       esc(column_id), esc(newest["machine"]), esc(label), len(runs), "" if len(runs) == 1 else "s"))
+        for run in reversed(runs):
+            night = esc(_night_label(run))
+            if _archived(www, run) and (www / run["path"] / "index.html").is_file():
+                night = '<a href="{}">{}</a>'.format(esc(_href("archive", run["path"] + "/index.html")), night)
+            n = counts.get(run["run_id"], {})
+            note = []
+            if not run["complete"]:
+                note.append("incomplete run")
+            if run["producer"].startswith("import-legacy"):
+                note.append("imported from the legacy nightly")
+            out.append('<tr><td class="mono">{}</td><td>{}</td><td>{}</td><td class="num">{}</td><td class="num">{}</td>'
+                       '<td class="num">{}</td><td>{}</td><td>{}</td></tr>'.format(
+                           night, esc(_when(_local(run["finished"], tz))),
+                           commit_html(run["commit_sha"], bool(run["commit_inferred"])),
+                           n.get("FAILED", 0), n.get("SKIPPED", 0), n.get("PASS", 0),
+                           esc(_logs_state(www, run)), esc("; ".join(note))))
+        out.append("</table></section>")
+    out.append("</div>")
+    archive = www / "archive"
+    archive.mkdir(parents=True, exist_ok=True)
+    temporary = archive / ".index-{}.html".format(os.getpid())
+    temporary.write_text(_page("All nights · AMPS nightly tests", "\n".join(out), 1, generated))
+    os.replace(str(temporary), str(archive / "index.html"))
+    return archive / "index.html"
+
+
 # ----------------------------------------------------------------------------- build
 def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime] = None,
           tz: Optional[dt.tzinfo] = None, window_days: int = 60, stale_hours: float = 36,
           declared: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
-    """Regenerate index.html, family pages and assets under www; runs/ is left untouched.
+    """Regenerate index.html, family pages, assets and archive/index.html under www, and the night pages
+    whose previous/next night changed (refresh_night_navigation); other archived files are left untouched.
 
     declared: the columns of the enabled machine files (machines.declared_columns), in display order;
     each is shown, with "No results yet" until its first run. Stored columns that are not declared are
@@ -493,6 +646,8 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
     shown = [f for f in order if f in present] + sorted(present - set(order))
     unseen = [f for f in order if f not in present and registry.describe(f)["group"] != OTHER_GROUP]
     generated = _when(now_local)
+    nights_updated = refresh_night_navigation(store, www)
+    write_archive_index(store, www, tz, generated)
 
     build_dir = www / ".build-{}".format(os.getpid())
     if build_dir.exists():
@@ -528,4 +683,4 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
     os.replace(str(build_dir / "index.html"), str(www / "index.html"))
     shutil.rmtree(str(build_dir))
     return {"columns": [c.id for c in columns], "waiting": [c.id for c in all_columns if c.run is None],
-            "hidden": hidden, "families": shown, "family_pages": pages}
+            "hidden": hidden, "families": shown, "family_pages": pages, "night_pages_updated": nights_updated}

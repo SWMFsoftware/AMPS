@@ -116,6 +116,54 @@ class StoreAndReport(unittest.TestCase):
         self.assertTrue((self.www / "family" / "core-pic" / "pleiades-intel.html").is_file())
         self.assertTrue((self.www / "assets" / "report.css").is_file())
 
+    def test_archive_index_and_night_navigation(self):
+        from amps_nightly.store import write_index
+        now = dt.datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
+        base = self.www / "archive"
+        first, second = base / "2026/11/12/passion-gnu", base / "2026/11/13/passion-gnu"
+        with Store(self.root / "results.db") as st:
+            ingest(self.root, self.www, st, now)
+            self.assertEqual(report.build(st, Registry.load(), self.www, now=now, tz=UTC)["night_pages_updated"], 3)
+            page = (first / "index.html").read_text()
+            self.assertIn('rel="next" href="../../13/passion-gnu/index.html"', page)
+            self.assertIn("Next night · 2026-11-13", page)
+            self.assertIn("No previous night", page)
+            page = (second / "index.html").read_text()
+            self.assertIn('rel="prev" href="../../12/passion-gnu/index.html"', page)
+            self.assertIn("No next night", page)
+            self.assertIn('href="../../../../index.html">All nights', page)
+            other = (base / "2026/11/01/pleiades-intel/index.html").read_text()     # columns are separate
+            self.assertIn("No previous night", other)
+            self.assertIn("No next night", other)
+            # nothing new: no night page is rewritten
+            self.assertEqual(report.build(st, Registry.load(), self.www, now=now, tz=UTC)["night_pages_updated"], 0)
+            # a new night: it links back and the night before gains its next link; older nights stay as they are
+            before = (first / "index.html").read_text()
+            write_run_dir(self.root / "incoming" / "d", run("passion", "gnu", "2026-11-14T11:30:00Z", SHA[2]),
+                          [res("pic-field-solver", "t1", "PASS")])
+            ingest(self.root, self.www, st, now)
+            self.assertEqual(report.build(st, Registry.load(), self.www, now=now, tz=UTC)["night_pages_updated"], 2)
+            self.assertIn('rel="next" href="../../14/passion-gnu/index.html"', (second / "index.html").read_text())
+            self.assertIn('rel="prev" href="../../13/passion-gnu/index.html"',
+                          (base / "2026/11/14/passion-gnu/index.html").read_text())
+            self.assertEqual((first / "index.html").read_text(), before)
+        # any other writer of a night page (ingest, prune, relocate) keeps its links
+        write_index(second)
+        self.assertIn('rel="next" href="../../14/passion-gnu/index.html"', (second / "index.html").read_text())
+
+        archive = (base / "index.html").read_text()
+        self.assertIn("4 stored runs in 2 columns", archive)
+        self.assertLess(archive.index("2026-11-14"), archive.index("2026-11-13"))     # newest first
+        self.assertIn('href="2026/11/13/passion-gnu/index.html"', archive)
+        self.assertIn('href="2026/11/01/pleiades-intel/index.html"', archive)          # every stored column
+        self.assertLess(archive.index('id="passion-gnu"'), archive.index('id="pleiades-intel"'))   # latest run first
+        # night of 2026-11-13: t2 and CORE-PIC-NATIVE-001 failed, s1 skipped, t1 passed (result rows)
+        row = archive[archive.index('href="2026/11/13/passion-gnu/index.html"'):]
+        self.assertIn('<td class="num">2</td><td class="num">1</td><td class="num">1</td>', row[:row.index("</tr>")])
+        self.assertIn('href="archive/index.html">All nights', (self.www / "index.html").read_text())
+        self.assertIn('href="../../archive/index.html">All nights',
+                      (self.www / "family" / "pic-field-solver" / "passion-gnu.html").read_text())
+
     def test_prune_compresses_then_deletes_logs(self):
         from amps_nightly.store import prune
         for day, name in (("2026/11/10", "a"), ("2026/10/01", "b"), ("2025/01/01", "c")):

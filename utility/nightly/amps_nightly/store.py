@@ -119,6 +119,18 @@ class Store:
         rows = self.db.execute("SELECT * FROM results WHERE run_id = ? ORDER BY family, test", (run_id,)).fetchall()
         return [dict(r) for r in rows]
 
+    def all_runs(self) -> List[Dict[str, Any]]:
+        """Every stored run, grouped by column (machine, config) and oldest first within a column."""
+        rows = self.db.execute("SELECT * FROM runs ORDER BY machine, config, column_id, finished, run_id").fetchall()
+        return [dict(r) for r in rows]
+
+    def status_counts(self) -> Dict[str, Dict[str, int]]:
+        """run_id -> {status: number of result rows}, as on each night's summary page."""
+        counts: Dict[str, Dict[str, int]] = {}
+        for r in self.db.execute("SELECT run_id, status, COUNT(*) AS n FROM results GROUP BY run_id, status"):
+            counts.setdefault(r["run_id"], {})[r["status"]] = r["n"]
+        return counts
+
     def last_passes(self, column: str) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """(family, test) -> newest PASS in this column: run_id, finished, commit_sha, commit_inferred."""
         rows = self.db.execute(

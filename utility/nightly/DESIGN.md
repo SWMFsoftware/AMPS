@@ -49,6 +49,7 @@ Started 2026-11-13. Replaces the per-machine csh/perl scripts in `utility/TestSc
      outbox/<run-id>.tar.gz, rsync/copy                           → www/archive/YYYY/MM/DD/<column>/
                                                           amps-nightly report  → www/index.html
                                                                                → www/family/<family>/<column>.html
+                                                                               → www/archive/index.html
 ```
 
 ## Run directory format (`amps_nightly/records.py`)
