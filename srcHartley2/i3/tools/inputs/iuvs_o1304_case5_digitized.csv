@@ -1,0 +1,14 @@
+# MAVEN/IUVS O I 130.4-nm radial profile of 3I/ATLAS, 2025-10-29 17:32 (slide time label),
+# 'MAVEN/IUVS FUV Observations at Perihelion: O 130.4 nm' (presentation slide, photographed
+# 2026-11-18). Digitized 2026-11-21 by digitize_iuvs_o1304_case5.py; see digitization.json and
+# README.md. Bins are spatial elements folded about the nucleus: bin 1 = [0, w], bin k = [(2k-3)w,
+# (2k-1)w], w fitted to the bar ends; distance_1e5_km is the plotted point (bin midpoint).
+# The vertical error bars are not resolved in the photo (no larger than about +-2 %).
+bin,distance_1e5_km,distance_lower_1e5_km,distance_upper_1e5_km,radiance_R,radiance_kR,bar_row_px
+1,0.4591,0.0000,0.9181,54.173,0.054173,478.07
+2,1.8363,0.9181,2.7544,44.438,0.044438,497.48
+3,3.6725,2.7544,4.5907,29.329,0.029329,539.64
+4,5.5088,4.5907,6.4269,15.286,0.015286,606.73
+5,7.3451,6.4269,8.2632,9.780,0.009780,652.98
+6,9.1813,8.2632,10.0995,6.872,0.006872,688.77
+7,11.0176,10.0995,11.9357,6.427,0.006427,695.63

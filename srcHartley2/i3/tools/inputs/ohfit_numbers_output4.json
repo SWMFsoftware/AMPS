@@ -1,0 +1,422 @@
+{
+ "new_output": 4,
+ "method": "- Factor s = geometric mean over the MAVEN/IUVS OH points of observed / edge-corrected model,\n  the method of srcHartley2/i3/reference/i3_rate_scaling.csv. Fitted Q(H2O) = s x input Q(H2O).\n- In the I3 chemistry (i3.conf ChemistryReaction lines) H, OH and O all come from H2O; CO and CO2\n  have no photodissociation channels and only collide. Scaling Q(H2O) by s therefore scales the\n  OH, H and O brightness by s in the optically thin, collisionless limit; the edge-correction\n  factors do not change. Collisional changes in the inner coma at the lower Q are not included.\n- \"Fill-corrected estimate\" of the running new runs: X_now,est = X_earlier,converged x\n  (X_now / X_earlier at the same output) x edge factor of now, for X = OH, H and O; its own factor\n  s_est is fitted to its OH. H is still filling in the new runs, OH and O nearly not\n  (interim_ratio_to_earlier.png).",
+ "cases": {
+  "1": {
+   "q_h2o_input_s-1": 3.16e+28,
+   "q_h2o_table_s-1": 8e+27,
+   "rh_au": 1.75,
+   "rdot_km_s": -39.7,
+   "now": {
+    "scale": 0.586492460497134,
+    "q_h2o_fitted_s-1": 1.8533161751709434e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8417475098044965,
+     1.1488846060772546
+    ],
+    "oh_rms_log10_residual": 0.05108478812468998,
+    "h_model_over_obs_after_fit_geomean": 0.6124584509195021,
+    "h_model_over_obs_after_fit_median": 0.587499619978261,
+    "h_model_over_obs_after_fit_min_max": [
+     0.46209494498953135,
+     0.8861234000512608
+    ],
+    "n_oh_points": 4,
+    "n_h_points": 11
+   },
+   "now_est": {
+    "scale": 0.5872906098974626,
+    "q_h2o_fitted_s-1": 1.855838327275982e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8408715026329409,
+     1.148850883146003
+    ],
+    "oh_rms_log10_residual": 0.0512048294047369,
+    "h_model_over_obs_after_fit_geomean": 0.6194909793592979,
+    "h_model_over_obs_after_fit_median": 0.5937818905412974,
+    "h_model_over_obs_after_fit_min_max": [
+     0.4673018229554567,
+     0.8960396650397885
+    ],
+    "n_oh_points": 4,
+    "n_h_points": 11
+   },
+   "earlier": {
+    "scale": 1.035533158105849,
+    "q_h2o_fitted_s-1": 3.2722847796144825e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8093809641601121,
+     1.2886982253657258
+    ],
+    "oh_rms_log10_residual": 0.07219935623672534,
+    "h_model_over_obs_after_fit_geomean": 0.6105711280379933,
+    "h_model_over_obs_after_fit_median": 0.616502478715615,
+    "h_model_over_obs_after_fit_min_max": [
+     0.4990078952839861,
+     0.7838871935669393
+    ],
+    "n_oh_points": 4,
+    "n_h_points": 11
+   }
+  },
+  "2": {
+   "q_h2o_input_s-1": 6.734e+28,
+   "q_h2o_table_s-1": 1.4e+28,
+   "rh_au": 1.66,
+   "rdot_km_s": -36.2,
+   "now": {
+    "scale": 0.5605738724005516,
+    "q_h2o_fitted_s-1": 3.774904456745314e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.7797824565390816,
+     1.2982109028729312
+    ],
+    "oh_rms_log10_residual": 0.07345605531756833,
+    "h_model_over_obs_after_fit_geomean": 0.7845885613630371,
+    "h_model_over_obs_after_fit_median": 0.7735839145408201,
+    "h_model_over_obs_after_fit_min_max": [
+     0.5152976529642573,
+     1.3304142695928316
+    ],
+    "n_oh_points": 8,
+    "n_h_points": 14
+   },
+   "now_est": {
+    "scale": 0.5660374565684914,
+    "q_h2o_fitted_s-1": 3.8116962325322205e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.7820862038310978,
+     1.2924187824631883
+    ],
+    "oh_rms_log10_residual": 0.07205081016154083,
+    "h_model_over_obs_after_fit_geomean": 0.7924187266556967,
+    "h_model_over_obs_after_fit_median": 0.7780285755450547,
+    "h_model_over_obs_after_fit_min_max": [
+     0.5280599124762562,
+     1.3366254819040553
+    ],
+    "n_oh_points": 8,
+    "n_h_points": 14
+   },
+   "earlier": {
+    "scale": 1.051970282261749,
+    "q_h2o_fitted_s-1": 7.083967880750617e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8912448991632091,
+     1.0815780928946093
+    ],
+    "oh_rms_log10_residual": 0.02692442343875229,
+    "h_model_over_obs_after_fit_geomean": 0.8282836125478861,
+    "h_model_over_obs_after_fit_median": 0.7871967791652505,
+    "h_model_over_obs_after_fit_min_max": [
+     0.6296925989359801,
+     1.2587506155709458
+    ],
+    "n_oh_points": 8,
+    "n_h_points": 14
+   }
+  },
+  "3": {
+   "q_h2o_input_s-1": 1.574e+29,
+   "q_h2o_table_s-1": 5.3e+28,
+   "rh_au": 1.54,
+   "rdot_km_s": -29.6,
+   "now": {
+    "scale": 0.5650091828658127,
+    "q_h2o_fitted_s-1": 8.893244538307892e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8350561754113434,
+     1.1950453574464641
+    ],
+    "oh_rms_log10_residual": 0.06363597115490116,
+    "h_model_over_obs_after_fit_geomean": 1.1416675766640556,
+    "h_model_over_obs_after_fit_median": 1.1384167256518247,
+    "h_model_over_obs_after_fit_min_max": [
+     0.7005318592560034,
+     1.920150778084094
+    ],
+    "n_oh_points": 5,
+    "n_h_points": 14
+   },
+   "now_est": {
+    "scale": 0.5620331514859839,
+    "q_h2o_fitted_s-1": 8.846401804389386e+28,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8349513579988274,
+     1.196973821534235
+    ],
+    "oh_rms_log10_residual": 0.06384714849562058,
+    "h_model_over_obs_after_fit_geomean": 1.1759254741628542,
+    "h_model_over_obs_after_fit_median": 1.1692491305359511,
+    "h_model_over_obs_after_fit_min_max": [
+     0.7338123904851183,
+     1.9724399407024273
+    ],
+    "n_oh_points": 5,
+    "n_h_points": 14
+   },
+   "earlier": {
+    "scale": 1.0573757851280463,
+    "q_h2o_fitted_s-1": 1.664309485791545e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.9490850627385853,
+     1.0556241045269616
+    ],
+    "oh_rms_log10_residual": 0.015417540116820328,
+    "h_model_over_obs_after_fit_geomean": 1.1271839222542839,
+    "h_model_over_obs_after_fit_median": 1.0854029900214757,
+    "h_model_over_obs_after_fit_min_max": [
+     0.8465139368958441,
+     1.6988406802080198
+    ],
+    "n_oh_points": 5,
+    "n_h_points": 14
+   }
+  },
+  "4": {
+   "q_h2o_input_s-1": 4.524e+29,
+   "q_h2o_table_s-1": 2.6e+29,
+   "rh_au": 1.36,
+   "rdot_km_s": -5.8,
+   "now": {
+    "scale": 0.46465557608018143,
+    "q_h2o_fitted_s-1": 2.1021018261867406e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.825913713671746,
+     1.205759921209115
+    ],
+    "oh_rms_log10_residual": 0.06709800979503144,
+    "h_model_over_obs_after_fit_geomean": 1.0634089354858594,
+    "h_model_over_obs_after_fit_median": 1.0511288210611498,
+    "h_model_over_obs_after_fit_min_max": [
+     1.0273362800631518,
+     1.1613117806893651
+    ],
+    "n_oh_points": 3,
+    "n_h_points": 7
+   },
+   "now_est": {
+    "scale": 0.4830240909035561,
+    "q_h2o_fitted_s-1": 2.1852009872476876e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8251544676065865,
+     1.1992123126163934
+    ],
+    "oh_rms_log10_residual": 0.06636220701514581,
+    "h_model_over_obs_after_fit_geomean": 1.1559012074154398,
+    "h_model_over_obs_after_fit_median": 1.1438712509328675,
+    "h_model_over_obs_after_fit_min_max": [
+     1.1137872184074018,
+     1.2762015190681242
+    ],
+    "n_oh_points": 3,
+    "n_h_points": 7
+   },
+   "earlier": {
+    "scale": 1.0038119567734727,
+    "q_h2o_fitted_s-1": 4.54124529244319e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.8192876444838803,
+     1.224600685111619
+    ],
+    "oh_rms_log10_residual": 0.07127022539927799,
+    "h_model_over_obs_after_fit_geomean": 1.2080424305259772,
+    "h_model_over_obs_after_fit_median": 1.1685062027403363,
+    "h_model_over_obs_after_fit_min_max": [
+     1.113501850015913,
+     1.5028890727089963
+    ],
+    "n_oh_points": 3,
+    "n_h_points": 7
+   }
+  },
+  "5": {
+   "q_h2o_input_s-1": 3.5e+29,
+   "q_h2o_table_s-1": 2.8e+29,
+   "rh_au": 1.36,
+   "rdot_km_s": 0.4,
+   "now": {
+    "scale": 0.43620801839140144,
+    "q_h2o_fitted_s-1": 1.526728064369905e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.9293156949829933,
+     1.076060595337627
+    ],
+    "oh_rms_log10_residual": 0.03183672809596922,
+    "h_model_over_obs_after_fit_geomean": 0.7565107441144748,
+    "h_model_over_obs_after_fit_median": 0.7486741886801394,
+    "h_model_over_obs_after_fit_min_max": [
+     0.7197599690940762,
+     0.8685918010543972
+    ],
+    "n_oh_points": 2,
+    "n_h_points": 8
+   },
+   "now_est": {
+    "scale": 0.424042319287045,
+    "q_h2o_fitted_s-1": 1.4841481175046574e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.929709477496706,
+     1.075604825168132
+    ],
+    "oh_rms_log10_residual": 0.03165274180265274,
+    "h_model_over_obs_after_fit_geomean": 0.776433107765618,
+    "h_model_over_obs_after_fit_median": 0.7664763921456239,
+    "h_model_over_obs_after_fit_min_max": [
+     0.7353640287842941,
+     0.9012254915996548
+    ],
+    "n_oh_points": 2,
+    "n_h_points": 8
+   },
+   "earlier": {
+    "scale": 0.9992312198502044,
+    "q_h2o_fitted_s-1": 3.497309269475715e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.9280391985160568,
+     1.0775406918145365
+    ],
+    "oh_rms_log10_residual": 0.03243367966508862,
+    "h_model_over_obs_after_fit_geomean": 0.9220245541258274,
+    "h_model_over_obs_after_fit_median": 0.8907521563928179,
+    "h_model_over_obs_after_fit_min_max": [
+     0.8406156449564699,
+     1.2266684913823422
+    ],
+    "n_oh_points": 2,
+    "n_h_points": 8
+   },
+   "o_case5": {
+    "now_KVB2022": {
+     "obs_over_model_binmean": [
+      0.7157605461319582,
+      1.2271838052935202,
+      1.348601939867237,
+      1.0086273961701082,
+      0.8622675099463549,
+      0.7752866097320853,
+      0.899959725416348
+     ],
+     "geomean": 0.9539311741643542
+    },
+    "now_est_KVB2022": {
+     "obs_over_model_binmean": [
+      0.7280883851142536,
+      1.2524877362146003,
+      1.3795288006508453,
+      1.0335637467658594,
+      0.8841381131291849,
+      0.7955073489894114,
+      0.9241435099669235
+     ],
+     "geomean": 0.9762506495427258
+    },
+    "earlier_KVB2022": {
+     "obs_over_model_binmean": [
+      0.3244651326275825,
+      0.5895576582163164,
+      0.7048110947684065,
+      0.5584594051452032,
+      0.4964225244104661,
+      0.45806334121374737,
+      0.5408200576663833
+     ],
+     "geomean": 0.512286177569631
+    },
+    "now_SUMER2001": {
+     "obs_over_model_binmean": [
+      0.5732226286209523,
+      0.9952064897198292,
+      1.103453658199841,
+      0.8300079599143297,
+      0.712612235667161,
+      0.6429687770688022,
+      0.7486066713550014
+     ],
+     "geomean": 0.7822373225215963
+    },
+    "now_est_SUMER2001": {
+     "obs_over_model_binmean": [
+      0.5832702804135003,
+      1.0161225589886387,
+      1.1293160946729994,
+      0.8509991236874049,
+      0.7310954649888763,
+      0.6601172957822908,
+      0.7691741598669307
+     ],
+     "geomean": 0.8009348824209893
+    },
+    "earlier_SUMER2001": {
+     "obs_over_model_binmean": [
+      0.260968032486528,
+      0.4829534220702615,
+      0.5848440549905377,
+      0.46703179900211694,
+      0.41746192992368186,
+      0.38689845691215524,
+      0.4584999893626649
+     ],
+     "geomean": 0.42607919419054446
+    }
+   }
+  },
+  "6": {
+   "q_h2o_input_s-1": 3.978e+29,
+   "q_h2o_table_s-1": 2.6e+29,
+   "rh_au": 1.37,
+   "rdot_km_s": 7.1,
+   "now": {
+    "scale": 0.3727512293893188,
+    "q_h2o_fitted_s-1": 1.4828043905107102e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.9105516604233789,
+     1.0982353264119364
+    ],
+    "oh_rms_log10_residual": 0.04069540934150251,
+    "h_model_over_obs_after_fit_geomean": 0.8073788567432046,
+    "h_model_over_obs_after_fit_median": 0.815887537075566,
+    "h_model_over_obs_after_fit_min_max": [
+     0.7337923450766238,
+     0.8776418290696967
+    ],
+    "n_oh_points": 2,
+    "n_h_points": 9
+   },
+   "now_est": {
+    "scale": 0.3752253432481192,
+    "q_h2o_fitted_s-1": 1.492646415441018e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.9105957160820037,
+     1.0981821925350952
+    ],
+    "oh_rms_log10_residual": 0.04067439717116636,
+    "h_model_over_obs_after_fit_geomean": 0.8458434846617604,
+    "h_model_over_obs_after_fit_median": 0.8541561739531589,
+    "h_model_over_obs_after_fit_min_max": [
+     0.7682352103916511,
+     0.9232143007429505
+    ],
+    "n_oh_points": 2,
+    "n_h_points": 9
+   },
+   "earlier": {
+    "scale": 0.9805528303729852,
+    "q_h2o_fitted_s-1": 3.9006391592237354e+29,
+    "oh_model_over_obs_after_fit_min_max": [
+     0.9170245574439823,
+     1.0904833375316523
+    ],
+    "oh_rms_log10_residual": 0.03761903399234961,
+    "h_model_over_obs_after_fit_geomean": 1.1419817603890985,
+    "h_model_over_obs_after_fit_median": 1.1410502036454977,
+    "h_model_over_obs_after_fit_min_max": [
+     1.0027913263520878,
+     1.4421103215049043
+    ],
+    "n_oh_points": 2,
+    "n_h_points": 9
+   }
+  }
+ }
+}
