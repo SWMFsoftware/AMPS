@@ -910,7 +910,7 @@ convergence evidence.
 | U22 | Na sources | implemented linked probe and configuration guard | M0 built-in impact-on/`MySource`-off invariant, impact normalization, PSD density kernel, and exact Tenishev-2013 Case-1 parser/runtime scalars; no linked prescribed-reservoir or night-to-day migration claim. |
 | U23 | meteoroid driver | SKIPPED | No production forcing path. |
 | U24 | H2O/OH chemistry | SKIPPED | Source-bound OH/H₂O residence and finite-time release run as a supporting check. Molecular surface and chemistry dispatch remain open. [Scope and r14 lock](U24_water_chemistry/README.md) |
-| U25 | data provenance | SKIPPED | Requires a selected Dxx package and linked campaign context. |
+| U25 | data provenance | implemented 2026-11-23; aggregate SKIPPED | Evaluates the 12 datasets declared by U15/U16/U18/U21/U23/U26 (`--dataset`/`--for-test` select one): QA readiness, frozen observation splits, hash manifests, raw inventory, provenance hashes, and a rerun of the package's own processing on a private copy. D04/D05 PASS; D08 has an unfrozen hold-out; the other nine are not QA-ready. Data-package QA only, never validation. See `U25_data_provenance/README.md`. |
 | U26 | observation geometry | SKIPPED | The M1 observation-grid settings are parsed strictly, but the complete two-limb, body-fixed pole/shell, finite-beam, and exposure-time operators are not yet implemented or qualified; D14 lacks the radial WHAM response and numerical full raster. |
 
 The status is capability-sensitive.  Downloaded files, directory presence, or

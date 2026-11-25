@@ -3,24 +3,75 @@
   "name": "Observation/reference data provenance and immutable-package verification",
   "purpose": "Verify required Dxx package identity, native metadata, hashes, reproducibility, QA, and frozen selections without judging model agreement.",
   "production_capability": "Validation-data preflight shared by all data-dependent tests.",
-  "production_entry_points": ["canonical moon_validation_data packages and preparation scripts"],
+  "production_entry_points": [
+    "canonical moon_validation_data packages and preparation scripts"
+  ],
   "configuration": "Dataset list declared by the requesting test; raw files read-only.",
-  "inputs": ["README.md", "raw_inventory.json", "provenance.json", "qa_report.json", "SHA256SUMS.txt", "processed products", "calibration_holdout.json where required"],
+  "inputs": [
+    "README.md",
+    "raw_inventory.json",
+    "provenance.json",
+    "qa_report.json",
+    "SHA256SUMS.txt",
+    "processed products",
+    "calibration_holdout.json where required"
+  ],
   "independent_reference": "Native labels/headers plus recomputed SHA-256 and deterministic script reproduction.",
   "units": "dataset-specific and explicitly declared",
   "frame_time_convention": "dataset-specific and explicitly declared",
   "deterministic_stochastic_controls": "Deterministic processing; no model residuals used.",
   "procedure": "Validate schema/status, recompute hashes, verify raw immutability, rerun processing in a temporary output, compare products, and freeze selections.",
-  "metrics": ["hash matches", "record/filter counts", "reproduction identity", "metadata completeness"],
+  "metrics": [
+    "hash matches",
+    "record/filter counts",
+    "reproduction identity",
+    "metadata completeness"
+  ],
   "acceptance_criteria": "Every required artifact present and consistent; QA READY/PASS; deterministic outputs match; unknown blocking metadata causes SKIP/ERROR.",
   "expected_pass_result": "The selected package is reproducible and scientifically eligible for its target test.",
-  "expected_failure_modes": ["missing metadata", "hash mismatch", "manual processed edit", "PARTIAL/INCOMPLETE/ERROR status", "unfrozen split"],
-  "required_data": ["target-specific Dxx package"],
-  "data_hashes": "mixed local states: D04 QA PASS; D06 QA ERROR; D07 QA INCOMPLETE; D08 PROVISIONAL_NOT_FROZEN; D09 QA PASS; D10 QA PASS but its README says the available processed product is incomplete; D11 QA PASS; D12 recovered-summary status N/A; D13/D14 PARTIAL or provisional; D15 INCOMPLETE; D01-D03 absent",
+  "expected_failure_modes": [
+    "missing metadata",
+    "hash mismatch",
+    "manual processed edit",
+    "PARTIAL/INCOMPLETE/ERROR status",
+    "unfrozen split"
+  ],
+  "required_data": [
+    "target-specific Dxx package"
+  ],
+  "data_hashes": "Recomputed on every run for each evaluated package and written to <Dxx>/verified_hashes.json; nothing is frozen here because each package records its own hashes (SHA256SUMS.txt, raw_inventory.json, provenance.json). Superseded 2026-11-23 snapshot text: mixed local states: D04 QA PASS; D06 QA ERROR; D07 QA INCOMPLETE; D08 PROVISIONAL_NOT_FROZEN; D09 QA PASS; D10 QA PASS but its README says the available processed product is incomplete; D11 QA PASS; D12 recovered-summary status N/A; D13/D14 PARTIAL or provisional; D15 INCOMPLETE; D01-D03 absent",
   "predecessor_gates": [],
-  "artifacts": ["result.json", "verified_hashes.json", "reproduction_report.json"],
+  "artifacts": [
+    "result.json",
+    "verified_hashes.json",
+    "reproduction_report.json"
+  ],
   "status_semantics": "PASS is data-package QA only and never observational validation.",
-  "implementation": "not-implemented",
-  "skip_reason": "A target Dxx package was not specified, and the canonical root contains mixed readiness states; a blanket PASS would be false.",
-  "missing_capability": "Runner selection of a specific Dxx package and package-specific reproduction command."
+  "implementation": "data-package-provenance",
+  "package_registry": "reference/packages.json",
+  "dataset_selection": "Untargeted run: every Dxx named in required_data by the U contracts that list U25 among predecessor_gates (parsed at run time); aggregate status is PASS only if every such dataset passes, otherwise the most serious of ERROR, FAIL, SKIPPED. --dataset Dxx / --for-test UXX evaluate a specific target. User decision 2026-11-23.",
+  "accepted_readiness_values": [
+    "READY",
+    "PASS"
+  ],
+  "timestamp_normalization": {
+    "json_keys": [
+      "generated_utc",
+      "processing_utc"
+    ],
+    "text_line_prefixes": [
+      "Generated UTC: "
+    ],
+    "value_format": "ISO-8601 UTC, YYYY-MM-DDThh:mm:ss[.f]Z, on both sides",
+    "rule": "A reproduced file may differ from the package copy only on lines carrying one of these fields that packages.json registers for that file; JSON documents must also be equal after deleting exactly the registered key paths. The package SHA256SUMS.txt may then differ only in the entries of those files. Everything else must be byte-identical.",
+    "approved": "user decision 2026-11-23"
+  },
+  "metadata_completeness_policy": "The roadmap C6 minimum provenance fields are reported present/absent per package (literal names, no equivalence mapping) and do not gate the result. Byte-identical reproduction is the evidence that processed products were not edited by hand. User decision 2026-11-23.",
+  "status_mapping": {
+    "SKIPPED": "package/registry entry/required artifact absent; QA readiness not READY/PASS; observation selection not frozen; no reviewed reproduction recipe; documented interpreter unavailable",
+    "ERROR": "corrupt JSON; registered key absent; hash/size mismatch against SHA256SUMS.txt, raw_inventory.json or provenance.json; raw or processed file outside the manifests; symlink in the package; reproduction exit/timeout; canonical package changed during reproduction; U25 verifier controls not PASS",
+    "FAIL": "provenance declares a prohibited method (manual edit, synthetic data, digitization, OCR) as used; a reproduced file differs outside the timestamp rule",
+    "PASS": "every gate evaluated and met for every selected dataset"
+  },
+  "verifier_controls": "test_package_verification.py runs before any package and must PASS; its fixture packages exercise U25 itself and are never validation data."
 }

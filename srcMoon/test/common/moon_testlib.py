@@ -1029,8 +1029,14 @@ def run_one(
     test_id: str,
     build_dir: Path = DEFAULT_BUILD,
     output_root: Path = DEFAULT_OUTPUT,
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Dispatch one contract and atomically describe its semantic outcome."""
+    """Dispatch one contract and atomically describe its semantic outcome.
+
+    ``options`` carries test-specific CLI selections; currently only U25 uses
+    it (``datasets``, ``for_tests``, ``data_root``).  The aggregate runner
+    passes none, which selects each test's documented default.
+    """
     acceptance = load_acceptance(test_id)
     kind = acceptance["implementation"]
 
@@ -1128,6 +1134,17 @@ def run_one(
         result = run_linked_los(acceptance, build_dir, output_root)
     elif kind == "linked-executable-lorentz":
         result = run_linked_lorentz(acceptance, build_dir, output_root)
+    elif kind == "data-package-provenance":
+        # U25 judges validation-data packages only (never model agreement).
+        # Without options it evaluates every dataset declared by the tests
+        # that list U25 as a predecessor and reports their aggregate.
+        try:
+            if str(TEST_ROOT) not in sys.path:
+                sys.path.insert(0, str(TEST_ROOT))
+            from U25_data_provenance.package_verification import run_u25
+            result = run_u25(output_root, options)
+        except (OSError, ValueError, KeyError, ImportError) as error:
+            result = {"status": "ERROR", "reason": "U25 package verification failed: " + str(error)}
     elif kind == "not-implemented":
         result = {
             "status": "SKIPPED",

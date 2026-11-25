@@ -1,0 +1,57 @@
+{
+  "schema": "srcMoon-U25-package-registry-v1",
+  "registered_date": "2026-11-23",
+  "purpose": "Per-dataset U25 gates (readiness key, observation-selection files) and per-package integrity/reproduction recipes. Values are transcribed from each package's own files; nothing here supplies a scientific value or an expected outcome.",
+  "data_root": "/data/vtenishe/moon_validation_data (override with MOON_VALIDATION_DATA_ROOT or --data-root)",
+  "dataset_scope": "The datasets declared in required_data by the U contracts that list U25 as a predecessor (parsed at run time by package_verification.declared_datasets). D01-D03 are not declared by any such contract and are therefore not registered; a later declaration needs a reviewed entry here.",
+  "observation_dataset_rule": "Roadmap C8: observation tests need a committed calibration/hold-out split frozen before final scoring. observation_dataset=true for packages scored against AMPS in I32-I40 (D07, D08, D09, D12, D13, D14, D15); false for laboratory/reference data and forcing inputs (D04, D05, D06, D10, D11).",
+  "frozen_selection_rule": "A selection is accepted as frozen only if its status value is listed in frozen_status_values. No package has frozen its split as of 2026-11-23, so every list is empty and the gate fails closed; add the package's frozen value here only after it is reviewed.",
+  "unregistered_verification_rule": "verification=null means no integrity/reproduction recipe has been reviewed. Such a dataset is SKIPPED if it ever passes the readiness and selection gates, never PASS.",
+  "packages": {
+    "photochemistry": {
+      "documented_in": "photochemistry/README.md, photochemistry/scripts/run_photochemistry_pipeline.py",
+      "required_artifacts": ["README.md", "raw_inventory.json", "provenance.json", "qa_report.json", "qa_report.txt", "SHA256SUMS.txt"],
+      "ignored_names": [".venv", "__pycache__"],
+      "ignored_names_reason": ".venv is the package's interpreter environment (created after SHA256SUMS.txt, not part of the data); __pycache__ is Python bytecode. Neither is listed in SHA256SUMS.txt.",
+      "hash_manifests": [{"file": "SHA256SUMS.txt", "base": "."}],
+      "complete_manifest_directories": ["raw", "processed"],
+      "raw_directory": "raw",
+      "raw_inventory": {"file": "raw_inventory.json", "list_key": ["files"], "path_key": "path", "sha256_key": "sha256", "bytes_key": "byte_count", "immutable_key": "immutable"},
+      "provenance": {
+        "file": "provenance.json",
+        "outputs": {"list_key": ["outputs"], "path_key": "path", "sha256_key": "sha256", "bytes_key": "byte_count", "covers_directory": "processed"},
+        "scripts": {"list_key": ["processing_scripts"], "path_key": "path", "sha256_key": "sha256", "covers_directory": "scripts", "covers_suffix": ".py"},
+        "self_hashes": [{"path_key": ["raw_inventory", "path"], "sha256_key": ["raw_inventory", "sha256"]}],
+        "must_be_false": [["prohibited_methods", "ocr"], ["prohibited_methods", "plot_digitization"], ["prohibited_methods", "synthetic_replacement_data"]]
+      },
+      "reproduction": {
+        "documented_in": "photochemistry/README.md: '.venv/bin/python scripts/run_photochemistry_pipeline.py --skip-fetch' processes the acquired immutable raw data without network access",
+        "interpreter": ".venv/bin/python",
+        "command": ["{python}", "-B", "{copy}/scripts/run_photochemistry_pipeline.py", "--root", "{copy}", "--skip-fetch"],
+        "network": false,
+        "timeout_seconds": 900,
+        "copy_exclude": [".venv", "__pycache__"],
+        "timestamp_fields": {
+          "provenance.json": {"json_keys": [["generated_utc"]]},
+          "qa_report.json": {"json_keys": [["generated_utc"]]},
+          "qa_report.txt": {"line_prefixes": ["Generated UTC: "]}
+        },
+        "verified_2026_11_23": "A trial rerun on a copy reproduced all 206 raw/processed/inventory/documentation files byte for byte; provenance.json, qa_report.json and qa_report.txt differed only in generated_utc / 'Generated UTC:'."
+      }
+    }
+  },
+  "datasets": {
+    "D04": {"description": "PHIDRATES photoionization/photodissociation (requested by U15)", "package_directory": "photochemistry", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": false, "verification": "photochemistry"},
+    "D05": {"description": "Voronov (1997) electron-impact ionization fits (requested by U16); same package as D04", "package_directory": "photochemistry", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": false, "verification": "photochemistry"},
+    "D06": {"description": "ARTEMIS plasma forcing (requested by U18)", "package_directory": "drivers", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": false, "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for drivers (QA was ERROR when U25 was implemented)"},
+    "D07": {"description": "Kaguya UPI-TVIS Na (requested by U26)", "package_directory": "kaguya/tvis_na", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": true, "selection_files": [], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for kaguya/tvis_na (QA was INCOMPLETE when U25 was implemented)"},
+    "D08": {"description": "LADEE NMS He/Ne/Ar (requested by U26)", "package_directory": "ladee_nms", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": true, "selection_files": [{"file": "calibration_holdout.json", "status_key": ["status"], "frozen_status_values": []}], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for ladee_nms; prepare_d08.py refuses an output root different from its input root"},
+    "D09": {"description": "LRO/LAMP helium (requested by U26)", "package_directory": "lamp", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": true, "selection_files": [{"file": "calibration_holdout.json", "status_key": ["status"], "frozen_status_values": []}], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for lamp; finalize_d09.py rewrites raw/SHA256SUMS.txt"},
+    "D10": {"description": "Kaguya GRS potassium map (requested by U21)", "package_directory": "grs", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": false, "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for grs; k_map_native.npz embeds zip timestamps"},
+    "D11": {"description": "IAU meteoroid streams (requested by U23)", "package_directory": "meteoroids", "readiness": {"file": "qa_report.json", "key": ["data_status"]}, "observation_dataset": false, "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for meteoroids"},
+    "D12": {"description": "Apollo 17 LACE (requested by U26)", "package_directory": "lace", "readiness": {"file": "qa_report.json", "key": ["data_status"]}, "observation_dataset": true, "selection_files": [], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for lace; inventory_lace_sources.py rewrites raw/data_search_manifest.json"},
+    "D13": {"description": "Kaguya PACE pickup ions (requested by U26)", "package_directory": "pace", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": true, "selection_files": [{"file": "event_selection.json", "status_key": ["status"], "frozen_status_values": []}], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for pace; its .csv.gz and .npz outputs embed write times"},
+    "D14": {"description": "Ground-based sodium tail (requested by U26)", "package_directory": "sodium_tail", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": true, "selection_files": [{"file": "profile_selection.json", "status_key": ["status"], "frozen_status_values": []}], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for sodium_tail"},
+    "D15": {"description": "LADEE water events (requested by U26)", "package_directory": "ladee_water", "readiness": {"file": "qa_report.json", "key": ["status"]}, "observation_dataset": true, "selection_files": [{"file": "event_definition.json", "status_key": ["status"], "frozen_status_values": []}, {"file": "water_selection_definition.json", "status_key": ["status"], "frozen_status_values": []}], "verification": null, "verification_unregistered_reason": "no integrity/reproduction recipe reviewed for ladee_water"}
+  }
+}

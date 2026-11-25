@@ -198,7 +198,10 @@ the precise subset addressed; it does not declare their complete scopes closed.
 - **U25 / I41-I46:** add a package selector that reads each required README,
   `provenance.json`, and `qa_report.json`, verifies every referenced hash, and
   emits an immutable run manifest with build, executable, layout, seeds, and
-  external-data identities.
+  external-data identities.  *2026-11-23:* the U25 package selector, hash
+  verification and package reproduction are implemented
+  (`U25_data_provenance/`).  The I41-I46 linked run manifest with build,
+  executable, layout and seed identities remains open.
 - **U26 / I32-I40:** implement independent geometry fixtures for Kaguya TVIS,
   LADEE NMS, LAMP, LACE, PACE, and ground-based Na operators before any
   observational score.  Instrument selection, calibration, and hold-out sets
