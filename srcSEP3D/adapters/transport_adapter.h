@@ -104,6 +104,38 @@ struct MoverInput {
   RuntimeModel::FocusedScatteringFrame focusedScatteringFrame =
       RuntimeModel::FocusedScatteringFrame::PlasmaFrameIsotropic;
   std::uint64_t maximumScatteringEventsPerSubstep = 100000;
+  // Absorbing shock (source.shock.returning_particles = absorb, 2026-11-26).
+  // A particle that crosses the front into its downstream side, where the
+  // front is an accepted shock, is removed: the 1-D net source already counts
+  // only escaping particles.  moverEpochS is the model time at the start of
+  // this (sub)step; shockAccepted answers whether the front point is an
+  // accepted shock at an epoch.
+  //   absorbAtShock  enables the test after every substep (AdvanceParticle;
+  //                  geometry and statistics in shock_return.h).  The front
+  //                  geometry is `shock`, whose radiusAtStepStartM the caller
+  //                  sets to the radius at moverEpochS.
+  //   moverEpochS    model time [s] at the start of this (sub)step; the hit
+  //                  epoch passed to shockAccepted is moverEpochS + tau dt.
+  //   shockAccepted  optional query (frame point [m], epoch [s]) ->
+  //                  accepted; main_lib.cpp binds it to the ShockSurface
+  //                  front state (supported && accepted).  nullptr accepts
+  //                  every point of the geometric front.  A failed query
+  //                  fails the particle.
+  bool absorbAtShock = false;
+  double moverEpochS = 0.0;
+  // Rotating-frame inertial forces of the focused movers (corotating frame).
+  //   inertialForces  application.sep.transport.frame_inertial_forces:
+  //                   None, Coriolis, or CoriolisAndCentrifugal.  Only the
+  //                   two focused movers evaluate it; Parker ignores it.
+  //   frameAngularVelocityRadPerS  Omega of the computation frame [rad/s]
+  //                   (0 in a non-rotating frame, where the terms vanish).
+  // The terms are described at EvaluateFrameInertialTerms
+  // (transport_adapter.cpp) and in transport/focused_transport.h.
+  RuntimeModel::FrameInertialForces inertialForces =
+      RuntimeModel::FrameInertialForces::None;
+  Core::Vec3 frameAngularVelocityRadPerS;
+  Core::Status (*shockAccepted)(const Core::Vec3& frontPointM, double epochS,
+                                bool* accepted) = nullptr;
 };
 
 struct MoverResult {

@@ -99,18 +99,28 @@ double RelativisticSpeed(double momentumKgMPerS, double massKg) {
       std::hypot(momentumKgMPerS, mc);
 }
 
+// dmu/dt [1/s] of the deterministic part (focused_transport.h):
+//   (1-mu^2)/2 [v div b + mu (div U - 3 bb:grad U)] - (1-mu^2) A,
+// the last term the optional rotating-frame inertial term
+// A = frameAccelerationOverSpeedPerS (0 unless frame_inertial_forces is set,
+// so the released mover is reproduced exactly by default).
 double FocusedPitchDriftPerS(double mu, double speedMPerS,
                              const FocusedLocalState& local) {
   const double oneMinusMu2 = std::max(0.0, 1.0 - mu * mu);
   return 0.5 * oneMinusMu2 *
       (speedMPerS * local.divBhatPerM +
-       mu * (local.divUPerS - 3.0 * local.fieldAlignedStrainPerS));
+       mu * (local.divUPerS - 3.0 * local.fieldAlignedStrainPerS)) -
+      oneMinusMu2 * local.frameAccelerationOverSpeedPerS;
 }
 
+// d ln p/dt [1/s] of the deterministic part:
+//   -1/2 [(1-mu^2) div U + (3mu^2-1) bb:grad U] - mu A,
+// with the same optional inertial term A as FocusedPitchDriftPerS.
 double FocusedLogMomentumRatePerS(double mu,
                                   const FocusedLocalState& local) {
   return -0.5 * ((1.0 - mu * mu) * local.divUPerS +
-      (3.0 * mu * mu - 1.0) * local.fieldAlignedStrainPerS);
+      (3.0 * mu * mu - 1.0) * local.fieldAlignedStrainPerS) -
+      mu * local.frameAccelerationOverSpeedPerS;
 }
 
 double ReflectPitchAngle(double mu, unsigned* reflections) {

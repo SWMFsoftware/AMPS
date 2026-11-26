@@ -14,6 +14,9 @@
 
 #include "../adapters/particle_ledger.h"
 
+#include <cstdint>
+#include <vector>
+
 // InjectionPlan is intentionally incomplete here.  This header is reachable
 // from AMPS-facing declarations, while its concrete definition eventually
 // includes canonical SWCME/sep_common headers.  Only the implementation that
@@ -51,6 +54,30 @@ struct Context {
   // part of the frozen context instead of a file-scope magic number so it can
   // be fingerprinted and restored with the run configuration.
   std::uint64_t maximumSubsteps = 100000;
+  // Absorbing shock (source.shock.returning_particles = absorb): the model
+  // time of the current step start (the shock record is evaluated there) and
+  // the acceptance query of the front.
+  //   absorbAtShock   copied into every MoverInput (transport_adapter.h).
+  //   stepStartEpochS model time [s] that `shock` describes; replaced together
+  //                   with the shock by UpdateShockAtEpoch before each step.
+  //                   MoveParticle advances the shock radius from it to a
+  //                   particle's own first-move epoch.
+  //   shockAccepted   front-state query, see MoverInput::shockAccepted.
+  bool absorbAtShock = false;
+  // Long jumps (observer flux tube, 2026-11-26): substeps may enter cells
+  // this rank does not hold (the background resolver evaluates the provider
+  // there), and a particle ending on another rank's leaf is handed to its
+  // owner after the mover phase instead of being lost.
+  // With a fixed run.time_step_s a fast particle crosses many blocks in one
+  // step; without this the result would depend on the MPI decomposition
+  // (README of test/event_2013_04_11 section 2.7).  "Active" means a leaf of
+  // the observer-tube mask (IsUsedInCalculationFlag); leaving the active
+  // domain sideways still removes the particle, and is counted
+  // (TakeLeftActiveDomainCount).
+  bool longJumps = false;
+  double stepStartEpochS = 0.0;
+  Core::Status (*shockAccepted)(const Core::Vec3& frontPointM, double epochS,
+                                bool* accepted) = nullptr;
 };
 
 // Install is legal before particle motion begins. The pointed-to ledger is
@@ -58,6 +85,23 @@ struct Context {
 Core::Status InstallContext(const Context& context);
 bool ContextInstalled();
 Core::Status UpdateShock(const Adapters::ExpandingShock& shock);
+// Replace the shock record together with the epoch it describes (the start
+// of the next step); used by the absorbing shock.  Same preconditions and
+// failures as UpdateShock (not during particle motion; a valid active
+// record); the epoch is stored only when the shock was accepted.
+Core::Status UpdateShockAtEpoch(const Adapters::ExpandingShock& shock,
+                                double stepStartEpochS);
+// Long-jump hand-off: the records of particles that ended this step on a
+// leaf this rank does not hold (taken and cleared), and the number of
+// particles that left the active domain sideways since the last call.
+// Both are rank-local; main_lib.cpp ExchangeLongJumpParticles gathers the
+// records on all ranks after the mover phase, lets each owner insert them,
+// and sums the counts for the run log.  A record carries the complete
+// persistent particle state (identity, step and substep keys, momentum, mu,
+// gyrophase, scattering state, statistical weight), so the particle
+// continues on its new owner exactly as it would have on this rank.
+std::vector<Adapters::ParticleRecord> TakeLongJumpParticles();
+std::uint64_t TakeLeftActiveDomainCount();
 
 // Request exactly one packed persistent record before AMPS freezes its
 // particle-buffer layout. AMPS checkpoint/restart then carries stochastic

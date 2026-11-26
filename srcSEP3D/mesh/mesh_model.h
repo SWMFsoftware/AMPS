@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <limits>
+#include <memory>
 #include <vector>
 
 namespace SEP3D {
@@ -50,6 +52,63 @@ struct SolarBoundaryGeometry {
   Core::Vec3 centerM;
   double radiusM = Core::Const::R_sun;
 };
+
+// ---------------------------------------------------------------------------
+// Observer flux tube (mesh.active_region.mode = observer-flux-tube).
+//
+// Classification geometry of the tube traced by mesh/observer_flux_tube.h.
+// The application builds it before the mesh exists (main_lib.cpp,
+// BuildObserverFluxTubeBeforeMesh) from the kept field lines: one capsule
+// per chord [x_i, x_{i+1}] of every line, with radius
+//     max(s_i, s_{i+1}) + |x_{i+1} - x_i| / 2 + 256 eps R_outer,
+// where s = sqrt(Phi/|B|) is the line's local spacing.  The s term covers
+// the flux between neighbouring lines, the half-chord term bounds the
+// distance between the curved line and its chord, and the last term is a
+// roundoff guard.  The union of capsules is the tube:
+//   - BuildActiveRegionPlan marks every leaf that a capsule intersects as
+//     Core (then buffer layers, cavity filling and connectivity follow as
+//     for the analytic corridor);
+//   - RequestedCellSizeM grades the cell size with the distance to the
+//     capsules (DistanceToObserverTubeM).
+// All positions are mesh coordinates [m] (Sun-centred frame position plus
+// the configuration's coordinate origin).
+// ---------------------------------------------------------------------------
+
+// One capsule: the chord from firstM to secondM [m] and its radius [m].
+struct ActiveTubeSegment {
+  Core::Vec3 firstM;
+  Core::Vec3 secondM;
+  double envelopeRadiusM = 0.0;
+};
+// Spatial index over the capsules: a bounding-volume hierarchy of their
+// axis-aligned boxes (defined in mesh_model.cpp).
+struct ObserverTubeIndex;
+struct ObserverTubeGeometry {
+  std::vector<ActiveTubeSegment> segments;  // every chord of every kept line
+  // The line ends on the inner sphere, one per line.  The active-region plan
+  // requires a Core leaf that contains at least one of them (a source leaf).
+  std::vector<Core::Vec3> sourcePointsM;
+  // The line ends on the outer sphere, one per line.  The plan requires a
+  // Core leaf that contains at least one of them (a terminal leaf).
+  std::vector<Core::Vec3> terminalPointsM;
+  std::uint64_t digest = 0;   // the tube's line-point digest (observer_flux_tube.h)
+  // Built by IndexObserverTube; used by the distance-graded refinement.
+  // Null until indexed.
+  std::shared_ptr<const ObserverTubeIndex> index;
+};
+// Build the spatial index of the tube capsules from geometry->segments and
+// store it in geometry->index.  Rebuilding after segments change replaces
+// the index.  Errors: InvalidInput for a null geometry.
+Core::Status IndexObserverTube(ObserverTubeGeometry* geometry);
+// Distance [m] from a mesh point to the nearest capsule surface,
+//     min_k max(0, dist(x, chord_k) - radius_k),
+// which is 0 inside the tube.  The result is clipped at capM: the query
+// prunes every box farther than the best distance so far, starting from
+// capM, so the cost stays small far from the tube.  Without an index (or
+// with no segments) it returns capM.
+double DistanceToObserverTubeM(const ObserverTubeGeometry& geometry,
+                               const Core::Vec3& positionM,
+                               double capM = std::numeric_limits<double>::infinity());
 
 struct ResolutionConfiguration {
   // All radius and Parker-geometry calculations are relative to this origin.
@@ -95,6 +154,12 @@ struct ResolutionConfiguration {
       RuntimeModel::TubeRadiusMode::ConstantAngularWidth;
   unsigned activeTubeBufferBlocks = 0;
   double activeSolarSphereRadiusM = 0.0;
+  // ObserverFluxTube: the indexed tube geometry, filled by the application
+  // before the mesh is built (main_lib.cpp, ResolutionConfiguration()).  It
+  // is null in every other mode, and before the tube is traced.  Validate()
+  // runs once before the tracing, so it does not require this field;
+  // BuildActiveRegionPlan does.
+  std::shared_ptr<const ObserverTubeGeometry> observerTube;
   double solarWindSpeedMPerS = Core::Const::V_sw_default;
   double solarRotationRateRadPerS = Core::Const::Omega_sun;
   Core::Vec3 rotationAxis = {0.0, 0.0, 1.0};

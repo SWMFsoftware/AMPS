@@ -48,10 +48,20 @@
                   "--raw", "{sep_validation_data}/event_2013_04_11"],
       "env": {"PYTHONPATH": "{sep_python_path}"},
       "time_limit_min": 10,
-      "note": "regenerates every checked-in input of the SEP--event-2013-04-11 tests (derived.json, observations.csv, event.event, event.in, event.nightly.in, event.args, the WSO asset, deck_summary.json) from the raw archives and byte-compares them, so a change of the preparation script, its settings or the archives is caught; the Table tests themselves only read the checked-in files. About 5 s.",
+      "note": "regenerates every checked-in input of the SEP--event-2013-04-11 tests (derived.json, observations.csv, event.event, event.in, event.nightly.in, event.args, the WSO asset, deck_summary.json, and the srcSEP3D 3-D decks and ephemerides of srcSEP3D/test/event_2013_04_11) from the raw archives and byte-compares them, so a change of the preparation script, its settings or the archives is caught; the Table tests themselves only read the checked-in files. About 5 s.",
       "results": {"reader": "exit-code"},
       "families": "app-sep",
       "requires_vars": ["sep_validation_data", "sep_python_path"]
+    },
+    {
+      "id": "sep3d-event-units",
+      "title": "srcSEP3D 2013-04-11 3-D additions: unit tests E3D01-E3D06",
+      "workspace": "plain",
+      "command": ["sh", "srcSEP3D/test/event_2013_04_11/run_unit_tests.sh"],
+      "time_limit_min": 10,
+      "note": "standalone ASan/UBSan unit tests of the corotating frame, the focused-mover inertial terms, ephemeris interpolation, field-line tracing and the observer flux tube, the absorbing shock and the 1-D-equivalent tube-line source (srcSEP3D/test/event_2013_04_11/README.md, section 5); no AMPS build. About 30 s.",
+      "results": {"reader": "exit-code"},
+      "families": "app-sep"
     },
     {
       "id": "sep",

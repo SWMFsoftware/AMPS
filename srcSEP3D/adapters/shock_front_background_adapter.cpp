@@ -73,20 +73,41 @@ Core::Status ShockFrontBackgroundAdapter::Create(
           eventPath.string());
   if(!resolved.ok())return Invalid("cannot resolve shock-front event: "+
       resolved.status.message);
-  // srcSEP3D's source/surface consumers are written for the finite SSE cap
-  // (half width, cap axis, support rim). The v1.3 closed heliocentric sphere
-  // is qualified only for the srcSEP field-line consumer; reject it here
-  // instead of letting a pi half-width reach SSE-specific geometry.
+  // Both geometries of the shared core are consumed through the
+  // provider-neutral ShockSurface (adapters/shock_surface.h).  The mover-side
+  // shock record (ExpandingShock) carries Sphere or FiniteSSE accordingly.
+  // Any other core geometry is rejected here rather than reaching consumers
+  // that know only these two.
   if(resolved.value->geometryModel!=
-      SEP::CoronaSwcme::ShockFront::GeometryModel::FiniteSseFixedWidth)
-    return Invalid("srcSEP3D reduced shock-front consumers support only "
-        "geometry.model=finite-sse-fixed-width");
+         SEP::CoronaSwcme::ShockFront::GeometryModel::FiniteSseFixedWidth&&
+     resolved.value->geometryModel!=
+         SEP::CoronaSwcme::ShockFront::GeometryModel::HeliocentricSphere)
+    return Invalid("srcSEP3D reduced shock-front consumers support "
+                   "geometry.model=finite-sse-fixed-width or heliocentric-sphere");
+  const Core::ComputationFrame frame=options.ComputationFrameValue();
+  if(!frame.IsInertial()) {
+    // The corotating computation frame is the frame in which the reduced
+    // ambient (a rigidly rotating PFSS/Parker pattern) is static.  Any other
+    // rate would make the traced tube and the published field time dependent.
+    // The comparison is exact (bitwise equality of the two doubles): the
+    // deck must state the event's rate literally (2.86533e-6 rad/s in the
+    // 2013-04-11 test).
+    const double eventRate=resolved.value->ambient.ambient.rotationRateRadPerS;
+    if(frame.RotationRateRadPerS()!=eventRate)
+      return Invalid("mesh.domain.frame_rotation_rate_rad_per_s must equal the "
+                     "event's ambient.rotation_rate_rad_per_s ("+
+                     std::to_string(eventRate)+") so the ambient is static in "
+                     "the corotating frame");
+  }
   const auto shared=SEP::CoronaSwcme::ShockFront::Provider::Create(resolved.value);
   if(!shared.ok())return Invalid("cannot construct shock-front provider: "+
       shared.status.message);
   std::shared_ptr<ShockFrontBackgroundAdapter> candidate(
       new ShockFrontBackgroundAdapter);
   candidate->provider_=shared.value;candidate->originM_=options.coordinateOriginM;
+  // Keep the frame for every conversion below and the run's frame label for
+  // the published snapshot metadata.
+  candidate->frame_=frame;candidate->runFrameName_=options.coordinateFrame;
   candidate->configurationDigest_=Digest(resolved.value->physicsFingerprint);
   const auto valid=candidate->Validate();if(!valid.ok())return valid;
   *output=std::move(candidate);return Core::Status::OK();
@@ -149,8 +170,16 @@ Core::Status ShockFrontBackgroundAdapter::Prepare(double timeS) {
   next.provider=Background::ProviderKind::RuntimeModel;
   next.ownership=Background::StorageOwnership::ModelOwned;
   next.epochS=next.validFromS=timeS;
-  next.validUntilS=std::min(event.ambient.support.endS,timeS+event.backgroundDtS);
-  next.generation=generation;next.coordinateFrame=event.coordinateFrame;
+  // In the corotating frame of the event's rotation the published ambient
+  // is static (a rigidly rotating pattern): it stays valid to the end of the
+  // event support, so no republication is needed.  In HCI the pattern turns,
+  // so the snapshot keeps the event's background cadence backgroundDtS.
+  next.validUntilS=frame_.IsInertial()?
+      std::min(event.ambient.support.endS,timeS+event.backgroundDtS):
+      event.ambient.support.endS;
+  next.generation=generation;
+  // The published cells are in the run's computation frame.
+  next.coordinateFrame=runFrameName_.empty()?event.coordinateFrame:runFrameName_;
   next.providerIdentity=CanonicalName();
   next.configurationFingerprint=event.physicsFingerprint;
   metadata_=std::move(next);prepared_=true;return Core::Status::OK();
@@ -178,22 +207,39 @@ Background::BackgroundSample ShockFrontBackgroundAdapter::Evaluate(
   // point lies behind the front: the reduced provider has no physical sheath
   // or ejecta volume, and painting a local RH state into cells would fabricate
   // one.  Immediate downstream exists only in FrontEpoch() records.
+  // In a corotating run the cell position is a frame point: rotate it into
+  // HCI for the query and every returned vector/tensor back into the frame.
+  // B rotates as a true vector; U also loses the frame velocity Omega x x at
+  // the HCI point (U' = U - Omega x x, field-aligned for the corotating
+  // ambient).  Scalars (density, temperature, pressure, Alfven speed) are
+  // frame independent.
   const Core::Vec3 local=global-originM_;
-  const auto state=provider_->QueryAmbient({local.x,local.y,local.z},
-      metadata_.epochS,metadata_.generation);
+  const double epoch=metadata_.epochS;
+  const Core::Vec3 hci=frame_.ToInertialPosition(local,epoch);
+  const auto state=provider_->QueryAmbient({hci.x,hci.y,hci.z},
+      epoch,metadata_.generation);
   if(!state.ok()) {out.status=Invalid(state.status.message);return out;}
   const auto& value=state.value;
-  out.B=Convert(value.primitive.magneticFieldT);
-  out.U=Convert(value.primitive.velocityMPerS);
+  out.B=frame_.FromInertialVector(Convert(value.primitive.magneticFieldT),epoch);
+  out.U=frame_.FromInertialVelocity(Convert(value.primitive.velocityMPerS),
+                                    hci,epoch);
   out.absB=out.B.Norm();out.bHat=out.absB>0?out.B/out.absB:Core::Vec3{};
   out.numberDensityM3=value.primitive.plasma.electronNumberDensityM3;
   out.temperatureK=value.primitive.protonTemperatureK;
   out.pressurePa=value.primitive.plasma.pressurePa;
   out.alfvenSpeedMpS=value.primitive.plasma.alfvenSpeedMPerS;
+  // The core's gradients are row-major d(component)/d(HCI coordinate).  In
+  // the frame they become R G R^T with R = Rz(-theta); grad U also loses the
+  // antisymmetric grad(Omega x x), which leaves div U and bb:grad U
+  // unchanged (core/computation_frame.h).
+  Core::ComputationFrame::Tensor gradB{},gradU{};
+  for(int i=0;i<9;++i){gradB[i]=value.gradientB[i];gradU[i]=value.gradientU[i];}
+  gradB=frame_.FromInertialTensor(gradB,epoch);
+  gradU=frame_.FromInertialVelocityGradient(gradU,epoch);
   for(int component=0;component<3;++component)for(int coordinate=0;
       coordinate<3;++coordinate) {
-    out.gradB(component,coordinate)=value.gradientB[3*component+coordinate];
-    out.gradU(component,coordinate)=value.gradientU[3*component+coordinate];
+    out.gradB(component,coordinate)=gradB[3*component+coordinate];
+    out.gradU(component,coordinate)=gradU[3*component+coordinate];
   }
   Background::CompleteVectorDerivatives(&out);
   out.generation=metadata_.generation;out.configurationDigest=configurationDigest_;
@@ -208,6 +254,26 @@ Background::ProviderCapabilities ShockFrontBackgroundAdapter::Capabilities() con
   Background::ProviderCapabilities out;out.hasGradB=out.hasDivBhat=
       out.hasCurvature=out.hasGradU=out.hasFieldAlignedStrain=
       out.hasPlasmaState=out.supportsBatchEval=true;return out;
+}
+
+// Ambient B, U' and sector at a frame point (see the header).  Unlike
+// Evaluate() it needs no prepared snapshot and takes its own epoch, so the
+// observer-tube tracer can call it while the mesh is being built.  Errors:
+// no provider, or the core's ambient evaluation fails (e.g. a point where
+// the open-tube wind has no solution).
+Core::Status ShockFrontBackgroundAdapter::AmbientAt(
+    const Core::Vec3& framePositionM,double epochS,Core::Vec3* magneticFieldT,
+    Core::Vec3* velocityMPerS,int* sector) const {
+  if(!provider_)return Invalid("shock-front adapter has no provider");
+  const Core::Vec3 hci=frame_.ToInertialPosition(framePositionM-originM_,epochS);
+  const auto state=provider_->Ambient().Evaluate({hci.x,hci.y,hci.z},epochS);
+  if(!state.ok())return Invalid(state.status.message);
+  if(magneticFieldT)*magneticFieldT=frame_.FromInertialVector(
+      Convert(state.value.magneticFieldT),epochS);
+  if(velocityMPerS)*velocityMPerS=frame_.FromInertialVelocity(
+      Convert(state.value.velocityMPerS),hci,epochS);
+  if(sector)*sector=state.value.magneticSector;
+  return Core::Status::OK();
 }
 
 std::shared_ptr<const SEP::CoronaSwcme::ShockFront::Epoch>

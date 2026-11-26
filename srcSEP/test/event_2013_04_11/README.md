@@ -1,5 +1,8 @@
 # 2013-04-11 SEP event: real-event end-to-end validation (srcSEP, reduced shock-front path)
 
+The 3-D version of this test (srcSEP3D, the same shock, ambient and
+observations in the corotating frame) is [`srcSEP3D/test/event_2013_04_11`](../../../srcSEP3D/test/event_2013_04_11/README.md).
+
 This directory holds the inputs of the 2013-04-11 real-event tests, in two
 tiers (Section 5): the nightly regression
 `SEP--event-2013-04-11--{Parker,FTE-Dmumu,FTE-MFP}` (`event.nightly.in`) and

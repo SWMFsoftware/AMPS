@@ -48,6 +48,32 @@ enum class RandomPurpose : std::uint64_t {
   ReducedSourceBarycentric = 17,
   ReducedSourceSpectrum = 18,
   ReducedSourceIdentity = 19,
+  // 1-D-equivalent release on observer-tube lines (2026-11-26) and the
+  // absorbing shock's Brownian-bridge test.
+  // One purpose per independent quantity of adapters/tube_line_source.cpp
+  // (keyed by campaign seed, step, sample and species), so each is drawn
+  // from its own stream:
+  //   TubeSourceTime        birth phase inside the sample's time stratum
+  //   TubeSourceLine        choice of the tube line by rate
+  //   TubeSourceTransverse  position over the flux element's footprint
+  //   TubeSourceSpectrum    momentum (DSA law or log-uniform proposal)
+  //   TubeSourcePitch       pitch-angle cosine
+  //   TubeSourceGyrophase   gyrophase
+  //   TubeSourceIdentity    stable particle identity (hash of its key)
+  //   ShockReturnBridge     hidden-crossing draw of the absorbing shock
+  //                         (adapters/shock_return.cpp), keyed like the
+  //                         particle's mover substep.
+  // The values are part of the random keys, so they must not be renumbered:
+  // that would change the draws of these purposes and therefore the
+  // regression references of the tests that use them.
+  TubeSourceTime = 20,
+  TubeSourceLine = 21,
+  TubeSourceTransverse = 22,
+  TubeSourceSpectrum = 23,
+  TubeSourcePitch = 24,
+  TubeSourceGyrophase = 25,
+  TubeSourceIdentity = 26,
+  ShockReturnBridge = 27,
   ReservedFuturePhysics = 1024
 };
 

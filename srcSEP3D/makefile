@@ -153,10 +153,14 @@ endif
 
 # L0 numerical core.  Headers are not listed here; normal compiler dependency
 # tracking in the enclosing AMPS build determines when they trigger rebuilds.
+# mesh/observer_flux_tube.cpp traces the observer flux tube
+# (mesh.active_region.mode = observer-flux-tube); like the other L0 sources it
+# depends on neither AMPS, PIC nor MPI.
 CORE_SRC := \
     core/parker_geometry.cpp \
     core/domain_geometry.cpp \
-    mesh/mesh_model.cpp
+    mesh/mesh_model.cpp \
+    mesh/observer_flux_tube.cpp
 # Concrete runtime providers link the single canonical SWCME implementation;
 # AMPS-facing headers remain provider-neutral and do not duplicate model code.
 BG_SRC := \
@@ -182,12 +186,25 @@ RUNTIME_SRC := \
     runtime/runtime.cpp \
     runtime/background_factory.cpp \
     runtime/runtime_adapters.cpp
+# Shock-surface sources of the 3-D 2013-04-11 test (all AMPS/PIC/MPI-free):
+#   reduced_front_shock_surface.cpp  provider-neutral ShockSurface over the
+#                                    reduced shock-front core (both geometries);
+#   tube_line_source.cpp             the 1-D-equivalent net source on the
+#                                    observer-tube lines;
+#   shock_return.cpp                 the absorbing-shock test of one substep.
 ADAPTER_SRC := \
     adapters/transport_adapter.cpp \
     adapters/particle_ledger.cpp \
     adapters/shock_front_background_adapter.cpp \
+    adapters/reduced_front_shock_surface.cpp \
+    adapters/tube_line_source.cpp \
+    adapters/shock_return.cpp \
     adapters/swcme_source_adapter.cpp \
     adapters/source_runtime.cpp
+# output/observer_trajectory.cpp: observer trajectories (fixed, moving and
+# body observers with an ephemeris table) in HCI and the computation frame.
+# output/spice_ephemeris.cpp: the SPICE ephemeris of body observers; it has an
+# explicit rule below that adds CSPICE when the AMPS build names a toolkit.
 OUTPUT_SRC := \
     output/sampling.cpp \
     output/observer_runtime.cpp \
@@ -195,6 +212,8 @@ OUTPUT_SRC := \
     output/restart.cpp \
     output/output_coordinator.cpp \
     output/reduced_front_output.cpp \
+    output/observer_trajectory.cpp \
+    output/spice_ephemeris.cpp \
     output/point_sampling.cpp
 VALIDATION_SRC := validation/validation_metrics.cpp
 # This evaluator consumes the public coronal-CME API and is linked only into
@@ -478,6 +497,21 @@ adapters/%.o: adapters/%.cpp
 
 output/%.o: output/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+# Body-observer SPICE ephemeris (output/spice_ephemeris.h): compiled against
+# CSPICE only when the AMPS configuration names a SPICE toolkit
+# (Config.pl -spice-path=DIR writes SPICE=DIR into Makefile.local); the AMPS
+# link then adds cspice.a.  A nospice build compiles the typed refusal.
+# SEP3D_SPICE_PATH may be set on the make command line; otherwise it is the
+# last SPICE= line of Makefile.local (SPICEKERNELS= does not match).  An empty
+# value or "nospice" keeps the generic output/%.o rule; any other value
+# replaces it for this one object with -DSEP3D_WITH_SPICE and the CSPICE
+# include directory.
+SEP3D_SPICE_PATH ?= $(strip $(shell sed -n 's/^SPICE=//p' $(AMPS_ROOT)/Makefile.local 2>/dev/null | tail -n 1))
+ifneq ($(filter-out nospice,$(SEP3D_SPICE_PATH)),)
+output/spice_ephemeris.o: output/spice_ephemeris.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -DSEP3D_WITH_SPICE -I$(SEP3D_SPICE_PATH)/include -MMD -MP -c -o $@ $<
+endif
 
 validation/%.o: validation/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<

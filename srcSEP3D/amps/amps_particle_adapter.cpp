@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>    // std::fprintf of the opt-in disposition diagnostics
+#include <cstdlib>   // std::getenv / std::atol of SEP3D_DEBUG_DISPOSITIONS
 #include <cstring>
 #include <limits>
 #include <unordered_set>
@@ -293,6 +295,45 @@ Core::Status InstallContext(const Context& context) {
 }
 
 bool ContextInstalled() { return gContextInstalled; }
+
+// Long-jump state of this rank (observer flux tube; Context::longJumps).
+//   gLongJumpOutbox    records of particles that ended the current step on
+//                      another rank's active leaf; filled by MoveParticle,
+//                      drained by TakeLongJumpParticles after the mover phase.
+//   gLeftActiveDomain  particles removed because they ended outside the
+//                      active domain (no allocated block and not an active
+//                      leaf of another rank), since the last
+//                      TakeLeftActiveDomainCount.
+// MoveParticle runs in the AMPS mover loop of one rank; these are plain
+// rank-local containers.
+namespace {
+std::vector<Adapters::ParticleRecord> gLongJumpOutbox;
+std::uint64_t gLeftActiveDomain = 0;
+}  // namespace
+
+// Move the queued records out and leave the outbox empty for the next step.
+std::vector<Adapters::ParticleRecord> TakeLongJumpParticles() {
+  std::vector<Adapters::ParticleRecord> out;
+  out.swap(gLongJumpOutbox);
+  return out;
+}
+
+// Return and reset this rank's count of particles that left the active domain.
+std::uint64_t TakeLeftActiveDomainCount() {
+  const std::uint64_t count = gLeftActiveDomain;
+  gLeftActiveDomain = 0;
+  return count;
+}
+
+// The shock record and the model time it describes are replaced together,
+// so MoveParticle can advance the record to each particle's own epoch.  The
+// epoch is kept unchanged when UpdateShock rejects the record.
+Core::Status UpdateShockAtEpoch(const Adapters::ExpandingShock& shock,
+                                double stepStartEpochS) {
+  const Core::Status status = UpdateShock(shock);
+  if (status.ok()) gContext.stepStartEpochS = stepStartEpochS;
+  return status;
+}
 
 Core::Status UpdateShock(const Adapters::ExpandingShock& shock) {
   if (!gContextInstalled)
@@ -775,6 +816,29 @@ int MoveParticle(long int ptr, double dtTotal,
   // continuous-time process rather than moving all births from the beginning
   // of the step.
   input.requestedDtS = dtTotal*persistent.remainingFirstStepFraction;
+  // A particle born at tau inside the step starts its first move at
+  // stepStart + tau: advance the shock record to that epoch.
+  //   offset = dt - requestedDt = tau dt  (0 for every later step, where
+  //   remainingFirstStepFraction = 1), moverEpoch = stepStart + offset,
+  //   R(moverEpoch) = R(stepStart) + V_sh offset   (linear front motion).
+  // The absorbing test of every substep then uses the front at that
+  // substep's own times, also for a particle born inside the step.
+  {
+    const double offsetS = dtTotal - input.requestedDtS;
+    input.moverEpochS = gContext.stepStartEpochS + offsetS;
+    // (Only with the absorbing shock: the legacy front-surface source keeps
+    // its released step-start record.)
+    if (gContext.absorbAtShock && input.shock.active)
+      input.shock.radiusAtStepStartM += input.shock.radialSpeedMPerS * offsetS;
+    input.absorbAtShock = gContext.absorbAtShock;
+    input.shockAccepted = gContext.shockAccepted;
+  }
+  // Optional rotating-frame inertial forces of the focused movers, and the
+  // frame's angular velocity Omega [rad/s] they need (zero vector for a
+  // non-rotating frame).
+  input.inertialForces = configuration->options().frameInertialForces;
+  input.frameAngularVelocityRadPerS =
+      configuration->options().ComputationFrameValue().AngularVelocity();
   input.innerRadiusM = configuration->options().innerRadiusM;
   input.outerRadiusM = configuration->options().outerRadiusM;
   input.campaignSeed = configuration->options().campaignSeed;
@@ -818,7 +882,20 @@ int MoveParticle(long int ptr, double dtTotal,
     double x[3];
     particle.positionM.CopyTo(x);
     state->node = PIC::Mesh::mesh->findTreeNode(x, state->node);
-    if (state->node == nullptr || state->node->block == nullptr)
+    if (gContext.longJumps && state->node != nullptr &&
+        state->node->block == nullptr) {
+      // A leaf of another rank: allowed inside the active domain (the
+      // resolver evaluates the provider at the cell centre).
+      // The substep may continue through it: the local resolver
+      // (main_lib.cpp ResolveStoredBackground -> FallbackCellBackground)
+      // evaluates the deterministic background provider at that cell's
+      // centre, which is the value the owner published for the cell, so the
+      // path does not depend on which rank moves the particle.  A leaf outside
+      // the observer-tube mask ends the particle as a domain exit.
+      if (!state->node->IsUsedInCalculationFlag)
+        return Core::Status(Core::StatusCode::DomainExit,
+                            "particle left the active observer flux tube");
+    } else if (state->node == nullptr || state->node->block == nullptr)
       return Core::Status(Core::StatusCode::DomainExit,
                           "particle left the allocated AMR tree during subcycling");
     Core::Status resolved = state->resolver(
@@ -841,6 +918,29 @@ int MoveParticle(long int ptr, double dtTotal,
 
   if (moved.disposition != Adapters::ParticleDisposition::Active ||
       !moved.status.ok()) {
+    // Opt-in diagnosis of removed particles (SEP3D_DEBUG_DISPOSITIONS=N
+    // prints the first N per rank): disposition, reason and state.
+    // Printed per removal to stderr: rank, step, disposition, status
+    // message, start and end radii r0/r1 [m], the shock radius of the record
+    // [m], mu and p [kg m/s] at the start of the call, and the mover epoch
+    // [s].  The budget is read once per process; unset or 0 prints nothing,
+    // so production output is unchanged.
+    static long remaining = [] {
+      const char* text = std::getenv("SEP3D_DEBUG_DISPOSITIONS");
+      return text ? std::atol(text) : 0L;
+    }();
+    if (remaining > 0) {
+      --remaining;
+      const Core::Vec3 from(position);
+      std::fprintf(stderr,
+          "[srcSEP3D debug] rank=%d step=%llu disposition=%s status=%s "
+          "r0_m=%.6e r1_m=%.6e shock_m=%.6e mu=%.4f p=%.4e epoch_s=%.3f\n",
+          PIC::ThisThread, static_cast<unsigned long long>(step),
+          Adapters::Name(moved.disposition), moved.status.message.c_str(),
+          from.Norm(), moved.particle.positionM.Norm(),
+          input.shock.radiusAtStepStartM, input.particle.mu,
+          input.particle.momentumKgMPerS, input.moverEpochS);
+    }
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_LEFT_THE_DOMAIN_;
   }
@@ -874,9 +974,41 @@ int MoveParticle(long int ptr, double dtTotal,
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* finalNode =
       PIC::Mesh::mesh->findTreeNode(finalPosition, bridge.node);
   int i = 0, j = 0, k = 0;
+  // Final placement of an active particle:
+  //  1. long jumps and the end point is on an active leaf with no block on
+  //     this rank: queue the record for its owner and free the local slot;
+  //  2. no tree node, no block, or no cell: the particle left the domain
+  //     (counted when long jumps are on, so sideways losses are reported);
+  //  3. otherwise the native path: link it into the cell's temporary moving
+  //     list of the block that holds the end point.
+  if (gContext.longJumps && finalNode != nullptr &&
+      finalNode->block == nullptr && finalNode->IsUsedInCalculationFlag) {
+    // Ended on another rank's active leaf: hand the complete record to its
+    // owner after the mover phase (main_lib ExchangeLongJumpParticles).
+    // The persistent state was already advanced above (completedStep =
+    // step + 1, substep, scattering state), so the owner's next move uses
+    // the same random keys this rank would have used; the receiving side
+    // sets remainingFirstStepFraction = 1 because this step is complete.
+    Adapters::ParticleRecord record = moved.particle;
+    record.species = species;
+    record.stableId = persistent.stableId;
+    record.completedStep = persistent.completedStep;
+    record.substep = persistent.substep;
+    // Physical weight = global species weight x individual correction; the
+    // owner re-derives its correction from this absolute value.
+    record.statisticalWeight = input.particle.statisticalWeight;
+    gLongJumpOutbox.push_back(record);
+    // The local copy is freed; the particle continues as the owner's copy
+    // (main_lib checks that every handed-off record is inserted exactly once).
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_LEFT_THE_DOMAIN_;
+  }
   if (finalNode == nullptr || finalNode->block == nullptr ||
       PIC::Mesh::mesh->FindCellIndex(
           finalPosition, i, j, k, finalNode, false) == -1) {
+    // Long jumps: an end point outside every active leaf is a sideways exit
+    // from the tube; count it so it is reported, never dropped silently.
+    if (gContext.longJumps) ++gLeftActiveDomain;
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_LEFT_THE_DOMAIN_;
   }

@@ -1,0 +1,72 @@
+{
+  "schema": "srcsep3d-event-2013-04-11-settings-v1",
+  "event": "2013-04-11 SEP event, 3-D (srcSEP3D) version of srcSEP/test/event_2013_04_11",
+  "shared_inputs": "The shock, ambient, wind, PFSS asset, transport law, source band, release fraction, observation channels and clocks are those of the 1-D event (srcSEP/test/event_2013_04_11: event.event, derived.json, observations.csv, event_settings.json). This file holds only what the 3-D model adds.",
+  "decisions": {
+    "note": "User decisions 2026-11-25/26 (see README.md, section 'Decisions').",
+    "shock_model": "the 1-D v1.3 heliocentric sphere of the shared reduced core, consumed through the provider-neutral srcSEP3D ShockSurface so other core models or an MHD-derived front can be added later (user 2026-11-26: '1: OK')",
+    "frame": "HCI-corotating: the domain is fixed along the field lines, which turn with the Sun; the frame rotates at the event's ambient.rotation_rate_rad_per_s about HCI +z and equals HCI at t = 0 (user 2026-11-26: '1: yes')",
+    "domain": "observer-flux-tube: the flux tube met by the collection spheres of SOHO, ACE and Earth during their stay intervals (user 2026-11-26)",
+    "stay_interval": "long tier: the whole particle run; nightly tier: the first hour (user 2026-11-26: '3: yes')",
+    "collection_radius": "set by a convergence study (user 2026-11-26: '4: set it up with a convergence study'); the values below are PROVISIONAL until that study",
+    "source": "the 1-D source on every tube line: eta n1 w1 Phi/|B.n|, release at (1+f) R_sh with f = 0.3, 20 keV - 200 MeV, local-compression DSA, log-uniform importance sampling, positive-normal-flux pitch-angle law (isotropic for Parker), absorbing shock (user 2026-11-26: '4: yes')",
+    "amplitude": "the single ERNE-calibrated scale factor of the matching 1-D run is reused, not re-fitted (user 2026-11-26: '4: yes')",
+    "movers": "parker = 1-D parker (kappa = v lambda/3); focused-diffusion with the PA-ISO pitch-angle library model = 1-D fte-dmumu (D = v(1-mu^2)/(2 lambda)); focused-scattering in the Alfven-wave frames with equal branch rates = 1-D fte-mfp (sep_focused_transport_mfp_core.cpp: equal split of v/lambda for a prescribed lambda)",
+    "inertial_forces": "none: the Coriolis/centrifugal option of the focused movers exists (user 2026-11-26) but stays off so the 3-D movers solve the same equations as the 1-D ones",
+    "tiers": "nightly = first hour, coarse, all three movers, DiffNum against AMPS references; long = full event, observation score reported, not gating (user 2026-11-26: '5: yes')"
+  },
+  "solar_pole": {
+    "right_ascension_deg": 286.13,
+    "declination_deg": 63.87,
+    "obliquity_j2000_arcsec": 84381.448,
+    "note": "IAU WGCCRE solar pole (Archinal et al. 2018, Celest. Mech. Dyn. Astr. 130:22, Table 1) in ICRF; the obliquity is the IAU 1976 value Horizons uses for its J2000 ecliptic. The model frame has +z on this pole and +x on the projection of the geometric Sun->Earth vector at t0 (the 1-D frame definition)."
+  },
+  "bodies": {
+    "soho": "horizons/vectors_soho.txt",
+    "ace": "horizons/vectors_ace.txt",
+    "earth": "horizons/vectors_earth.txt",
+    "note": "hourly DE441 geometric state vectors (Ecliptic J2000, heliocentric) in the raw archive; the instrument channels of observations.csv sit at their host: ERNE on SOHO, EPAM on ACE, GOES-13 at Earth"
+  },
+  "mesh": {
+    "inner_radius_rs": 2.5,
+    "inner_radius_note": "The transport inner sphere is the PFSS source surface, not the 1-D line base 1.1 Rs. No particle can reach r < 2.52 Rs: the shock sphere is at R_sh >= 2.52 Rs from t = 0 and absorbs every particle that returns to it, so the 1-D 1.1-2.5 Rs shell carries no particles. In 3-D the tube's halo blocks below 2.5 Rs would also reach open PFSS tubes where the isothermal open-tube wind has no subsonic solution (the core rejects such points), so the 3-D domain starts at the source surface.",
+    "outer_radius_au": 2.0,
+    "outer_radius_note": "the 1-D outer sphere (event_settings.json numerics.outer_radius_au)",
+    "global_cell_size_au": 0.02,
+    "surface_cell_size_m": 100000000.0,
+    "transition_outer_radius_au": 1.0,
+    "refinement_profile": "linear",
+    "cells_per_block_edge": 4,
+    "maximum_level": 12,
+    "buffer_blocks": 1,
+    "trace_step_m": 1000000000.0,
+    "seed_spacing_m": 0.0,
+    "time_spacing_s": 0.0,
+    "note": "PROVISIONAL until the convergence study: the cell size grows linearly from 1e8 m at the Sun to 0.02 au at 1 au (about 2-6 percent of r everywhere); seed_spacing_m = 0 derives half the cell size at the reference observer and time_spacing_s = 0 lets consecutive collection spheres overlap by 3/4"
+  },
+  "time_step_s": 60.0,
+  "background_cadence_steps": 2484,
+  "background_cadence_note": "the ambient is static in the corotating frame (its published snapshot is valid to the end of the event support), so the background is published once; the cadence is the full particle run",
+  "long": {
+    "time_steps": 2484,
+    "samples_per_step": 200,
+    "collection_radius_au": 0.02,
+    "output_cadence_steps": 10,
+    "stay_interval_s": "whole run"
+  },
+  "nightly": {
+    "time_steps": 60,
+    "samples_per_step": 200,
+    "samples_per_step_note": "200 (the 1-D long-tier value) rather than the 1-D nightly 20: the 3-D observers sample a collection sphere, not a line bin, and 20 samples leave them empty after one hour; with 200 the 0.1-0.5 au and 1 au observers record particles (8.6 min on 8 ranks, 2026-11-26)",
+    "collection_radius_au": 0.02,
+    "output_cadence_steps": 1,
+    "stay_interval_s": "first hour",
+    "inner_observer_radii_au": [0.1, 0.3, 0.5],
+    "inner_observer_energy_bins": 40,
+    "inner_observer_note": "regression-only frame-fixed broadband observers on the Parker-exterior field line through Earth at t0 (the 1-D inner observers); their collection radius scales with r from the body value"
+  },
+  "convergence": {
+    "collection_radius_au": [0.005, 0.01, 0.02, 0.04],
+    "note": "collection-radius study (README.md, section 'Collection radius'): one long-tier run per value; the chosen radius is the largest whose Earth/L1 time profiles agree with the next smaller one within their Monte Carlo uncertainty"
+  }
+}

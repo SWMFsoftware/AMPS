@@ -11,7 +11,9 @@
 
 #include "../core/sep3d_types.h"
 #include "../core/domain_geometry.h"
+#include "../core/computation_frame.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -122,7 +124,17 @@ enum class TubeRadiusMode { PhysicalConstant, ConstantAngularWidth };
 // AMPS deactivates complete leaf blocks rather than individual finite-volume
 // cells.  FullDomain preserves the historical enclosing cube; ParkerTube keeps
 // only blocks conservatively intersecting a configured transport corridor.
-enum class ActiveRegionMode { FullDomain, ParkerTube };
+//
+// ObserverFluxTube (2026-11-26) keeps the blocks crossed by the magnetic flux
+// tube that the collection spheres of the listed observers meet during their
+// declared stay intervals.  The tube is traced through the run's own
+// background field in the computation frame, so it follows the actual
+// (PFSS, accelerating-wind) field lines rather than an analytic spiral.
+// A mesh fixed in the computation frame can follow the tube only if the field
+// is static there: Create() requires the runtime-model background, and
+// main_lib.cpp (BuildObserverFluxTubeBeforeMesh) stops a run whose reduced
+// ambient rotates in an inertial frame.
+enum class ActiveRegionMode { FullDomain, ParkerTube, ObserverFluxTube };
 
 // This identifier is part of the frozen physics fingerprint because mask
 // semantics determine which physical cells can contain fields and particles.
@@ -132,6 +144,12 @@ constexpr const char* kActiveRegionAlgorithmName =
     "finite-parker-capsule-topological-solar-boundary-v3";
 constexpr const char* kSolarSphereActiveRegionAlgorithmName =
     "finite-parker-capsule-topological-solar-sphere-corner-v4";
+// Mask semantics of the observer flux tube: block classification against the
+// capsules of the traced lines (mesh/observer_flux_tube.h, mesh_model.cpp).
+// Create() writes it into the physics fingerprint only when mode =
+// observer-flux-tube, so the fingerprints of other decks are unchanged.
+constexpr const char* kObserverTubeActiveRegionAlgorithmName =
+    "observer-flux-tube-traced-lines-topological-v1";
 enum class PopulationControlMode { Off, SplitMerge };
 // Coefficient choices are deliberately independent of mover selection.  A
 // compatibility check in RunConfiguration3D::Create rejects circular or unused
@@ -182,13 +200,24 @@ enum class ResonanceRangeMode { Reject, PowerLawExtension };
 enum class PitchAngleSchemeMode { ReflectingMilstein, ReflectingEulerMaruyama };
 enum class PerpendicularDiffusionMode { None, Constant, ConstantRatio };
 enum class DriftMode { None, GradientB, Curvature, GradientAndCurvature };
+// Body (2026-11-26): an astronomical body or spacecraft whose heliocentric
+// trajectory comes from an ephemeris (a checksummed table, or SPICE when the
+// build links it).  In a corotating run a FixedCartesian observer is fixed in
+// the computation frame (on a field line), while MovingCartesian and Body
+// observers follow inertial (HCI) trajectories transformed into the frame.
 enum class ObserverKind {
   FixedCartesian,
   FixedHeliographic,
   MovingCartesian,
   SphericalShell,
-  FieldConnected
+  FieldConnected,
+  Body
 };
+// Source of a Body observer's trajectory (observer.ID.ephemeris).  None for
+// every other kind; Table: a checksummed CSV read and interpolated by
+// output/observer_trajectory.cpp; Spice: CSPICE through
+// output/spice_ephemeris.cpp, which a build without SPICE refuses.
+enum class ObserverEphemerisSource { None, Table, Spice };
 enum class ObserverNormalization { RepresentedParticles, DifferentialIntensity };
 // Energy-channel spacing is part of the observer definition rather than a
 // hard-coded sampling implementation detail. Logarithmic channels resolve
@@ -197,6 +226,38 @@ enum class EnergyChannelSpacing { Logarithmic, Linear };
 // Particle source models (source.shock.model).  Only the reduced shock front
 // exists; see SourceOptions::model.
 enum class ParticleSourceModel { ReducedShockFront };
+// Where the reduced-front source releases its particles.
+//   FrontSurface: the historical gross incident-flux sampler on the front's
+//     triangulated faces (the particle is born on the front).
+//   ReleaseSurfaceOnTubeLines (2026-11-26): the 1-D srcSEP net source applied
+//     to every traced field line of an ObserverFluxTube.  On each line the
+//     rate is eta n1 w1 Phi/|B.n| at its shock crossing, the particle is
+//     released where the line crosses the release surface (1+f) times the
+//     front's generating-sphere radius, with the local-compression DSA
+//     spectrum and the positive-normal-flux pitch-angle law.
+enum class SourcePlacement { FrontSurface, ReleaseSurfaceOnTubeLines };
+// What happens to a particle that crosses the front into its downstream side.
+// The reduced provider has no downstream volume; the 1-D net source counts
+// escaping particles only, so a returning particle must be removed.
+//   Transparent: the released behaviour; the mover never removes a particle
+//     at the front.
+//   Absorb: every transport substep is tested against the front moving over
+//     that substep (adapters/shock_return.h); a hit on the outward part of
+//     the front where the shock surface reports an accepted fast shock
+//     removes the particle with disposition Absorbed.  Allowed only with,
+//     and required by, ReleaseSurfaceOnTubeLines.
+enum class ShockReturnBoundary { Transparent, Absorb };
+// Optional inertial forces of the focused movers in a rotating computation
+// frame (user request 2026-11-26).  They enter the focused transport equation
+// through the acceleration of the plasma frame seen from inertial space,
+// a = 2 Omega x U' (+ Omega x (Omega x x)), and the guiding-centre drift of
+// the same forces acting on the particle.
+//   None: the released focused equations (no frame term);
+//   Coriolis: a = 2 Omega x U' only;
+//   CoriolisAndCentrifugal: a = 2 Omega x U' + Omega x (Omega x x).
+// Create() accepts a value other than None only in the corotating frame with
+// a focused mover (adapters/transport_adapter.cpp evaluates the terms).
+enum class FrameInertialForces { None, Coriolis, CoriolisAndCentrifugal };
 
 const char* Name(BackgroundAuthority value);
 const char* Name(TurbulenceAuthority value);
@@ -233,6 +294,10 @@ const char* Name(DriftMode value);
 const char* Name(ObserverKind value);
 const char* Name(ObserverNormalization value);
 const char* Name(EnergyChannelSpacing value);
+const char* Name(ObserverEphemerisSource value);
+const char* Name(SourcePlacement value);
+const char* Name(ShockReturnBoundary value);
+const char* Name(FrameInertialForces value);
 
 // C02 typed physical groups.  These records deliberately contain SI values
 // only.  The file parser converts unit-bearing text into these records, while
@@ -326,6 +391,16 @@ struct SourceOptions {
   // a fail-closed memory/runaway guard, never a cap: reaching it aborts the
   // step instead of biasing the represented source or changing W_s.
   std::uint64_t maximumMacroparticlesPerSpeciesPerStep = 1000000;
+  // 2026-11-26: the 1-D-equivalent release on the tube field lines.
+  // source.shock.placement; absent selects FrontSurface.
+  SourcePlacement placement = SourcePlacement::FrontSurface;
+  // f of L_ref = f R (R the front's generating-sphere radius); used only by
+  // ReleaseSurfaceOnTubeLines, where it is required and in (0,1].
+  double releaseDistanceShockRadiusFraction = 0.0;
+  // source.shock.returning_particles.  The parser accepts the key only with
+  // ReleaseSurfaceOnTubeLines, and Create() then requires Absorb; every other
+  // placement keeps Transparent.
+  ShockReturnBoundary returningParticles = ShockReturnBoundary::Transparent;
 };
 
 // Provider-neutral transport record for the standalone [swcme] section.  Key
@@ -415,6 +490,35 @@ struct ObserverOptions {
   // explicit numeric list during configuration validation.
   bool allCompiledSpecies = false;
   std::vector<int> species = {0};
+  // Body observers (kind = body).  Table: CSV columns time_s,x_m,y_m,z_m,
+  // vx_m_per_s,vy_m_per_s,vz_m_per_s in the model HCI frame, with a SHA-256
+  // of its bytes; cubic Hermite interpolation, no extrapolation.  SPICE: the
+  // state of spiceTarget relative to spiceCenter in spiceFrame at ephemeris
+  // time et(spiceReferenceUtc) + t, rotated into the model HCI frame by
+  // spiceToModelRotation (row-major, proper orthonormal).
+  // The SPICE query is spkezr_c(target, et, frame, "NONE", center): the
+  // geometric state without aberration correction.  The table digest is
+  // checked against the file bytes when the trajectory is created
+  // (CreateObserverTrajectory); Create() checks only its form here.
+  ObserverEphemerisSource ephemerisSource = ObserverEphemerisSource::None;
+  std::string ephemerisFile;          // as written (relative to the input)
+  std::string ephemerisResolvedPath;  // resolved by the parser
+  std::string ephemerisSha256;        // 64 hex digits, lower case
+  std::string spiceTarget;            // SPICE name or ID of the body
+  std::string spiceCenter;            // SPICE name or ID of the origin
+  std::string spiceFrame;             // SPICE frame of the returned state
+  std::string spiceKernels;           // meta-kernel, resolved path
+  std::string spiceReferenceUtc;      // UTC of model time t = 0
+  // Row-major R with x_model = R x_spice; identity unless written.  Create()
+  // requires it orthonormal with det = +1 to 1e-12.
+  std::array<double, 9> spiceToModelRotation{{1, 0, 0, 0, 1, 0, 0, 0, 1}};
+  // ObserverFluxTube: the observer's collection sphere must stay inside the
+  // simulated tube over [tubeStayBeginS, tubeStayEndS] (model elapsed s).
+  // The parser sets definesTube exactly for the observers listed in
+  // mesh.active_region.observers and requires both stay keys for them only.
+  bool definesTube = false;
+  double tubeStayBeginS = 0.0;
+  double tubeStayEndS = 0.0;
 };
 
 // ---- Point sampling ('#begin sampling: points', schema 6) -----------------
@@ -523,6 +627,25 @@ struct RunConfiguration3DOptions {
   OuterBoundaryMode outerBoundary = OuterBoundaryMode::Escape;
   Core::Vec3 coordinateOriginM = {0.0, 0.0, 0.0};
   std::string coordinateFrame = "HCI-like-inertial";
+  // Computation frame (core/computation_frame.h).  coordinate_frame =
+  // HCI-corotating selects the frame rotating about HCI +z at
+  // frameRotationRateRadPerS, coinciding with HCI at frameReferenceEpochS.
+  // Any other coordinate_frame spelling is the inertial frame, where both
+  // controls must stay zero.  The corotating rate must be finite and nonzero
+  // (ComputationFrame::Validate) and equal the reduced event's ambient
+  // rotation rate (checked when the shock-front background adapter is built).
+  Core::ComputationFrameKind computationFrame = Core::ComputationFrameKind::Hci;
+  double frameRotationRateRadPerS = 0.0;
+  double frameReferenceEpochS = 0.0;
+  // The frame value every consumer uses (mesh tube tracing, background
+  // adapter, observers, movers).  Its Canonical() text enters the physics
+  // fingerprint for a corotating run.
+  Core::ComputationFrame ComputationFrameValue() const {
+    return computationFrame == Core::ComputationFrameKind::Corotating
+        ? Core::ComputationFrame::Corotating(frameRotationRateRadPerS,
+                                             frameReferenceEpochS)
+        : Core::ComputationFrame::Inertial();
+  }
 
   // Finite Parker-line construction used by initialization, diagnostics, and
   // future mesh export.  Coordinates and length are SI.  A zero length/count
@@ -607,6 +730,23 @@ struct RunConfiguration3DOptions {
   // Zero disables this addition. The solid photosphere is still excluded by
   // AMPS' internal boundary; this is an allocation radius, not another Sun.
   double activeSolarSphereRadiusM = 0.0;
+  // ObserverFluxTube controls (mesh.active_region.*, all four required
+  // exactly with mode = observer-flux-tube).  The observers listed in
+  // activeTubeObserverIds (each with definesTube and a stay interval) define
+  // the tube.  activeTubeTraceStepM [m] bounds the field-line arc step (the
+  // step is min(traceStepM, 0.02 r)).  activeTubeSeedSpacingM [m] is the seed
+  // lattice spacing on the reference sphere; zero takes half the requested
+  // cell size at the first sample of the first listed observer.
+  // activeTubeTimeSpacingS [s] is the sampling cadence of the stay intervals;
+  // zero takes a quarter of the collection radius over a bound of the
+  // observer's frame speed.  main_lib.cpp (BuildObserverFluxTubeBeforeMesh)
+  // traces the lines before the AMR tree exists.  The physics fingerprint
+  // carries these controls and the observer list; the digest of the traced
+  // lines is only compared across MPI ranks (all must trace the same lines).
+  std::vector<std::string> activeTubeObserverIds;
+  double activeTubeTraceStepM = 0.0;
+  double activeTubeSeedSpacingM = 0.0;
+  double activeTubeTimeSpacingS = 0.0;
   unsigned meshCellsPerBlockEdge = 4;
   unsigned maximumMeshLevel = 7;
   std::size_t meshBlockOverheadBytes = 1024;
@@ -618,6 +758,9 @@ struct RunConfiguration3DOptions {
   // demonstration from being confused with an injection run that silently
   // disabled its source.
   RunIntent intent = RunIntent::TransportOnly;
+  // Inertial-force terms of the focused movers (corotating frame only).
+  // application.sep.transport.frame_inertial_forces; absent selects None.
+  FrameInertialForces frameInertialForces = FrameInertialForces::None;
   ParkerPhysicsOptions parker;
   ShockOptions shockModel;
   SourceOptions source;

@@ -303,6 +303,7 @@ const char* Name(ActiveRegionMode value) {
   switch (value) {
     case ActiveRegionMode::FullDomain: return "full-domain";
     case ActiveRegionMode::ParkerTube: return "parker-tube";
+    case ActiveRegionMode::ObserverFluxTube: return "observer-flux-tube";
   }
   return "unknown";
 }
@@ -419,6 +420,7 @@ const char* Name(ObserverKind value) {
     case ObserverKind::MovingCartesian: return "moving-cartesian";
     case ObserverKind::SphericalShell: return "spherical-shell";
     case ObserverKind::FieldConnected: return "field-connected";
+    case ObserverKind::Body: return "body";
   }
   return "unknown";
 }
@@ -437,6 +439,46 @@ const char* Name(EnergyChannelSpacing value) {
   switch (value) {
     case EnergyChannelSpacing::Logarithmic: return "logarithmic";
     case EnergyChannelSpacing::Linear: return "linear";
+  }
+  return "unknown";
+}
+
+// Names of the observer-tube, body-observer, tube-line-source and frame-force
+// enumerations: the input spellings of configuration_io.cpp ("none" of
+// ObserverEphemerisSource is the absent key).  The physics fingerprint below
+// writes these names, so they must not change.
+const char* Name(ObserverEphemerisSource value) {
+  switch (value) {
+    case ObserverEphemerisSource::None: return "none";
+    case ObserverEphemerisSource::Table: return "table";
+    case ObserverEphemerisSource::Spice: return "spice";
+  }
+  return "unknown";
+}
+
+const char* Name(SourcePlacement value) {
+  switch (value) {
+    case SourcePlacement::FrontSurface: return "front-surface";
+    case SourcePlacement::ReleaseSurfaceOnTubeLines:
+      return "release-surface-on-tube-lines";
+  }
+  return "unknown";
+}
+
+const char* Name(ShockReturnBoundary value) {
+  switch (value) {
+    case ShockReturnBoundary::Transparent: return "transparent";
+    case ShockReturnBoundary::Absorb: return "absorb";
+  }
+  return "unknown";
+}
+
+const char* Name(FrameInertialForces value) {
+  switch (value) {
+    case FrameInertialForces::None: return "none";
+    case FrameInertialForces::Coriolis: return "coriolis";
+    case FrameInertialForces::CoriolisAndCentrifugal:
+      return "coriolis-and-centrifugal";
   }
   return "unknown";
 }
@@ -1014,8 +1056,73 @@ Core::Status RunConfiguration3D::Create(
     return Invalid("Parker-tube refinement options are invalid");
   }
   if (normalized.activeRegion != ActiveRegionMode::FullDomain &&
-      normalized.activeRegion != ActiveRegionMode::ParkerTube)
+      normalized.activeRegion != ActiveRegionMode::ParkerTube &&
+      normalized.activeRegion != ActiveRegionMode::ObserverFluxTube)
     return Invalid("active-region mode is unknown");
+  {
+    // Computation frame (core/computation_frame.h).  Validate() rejects a
+    // corotating frame without a finite nonzero rate and a finite reference
+    // epoch.  Equality of the rate with the reduced event's ambient rotation
+    // is checked later, when the shock-front background adapter is created.
+    const Core::Status frame = normalized.ComputationFrameValue().Validate();
+    if (!frame.ok()) return frame;
+    // Inactive frame controls must be zero, as for the inactive tube controls.
+    if (normalized.computationFrame == Core::ComputationFrameKind::Hci &&
+        (normalized.frameRotationRateRadPerS != 0.0 ||
+         normalized.frameReferenceEpochS != 0.0))
+      return Invalid("an inertial computation frame requires zero inactive "
+                     "frame rotation controls");
+    // Inertial forces exist only in a rotating frame, and only the focused
+    // movers implement them (adapters/transport_adapter.cpp).
+    if (normalized.frameInertialForces != FrameInertialForces::None &&
+        (normalized.computationFrame != Core::ComputationFrameKind::Corotating ||
+         normalized.particleMover != ParticleMoverFamily::FocusedTransport))
+      return Invalid("frame_inertial_forces requires the corotating frame "
+                     "and a focused mover");
+  }
+  if (normalized.activeRegion == ActiveRegionMode::ObserverFluxTube) {
+    // The tube is traced from the background field before the mesh exists;
+    // the analytic corridor controls are inactive and must stay zero.
+    // trace_step_m > 0; seed_spacing_m and time_spacing_s >= 0 (zero selects
+    // the derived value, see RunConfiguration3DOptions); buffer_blocks counts
+    // the touching-neighbour block layers kept around the tube core for
+    // coefficient stencils and particle crossings (mesh_model.cpp) and must
+    // be at least one in this mode.
+    if (normalized.activeTubeObserverIds.empty() ||
+        !std::isfinite(normalized.activeTubeTraceStepM) ||
+        normalized.activeTubeTraceStepM <= 0.0 ||
+        !std::isfinite(normalized.activeTubeSeedSpacingM) ||
+        normalized.activeTubeSeedSpacingM < 0.0 ||
+        !std::isfinite(normalized.activeTubeTimeSpacingS) ||
+        normalized.activeTubeTimeSpacingS < 0.0 ||
+        normalized.activeTubeBufferBlocks == 0)
+      return Invalid("observer-flux-tube requires observers, a positive "
+                     "trace_step_m, nonnegative seed_spacing_m and "
+                     "time_spacing_s, and buffer_blocks >= 1");
+    if (normalized.activeTubeRadiusAtReferenceM != 0.0 ||
+        normalized.enableTubeRefinement ||
+        normalized.activeSolarSphereRadiusM != 0.0 ||
+        normalized.domainBoxGeometry != DomainBoxGeometry::SunCenteredCube)
+      return Invalid("observer-flux-tube requires zero inactive "
+                     "radius_at_reference_m, disabled analytic tube "
+                     "refinement, no solar sphere and the Sun-centred cube");
+    // Only the runtime-model (reduced shock-front) provider is constructed
+    // before the AMR tree (InitializeSelectedModelsAfterParser in main_lib).
+    if (normalized.background != BackgroundAuthority::RuntimeModel)
+      return Invalid("observer-flux-tube needs a background that can be "
+                     "traced before the mesh exists (runtime-model)");
+    // Every listed ID must name an observer with a stay interval; the parser
+    // sets definesTube exactly for the listed observers, so this guards
+    // parser-free hosts that fill the options directly.
+    for (const std::string& id : normalized.activeTubeObserverIds) {
+      const auto found = std::find_if(normalized.observers.begin(),
+          normalized.observers.end(),
+          [&](const ObserverOptions& o) { return o.id == id; });
+      if (found == normalized.observers.end() || !found->definesTube)
+        return Invalid("observer-flux-tube observer '" + id +
+                       "' is missing or has no tube stay interval");
+    }
+  }
   if (normalized.activeTubeRadiusMode != TubeRadiusMode::PhysicalConstant &&
       normalized.activeTubeRadiusMode !=
           TubeRadiusMode::ConstantAngularWidth)
@@ -1066,9 +1173,12 @@ Core::Status RunConfiguration3D::Create(
         }
       }
     }
-  } else if (normalized.inputSchemaVersion >= 4 &&
+  } else if (normalized.activeRegion == ActiveRegionMode::FullDomain &&
+             normalized.inputSchemaVersion >= 4 &&
              (normalized.activeTubeRadiusAtReferenceM != 0.0 ||
               normalized.activeTubeBufferBlocks != 0)) {
+    // Full-domain only: observer-flux-tube uses buffer_blocks (checked
+    // above) and must not reach this zero-control rule.
     return Invalid("full-domain active region requires zero inactive tube "
                    "radius and buffer_blocks");
   }
@@ -1449,6 +1559,41 @@ Core::Status RunConfiguration3D::Create(
       if(!NearlyEqual(derived,normalized.requestedTimeStepS))
         return Invalid("global time step differs from margin*minimum_cell_size/maximum_particle_speed");
     }
+  } else if(source.placement==SourcePlacement::ReleaseSurfaceOnTubeLines) {
+    // 1-D-equivalent net release on the observer-tube lines (2026-11-26).
+    // Each requirement mirrors the 1-D source: the reduced front supplies the
+    // shock and its accepted incident flux sets each line's rate; the lines
+    // are those of the observer flux tube; f in (0,1] places the release
+    // surface; returning particles are absorbed (the net source counts only
+    // escaping particles); the spectrum is the local-compression DSA law.
+    // The step and the reference weight are written in the deck, so the
+    // mesh-derived numerics sentinels and the derived per-species
+    // normalizations must stay unset.
+    if(!reducedShockFront||!source.enabled||
+        particleNumerics.sourceRateModel!=
+            SourceRateNormalizationModel::AcceptedShockIncidentFlux||
+        normalized.activeRegion!=ActiveRegionMode::ObserverFluxTube||
+        !std::isfinite(source.releaseDistanceShockRadiusFraction)||
+        source.releaseDistanceShockRadiusFraction<=0||
+        source.releaseDistanceShockRadiusFraction>1||
+        source.returningParticles!=ShockReturnBoundary::Absorb||
+        source.spectrumModel!=SourceSpectrumModel::LocalCompressionDsa||
+        particleNumerics.maximumParticleSpeedMPerS!=0||
+        particleNumerics.timeStepMarginFactor!=0||
+        particleNumerics.sourceNormalizationRadiusM!=0||
+        particleNumerics.resolvedMinimumCellSizeM!=0||
+        !normalized.speciesParticleNormalizations.empty())
+      return Invalid("release-surface-on-tube-lines requires an enabled "
+                     "reduced-front source, accepted incident flux, an "
+                     "observer-flux-tube, a release fraction in (0,1], "
+                     "returning_particles = absorb, the local-compression DSA "
+                     "spectrum and zero derived-numerics sentinels");
+    // Not the tube-line placement: its two controls must be inactive.
+  } else if(source.placement!=SourcePlacement::FrontSurface||
+      source.releaseDistanceShockRadiusFraction!=0||
+      source.returningParticles!=ShockReturnBoundary::Transparent) {
+    return Invalid("release fraction and returning-particle boundary are "
+                   "used only by release-surface-on-tube-lines");
   } else if(particleNumerics.sourceRateModel!=
           SourceRateNormalizationModel::ConfiguredConstant||
       particleNumerics.maximumParticleSpeedMPerS!=0||
@@ -1646,6 +1791,65 @@ Core::Status RunConfiguration3D::Create(
                        "' does not intersect the configured finite Parker "
                        "active corridor");
       }
+    }
+
+    // Body observers (2026-11-26).  The position comes from the ephemeris, so
+    // the observer must follow its trajectory.  A table needs its resolved
+    // path and a 64-hex-digit SHA-256 (the digest itself is compared with the
+    // file bytes in output/observer_trajectory.cpp).  SPICE needs every
+    // spice_* text and a proper rotation: R R^T = I element-wise to 1e-12 and
+    // det R = 1 to 1e-12 (a reflection would mirror the trajectory).
+    if (observer.kind == ObserverKind::Body) {
+      if (!observer.followsTrajectory)
+        return Invalid("body observer '" + observer.id + "' requires "
+                       "follows_trajectory = true (its position comes from "
+                       "the ephemeris)");
+      if (observer.ephemerisSource == ObserverEphemerisSource::Table) {
+        bool hex = observer.ephemerisSha256.size() == 64;
+        for (char c : observer.ephemerisSha256)
+          hex = hex && std::isxdigit(static_cast<unsigned char>(c));
+        if (observer.ephemerisResolvedPath.empty() || !hex)
+          return Invalid("body observer '" + observer.id + "' requires an "
+                         "ephemeris_file and its 64-digit ephemeris_sha256");
+      } else if (observer.ephemerisSource == ObserverEphemerisSource::Spice) {
+        if (observer.spiceTarget.empty() || observer.spiceCenter.empty() ||
+            observer.spiceFrame.empty() || observer.spiceKernels.empty() ||
+            observer.spiceReferenceUtc.empty())
+          return Invalid("body observer '" + observer.id + "' requires every "
+                         "spice_* key");
+        const auto& r = observer.spiceToModelRotation;
+        for (int i = 0; i < 3; ++i)
+          for (int j = 0; j < 3; ++j) {
+            double dot = 0.0;
+            for (int k = 0; k < 3; ++k) dot += r[3 * i + k] * r[3 * j + k];
+            if (!std::isfinite(dot) || std::fabs(dot - (i == j ? 1.0 : 0.0)) > 1e-12)
+              return Invalid("spice_to_model_rotation of observer '" +
+                             observer.id + "' is not orthonormal");
+          }
+        const double det =
+            r[0] * (r[4] * r[8] - r[5] * r[7]) -
+            r[1] * (r[3] * r[8] - r[5] * r[6]) +
+            r[2] * (r[3] * r[7] - r[4] * r[6]);
+        if (std::fabs(det - 1.0) > 1e-12)
+          return Invalid("spice_to_model_rotation of observer '" +
+                         observer.id + "' is not a proper rotation");
+      } else {
+        return Invalid("body observer '" + observer.id + "' requires "
+                       "ephemeris = table or spice");
+      }
+    } else if (observer.ephemerisSource != ObserverEphemerisSource::None) {
+      return Invalid("observer '" + observer.id + "' has an ephemeris but is "
+                     "not kind = body");
+    }
+    // A stay interval is meaningful only for an observer that defines the
+    // observer flux tube; it must be finite with begin < end (model s).
+    if (observer.definesTube) {
+      if (normalized.activeRegion != ActiveRegionMode::ObserverFluxTube ||
+          !std::isfinite(observer.tubeStayBeginS) ||
+          !std::isfinite(observer.tubeStayEndS) ||
+          observer.tubeStayEndS <= observer.tubeStayBeginS)
+        return Invalid("observer '" + observer.id + "' needs a finite tube "
+                       "stay interval with begin < end");
     }
 
     // The generated AMPS table is intentionally not imported here.  Reject
@@ -2013,7 +2217,44 @@ Core::Status RunConfiguration3D::Create(
     } else {
       for (int species : observer.species) physics << ',' << species;
     }
+    // 2026-11-26 body/tube fields; absent for legacy observers so their
+    // fingerprints are unchanged.  A table observer contributes its file
+    // digest; a SPICE observer its target, centre, frame and reference UTC
+    // (not the kernel path or the rotation matrix).
+    if (observer.kind == ObserverKind::Body) {
+      physics << ",ephemeris=" << Name(observer.ephemerisSource);
+      if (observer.ephemerisSource == ObserverEphemerisSource::Table)
+        physics << ",ephemeris_sha256=" << observer.ephemerisSha256;
+      else
+        physics << ",spice=" << observer.spiceTarget << '|'
+                << observer.spiceCenter << '|' << observer.spiceFrame << '|'
+                << observer.spiceReferenceUtc;
+    }
+    if (observer.definesTube)
+      physics << ",tube_stay=" << observer.tubeStayBeginS << ':'
+              << observer.tubeStayEndS;
   }
+  // 2026-11-26 extensions: present only when selected.  The tube enters
+  // through its algorithm name, controls and observer list (the traced lines
+  // follow from these, the observers and the background); the tube-line
+  // source through its placement, release fraction and return boundary.
+  if (normalized.computationFrame != Core::ComputationFrameKind::Hci)
+    physics << ';' << normalized.ComputationFrameValue().Canonical();
+  if (normalized.frameInertialForces != FrameInertialForces::None)
+    physics << ";frame_inertial_forces=" << Name(normalized.frameInertialForces);
+  if (normalized.activeRegion == ActiveRegionMode::ObserverFluxTube) {
+    physics << ";observer_tube_algorithm=" << kObserverTubeActiveRegionAlgorithmName
+            << ";observer_tube_trace_step_m=" << normalized.activeTubeTraceStepM
+            << ";observer_tube_seed_spacing_m=" << normalized.activeTubeSeedSpacingM
+            << ";observer_tube_time_spacing_s=" << normalized.activeTubeTimeSpacingS
+            << ";observer_tube_observers=";
+    for (const std::string& id : normalized.activeTubeObserverIds)
+      physics << id << ',';
+  }
+  if (normalized.source.placement != SourcePlacement::FrontSurface)
+    physics << ";source_placement=" << Name(normalized.source.placement)
+            << ";release_fraction=" << normalized.source.releaseDistanceShockRadiusFraction
+            << ";returning_particles=" << Name(normalized.source.returningParticles);
   // Point sampling is an output product, but its channel grid and point list
   // fix the layout of the sampling buffers a restart carries, so a restart
   // with a different sampling definition must be rejected (physics identity).

@@ -1,7 +1,10 @@
 #include "observer_runtime.h"
 
+#include "observer_trajectory.h"
+
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace SEP3D {
 namespace Output {
@@ -43,7 +46,46 @@ Core::Status BuildObserverDefinitions(
     VirtualSpacecraftDefinition resolved;
     resolved.name = observer.id;
     resolved.positionM = observer.positionM;
-    if (observer.kind == RuntimeModel::ObserverKind::MovingCartesian)
+    if (observer.kind == RuntimeModel::ObserverKind::Body ||
+        (observer.kind == RuntimeModel::ObserverKind::MovingCartesian &&
+         !configuration.options().ComputationFrameValue().IsInertial())) {
+      // Inertial trajectories (an ephemeris body, or a straight HCI line in a
+      // corotating run) in the computation frame (observer_trajectory.h).
+      // One trajectory per observer and process: a table is read and its
+      // SHA-256 checked once.
+      //
+      // The collection-sphere centre at simulationTimeS is the trajectory's
+      // computation-frame position (HCI rotated by -Omega (t - t_ref) in a
+      // corotating run) plus the mesh coordinate origin.  It is the same
+      // function that traced the observer flux tube (main_lib.cpp), so the
+      // sampled sphere follows the path the tube was built around.  A
+      // moving-cartesian observer in an HCI run keeps the original branch
+      // below (x0 + v t, no frame rotation).
+      //
+      // The cache key includes the physics fingerprint, so a different
+      // configuration in the same process (e.g. the unit-test runner) builds
+      // its own trajectory.  The map is not synchronized.  Its callers in
+      // main_lib.cpp run on the application's control path, outside
+      // threaded regions.
+      static std::map<std::string, ObserverTrajectoryPointer> cache;
+      ObserverTrajectoryPointer& trajectory =
+          cache[configuration.physics_fingerprint() + "|" + observer.id];
+      if (!trajectory) {
+        const Core::Status created = CreateObserverTrajectory(observer, &trajectory);
+        if (!created.ok()) return created;
+      }
+      const Core::Status placed = ObserverFramePosition(
+          *trajectory, configuration.options().ComputationFrameValue(),
+          simulationTimeS, &resolved.positionM);
+      // A time outside an ephemeris table or the SPICE coverage fails the
+      // publication with the observer named; the position is never clamped
+      // or extrapolated.
+      if (!placed.ok())
+        return Core::Status(placed.code, "observer '" + observer.id + "': " +
+                                             placed.message);
+      // Sun-centred frame position -> mesh coordinates.
+      resolved.positionM += configuration.options().coordinateOriginM;
+    } else if (observer.kind == RuntimeModel::ObserverKind::MovingCartesian)
       resolved.positionM += observer.velocityMPerS * simulationTimeS;
     else if (observer.kind == RuntimeModel::ObserverKind::SphericalShell) {
       Core::Vec3 direction = observer.positionM.Normalized();

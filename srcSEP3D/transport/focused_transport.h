@@ -49,6 +49,22 @@ struct FocusedLocalState {
   PitchAngleScheme scheme = PitchAngleScheme::ReflectingMilstein;
   double kappaPerpendicularM2PerS = 0.0;
   Core::Vec3 driftVelocityMPerS;
+  // Rotating-frame inertial term (application.sep.transport.
+  // frame_inertial_forces, 2026-11-26): A = (b . a_frame) / v, where a_frame
+  // is the acceleration of the plasma frame due to the frame rotation,
+  // 2 Omega x U' (Coriolis) plus Omega x (Omega x x) (centrifugal).  It adds
+  //   dmu/dt   += -(1 - mu^2) A,     dlnp/dt += -mu A,
+  // the plasma-frame acceleration terms of the focused transport equation:
+  // together a uniform force -gamma m (b . a_frame) along b that leaves the
+  // perpendicular momentum unchanged.  Zero reproduces the released mover.
+  // Check: with F_par = -gamma m (b . a) and p_par = p mu, p_perp fixed,
+  //   dp/dt  = mu F_par            -> dlnp/dt = mu F_par / p = -mu A,
+  //   dmu/dt = (1 - mu^2) F_par / p                         = -(1 - mu^2) A,
+  // using p = gamma m v (unit test E3D02 in test/event_2013_04_11).
+  // Units 1/s; v is the plasma-frame speed at the substep start.  Set by
+  // adapters/transport_adapter.cpp (EvaluateFrameInertialTerms), only when
+  // application.sep.transport.frame_inertial_forces is not `none`.
+  double frameAccelerationOverSpeedPerS = 0.0;
 };
 
 struct FocusedRandomStreams {

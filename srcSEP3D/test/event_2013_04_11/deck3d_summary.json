@@ -1,0 +1,51 @@
+{
+ "earth_heliographic_latitude_1d_deg": -5.888659966666666,
+ "earth_heliographic_latitude_geometric_deg": -5.888669473175695,
+ "earth_latitude_difference_deg": -9.506509028867072e-06,
+ "earth_t0_distance_m": 149930894044.09427,
+ "earth_t0_model_m": [
+  149139727518.32492,
+  -3.3993273973464966e-06,
+  -15382284115.865755
+ ],
+ "ephemeris_sha256": {
+  "ace": "d614cc9116267f81e6faa1f35b9fdbb9fe3d492405d50131942cd7f9dd1d96ee",
+  "earth": "904acb5cd73491956e4693632e85aaed8c657248bb14e0d616be1b6e39007f38",
+  "soho": "81f50aecc6ef7c86b83b5ba7c7a52290e80b6389fb3ccfdf7d85fe1e55c36d0b"
+ },
+ "inner_observer_positions_m": {
+  "0.1": [
+   5309841952.255119,
+   13901264711.244257,
+   -1534811731.0360222
+  ],
+  "0.3": [
+   28707029923.65062,
+   34188633668.70265,
+   -4604435193.108067
+  ],
+  "0.5": [
+   61372713134.16251,
+   42063994529.78913,
+   -7674058655.180111
+  ]
+ },
+ "model_frame_rows_from_ecliptic_j2000": [
+  [
+   -0.9234460180607571,
+   -0.36983339368092366,
+   0.10232650021466916
+  ],
+  [
+   0.3636991536460441,
+   -0.9285795127661934,
+   -0.07391220540648141
+  ],
+  [
+   0.12235349347232782,
+   -0.0310378702450671,
+   0.9920011457885356
+  ]
+ ],
+ "note": "geometric Earth latitude from the IAU pole vs the apparent Horizons sub-observer latitude of the 1-D frame"
+}

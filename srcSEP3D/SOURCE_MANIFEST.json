@@ -31,6 +31,7 @@
     "test/*.cpp",
     "test/**/*.sh",
     "test/**/*.cpp",
+    "test/**/*.py",
     "validation/*.py",
     "validation/**/*.py",
     "release/*.py"
@@ -41,6 +42,7 @@
     "background/*.md",
     "runtime/*.md",
     "test/*.md",
+    "test/**/*.md",
     "validation/*.md",
     "validation/**/*.md",
     "release/*.md"
@@ -49,7 +51,10 @@
     "examples/*.in",
     "test/frozen/*",
     "validation/**/*.json",
-    "release/*.json"
+    "release/*.json",
+    "test/event_2013_04_11/*.in",
+    "test/event_2013_04_11/*.json",
+    "test/event_2013_04_11/ephemeris/*.csv"
   ],
   "support_globs": [
     ".gitignore",

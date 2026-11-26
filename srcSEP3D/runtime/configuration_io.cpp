@@ -101,6 +101,24 @@ bool ParseSpeciesList(const std::string& text, std::vector<int>* values) {
   return true;
 }
 
+// Comma-separated non-empty items (identifiers or numbers), trimmed.
+// Used for mesh.active_region.observers and observer.ID.
+// spice_to_model_rotation.  Returns false for an empty list and for an empty
+// item before or between commas ("a,,b", ",a").  A single trailing comma
+// ("a,") is not detected: std::getline yields no final empty item.
+bool SplitCommaList(const std::string& text, std::vector<std::string>* items) {
+  if (items == nullptr) return false;
+  items->clear();
+  std::string current;
+  std::stringstream stream(text);
+  while (std::getline(stream, current, ',')) {
+    const std::string item = Trim(current);
+    if (item.empty()) return false;
+    items->push_back(item);
+  }
+  return !items->empty();
+}
+
 bool ParseBool(const std::string& text, bool* value) {
   const std::string normalized = Lower(text);
   if (normalized == "true" || normalized == "yes" || normalized == "on") {
@@ -275,6 +293,24 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   } else if (field == "mesh.domain.coordinate_frame") {
     o->coordinateFrame = value;
     o->parker.coordinateFrame = value;
+    // HCI-corotating: the computation frame rotates with the Sun about HCI
+    // +z (core/computation_frame.h); any other spelling is an inertial frame.
+    // The spelling is exact (case-sensitive).  The reduced shock-front
+    // runtime accepts only HCI and HCI-corotating (checked further below).
+    o->computationFrame = value == "HCI-corotating"
+        ? Core::ComputationFrameKind::Corotating
+        : Core::ComputationFrameKind::Hci;
+  } else if (field == "mesh.domain.frame_rotation_rate_rad_per_s") {
+    // Omega [rad/s] of the corotating frame.  No default: required exactly
+    // with HCI-corotating (ParseConfigurationDocument); finite and nonzero
+    // (ComputationFrame::Validate) and equal to the event's
+    // ambient.rotation_rate_rad_per_s (shock-front background adapter).
+    if (!ParseDouble(value, &o->frameRotationRateRadPerS)) return invalidValue();
+  } else if (field == "mesh.domain.frame_reference_epoch_s") {
+    // Model time [s] at which the corotating frame coincides with HCI; the
+    // reduced field is evaluated there when the tube is traced.  Required
+    // exactly with HCI-corotating; must be finite.
+    if (!ParseDouble(value, &o->frameReferenceEpochS)) return invalidValue();
   } else if (field == "mesh.domain.origin_x_m") {
     if (!ParseDouble(value, &o->coordinateOriginM.x)) return invalidValue();
   } else if (field == "mesh.domain.origin_y_m") {
@@ -358,8 +394,26 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   } else if (field == "mesh.active_region.mode") {
     if (!ParseEnum(value,
         {{"full-domain", ActiveRegionMode::FullDomain},
-         {"parker-tube", ActiveRegionMode::ParkerTube}},
+         {"parker-tube", ActiveRegionMode::ParkerTube},
+         {"observer-flux-tube", ActiveRegionMode::ObserverFluxTube}},
         &o->activeRegion)) return invalidValue();
+  } else if (field == "mesh.active_region.observers") {
+    // Observer flux tube (mode = observer-flux-tube; the four keys below are
+    // required exactly in that mode, ParseConfigurationDocument).
+    // observers: comma list of observer IDs; each must have an observer block
+    // with tube_stay_begin_s / tube_stay_end_s.
+    if (!SplitCommaList(value, &o->activeTubeObserverIds)) return invalidValue();
+  } else if (field == "mesh.active_region.trace_step_m") {
+    // Upper bound [m] of the field-line arc step; > 0 (RunConfiguration3D).
+    if (!ParseDouble(value, &o->activeTubeTraceStepM)) return invalidValue();
+  } else if (field == "mesh.active_region.seed_spacing_m") {
+    // Seed-lattice spacing [m] on the reference sphere; >= 0, where 0 takes
+    // half the requested cell size at the first tube observer.
+    if (!ParseDouble(value, &o->activeTubeSeedSpacingM)) return invalidValue();
+  } else if (field == "mesh.active_region.time_spacing_s") {
+    // Stay-interval sampling cadence [s]; >= 0, where 0 takes a quarter of the
+    // collection radius over a bound of the observer's frame speed.
+    if (!ParseDouble(value, &o->activeTubeTimeSpacingS)) return invalidValue();
   } else if (field == "mesh.active_region.reference_radius_m") {
     if (!ParseDouble(value, &o->activeTubeReferenceRadiusM))
       return invalidValue();
@@ -586,6 +640,16 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   } else if (field == "application.sep.transport.kappa_perpendicular_to_parallel_ratio") {
     if (!ParseDouble(value, &o->kappaPerpendicularToParallelRatio))
       return invalidValue();
+  } else if (field == "application.sep.transport.frame_inertial_forces") {
+    // Focused movers' rotating-frame terms: none (also the absent default),
+    // coriolis (2 Omega x U'), coriolis-and-centrifugal (+ Omega x (Omega x x)).
+    // Requires HCI-corotating (below) and a focused mover (RunConfiguration3D).
+    if (!ParseEnum(value,
+        {{"none", FrameInertialForces::None},
+         {"coriolis", FrameInertialForces::Coriolis},
+         {"coriolis-and-centrifugal",
+          FrameInertialForces::CoriolisAndCentrifugal}},
+        &o->frameInertialForces)) return invalidValue();
   } else if (field == "application.sep.transport.drifts") {
     if (!ParseEnum(value,
         {{"none", DriftMode::None}, {"gradient-b", DriftMode::GradientB},
@@ -674,6 +738,29 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
   } else if (field == "source.shock.phase_space_power_index") {
     if (!ParseDouble(value, &o->source.fixedPhaseSpacePowerIndex))
       return invalidValue();
+  } else if (field == "source.shock.placement") {
+    // front-surface (also the absent default): the released front-surface
+    // sampler.  release-surface-on-tube-lines: the srcSEP 1-D net source on
+    // the observer-tube lines, with the key rules in ParseConfigurationDocument
+    // and RunConfiguration3D::Create.
+    if (!ParseEnum(value,
+        {{"front-surface", SourcePlacement::FrontSurface},
+         {"release-surface-on-tube-lines",
+          SourcePlacement::ReleaseSurfaceOnTubeLines}},
+        &o->source.placement)) return invalidValue();
+  } else if (field == "source.shock.release_distance_shock_radius_fraction") {
+    // f, dimensionless, in (0, 1]: release at (1 + f) times the front's
+    // generating-sphere radius (the srcSEP key of the same name).  Required
+    // with, and accepted only with, release-surface-on-tube-lines.
+    if (!ParseDouble(value, &o->source.releaseDistanceShockRadiusFraction))
+      return invalidValue();
+  } else if (field == "source.shock.returning_particles") {
+    // transparent | absorb.  Required with, and accepted only with,
+    // release-surface-on-tube-lines, where RunConfiguration3D requires absorb.
+    if (!ParseEnum(value,
+        {{"transparent", ShockReturnBoundary::Transparent},
+         {"absorb", ShockReturnBoundary::Absorb}},
+        &o->source.returningParticles)) return invalidValue();
   } else if (field == "source.shock.samples_per_step") {
     if (!ParseUnsigned64(value, &o->source.samplesPerStep)) return invalidValue();
   } else if (field == "source.shock.normalization") {
@@ -807,8 +894,49 @@ Core::Status ApplyField(const std::string& section, const std::string& key,
            {"fixed-heliographic", ObserverKind::FixedHeliographic},
            {"moving-cartesian", ObserverKind::MovingCartesian},
            {"spherical-shell", ObserverKind::SphericalShell},
-           {"field-connected", ObserverKind::FieldConnected}},
+           {"field-connected", ObserverKind::FieldConnected},
+           {"body", ObserverKind::Body}},
           &observer->kind)) return invalidValue();
+    } else if (key == "ephemeris") {
+      // Body observers (kind = body).  ephemeris = table | spice selects the
+      // trajectory source; the key rules (exactly the keys of the selected
+      // source) are in ParseConfigurationDocument, the value checks in
+      // RunConfiguration3D::Create.  Relative paths are resolved in WalkBlocks.
+      if (!ParseEnum(value,
+          {{"table", ObserverEphemerisSource::Table},
+           {"spice", ObserverEphemerisSource::Spice}},
+          &observer->ephemerisSource)) return invalidValue();
+    } else if (key == "ephemeris_file") {
+      observer->ephemerisFile = value;
+    } else if (key == "ephemeris_sha256") {
+      // Stored in lower case so it compares with the computed hex digest.
+      observer->ephemerisSha256 = Lower(value);
+    } else if (key == "spice_target") {
+      observer->spiceTarget = value;
+    } else if (key == "spice_center") {
+      observer->spiceCenter = value;
+    } else if (key == "spice_frame") {
+      observer->spiceFrame = value;
+    } else if (key == "spice_kernels") {
+      observer->spiceKernels = value;
+    } else if (key == "spice_reference_utc") {
+      observer->spiceReferenceUtc = value;
+    } else if (key == "spice_to_model_rotation") {
+      // Exactly nine comma-separated numbers, row-major R with
+      // x_model = R x_spice (orthonormality is checked in RunConfiguration3D).
+      std::vector<std::string> items;
+      if (!SplitCommaList(value, &items) || items.size() != 9)
+        return invalidValue();
+      for (std::size_t i = 0; i < 9; ++i)
+        if (!ParseDouble(items[i], &observer->spiceToModelRotation[i]))
+          return invalidValue();
+    } else if (key == "tube_stay_begin_s") {
+      // Model times [s] of the interval over which this observer's collection
+      // sphere must stay inside the observer flux tube; exactly for observers
+      // listed in mesh.active_region.observers, finite with begin < end.
+      if (!ParseDouble(value, &observer->tubeStayBeginS)) return invalidValue();
+    } else if (key == "tube_stay_end_s") {
+      if (!ParseDouble(value, &observer->tubeStayEndS)) return invalidValue();
     } else if (key == "normalization") {
       if (!ParseEnum(value,
           {{"represented-particles", ObserverNormalization::RepresentedParticles},
@@ -1048,6 +1176,26 @@ Core::Status WalkBlocks(const AMPS::Input::Block& parent,
     const Core::Status nested = WalkBlocks(block, path, state);
     if (!nested.ok()) return nested;
 
+    if (path.rfind("observer.", 0) == 0) {
+      // A body observer's ephemeris table and SPICE meta-kernel resolve
+      // relative to the file that holds the observer block (like #include).
+      // The table keeps its written path and gets ephemerisResolvedPath; the
+      // meta-kernel path is replaced by its resolved form.
+      for (ObserverOptions& observer : state->options->observers) {
+        if ("observer." + observer.id != path) continue;
+        const auto resolve = [&](const std::string& written) {
+          std::filesystem::path file(written);
+          if (file.is_relative())
+            file = std::filesystem::path(block.begin.file).parent_path() / file;
+          return file.lexically_normal().string();
+        };
+        if (!observer.ephemerisFile.empty())
+          observer.ephemerisResolvedPath = resolve(observer.ephemerisFile);
+        if (!observer.spiceKernels.empty())
+          observer.spiceKernels = resolve(observer.spiceKernels);
+      }
+    }
+
     if (path == "sampling.points" && !sampling.pointFile.empty()) {
       // The point file is resolved relative to the directory of the file
       // that holds the sampling block (like #include), so a deck and its
@@ -1121,11 +1269,57 @@ static Core::Status ParseConfigurationDocument(
   const std::set<std::string> derivedOwned = {
       "run.time_step_s", "source.shock.physical_particle_rate_per_s",
       "source.shock.injection_efficiency", "species.macroparticle_weight"};
-  if (derivedTimeStep != incidentFlux)
+  // The 1-D-equivalent release on the tube field lines (2026-11-26) uses the
+  // accepted incident flux per line with a written step and reference weight:
+  // every line's rate eta n1 w1 Phi/|B.n| is evaluated at each stratified
+  // birth time, so no mesh-derived step or Poisson guard is involved.
+  // Required with the tube-line source: the written step and weight, the
+  // efficiency eta and the weight model of the per-line rate, and its two
+  // controls.  Forbidden: the mesh-derived step controls, the Poisson
+  // event guard and a fixed physical rate, none of which it uses.
+  const bool tubeLineSource = candidate.source.placement ==
+      SourcePlacement::ReleaseSurfaceOnTubeLines;
+  const char* tubeLineKeys[] = {
+      "source.shock.release_distance_shock_radius_fraction",
+      "source.shock.returning_particles"};
+  if (tubeLineSource) {
+    if (!incidentFlux || derivedTimeStep)
+      return Invalid("source.shock.placement=release-surface-on-tube-lines "
+                     "requires source.shock.normalization="
+                     "accepted-shock-incident-flux and run.time_step_mode=fixed");
+    const char* required[] = {
+        "run.time_step_s", "source.shock.injection_efficiency",
+        "species.macroparticle_weight", "source.shock.weight_model",
+        "source.shock.release_distance_shock_radius_fraction",
+        "source.shock.returning_particles"};
+    for (const char* field : required)
+      if (assigned.count(field) == 0)
+        return Invalid(std::string("source.shock.placement="
+                       "release-surface-on-tube-lines requires '") + field + "'");
+    const char* forbidden[] = {
+        "run.maximum_particle_speed_m_s", "run.time_step_margin_factor",
+        "source.shock.normalization_radius_m",
+        "source.shock.maximum_events_per_species_per_step",
+        "source.shock.physical_particle_rate_per_s"};
+    for (const char* field : forbidden)
+      if (assigned.count(field) != 0)
+        return Invalid(std::string("'") + field + "' is not used by "
+                       "source.shock.placement=release-surface-on-tube-lines; "
+                       "remove it");
+  } else {
+    for (const char* field : tubeLineKeys)
+      if (assigned.count(field) != 0)
+        return Invalid(std::string("'") + field + "' is used only with "
+                       "source.shock.placement=release-surface-on-tube-lines");
+  }
+  // Outside the tube-line source the mesh-derived step and the incident-flux
+  // normalization still come as a pair, and the derived quantities may not
+  // be written; with it, they are written (required above) instead.
+  if (!tubeLineSource && derivedTimeStep != incidentFlux)
     return Invalid("run.time_step_mode=derived-from-mesh and "
                    "source.shock.normalization=accepted-shock-incident-flux "
                    "must be selected together");
-  if (incidentFlux) {
+  if (incidentFlux && !tubeLineSource) {
     for (const std::string& field : derivedOwned)
       if (assigned.count(field) != 0)
         return Invalid("'" + field + "' is derived from the mesh and the "
@@ -1141,7 +1335,7 @@ static Core::Status ParseConfigurationDocument(
     // The incident flux is itself the declared physical seed rate; no
     // hidden efficiency multiplies it (see particle_normalization.h).
     candidate.source.injectionEfficiency = 1.0;
-  } else {
+  } else if (!incidentFlux) {
     const char* derivedOnly[] = {
         "run.maximum_particle_speed_m_s", "run.time_step_margin_factor",
         "source.shock.normalization_radius_m", "source.shock.weight_model",
@@ -1171,7 +1365,9 @@ static Core::Status ParseConfigurationDocument(
       "mesh.refinement.solar", "mesh.refinement.tube", "mesh.active_region",
       "mesh.memory", "physics.background", "physics.background.parker",
       "physics.shock", "source.shock", "output"};
-  if (!incidentFlux) requiredSections.push_back("species");
+  // The tube-line source reads species.macroparticle_weight, so it needs the
+  // species block although it uses the incident-flux normalization.
+  if (!incidentFlux || tubeLineSource) requiredSections.push_back("species");
   for (const std::string& required : requiredSections)
     if (sections.count(required) == 0)
       return Invalid("missing required block '" + required + "'");
@@ -1193,7 +1389,18 @@ static Core::Status ParseConfigurationDocument(
       "mesh.domain.corner_margin_m", "mesh.field_line.end_radius_m",
       "mesh.refinement.solar.anchor", "mesh.active_region.solar_sphere_radius_m",
       // Required exactly for provider = runtime-model (typed factory rule).
-      "physics.background.model_id"};
+      "physics.background.model_id",
+      // 2026-11-26 extensions, each checked by its own rule below: the
+      // corotating frame, the observer flux tube, the focused movers'
+      // inertial forces and the 1-D-equivalent release on the tube lines.
+      "mesh.domain.frame_rotation_rate_rad_per_s",
+      "mesh.domain.frame_reference_epoch_s",
+      "mesh.active_region.observers", "mesh.active_region.trace_step_m",
+      "mesh.active_region.seed_spacing_m", "mesh.active_region.time_spacing_s",
+      "application.sep.transport.frame_inertial_forces",
+      "source.shock.placement",
+      "source.shock.release_distance_shock_radius_fraction",
+      "source.shock.returning_particles"};
   for (const Layout::KeyRule& rule : Layout::kKeys) {
     if ((rule.support & Layout::kSrcSep3d) == 0) continue;
     const std::string block = rule.block;
@@ -1416,6 +1623,78 @@ static Core::Status ParseConfigurationDocument(
         if (assigned.count(required) == 0)
           return Invalid("missing required key '" + required + "'");
       }
+    }
+    // Body observers (2026-11-26): exactly the keys of the selected
+    // ephemeris source; tube stay intervals exactly for the observers that
+    // define an observer-flux-tube.  definesTube is set here, after every
+    // block has been read, so the order of the mesh and observer blocks in a
+    // deck does not matter.
+    const bool observerTube =
+        candidate.activeRegion == ActiveRegionMode::ObserverFluxTube;
+    for (ObserverOptions& observer : candidate.observers) {
+      const std::string prefix = "observer." + observer.id + ".";
+      const auto has = [&](const char* key) {
+        return assigned.count(prefix + key) != 0;
+      };
+      const char* tableKeys[] = {"ephemeris_file", "ephemeris_sha256"};
+      const char* spiceKeys[] = {"spice_target", "spice_center", "spice_frame",
+                                 "spice_kernels", "spice_reference_utc",
+                                 "spice_to_model_rotation"};
+      const bool body = observer.kind == ObserverKind::Body;
+      if (body != has("ephemeris"))
+        return Invalid("'" + prefix + "ephemeris' is required exactly for "
+                       "kind = body");
+      const bool table = body &&
+          observer.ephemerisSource == ObserverEphemerisSource::Table;
+      const bool spice = body &&
+          observer.ephemerisSource == ObserverEphemerisSource::Spice;
+      for (const char* key : tableKeys)
+        if (has(key) != table)
+          return Invalid("'" + prefix + key + "' is required exactly for "
+                         "ephemeris = table");
+      for (const char* key : spiceKeys)
+        if (has(key) != spice)
+          return Invalid("'" + prefix + key + "' is required exactly for "
+                         "ephemeris = spice");
+      const bool listed = observerTube &&
+          std::find(candidate.activeTubeObserverIds.begin(),
+                    candidate.activeTubeObserverIds.end(), observer.id) !=
+              candidate.activeTubeObserverIds.end();
+      if (has("tube_stay_begin_s") != listed ||
+          has("tube_stay_end_s") != listed)
+        return Invalid("'" + prefix + "tube_stay_begin_s' and "
+                       "'tube_stay_end_s' are required exactly for an "
+                       "observer listed in mesh.active_region.observers");
+      observer.definesTube = listed;
+    }
+    if (observerTube)
+      for (const std::string& id : candidate.activeTubeObserverIds)
+        if (sections.count("observer." + id) == 0)
+          return Invalid("mesh.active_region.observers names '" + id +
+                         "', which has no '#begin observer: " + id + "' block");
+    {
+      const char* tubeKeys[] = {
+          "mesh.active_region.observers", "mesh.active_region.trace_step_m",
+          "mesh.active_region.seed_spacing_m",
+          "mesh.active_region.time_spacing_s"};
+      for (const char* field : tubeKeys)
+        if ((assigned.count(field) != 0) != observerTube)
+          return Invalid(std::string("'") + field + "' is required exactly "
+                         "for mesh.active_region.mode = observer-flux-tube");
+      // The frame controls are required exactly with HCI-corotating, and the
+      // focused movers' inertial forces need that frame.
+      const bool corotating = candidate.computationFrame ==
+          Core::ComputationFrameKind::Corotating;
+      const char* frameKeys[] = {"mesh.domain.frame_rotation_rate_rad_per_s",
+                                 "mesh.domain.frame_reference_epoch_s"};
+      for (const char* field : frameKeys)
+        if ((assigned.count(field) != 0) != corotating)
+          return Invalid(std::string("'") + field + "' is required exactly "
+                         "for mesh.domain.coordinate_frame = HCI-corotating");
+      if (assigned.count("application.sep.transport.frame_inertial_forces") &&
+          !corotating)
+        return Invalid("application.sep.transport.frame_inertial_forces "
+                       "requires mesh.domain.coordinate_frame = HCI-corotating");
     }
     if (candidate.injectionCadenceSteps != 1)
       return Invalid("source.shock.samples_per_step is an exact count at "
@@ -1691,8 +1970,12 @@ static Core::Status ParseConfigurationDocument(
       }
       if(!candidate.swcmeAssignments.empty())
         return Invalid("reduced shock-front runtime rejects inactive physics: swcme assignments");
-      if(candidate.coordinateFrame!="HCI")
-        return Invalid("reduced shock-front runtime requires mesh.domain.coordinate_frame=HCI");
+      // HCI-corotating is accepted since the reduced adapter transforms the
+      // provider's HCI state into the computation frame.
+      if(candidate.coordinateFrame!="HCI"&&
+          candidate.coordinateFrame!="HCI-corotating")
+        return Invalid("reduced shock-front runtime requires "
+                       "mesh.domain.coordinate_frame=HCI or HCI-corotating");
       // The shared resolver receives the canonical block text; relative assets
       // (assets.harmonics_file) resolve from the file that holds the block.
       candidate.backgroundModelAssetPath.clear();

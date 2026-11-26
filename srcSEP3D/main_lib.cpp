@@ -20,10 +20,14 @@
 #include "background/background_snapshot.h"
 #include "adapters/source_runtime.h"
 #include "adapters/shock_front_background_adapter.h"
+#include "adapters/reduced_front_shock_surface.h"
+#include "adapters/tube_line_source.h"
 #include "amps/amps_mover_status.h"
 #include "amps/amps_particle_adapter.h"
 #include "amps/amps_point_sampler.h"
 #include "mesh/mesh_model.h"
+#include "mesh/observer_flux_tube.h"
+#include "output/observer_trajectory.h"
 #include "output/observer_runtime.h"
 #include "output/publication.h"
 #include "output/restart.h"
@@ -47,10 +51,12 @@
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <list>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -87,6 +93,22 @@ const SEP3D::RuntimeModel::RunConfiguration3D& Configuration();
 // configuration keeps its configured step and weight.
 bool DerivedParticleNumericsSelected() {
   return Configuration().options().particleNumerics.deriveFromMeshAndShock;
+}
+
+// The observer flux tube (2026-11-26) is traced through the reduced
+// provider's field before the mesh exists, and the 1-D-equivalent source
+// releases particles on its lines; both need the provider at the first
+// post-parser boundary, as the derived particle numerics do.  Both
+// predicates read only the validated configuration, so they have the same
+// value on every rank and the collectives they guard stay matched.
+bool ObserverFluxTubeSelected() {
+  return Configuration().options().activeRegion==
+      SEP3D::RuntimeModel::ActiveRegionMode::ObserverFluxTube;
+}
+bool TubeLineSourceSelected() {
+  const auto& source=Configuration().options().source;
+  return source.enabled&&source.placement==
+      SEP3D::RuntimeModel::SourcePlacement::ReleaseSurfaceOnTubeLines;
 }
 
 void StopWithStatus(const char* operation,
@@ -204,6 +226,15 @@ std::shared_ptr<const SEP3D::Background::BackgroundSnapshot>
 // joined, so no particle phase overlaps preparation/publication.
 std::shared_ptr<SEP3D::Background::BackgroundProvider>
     gRuntimeBackgroundProvider;
+// Observer flux tube (mesh.active_region.mode = observer-flux-tube): the traced
+// lines, their mesh classification capsules and every observer trajectory.
+std::shared_ptr<const SEP3D::Mesh::ObserverFluxTube> gObserverFluxTube;
+std::shared_ptr<const SEP3D::Mesh::ObserverTubeGeometry> gObserverTubeGeometry;
+std::vector<SEP3D::Mesh::TubeObserverPath> gObserverTubePaths;
+// Provider-neutral shock surface of the 1-D-equivalent tube-line source and
+// the absorbing shock (adapters/shock_surface.h).  Created in amps_init
+// (tube-line source only) over the same reduced provider instance.
+SEP3D::Adapters::ShockSurfacePointer gShockSurface;
 std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>
     gInstalledTurbulence;
 std::shared_ptr<SEP3D::Turbulence::TurbulenceProvider>
@@ -319,8 +350,15 @@ void BindCompiledSpeciesTable() {
   }
 }
 
+// Construct the reduced shock/background provider right after the parser,
+// before the AMR tree exists.  The derived particle numerics need it for the
+// mesh-and-shock step, the observer flux tube to trace field lines through
+// its field (BuildObserverFluxTubeBeforeMesh), and the tube-line source
+// reuses the same instance.  Any other run creates its provider at the first
+// background fill.  Every rank constructs it; a failure on one rank stops all.
 void InitializeSelectedModelsAfterParser() {
-  if(!DerivedParticleNumericsSelected())return;
+  if(!DerivedParticleNumericsSelected()&&!ObserverFluxTubeSelected()&&
+      !TubeLineSourceSelected())return;
   if(gRuntimeBackgroundProvider)
     StopWithStatus("parsed model initialization",SEP3D::Core::Status(
         SEP3D::Core::StatusCode::InvalidTransition,
@@ -561,6 +599,10 @@ SEP3D::Mesh::ResolutionConfiguration ResolutionConfiguration() {
       options.activeTubeRadiusAtReferenceM;
   result.activeTubeRadiusMode = options.activeTubeRadiusMode;
   result.activeTubeBufferBlocks = options.activeTubeBufferBlocks;
+  // Null until BuildObserverFluxTubeBeforeMesh has traced the tube.  A record
+  // taken earlier has no distance grading and would be rejected by the mask
+  // builder, so amps_init_mesh rebuilds it before ApplyActiveRegionMask.
+  result.observerTube = gObserverTubeGeometry;
   result.solarWindSpeedMPerS = options.parker.solarWindSpeedMPerS;
   result.solarRotationRateRadPerS = options.parker.solarRotationRateRadPerS;
   result.rotationAxis = options.parker.rotationAxis;
@@ -1159,12 +1201,80 @@ void PrintInitializationCellData(
   }
 }
 
+// Reduced-provider cell fallback (observer flux tube, 2026-11-26).  With the
+// 1-D-like 60 s step a particle crosses many cells per AMPS step, so its
+// substeps can reach cells this rank does not hold (a remote leaf, or the
+// interior of a ghost block whose centres AMPS never sends).  The reduced
+// provider is deterministic and identical on every rank, so such a cell is
+// evaluated at its centre exactly as its owner published it.  Results are
+// cached per cell and provider generation.
+bool ProviderCellFallbackEnabled() {
+  return ObserverFluxTubeSelected() && gRuntimeBackgroundProvider &&
+         gRuntimeBackgroundProvider->PreparedMetadata() != nullptr;
+}
+
+SEP3D::Core::Status FallbackCellBackground(
+    const SEP3D::Core::Vec3& positionM,
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
+    SEP3D::Background::BackgroundSample* resolved) {
+  using namespace SEP3D;
+  // Rank-local memo of provider samples, keyed by (leaf address, cell index)
+  // and cleared when the provider prepares a new generation.  It has no lock:
+  // it assumes one mover thread per MPI rank.
+  static std::unordered_map<std::uint64_t, Background::BackgroundSample> cache;
+  static std::uint64_t cachedGeneration = 0;
+  const std::uint64_t generation =
+      gRuntimeBackgroundProvider->PreparedMetadata()->generation;
+  if (generation != cachedGeneration) { cache.clear(); cachedGeneration = generation; }
+  // Cell (i,j,k) of the position inside the leaf, clamped so that a point on
+  // the upper face maps to the last cell, and that cell's centre.
+  const int n[3] = {_BLOCK_CELLS_X_, _BLOCK_CELLS_Y_, _BLOCK_CELLS_Z_};
+  const double x[3] = {positionM.x, positionM.y, positionM.z};
+  int index[3];
+  double centre[3];
+  for (int d = 0; d < 3; ++d) {
+    const double h = (node->xmax[d] - node->xmin[d]) / n[d];
+    index[d] = std::max(0, std::min(n[d] - 1,
+        static_cast<int>(std::floor((x[d] - node->xmin[d]) / h))));
+    centre[d] = node->xmin[d] + (index[d] + 0.5) * h;
+  }
+  // Key = (leaf address << 12) xor (i + 64 (j + 64 k)).  The packed index
+  // needs 15 bits for the 6-cell blocks of input/sep3d.input, so it overlaps
+  // only address bits 0-2, which are zero for an 8-byte-aligned leaf.
+  const std::uint64_t key = (reinterpret_cast<std::uintptr_t>(node) << 12) ^
+      static_cast<std::uint64_t>(index[0] + 64 * (index[1] + 64 * index[2]));
+  const auto found = cache.find(key);
+  if (found != cache.end()) { *resolved = found->second; return Core::Status::OK(); }
+  // A cell centre outside the radial transport shell is a domain exit, not
+  // a provider query.
+  const Core::Vec3 at(centre);
+  const double r = (at - Configuration().options().coordinateOriginM).Norm();
+  if (r < Configuration().options().innerRadiusM ||
+      r > Configuration().options().outerRadiusM)
+    return Core::Status(Core::StatusCode::DomainExit,
+                        "fallback cell lies outside the radial transport shell");
+  const Background::BackgroundSample sample = gRuntimeBackgroundProvider->Evaluate(at);
+  if (!sample.valid) return sample.status;
+  cache.emplace(key, sample);
+  *resolved = sample;
+  return Core::Status::OK();
+}
+
 SEP3D::Core::Status ResolveStoredBackground(
     const SEP3D::Core::Vec3& positionM,
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,
     SEP3D::Background::BackgroundSample* resolved,
     PIC::Mesh::cDataCenterNode** resolvedCell) {
   using namespace SEP3D;
+  // A leaf without a local block (another rank's leaf): with the fallback
+  // enabled, evaluate the provider at the cell centre.  resolvedCell is null,
+  // so callers cannot read stored per-cell data (the turbulence variance in
+  // ResolveLocalTransportImpl keeps the prescribed model's value).
+  if (node != nullptr && node->block == nullptr && resolved != nullptr &&
+      ProviderCellFallbackEnabled()) {
+    if (resolvedCell != nullptr) *resolvedCell = nullptr;
+    return FallbackCellBackground(positionM, node, resolved);
+  }
   if (node == nullptr || node->block == nullptr || resolved == nullptr)
     return Core::Status(Core::StatusCode::NotFound,
                         "background lookup has no allocated AMR block");
@@ -1253,6 +1363,11 @@ SEP3D::Core::Status ResolveStoredBackground(
         ? Core::Status::OK()
         : Core::Status(Core::StatusCode::BackgroundInvalid,
                        "stored AMR magnetic field is invalid");
+    if (!background.valid && ProviderCellFallbackEnabled()) {
+      // An unsent ghost-block centre (see FallbackCellBackground).
+      if (resolvedCell != nullptr) *resolvedCell = nullptr;
+      return FallbackCellBackground(positionM, node, resolved);
+    }
   }
   if (!background.status.ok()) return background.status;
   *resolved = background;
@@ -1313,9 +1428,22 @@ SEP3D::Adapters::ExpandingShock ReducedMoverShock(
   shock.radialSpeedMPerS=epoch.trajectory.apexSpeedMPerS;
   shock.generation=epoch.generation;
   shock.active=epoch.apexShockAccepted;
+  if(event.geometryModel==
+      SEP::CoronaSwcme::ShockFront::GeometryModel::HeliocentricSphere) {
+    // The closed heliocentric sphere is the same surface in HCI and in the
+    // corotating frame; its radius and radial speed are the PCHIP history.
+    shock.geometry=SEP3D::Adapters::ShockGeometryKind::Sphere;
+    return shock;
+  }
   shock.geometry=SEP3D::Adapters::ShockGeometryKind::FiniteSSE;
-  shock.cmeDirection=SEP3D::Core::Vec3(
-      event.direction.x,event.direction.y,event.direction.z);
+  // The SSE cap axis is fixed in HCI; in a corotating run it turns backward.
+  const auto configuration=SEP3D::ApplicationRuntime().configuration();
+  const SEP3D::Core::ComputationFrame frame=configuration?
+      configuration->options().ComputationFrameValue():
+      SEP3D::Core::ComputationFrame::Inertial();
+  shock.cmeDirection=frame.FromInertialVector(SEP3D::Core::Vec3(
+      event.direction.x,event.direction.y,event.direction.z),
+      epoch.trajectory.timeS);
   shock.halfWidthRad=event.halfWidthRad;
   return shock;
 }
@@ -1504,6 +1632,275 @@ long int InjectReducedShockSurfaceParticles() {
   return static_cast<long int>(localTotal);
 }
 
+// Long-jump hand-off (observer flux tube): particles that ended this step on
+// another rank's active leaf are gathered and inserted by their owner, so a
+// 60 s step can carry a particle across any number of blocks and ranks.
+// amps_time_step calls it after PIC::TimeStep and before the particle ledger
+// closes: the sender has recorded the move (disposition Active) and deleted
+// the particle, so the receiver's end-of-step count must include it for the
+// global particle balance.
+// No-op unless the observer flux tube is selected.  Collective on all ranks.
+std::uint64_t gLeftActiveDomainTotal = 0;
+void ExchangeLongJumpParticles(std::uint64_t step) {
+  using namespace SEP3D;
+  if(!ObserverFluxTubeSelected())return;
+  // The complete persistent record, sent as raw bytes (every rank runs the
+  // same binary, so the layout agrees); 112 bytes per particle.
+  struct Packed {
+    std::uint64_t stableId,completedStep,substep,lastShockGeneration,nextEvent;
+    std::int64_t species;
+    double x,y,z,momentum,mu,gyrophase,weight,opticalDepth;
+  };
+  const std::vector<Adapters::ParticleRecord> outbox=
+      SEP3D::AMPS::Movers::TakeLongJumpParticles();
+  std::vector<Packed> local;
+  local.reserve(outbox.size());
+  for(const auto& r:outbox) {
+    Packed p{r.stableId,r.completedStep,r.substep,r.lastShockGeneration,
+             r.nextScatteringEvent,r.species,r.positionM.x,r.positionM.y,
+             r.positionM.z,r.momentumKgMPerS,r.mu,r.gyrophaseRad,
+             r.statisticalWeight,r.remainingScatteringOpticalDepth};
+    local.push_back(p);
+  }
+  // Every rank receives every record (allgather of the byte counts, then
+  // allgatherv in rank order).  The counts are MPI ints, which limits one
+  // rank's outbox to INT_MAX bytes per step.
+  const int bytes=static_cast<int>(local.size()*sizeof(Packed));
+  std::vector<int> counts(PIC::nTotalThreads),offsets(PIC::nTotalThreads,0);
+  MPI_Allgather(&bytes,1,MPI_INT,counts.data(),1,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
+  long long total=0;
+  for(int r=0;r<PIC::nTotalThreads;++r){offsets[r]=static_cast<int>(total);total+=counts[r];}
+  std::vector<Packed> all(static_cast<std::size_t>(total/sizeof(Packed)));
+  MPI_Allgatherv(local.data(),bytes,MPI_BYTE,all.data(),counts.data(),offsets.data(),
+      MPI_BYTE,MPI_GLOBAL_COMMUNICATOR);
+  Adapters::InjectionPlan plan;
+  plan.status=Core::Status::OK();
+  for(const Packed& p:all) {
+    Adapters::InjectedParticle injected;
+    injected.status=Core::Status::OK();
+    // The particle has already finished this step (completedStep is the next
+    // tick), so its next move is a full step.
+    injected.remainingFirstStepFraction=1.0;
+    auto& r=injected.particle;
+    r.stableId=p.stableId;r.completedStep=p.completedStep;r.substep=p.substep;
+    r.lastShockGeneration=p.lastShockGeneration;r.nextScatteringEvent=p.nextEvent;
+    r.species=static_cast<int>(p.species);r.positionM=Core::Vec3(p.x,p.y,p.z);
+    r.momentumKgMPerS=p.momentum;r.mu=p.mu;r.gyrophaseRad=p.gyrophase;
+    r.statisticalWeight=p.weight;r.remainingScatteringOpticalDepth=p.opticalDepth;
+    plan.particles.push_back(injected);
+  }
+  // InjectParticles allocates only the records whose leaf this rank owns and
+  // skips the others; the sum over ranks must be exactly one per record.
+  const auto outcome=SEP3D::AMPS::Movers::InjectParticles(plan);
+  if(!outcome.status.ok())StopWithStatus("long-jump particle hand-off",outcome.status);
+  unsigned long long placed=outcome.allocated,placedAll=0;
+  MPI_Allreduce(&placed,&placedAll,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if(placedAll!=all.size())StopWithStatus("long-jump particle hand-off",Core::Status(
+      Core::StatusCode::LayoutMismatch,"a handed-off particle was not inserted exactly once"));
+  // Particles the mover deleted because their end point lies outside every
+  // active leaf (a sideways exit from the tube): reported, not an error.
+  unsigned long long left=SEP3D::AMPS::Movers::TakeLeftActiveDomainCount(),leftAll=0;
+  MPI_Allreduce(&left,&leftAll,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  gLeftActiveDomainTotal+=leftAll;
+  if(PIC::ThisThread==0&&(leftAll>0||!all.empty()))
+    std::cout<<"[srcSEP3D] long-jump step="<<step<<" handed_off="<<all.size()
+             <<" left_active_domain="<<leftAll<<" left_total="<<gLeftActiveDomainTotal<<'\n';
+}
+
+// The mover's shock record at an exact epoch from the core's front history
+// (the tube-line source and the absorbing shock; the background may be
+// republished less often than every step).
+// generation is the 1-based step index of the record (amps_init passes 1,
+// amps_time_step the next step's index + 1); zero is mapped to 1.  The
+// sphere is centred on the frame origin, which Create() requires to be the
+// Sun.
+SEP3D::Adapters::ExpandingShock ExactReducedMoverShock(double epochS,
+                                                       std::uint64_t generation) {
+  const auto reduced=std::dynamic_pointer_cast<
+      SEP3D::Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  const auto provider=reduced?reduced->SharedProvider():nullptr;
+  if(!provider)StopWithStatus("exact mover shock",SEP3D::Core::Status(
+      SEP3D::Core::StatusCode::SnapshotUnavailable,"no reduced provider"));
+  const auto trajectory=provider->Trajectory(epochS);
+  if(!trajectory.ok())StopWithStatus("exact mover shock",SEP3D::Core::Status(
+      SEP3D::Core::StatusCode::SnapshotUnavailable,trajectory.status.message));
+  const auto& event=provider->Event();
+  SEP3D::Adapters::ExpandingShock shock;
+  shock.centerM=SEP3D::Core::Vec3();
+  shock.radiusAtStepStartM=trajectory.value.apexRadiusM;
+  shock.radialSpeedMPerS=trajectory.value.apexSpeedMPerS;
+  shock.generation=generation==0?1:generation;
+  // The geometry always exists; admission is decided per crossing point.
+  shock.active=true;
+  if(event.geometryModel==
+      SEP::CoronaSwcme::ShockFront::GeometryModel::HeliocentricSphere) {
+    shock.geometry=SEP3D::Adapters::ShockGeometryKind::Sphere;
+    return shock;
+  }
+  shock.geometry=SEP3D::Adapters::ShockGeometryKind::FiniteSSE;
+  shock.cmeDirection=reduced->Frame().FromInertialVector(SEP3D::Core::Vec3(
+      event.direction.x,event.direction.y,event.direction.z),epochS);
+  shock.halfWidthRad=event.halfWidthRad;
+  return shock;
+}
+
+// Mover callback of the absorbing shock (Context::shockAccepted): is the
+// front at frontPointM [m, computation frame] and epochS [s, model time] a
+// supported, accepted fast shock?  A substep hit elsewhere on the front
+// leaves the particle in transport (adapters/transport_adapter.cpp).
+SEP3D::Core::Status ShockAcceptedAt(const SEP3D::Core::Vec3& frontPointM,
+                                    double epochS,bool* accepted) {
+  if(!accepted||!gShockSurface)return SEP3D::Core::Status(
+      SEP3D::Core::StatusCode::InvalidInput,"no shock surface for the absorbing shock");
+  SEP3D::Adapters::ShockFrontState state;
+  const SEP3D::Core::Status status=gShockSurface->FrontAt(frontPointM,epochS,&state);
+  if(!status.ok())return status;
+  *accepted=state.supported&&state.accepted;
+  return SEP3D::Core::Status::OK();
+}
+
+// The 1-D-equivalent net source on the observer-tube lines
+// (source.shock.placement = release-surface-on-tube-lines).  All ranks build
+// the same keyed candidates; the owner of each AMR leaf allocates it.
+long int InjectTubeLineParticles() {
+  using namespace SEP3D;
+  const auto& options=Configuration().options();
+  const auto reduced=std::dynamic_pointer_cast<
+      Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  if(!reduced||!gShockSurface||!gObserverFluxTube)
+    StopWithStatus("tube-line source",Core::Status(
+        Core::StatusCode::SnapshotUnavailable,
+        "the tube-line source needs the reduced provider, its shock surface "
+        "and the traced observer tube"));
+  // AMPS calls this once per step (PIC::BC::UserDefinedParticleInjection-
+  // Function, installed in amps_init).  completedSteps is the index of the
+  // step being taken and keys every draw; the births are spread over
+  // [stepBegin, stepBegin + dt) by the source.
+  const double dt=options.requestedTimeStepS;
+  const std::uint64_t particleStep=ApplicationRuntime().counters().completedSteps;
+  const double stepBegin=ApplicationRuntime().CurrentTimeS();
+  unsigned long long localTotal=0;
+  for(const auto& species:gCompiledSpecies) {
+    // One request per compiled species: field and plasma come from the
+    // reduced adapter in the computation frame; the efficiency is the deck's
+    // injection_efficiency (not forced to 1 for this placement); Parker gets
+    // isotropic mu, the focused movers the 1-D escape pitch-angle law.
+    Adapters::TubeLineSourceRequest request;
+    request.tube=gObserverFluxTube.get();
+    request.shock=gShockSurface.get();
+    request.plasma=[&](const Core::Vec3& x,double t,Core::Vec3* b,Core::Vec3* u){
+      return reduced->AmbientAt(x,t,b,u,nullptr);
+    };
+    request.species=species.ampsIndex;
+    request.massKg=species.massKg;
+    request.injectionEfficiency=options.source.injectionEfficiency;
+    request.releaseFraction=options.source.releaseDistanceShockRadiusFraction;
+    request.minimumEnergyJ=options.source.minimumEnergyJ;
+    request.maximumEnergyJ=options.source.maximumEnergyJ;
+    request.logUniformMomentum=options.source.weightingModel==
+        RuntimeModel::SourceWeightingModel::LogUniformMomentumImportance;
+    request.focusedPitchLaw=options.particleMover!=
+        RuntimeModel::ParticleMoverFamily::Parker;
+    request.samplesPerStep=options.source.samplesPerStep;
+    request.campaignSeed=options.campaignSeed;
+    request.step=particleStep;
+    request.stepBeginS=stepBegin;
+    request.dtS=dt;
+    Adapters::TubeLineSourceResult batch=Adapters::GenerateTubeLineSource(request);
+    if(!batch.status.ok())StopWithStatus("tube-line source sampling",batch.status);
+    Adapters::InjectionPlan localPlan;
+    localPlan.status=Core::Status::OK();
+    std::uint64_t disconnected=0;
+    double localWeight=0,localEnergyJ=0;
+    // Every rank holds the same candidates.  A candidate outside the radial
+    // shell or in a missing or inactive leaf is counted as disconnected (the
+    // same count on every rank) and dropped; otherwise only the owner of its
+    // leaf allocates it.
+    for(Adapters::InjectedParticle& injected:batch.particles) {
+      const Core::Vec3 x0=injected.particle.positionM;
+      const double radius=(x0-options.coordinateOriginM).Norm();
+      double x[3];x0.CopyTo(x);
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->findTreeNode(x);
+      if(radius<options.innerRadiusM||radius>options.outerRadiusM||
+          node==nullptr||!node->IsUsedInCalculationFlag) {
+        ++disconnected;continue;
+      }
+      if(node->Thread!=PIC::ThisThread)continue;
+      // mu was sampled relative to the field at the release point; the native
+      // record is relative to the stored cell field, which may differ.
+      Core::Vec3 bHat;
+      Core::Status status=ResolvePopulationMagneticDirection(x0,node,&bHat);
+      if(!status.ok())StopWithStatus("tube-line source magnetic basis",status);
+      Core::Vec3 b,u;
+      status=reduced->AmbientAt(x0,stepBegin,&b,&u,nullptr);
+      if(!status.ok())StopWithStatus("tube-line source field",status);
+      // The field is static in the computation frame (an observer-tube
+      // requirement), so the step-start field is the field at the birth
+      // epoch.  Opposite directions: flip mu to keep the physical direction.
+      if(b.Normalized().Dot(bHat)<0)injected.particle.mu=-injected.particle.mu;
+      localWeight+=injected.particle.statisticalWeight;
+      localEnergyJ+=injected.particle.statisticalWeight*RelativisticKineticEnergyJ(
+          injected.particle.momentumKgMPerS,species.massKg);
+      localPlan.particles.push_back(injected);
+    }
+    const SEP3D::AMPS::Movers::InjectionOutcome outcome=
+        SEP3D::AMPS::Movers::InjectParticles(localPlan);
+    if(!outcome.status.ok())
+      StopWithStatus("tube-line AMPS particle allocation",outcome.status);
+    // Mover ledger (allocated count), then AMPS' own injection diagnostics:
+    // count and the number and mass production rates over the step.
+    Core::Status status=gParticleLedger.RecordInjection(
+        particleStep,species.ampsIndex,outcome.allocated);
+    if(!status.ok())StopWithStatus("tube-line particle ledger",status);
+    PIC::BC::nInjectedParticles[species.ampsIndex]+=static_cast<long int>(outcome.allocated);
+    PIC::BC::ParticleProductionRate[species.ampsIndex]+=localWeight/dt;
+    PIC::BC::ParticleMassProductionRate[species.ampsIndex]+=localWeight*species.massKg/dt;
+    localTotal+=outcome.allocated;
+    unsigned long long localCount=outcome.allocated,globalCount=0;
+    MPI_Allreduce(&localCount,&globalCount,1,MPI_UNSIGNED_LONG_LONG,MPI_SUM,
+        MPI_GLOBAL_COMMUNICATOR);
+    double localSums[2]={localWeight,localEnergyJ},globalSums[2]={};
+    MPI_Allreduce(localSums,globalSums,2,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    // Exactly-once ownership: allocated on all ranks + disconnected must be
+    // the whole candidate list.
+    if(globalCount+disconnected!=batch.particles.size())
+      StopWithStatus("tube-line source MPI ownership",Core::Status(
+          Core::StatusCode::LayoutMismatch,
+          "candidates were not assigned exactly once to an owner or the "
+          "explicit disconnected budget"));
+    // Rank 0 records one source-ledger row per step and species.  Its shock
+    // generation is particleStep + 1, the generation of this step's exact
+    // mover shock; the source ID is the FNV-1a hash of
+    // "tube-lines:<step>:<species>" (a zero hash is mapped to 1).  The
+    // disconnected candidates are the row's rejected count.
+    if(PIC::ThisThread==0) {
+      Adapters::SourceLedgerRow row;
+      row.step=particleStep;row.species=species.ampsIndex;
+      row.shockGeneration=particleStep+1;
+      row.sourceId=Fnv1a64("tube-lines:"+std::to_string(particleStep)+":"+
+          std::to_string(species.ampsIndex));
+      if(row.sourceId==0)row.sourceId=1;
+      row.representedParticles=globalSums[0];
+      row.injectedEnergyJ=globalSums[1];
+      row.macroparticles=globalCount;
+      row.rejected=disconnected;
+      row.disconnectedPatches=disconnected==0?0:1;
+      gSourceLedger.push_back(row);
+      std::cout<<std::scientific<<std::setprecision(10)
+          <<"[srcSEP3D] tube-line source step="<<particleStep
+          <<" t_s="<<stepBegin<<" species="<<species.symbol
+          <<" lines_accepted="<<batch.acceptedLines<<"/"<<gObserverFluxTube->lines.size()
+          <<" net_rate_s-1="<<batch.totalRateBeginPerS
+          <<" candidates="<<batch.particles.size()
+          <<" empty_samples="<<batch.emptySamples
+          <<" injected_all_ranks="<<globalCount
+          <<" represented="<<globalSums[0]
+          <<" disconnected="<<disconnected<<std::defaultfloat<<'\n';
+    }
+  }
+  return static_cast<long int>(localTotal);
+}
+
 SEP3D::Core::Status ResolveLocalTransportImpl(
     const SEP3D::Core::Vec3& positionM, int species,
     double momentumKgMPerS, double mu,
@@ -1534,11 +1931,15 @@ SEP3D::Core::Status ResolveLocalTransportImpl(
   if (layout.waveEnergyOffset == RuntimeModel::kNoOffset)
     return Core::Status(Core::StatusCode::LayoutMismatch,
                         "mandatory directional turbulence storage is absent");
-  double variance[2];
-  LoadBytes(cell, layout.waveEnergyOffset, variance, sizeof(variance));
-  waves.deltaBPlus2T2 = variance[0];
-  waves.deltaBMinus2T2 = variance[1];
-  waves.deltaB2T2 = variance[0] + variance[1];
+  if (cell != nullptr) {
+    double variance[2];
+    LoadBytes(cell, layout.waveEnergyOffset, variance, sizeof(variance));
+    waves.deltaBPlus2T2 = variance[0];
+    waves.deltaBMinus2T2 = variance[1];
+    waves.deltaB2T2 = variance[0] + variance[1];
+  }
+  // A provider-fallback cell (no local storage) keeps the prescribed model's
+  // own variance, from which the stored cell values are initialized.
   if (!waves.status.usable() || !waves.valid) return waves.status;
   if (waves.deltaB2T2 > 0.0) {
     local->plusWaveFraction = waves.deltaBPlus2T2 / waves.deltaB2T2;
@@ -2852,6 +3253,59 @@ void PublishObserversAtBoundary() {
       status = published.status;
     }
     if (status.ok()) status = gObserverRuntime.CommitPublication(prepared);
+    if (status.ok() && ObserverFluxTubeSelected()) {
+      // Radial-energy histogram of all particles (observer-flux-tube runs):
+      // log bins in heliocentric radius over the transport shell and in
+      // kinetic energy over the source band; one sparse row per occupied bin.
+      // Rank 0 bins the gathered particles (positions in the computation
+      // frame, r from the frame origin) into 48 log bins over
+      // [inner_radius, outer_radius) and 24 log bins over the source band
+      // [minimum_energy, maximum_energy).  Radii outside the shell are skipped;
+      // energies below the band go to bin -1 (written as [0, E_min]) and
+      // energies at or above E_max to the overflow bin 24 (written as
+      // [E_max, inf]); the last regular bin 23 is [E_23, E_max].  represented_particles is the summed
+      // statistical weight, macroparticles the count; SI units (m, J).  Rows
+      // are appended to <output_directory>/<prefix>.radial-energy.csv at every
+      // publication; the header is written only when the file is new.
+      const auto& options = Configuration().options();
+      const int radialBins = 48, energyBins = 24;
+      const double r0 = options.innerRadiusM, r1 = options.outerRadiusM;
+      const double e0 = options.source.minimumEnergyJ, e1 = options.source.maximumEnergyJ;
+      std::map<std::pair<int, int>, std::pair<double, std::uint64_t>> bins;
+      for (const PackedObservation& packed : globalParticles) {
+        const double r = (Core::Vec3(packed.x, packed.y, packed.z) -
+                          options.coordinateOriginM).Norm();
+        const double energy = RelativisticKineticEnergyJ(packed.momentum, packed.mass);
+        const int ir = static_cast<int>(std::floor(radialBins * std::log(r / r0) / std::log(r1 / r0)));
+        const int ie = static_cast<int>(std::floor(energyBins * std::log(energy / e0) / std::log(e1 / e0)));
+        if (ir < 0 || ir >= radialBins) continue;
+        auto& bin = bins[{ir, std::max(-1, std::min(energyBins, ie))}];
+        bin.first += packed.weight;
+        ++bin.second;
+      }
+      const std::filesystem::path file = std::filesystem::path(options.outputDirectory) /
+          (options.outputPrefix + ".radial-energy.csv");
+      const bool fresh = !std::filesystem::exists(file);
+      std::ofstream out(file, std::ios::app);
+      if (fresh)
+        out << "time_s,radius_min_m,radius_max_m,energy_min_j,energy_max_j,"
+               "represented_particles,macroparticles\n";
+      out << std::setprecision(17);
+      for (const auto& item : bins) {
+        const int ir = item.first.first, ie = item.first.second;
+        const auto edgeR = [&](int i) { return r0 * std::pow(r1 / r0, double(i) / radialBins); };
+        // Edge i of the energy grid: 0 below the band, E_min..E_max on the log
+        // grid, and exactly E_max at i == energyBins, which is both the upper
+        // edge of the last regular bin and the lower edge of the overflow bin.
+        const auto edgeE = [&](int i) {
+          return i < 0 ? 0.0 : i > energyBins ? std::numeric_limits<double>::infinity()
+                             : i == energyBins ? e1
+                                               : e0 * std::pow(e1 / e0, double(i) / energyBins); };
+        out << runtime.CurrentTimeS() << ',' << edgeR(ir) << ',' << edgeR(ir + 1) << ','
+            << edgeE(ie) << ',' << (ie < 0 ? e0 : ie >= energyBins ? std::numeric_limits<double>::infinity() : edgeE(ie + 1)) << ','
+            << item.second.first << ',' << item.second.second << '\n';
+      }
+    }
     if (!status.ok()) { publicationOK = 0; failure = status.message; }
   }
   MPI_Bcast(&publicationOK, 1, MPI_INT, 0, MPI_GLOBAL_COMMUNICATOR);
@@ -3739,6 +4193,217 @@ void ApplyActiveRegionMask(
   }
 }
 
+// Trace the observer flux tube before the AMR tree exists (all ranks compute
+// the same deterministic lines; the digest is checked across ranks).
+void BuildObserverFluxTubeBeforeMesh() {
+  using namespace SEP3D;
+  if(!ObserverFluxTubeSelected())return;
+  const auto& options=Configuration().options();
+  const auto reduced=std::dynamic_pointer_cast<
+      Adapters::ShockFrontBackgroundAdapter>(gRuntimeBackgroundProvider);
+  if(!reduced)StopWithStatus("observer flux tube",Core::Status(
+      Core::StatusCode::ConfigurationConflict,
+      "observer-flux-tube requires the reduced shock-front background"));
+  // A rotating ambient in an inertial frame moves its field lines, so a tube
+  // fixed in the mesh would not stay on them.
+  const Core::ComputationFrame frame=reduced->Frame();
+  if(frame.IsInertial()&&
+      reduced->SharedProvider()->Event().ambient.ambient.rotationRateRadPerS!=0)
+    StopWithStatus("observer flux tube",Core::Status(
+        Core::StatusCode::ConfigurationConflict,
+        "the reduced ambient rotates in HCI; an observer flux tube needs "
+        "mesh.domain.coordinate_frame = HCI-corotating, where it is static"));
+  // The field is static in the computation frame; evaluate it at the frame's
+  // reference epoch.
+  const double fieldEpoch=frame.ReferenceEpochS();
+  const Mesh::FrameFieldFunction field=[&](const Core::Vec3& x,Core::Vec3* b,
+      int* sector) {
+    return reduced->AmbientAt(x,fieldEpoch,b,nullptr,sector);
+  };
+  // Sample each tube observer over its stay interval in the computation
+  // frame.  Create() guarantees that every listed ID names an observer with
+  // a stay interval; a table ephemeris is checksummed when created.
+  std::vector<Mesh::TubeObserverPath> paths;
+  for(const std::string& id:options.activeTubeObserverIds) {
+    const auto found=std::find_if(options.observers.begin(),
+        options.observers.end(),[&](const RuntimeModel::ObserverOptions& o){
+          return o.id==id;});
+    Output::ObserverTrajectoryPointer trajectory;
+    Core::Status status=Output::CreateObserverTrajectory(*found,&trajectory);
+    if(!status.ok())StopWithStatus("observer flux tube",status);
+    Mesh::TubeObserverPath path;
+    path.id=id;path.collectionRadiusM=found->collectionRadiusM;
+    // Sample the stay interval so that consecutive collection spheres
+    // overlap: the frame speed of a body is at most |Omega| r plus its own.
+    double dt=options.activeTubeTimeSpacingS;
+    if(dt==0) {
+      Core::Vec3 x,v;
+      status=trajectory->StateHci(found->tubeStayBeginS,&x,&v);
+      if(!status.ok())StopWithStatus("observer flux tube",status);
+      const double speed=std::fabs(frame.RotationRateRadPerS())*x.Norm()+v.Norm();
+      dt=speed>0?0.25*found->collectionRadiusM/speed:
+          found->tubeStayEndS-found->tubeStayBeginS;
+    }
+    // ceil(span/dt) + 1 evenly spaced samples including both ends, so the
+    // actual spacing never exceeds dt; positions relative to the origin.
+    const double span=found->tubeStayEndS-found->tubeStayBeginS;
+    const std::size_t count=static_cast<std::size_t>(std::ceil(span/dt))+1;
+    for(std::size_t k=0;k<count;++k) {
+      const double t=k+1==count?found->tubeStayEndS:
+          found->tubeStayBeginS+span*static_cast<double>(k)/(count-1);
+      Core::Vec3 c;
+      status=Output::ObserverFramePosition(*trajectory,frame,t,&c);
+      if(!status.ok())StopWithStatus("observer flux tube",Core::Status(
+          status.code,"observer '"+id+"': "+status.message));
+      path.timesS.push_back(t);path.centresM.push_back(c-options.coordinateOriginM);
+    }
+    paths.push_back(std::move(path));
+  }
+  Mesh::ObserverTubeControls controls;
+  controls.innerRadiusM=options.innerRadiusM;
+  controls.outerRadiusM=options.outerRadiusM;
+  controls.traceStepM=options.activeTubeTraceStepM;
+  controls.seedSpacingM=options.activeTubeSeedSpacingM;
+  if(controls.seedSpacingM==0) {
+    // Half the requested cell size at the first observer.  The resolution
+    // record has no tube geometry yet, so this is the ungraded radial target.
+    const Core::Vec3 at=paths.front().centresM.front()+options.coordinateOriginM;
+    controls.seedSpacingM=0.5*Mesh::RequestedCellSizeM(at,ResolutionConfiguration());
+  }
+  // Every rank traces the same lines.  A failure on any rank stops all of
+  // them; equal digests (FNV-1a of every line point) on all ranks confirm
+  // that they traced bit-identical lines.
+  auto tube=std::make_shared<Mesh::ObserverFluxTube>();
+  const Core::Status built=Mesh::BuildObserverFluxTube(paths,controls,field,tube.get());
+  int local=built.ok()?1:0,global=0;
+  MPI_Allreduce(&local,&global,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  if(!global)StopWithStatus("observer flux tube",built.ok()?Core::Status(
+      Core::StatusCode::ConfigurationConflict,"another rank failed to trace the tube"):built);
+  unsigned long long digest=tube->digest,minimum=0,maximum=0;
+  MPI_Allreduce(&digest,&minimum,1,MPI_UNSIGNED_LONG_LONG,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&digest,&maximum,1,MPI_UNSIGNED_LONG_LONG,MPI_MAX,MPI_GLOBAL_COMMUNICATOR);
+  if(minimum!=maximum)StopWithStatus("observer flux tube",Core::Status(
+      Core::StatusCode::ConfigurationConflict,"MPI ranks traced different tubes"));
+  // Classification capsules: local line spacing plus the half-chord bound.
+  // One capsule per chord of every line, of radius
+  //   max(spacing at its two ends) + chord/2 + 256 eps outer_radius,
+  // the last term a roundoff guard.  The inner and outer line ends mark the
+  // source and terminal leaves of the mask's connectivity check
+  // (mesh_model.cpp).
+  auto geometry=std::make_shared<Mesh::ObserverTubeGeometry>();
+  std::size_t points=0;
+  for(const Mesh::TracedTubeLine& line:tube->lines) {
+    points+=line.pointsM.size();
+    geometry->sourcePointsM.push_back(line.pointsM.front()+options.coordinateOriginM);
+    geometry->terminalPointsM.push_back(line.pointsM.back()+options.coordinateOriginM);
+    for(std::size_t i=0;i+1<line.pointsM.size();++i) {
+      Mesh::ActiveTubeSegment segment;
+      segment.firstM=line.pointsM[i]+options.coordinateOriginM;
+      segment.secondM=line.pointsM[i+1]+options.coordinateOriginM;
+      const double chord=(line.pointsM[i+1]-line.pointsM[i]).Norm();
+      segment.envelopeRadiusM=std::max(line.localSpacingM[i],
+          line.localSpacingM[i+1])+0.5*chord+
+          256*std::numeric_limits<double>::epsilon()*options.outerRadiusM;
+      geometry->segments.push_back(segment);
+    }
+  }
+  geometry->digest=tube->digest;
+  // Spatial index of the capsules, used by the distance-graded refinement
+  // and the block classification.
+  const Core::Status indexed=Mesh::IndexObserverTube(geometry.get());
+  if(!indexed.ok())StopWithStatus("observer flux tube",indexed);
+  gObserverFluxTube=tube;gObserverTubeGeometry=geometry;gObserverTubePaths=paths;
+  if(PIC::ThisThread==0) {
+    // The traced lines, for plots and checks (one row per point): frame
+    // coordinates [m] relative to the origin, local spacing [m] and the flux
+    // [Wb] of the line's element, in <output_directory>/
+    // observer-flux-tube-lines.csv.
+    std::filesystem::create_directories(options.outputDirectory);
+    std::ofstream lines(std::filesystem::path(options.outputDirectory)/
+                        "observer-flux-tube-lines.csv");
+    lines<<"line,x_m,y_m,z_m,local_spacing_m,flux_wb\n"<<std::setprecision(17);
+    for(std::size_t l=0;l<tube->lines.size();++l)
+      for(std::size_t i=0;i<tube->lines[l].pointsM.size();++i) {
+        const auto& x=tube->lines[l].pointsM[i];
+        lines<<l<<','<<x.x<<','<<x.y<<','<<x.z<<','
+             <<tube->lines[l].localSpacingM[i]<<','<<tube->lines[l].fluxWb<<'\n';
+      }
+    double flux=0;for(const auto& line:tube->lines)flux+=line.fluxWb;
+    std::cout<<"[srcSEP3D] observer flux tube lines="<<tube->lines.size()
+             <<" candidates="<<tube->candidateLines
+             <<" observer_samples="<<tube->observerSamples
+             <<" reference_radius_m="<<tube->referenceRadiusM
+             <<" seed_spacing_m="<<tube->seedSpacingM
+             <<" points="<<points<<" segments="<<geometry->segments.size()
+             <<" flux_wb="<<flux<<" frame="<<frame.Canonical()
+             <<" digest="<<std::hex<<tube->digest<<std::dec<<'\n';
+    for(const auto& path:paths)
+      std::cout<<"[srcSEP3D] observer flux tube observer="<<path.id
+               <<" samples="<<path.timesS.size()<<" stay_s=["
+               <<path.timesS.front()<<","<<path.timesS.back()<<"]"
+               <<" collection_radius_m="<<path.collectionRadiusM<<'\n';
+  }
+}
+
+// After allocation: every sampled collection sphere of every observer must
+// lie in active blocks (centre and the six axis extremes) -- the tube
+// observers over their stay intervals, every other observer over the run.
+void VerifyObserverTubeCoverage() {
+  if(!ObserverFluxTubeSelected())return;
+  const auto& options=Configuration().options();
+  // The tube observers reuse their stay-interval samples.  Every other
+  // observer is checked over model time [0, dt * maximum_time_steps]: once if
+  // it is fixed in the computation frame, otherwise at evenly spaced epochs
+  // at most 600 s apart.
+  std::vector<SEP3D::Mesh::TubeObserverPath> paths=gObserverTubePaths;
+  const double runEnd=options.requestedTimeStepS*
+      static_cast<double>(options.maximumTimeSteps);
+  for(const auto& observer:options.observers) {
+    if(observer.definesTube)continue;
+    SEP3D::Output::ObserverTrajectoryPointer trajectory;
+    SEP3D::Core::Status status=SEP3D::Output::CreateObserverTrajectory(observer,&trajectory);
+    if(!status.ok())StopWithStatus("observer coverage",status);
+    SEP3D::Mesh::TubeObserverPath path;
+    path.id=observer.id;path.collectionRadiusM=observer.collectionRadiusM;
+    const std::size_t count=trajectory->FrameFixed()?1:
+        static_cast<std::size_t>(std::ceil(runEnd/600.0))+1;
+    for(std::size_t k=0;k<count;++k) {
+      const double t=count==1?0.0:runEnd*static_cast<double>(k)/(count-1);
+      SEP3D::Core::Vec3 c;
+      status=SEP3D::Output::ObserverFramePosition(*trajectory,
+          SEP3D::Core::ComputationFrame(options.ComputationFrameValue()),t,&c);
+      if(!status.ok())StopWithStatus("observer coverage",status);
+      path.timesS.push_back(t);path.centresM.push_back(c-options.coordinateOriginM);
+    }
+    paths.push_back(path);
+  }
+  // Seven probes per sample (the centre and the six axis extremes of the
+  // sphere): a necessary condition for coverage, not a proof that the whole
+  // sphere is inside.  A probe in no leaf or in an inactive leaf stops the run.
+  for(const auto& path:paths)
+    for(std::size_t k=0;k<path.centresM.size();++k) {
+      const SEP3D::Core::Vec3 c=path.centresM[k]+options.coordinateOriginM;
+      const double rho=path.collectionRadiusM;
+      const SEP3D::Core::Vec3 probes[7]={c,c+SEP3D::Core::Vec3(rho,0,0),
+          c-SEP3D::Core::Vec3(rho,0,0),c+SEP3D::Core::Vec3(0,rho,0),
+          c-SEP3D::Core::Vec3(0,rho,0),c+SEP3D::Core::Vec3(0,0,rho),
+          c-SEP3D::Core::Vec3(0,0,rho)};
+      for(const auto& probe:probes) {
+        double x[3]={probe.x,probe.y,probe.z};
+        auto* node=PIC::Mesh::mesh->findTreeNode(x);
+        if(node==nullptr||!node->IsUsedInCalculationFlag)
+          StopWithStatus("observer flux tube",SEP3D::Core::Status(
+              SEP3D::Core::StatusCode::ConfigurationConflict,
+              "observer '"+path.id+"' collection sphere at t="+
+              std::to_string(path.timesS[k])+" s leaves the allocated tube "
+              "(a non-tube observer must lie inside the observers' flux tube)"));
+      }
+    }
+  if(PIC::ThisThread==0)
+    std::cout<<"[srcSEP3D] observer flux tube coverage verified for "
+             <<paths.size()<<" observers\n";
+}
+
 void VerifyActiveRegionAllocation() {
   using Node = cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>;
   gActiveRegionAllocationVerified = false;
@@ -3910,7 +4575,8 @@ void amps_init_mesh() {
     StopWithStatus("runtime mesh background",SEP3D::Core::Status(
         SEP3D::Core::StatusCode::ConfigurationConflict,"runtime mesh providers require the one-fluid AMPS DATAFILE buffer layout"));
 #endif
-  const SEP3D::Mesh::ResolutionConfiguration resolution =
+  // Not const: rebuilt below once the observer flux tube exists.
+  SEP3D::Mesh::ResolutionConfiguration resolution =
       ResolutionConfiguration();
   const SEP3D::Core::Status resolutionStatus =
       SEP3D::Mesh::Validate(resolution);
@@ -3935,6 +4601,11 @@ void amps_init_mesh() {
   // fails before AMR allocation; later epoch publication reuses this exact
   // provider rather than reparsing or creating a second model authority.
   InitializeSelectedModelsAfterParser();
+  // Trace the observer flux tube with that provider (no-op in other modes).
+  // It must exist before mesh->init(): localResolution() grades the cell size
+  // with the distance to the tube, and the mask below classifies blocks
+  // against its capsules.
+  BuildObserverFluxTubeBeforeMesh();
   // Capture and validate the complete generated species table only after the
   // application parser has committed its immutable count. The table itself is
   // read-only: count, symbols, masses, charges, and indices were fixed by
@@ -3982,6 +4653,13 @@ void amps_init_mesh() {
   // and before load measurement/distribution/block allocation.  Inactive
   // leaves then consume neither center-cell storage nor particle lists, while
   // movers see them through the normal DomainExit path.
+  // Rebuild the resolution record: an observer flux tube is traced after the
+  // first validation above.
+  // The first record predates BuildObserverFluxTubeBeforeMesh, so its tube
+  // geometry is null and the mask builder would reject it.  The tube
+  // geometry is the only input of ResolutionConfiguration() that changes in
+  // between, so in every other mode the rebuilt record equals the first.
+  resolution = ResolutionConfiguration();
   ApplyActiveRegionMask(resolution);
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
@@ -4010,6 +4688,9 @@ void amps_init_mesh() {
   // initialization so an inactive resident block cannot receive plausible
   // physics data and hide an activation-order regression.
   VerifyActiveRegionAllocation();
+  // Observer flux tube only: every observer's collection sphere lies in
+  // active blocks over its interval.
+  VerifyObserverTubeCoverage();
 
   // AllocateTreeBlocks() materializes the blocks referenced by the final
   // parallel distribution list, but it does not populate AMPS' cached
@@ -4106,6 +4787,37 @@ void amps_init() {
     // Preserve finite shape/axis/width together with the epoch's apex state.
     // Rebuilding this record from radius alone would silently restore a sphere.
     mover.shock = shock.MoverGeometry();
+  } else if (TubeLineSourceSelected()) {
+    // Exact front at the first step start; the absorbing shock decides
+    // admission per crossing point through the provider-neutral surface.
+    const auto reduced=std::dynamic_pointer_cast<
+        SEP3D::Adapters::ShockFrontBackgroundAdapter>(
+            gRuntimeBackgroundProvider);
+    if(!reduced)StopWithStatus("tube-line source", SEP3D::Core::Status(
+        SEP3D::Core::StatusCode::ConfigurationConflict,
+        "the tube-line source requires the reduced shock-front background"));
+    // The provider-neutral surface over the same provider instance, in the
+    // computation frame (adapters/reduced_front_shock_surface.h).
+    const SEP3D::Core::Status surface=
+        SEP3D::Adapters::ReducedFrontShockSurface::Create(reduced->SharedProvider(),
+            reduced->Frame(),Configuration().options().coordinateOriginM,&gShockSurface);
+    if(!surface.ok())StopWithStatus("shock surface", surface);
+    // Mover context: the exact front at the first step start (generation 1),
+    // absorption (always absorb here, by validation) with the per-point
+    // acceptance callback, and long jumps, which the tube-line source's
+    // observer flux tube always enables.
+    const double t0=SEP3D::ApplicationRuntime().CurrentTimeS();
+    mover.shock=ExactReducedMoverShock(t0,1);
+    mover.absorbAtShock=Configuration().options().source.returningParticles==
+        SEP3D::RuntimeModel::ShockReturnBoundary::Absorb;
+    mover.shockAccepted=ShockAcceptedAt;
+    mover.stepStartEpochS=t0;
+    mover.longJumps=ObserverFluxTubeSelected();
+    if(PIC::ThisThread==0)
+      std::cout<<"[srcSEP3D] shock surface geometry="<<gShockSurface->GeometryName()
+               <<" absorbing="<<(mover.absorbAtShock?"yes":"no")
+               <<" R_m="<<mover.shock.radiusAtStepStartM
+               <<" V_m_s="<<mover.shock.radialSpeedMPerS<<'\n';
   } else if (Configuration().options().source.enabled) {
     const auto reduced=std::dynamic_pointer_cast<
         SEP3D::Adapters::ShockFrontBackgroundAdapter>(
@@ -4141,6 +4853,20 @@ void amps_init() {
       StopWithStatus("AMPS particle mover selection", SEP3D::Core::Status(
           SEP3D::Core::StatusCode::ConfigurationConflict,
           "validated configuration contains an unknown particle-mover family"));
+  }
+  // The tube-line source is the run's only application injection hook (the
+  // front-surface sampler is installed only with the derived numerics, which
+  // this placement forbids); refuse to replace another callback.
+  if(TubeLineSourceSelected()) {
+    if(PIC::BC::UserDefinedParticleInjectionFunction!=nullptr&&
+        PIC::BC::UserDefinedParticleInjectionFunction!=InjectTubeLineParticles)
+      StopWithStatus("tube-line source callback",SEP3D::Core::Status(
+          SEP3D::Core::StatusCode::ConfigurationConflict,
+          "another application particle-injection callback is already installed"));
+    PIC::BC::UserDefinedParticleInjectionFunction=InjectTubeLineParticles;
+    if(PIC::ThisThread==0)
+      std::cout<<"[srcSEP3D] installed the 1-D-equivalent release on "
+          <<gObserverFluxTube->lines.size()<<" observer-tube lines\n";
   }
   if(DerivedParticleNumericsSelected()&&Configuration().options().source.enabled) {
     if(Configuration().options().source.weightingModel!=
@@ -4804,6 +5530,9 @@ int amps_time_step() {
   const std::uint64_t particleStep = runtime.counters().completedSteps;
   BeginParticleLedger(particleStep);
   const int returnCode = PIC::TimeStep();
+  // Hand particles that ended on another rank's leaf to their owner before
+  // the ledger closes (no-op without the observer flux tube).
+  ExchangeLongJumpParticles(particleStep);
   CloseParticleLedgerCollectively(particleStep);
   status = runtime.CompleteStep();
   if (!status.ok()) StopWithStatus("Runtime CompleteStep", status);
@@ -4813,7 +5542,15 @@ int amps_time_step() {
   // joined background commit, update the mover's finite-SSE crossing geometry
   // from that exact committed epoch before any source or population-control
   // operation can observe the next step.  No legacy SWCME object is created.
-  if(!gInstalledShock&&Configuration().options().source.enabled) {
+  if(!gInstalledShock&&TubeLineSourceSelected()) {
+    // Tube-line source and absorbing shock: the exact front at the next step
+    // start from the core's history, independent of background republication;
+    // generation = index of the next step + 1.
+    const double next=runtime.CurrentTimeS();
+    status=SEP3D::AMPS::Movers::UpdateShockAtEpoch(
+        ExactReducedMoverShock(next,runtime.counters().completedSteps+1),next);
+    if(!status.ok())StopWithStatus("exact mover shock update",status);
+  } else if(!gInstalledShock&&Configuration().options().source.enabled) {
     const auto reduced=std::dynamic_pointer_cast<
         SEP3D::Adapters::ShockFrontBackgroundAdapter>(
             gRuntimeBackgroundProvider);

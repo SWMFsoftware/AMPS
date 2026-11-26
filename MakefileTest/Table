@@ -859,6 +859,264 @@ Check=
 >>>@echo Test SEP--event-2013-04-11-long--FTE-Dmumu has finished: `date`
 <#
 
+-------------------------------------------------------------------------------
+
+srcSEP3D 3-D version of the 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md): the same
+shock, ambient and observations in 3-D, the observer flux tube of SOHO, ACE and Earth in the frame that
+corotates with the Sun; nightly = the first hour, long = the full event (Tier=long, Makefile.test.long).
+
+#>
+Name=SEP3D--event-2013-04-11--Parker
+Family=sep
+Time=12
+
+Compile=
+>>>@echo "test_SEP3D--event-2013-04-11--Parker_compile..." > test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff
+>>>./Config.pl -application=sep3d -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP3D--event-2013-04-11--Parker_compile... done" >> test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff
+
+Run=
+>>>@echo "test_SEP3D--event-2013-04-11--Parker_run..." >> test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff
+>>>@echo Test test_SEP3D--event-2013-04-11--Parker has started: `date`
+>>>@# Nightly tier of the srcSEP3D 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md):
+>>>@# the first hour (60 steps of 60 s) in 3-D, parker: the observer flux tube of SOHO, ACE and Earth in
+>>>@# the corotating frame, the shared 1-D shock and ambient (srcSEP/test/event_2013_04_11/event.event).
+>>>@# The decks and ephemerides are checked-in products of srcSEP/test/event_2013_04_11/prepare_event.py.
+>>>@E3=srcSEP3D/test/event_2013_04_11; E1=srcSEP/test/event_2013_04_11; D=$(TESTSEP3D--event-2013-04-11--ParkerDIR); mkdir -p $$D/assets $$D/ephemeris && cp $$E3/event3d.*.in $$D/ && cp $$E3/ephemeris/*.csv $$D/ephemeris/ && cp $$E1/event.event $$D/ && cp $$E1/assets/wso_cr2135_model_frame.harmonics.csv $$D/assets/
+>>>cd $(TESTSEP3D--event-2013-04-11--ParkerDIR) && $(MPIRUN) ./amps -input event3d.nightly.parker.in > run.log 2> run.err
+>>>@echo "test_SEP3D--event-2013-04-11--Parker_run... done" >> test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff
+
+Check=
+>>>@echo "test_SEP3D--event-2013-04-11--Parker_check..." >> test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff
+>>>@# srcSEP3D/test/event_2013_04_11/regression_products.sh assembles the products observers, radial_energy, ledger;
+>>>@# each is compared with output/test_SEP3D/SEP3D--event-2013-04-11--Parker--<label>.ref_np<N>.gz (N = MPI ranks of the run) by DiffNum.pl.
+>>>@# The test passes when every comparison is empty: test_SEP3D--event-2013-04-11--Parker.diff is then empty. Partial results stay in check/.
+>>>-@(D=$(TESTSEP3D--event-2013-04-11--ParkerDIR); NP=`ls -d $$D/PT/thread* 2>/dev/null | wc -l | tr -d ' '`; rm -rf $$D/check $$D/products; mkdir -p $$D/check; \
+>>>sh srcSEP3D/test/event_2013_04_11/regression_products.sh $$D $$D/products > $$D/check/0-products.diff 2>&1 && rm -f $$D/check/0-products.diff || echo "regression_products.sh failed" >> $$D/check/0-products.diff; \
+>>>for LABEL in observers radial_energy ledger; do \
+>>>  REF=output/test_SEP3D/SEP3D--event-2013-04-11--Parker--$$LABEL$(TESTSEP3D--event-2013-04-11--Parker-REF).ref_np$$NP.gz; \
+>>>  if [ ! -f $$D/products/$$LABEL.dat ]; then echo "product $$LABEL.dat is missing" > $$D/check/$$LABEL.diff; \
+>>>  elif [ -f $$REF ]; then gunzip -c $$REF > $$D/check/$$LABEL.ref; \
+>>>    ${SCRIPTDIR}/DiffNum.pl $$D/products/$$LABEL.dat $$D/check/$$LABEL.ref > $$D/check/$$LABEL.diff; \
+>>>  else echo "reference $$REF is missing" > $$D/check/$$LABEL.diff; fi; \
+>>>done; \
+>>>cat $$D/check/*.diff > test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff)
+>>>@ls -l test_SEP3D--event-2013-04-11--Parker$(TESTSEP3D--event-2013-04-11--Parker-REF).diff
+>>>@echo Test SEP3D--event-2013-04-11--Parker has finished: `date`
+<#
+
+#>
+Name=SEP3D--event-2013-04-11--FTE-Dmumu
+Family=sep
+Time=12
+
+Compile=
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-Dmumu_compile..." > test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff
+>>>./Config.pl -application=sep3d -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-Dmumu_compile... done" >> test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff
+
+Run=
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-Dmumu_run..." >> test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff
+>>>@echo Test test_SEP3D--event-2013-04-11--FTE-Dmumu has started: `date`
+>>>@# Nightly tier of the srcSEP3D 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md):
+>>>@# the first hour (60 steps of 60 s) in 3-D, fte-dmumu: the observer flux tube of SOHO, ACE and Earth in
+>>>@# the corotating frame, the shared 1-D shock and ambient (srcSEP/test/event_2013_04_11/event.event).
+>>>@# The decks and ephemerides are checked-in products of srcSEP/test/event_2013_04_11/prepare_event.py.
+>>>@E3=srcSEP3D/test/event_2013_04_11; E1=srcSEP/test/event_2013_04_11; D=$(TESTSEP3D--event-2013-04-11--FTE-DmumuDIR); mkdir -p $$D/assets $$D/ephemeris && cp $$E3/event3d.*.in $$D/ && cp $$E3/ephemeris/*.csv $$D/ephemeris/ && cp $$E1/event.event $$D/ && cp $$E1/assets/wso_cr2135_model_frame.harmonics.csv $$D/assets/
+>>>cd $(TESTSEP3D--event-2013-04-11--FTE-DmumuDIR) && $(MPIRUN) ./amps -input event3d.nightly.fte-dmumu.in > run.log 2> run.err
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-Dmumu_run... done" >> test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff
+
+Check=
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-Dmumu_check..." >> test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff
+>>>@# srcSEP3D/test/event_2013_04_11/regression_products.sh assembles the products observers, radial_energy, ledger;
+>>>@# each is compared with output/test_SEP3D/SEP3D--event-2013-04-11--FTE-Dmumu--<label>.ref_np<N>.gz (N = MPI ranks of the run) by DiffNum.pl.
+>>>@# The test passes when every comparison is empty: test_SEP3D--event-2013-04-11--FTE-Dmumu.diff is then empty. Partial results stay in check/.
+>>>-@(D=$(TESTSEP3D--event-2013-04-11--FTE-DmumuDIR); NP=`ls -d $$D/PT/thread* 2>/dev/null | wc -l | tr -d ' '`; rm -rf $$D/check $$D/products; mkdir -p $$D/check; \
+>>>sh srcSEP3D/test/event_2013_04_11/regression_products.sh $$D $$D/products > $$D/check/0-products.diff 2>&1 && rm -f $$D/check/0-products.diff || echo "regression_products.sh failed" >> $$D/check/0-products.diff; \
+>>>for LABEL in observers radial_energy ledger; do \
+>>>  REF=output/test_SEP3D/SEP3D--event-2013-04-11--FTE-Dmumu--$$LABEL$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).ref_np$$NP.gz; \
+>>>  if [ ! -f $$D/products/$$LABEL.dat ]; then echo "product $$LABEL.dat is missing" > $$D/check/$$LABEL.diff; \
+>>>  elif [ -f $$REF ]; then gunzip -c $$REF > $$D/check/$$LABEL.ref; \
+>>>    ${SCRIPTDIR}/DiffNum.pl $$D/products/$$LABEL.dat $$D/check/$$LABEL.ref > $$D/check/$$LABEL.diff; \
+>>>  else echo "reference $$REF is missing" > $$D/check/$$LABEL.diff; fi; \
+>>>done; \
+>>>cat $$D/check/*.diff > test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff)
+>>>@ls -l test_SEP3D--event-2013-04-11--FTE-Dmumu$(TESTSEP3D--event-2013-04-11--FTE-Dmumu-REF).diff
+>>>@echo Test SEP3D--event-2013-04-11--FTE-Dmumu has finished: `date`
+<#
+
+#>
+Name=SEP3D--event-2013-04-11--FTE-MFP
+Family=sep
+Time=12
+
+Compile=
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-MFP_compile..." > test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff
+>>>./Config.pl -application=sep3d -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-MFP_compile... done" >> test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff
+
+Run=
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-MFP_run..." >> test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff
+>>>@echo Test test_SEP3D--event-2013-04-11--FTE-MFP has started: `date`
+>>>@# Nightly tier of the srcSEP3D 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md):
+>>>@# the first hour (60 steps of 60 s) in 3-D, fte-mfp: the observer flux tube of SOHO, ACE and Earth in
+>>>@# the corotating frame, the shared 1-D shock and ambient (srcSEP/test/event_2013_04_11/event.event).
+>>>@# The decks and ephemerides are checked-in products of srcSEP/test/event_2013_04_11/prepare_event.py.
+>>>@E3=srcSEP3D/test/event_2013_04_11; E1=srcSEP/test/event_2013_04_11; D=$(TESTSEP3D--event-2013-04-11--FTE-MFPDIR); mkdir -p $$D/assets $$D/ephemeris && cp $$E3/event3d.*.in $$D/ && cp $$E3/ephemeris/*.csv $$D/ephemeris/ && cp $$E1/event.event $$D/ && cp $$E1/assets/wso_cr2135_model_frame.harmonics.csv $$D/assets/
+>>>cd $(TESTSEP3D--event-2013-04-11--FTE-MFPDIR) && $(MPIRUN) ./amps -input event3d.nightly.fte-mfp.in > run.log 2> run.err
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-MFP_run... done" >> test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff
+
+Check=
+>>>@echo "test_SEP3D--event-2013-04-11--FTE-MFP_check..." >> test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff
+>>>@# srcSEP3D/test/event_2013_04_11/regression_products.sh assembles the products observers, radial_energy, ledger;
+>>>@# each is compared with output/test_SEP3D/SEP3D--event-2013-04-11--FTE-MFP--<label>.ref_np<N>.gz (N = MPI ranks of the run) by DiffNum.pl.
+>>>@# The test passes when every comparison is empty: test_SEP3D--event-2013-04-11--FTE-MFP.diff is then empty. Partial results stay in check/.
+>>>-@(D=$(TESTSEP3D--event-2013-04-11--FTE-MFPDIR); NP=`ls -d $$D/PT/thread* 2>/dev/null | wc -l | tr -d ' '`; rm -rf $$D/check $$D/products; mkdir -p $$D/check; \
+>>>sh srcSEP3D/test/event_2013_04_11/regression_products.sh $$D $$D/products > $$D/check/0-products.diff 2>&1 && rm -f $$D/check/0-products.diff || echo "regression_products.sh failed" >> $$D/check/0-products.diff; \
+>>>for LABEL in observers radial_energy ledger; do \
+>>>  REF=output/test_SEP3D/SEP3D--event-2013-04-11--FTE-MFP--$$LABEL$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).ref_np$$NP.gz; \
+>>>  if [ ! -f $$D/products/$$LABEL.dat ]; then echo "product $$LABEL.dat is missing" > $$D/check/$$LABEL.diff; \
+>>>  elif [ -f $$REF ]; then gunzip -c $$REF > $$D/check/$$LABEL.ref; \
+>>>    ${SCRIPTDIR}/DiffNum.pl $$D/products/$$LABEL.dat $$D/check/$$LABEL.ref > $$D/check/$$LABEL.diff; \
+>>>  else echo "reference $$REF is missing" > $$D/check/$$LABEL.diff; fi; \
+>>>done; \
+>>>cat $$D/check/*.diff > test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff)
+>>>@ls -l test_SEP3D--event-2013-04-11--FTE-MFP$(TESTSEP3D--event-2013-04-11--FTE-MFP-REF).diff
+>>>@echo Test SEP3D--event-2013-04-11--FTE-MFP has finished: `date`
+<#
+
+#>
+Name=SEP3D--event-2013-04-11-long--FTE-MFP
+Family=sep-long
+Tier=long
+Ranks=32
+Time=720
+
+Compile=
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-MFP_compile..." > test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff
+>>>./Config.pl -application=sep3d -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-MFP_compile... done" >> test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff
+
+Run=
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-MFP_run..." >> test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff
+>>>@echo Test test_SEP3D--event-2013-04-11-long--FTE-MFP has started: `date`
+>>>@# Long tier of the srcSEP3D 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md):
+>>>@# the full 41.4 h event in 3-D (event3d.long.fte-mfp.in), fte-mfp, on the block's fixed rank count Ranks=
+>>>@# through $(TESTMPILAUNCH). Tier=long puts it in Makefile.test.long; the nightly never runs it.
+>>>@E3=srcSEP3D/test/event_2013_04_11; E1=srcSEP/test/event_2013_04_11; D=$(TESTSEP3D--event-2013-04-11-long--FTE-MFPDIR); mkdir -p $$D/assets $$D/ephemeris && cp $$E3/event3d.*.in $$D/ && cp $$E3/ephemeris/*.csv $$D/ephemeris/ && cp $$E1/event.event $$D/ && cp $$E1/assets/wso_cr2135_model_frame.harmonics.csv $$D/assets/
+>>>cd $(TESTSEP3D--event-2013-04-11-long--FTE-MFPDIR) && $(TESTMPILAUNCH) $(TESTSEP3D--event-2013-04-11-long--FTE-MFPRANKS) ./amps -input event3d.long.fte-mfp.in > run.log 2> run.err
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-MFP_run... done" >> test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff
+
+Check=
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-MFP_check..." >> test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff
+>>>@# srcSEP3D/test/event_2013_04_11/regression_products.sh assembles the products observers, radial_energy, ledger;
+>>>@# each is compared with output/test_SEP3D/SEP3D--event-2013-04-11-long--FTE-MFP--<label>.ref_np<N>.gz (N = MPI ranks of the run) by DiffNum.pl.
+>>>@# The test passes when every comparison is empty: test_SEP3D--event-2013-04-11-long--FTE-MFP.diff is then empty. Partial results stay in check/.
+>>>-@(D=$(TESTSEP3D--event-2013-04-11-long--FTE-MFPDIR); NP=`ls -d $$D/PT/thread* 2>/dev/null | wc -l | tr -d ' '`; rm -rf $$D/check $$D/products; mkdir -p $$D/check; \
+>>>[ "$$NP" = "$(TESTSEP3D--event-2013-04-11-long--FTE-MFPRANKS)" ] || echo "the run used $$NP MPI ranks, the block declares Ranks=$(TESTSEP3D--event-2013-04-11-long--FTE-MFPRANKS)" > $$D/check/0-ranks.diff; \
+>>>sh srcSEP3D/test/event_2013_04_11/regression_products.sh $$D $$D/products > $$D/check/0-products.diff 2>&1 && rm -f $$D/check/0-products.diff || echo "regression_products.sh failed" >> $$D/check/0-products.diff; \
+>>>for LABEL in observers radial_energy ledger; do \
+>>>  REF=output/test_SEP3D/SEP3D--event-2013-04-11-long--FTE-MFP--$$LABEL$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).ref_np$(TESTSEP3D--event-2013-04-11-long--FTE-MFPRANKS).gz; \
+>>>  if [ ! -f $$D/products/$$LABEL.dat ]; then echo "product $$LABEL.dat is missing" > $$D/check/$$LABEL.diff; \
+>>>  elif [ -f $$REF ]; then gunzip -c $$REF > $$D/check/$$LABEL.ref; \
+>>>    ${SCRIPTDIR}/DiffNum.pl $$D/products/$$LABEL.dat $$D/check/$$LABEL.ref > $$D/check/$$LABEL.diff; \
+>>>  else echo "reference $$REF is missing" > $$D/check/$$LABEL.diff; fi; \
+>>>done; \
+>>>cat $$D/check/*.diff > test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff)
+>>>@ls -l test_SEP3D--event-2013-04-11-long--FTE-MFP$(TESTSEP3D--event-2013-04-11-long--FTE-MFP-REF).diff
+>>>@echo Test SEP3D--event-2013-04-11-long--FTE-MFP has finished: `date`
+<#
+
+#>
+Name=SEP3D--event-2013-04-11-long--Parker
+Family=sep-long
+Tier=long
+Ranks=32
+Time=720
+
+Compile=
+>>>@echo "test_SEP3D--event-2013-04-11-long--Parker_compile..." > test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff
+>>>./Config.pl -application=sep3d -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP3D--event-2013-04-11-long--Parker_compile... done" >> test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff
+
+Run=
+>>>@echo "test_SEP3D--event-2013-04-11-long--Parker_run..." >> test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff
+>>>@echo Test test_SEP3D--event-2013-04-11-long--Parker has started: `date`
+>>>@# Long tier of the srcSEP3D 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md):
+>>>@# the full 41.4 h event in 3-D (event3d.long.parker.in), parker, on the block's fixed rank count Ranks=
+>>>@# through $(TESTMPILAUNCH). Tier=long puts it in Makefile.test.long; the nightly never runs it.
+>>>@E3=srcSEP3D/test/event_2013_04_11; E1=srcSEP/test/event_2013_04_11; D=$(TESTSEP3D--event-2013-04-11-long--ParkerDIR); mkdir -p $$D/assets $$D/ephemeris && cp $$E3/event3d.*.in $$D/ && cp $$E3/ephemeris/*.csv $$D/ephemeris/ && cp $$E1/event.event $$D/ && cp $$E1/assets/wso_cr2135_model_frame.harmonics.csv $$D/assets/
+>>>cd $(TESTSEP3D--event-2013-04-11-long--ParkerDIR) && $(TESTMPILAUNCH) $(TESTSEP3D--event-2013-04-11-long--ParkerRANKS) ./amps -input event3d.long.parker.in > run.log 2> run.err
+>>>@echo "test_SEP3D--event-2013-04-11-long--Parker_run... done" >> test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff
+
+Check=
+>>>@echo "test_SEP3D--event-2013-04-11-long--Parker_check..." >> test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff
+>>>@# srcSEP3D/test/event_2013_04_11/regression_products.sh assembles the products observers, radial_energy, ledger;
+>>>@# each is compared with output/test_SEP3D/SEP3D--event-2013-04-11-long--Parker--<label>.ref_np<N>.gz (N = MPI ranks of the run) by DiffNum.pl.
+>>>@# The test passes when every comparison is empty: test_SEP3D--event-2013-04-11-long--Parker.diff is then empty. Partial results stay in check/.
+>>>-@(D=$(TESTSEP3D--event-2013-04-11-long--ParkerDIR); NP=`ls -d $$D/PT/thread* 2>/dev/null | wc -l | tr -d ' '`; rm -rf $$D/check $$D/products; mkdir -p $$D/check; \
+>>>[ "$$NP" = "$(TESTSEP3D--event-2013-04-11-long--ParkerRANKS)" ] || echo "the run used $$NP MPI ranks, the block declares Ranks=$(TESTSEP3D--event-2013-04-11-long--ParkerRANKS)" > $$D/check/0-ranks.diff; \
+>>>sh srcSEP3D/test/event_2013_04_11/regression_products.sh $$D $$D/products > $$D/check/0-products.diff 2>&1 && rm -f $$D/check/0-products.diff || echo "regression_products.sh failed" >> $$D/check/0-products.diff; \
+>>>for LABEL in observers radial_energy ledger; do \
+>>>  REF=output/test_SEP3D/SEP3D--event-2013-04-11-long--Parker--$$LABEL$(TESTSEP3D--event-2013-04-11-long--Parker-REF).ref_np$(TESTSEP3D--event-2013-04-11-long--ParkerRANKS).gz; \
+>>>  if [ ! -f $$D/products/$$LABEL.dat ]; then echo "product $$LABEL.dat is missing" > $$D/check/$$LABEL.diff; \
+>>>  elif [ -f $$REF ]; then gunzip -c $$REF > $$D/check/$$LABEL.ref; \
+>>>    ${SCRIPTDIR}/DiffNum.pl $$D/products/$$LABEL.dat $$D/check/$$LABEL.ref > $$D/check/$$LABEL.diff; \
+>>>  else echo "reference $$REF is missing" > $$D/check/$$LABEL.diff; fi; \
+>>>done; \
+>>>cat $$D/check/*.diff > test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff)
+>>>@ls -l test_SEP3D--event-2013-04-11-long--Parker$(TESTSEP3D--event-2013-04-11-long--Parker-REF).diff
+>>>@echo Test SEP3D--event-2013-04-11-long--Parker has finished: `date`
+<#
+
+#>
+Name=SEP3D--event-2013-04-11-long--FTE-Dmumu
+Family=sep-long
+Tier=long
+Ranks=32
+Time=720
+
+Compile=
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-Dmumu_compile..." > test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff
+>>>./Config.pl -application=sep3d -spice-path=nospice -amps-test=on
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-Dmumu_compile... done" >> test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff
+
+Run=
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-Dmumu_run..." >> test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff
+>>>@echo Test test_SEP3D--event-2013-04-11-long--FTE-Dmumu has started: `date`
+>>>@# Long tier of the srcSEP3D 2013-04-11 real-event test (srcSEP3D/test/event_2013_04_11/README.md):
+>>>@# the full 41.4 h event in 3-D (event3d.long.fte-dmumu.in), fte-dmumu, on the block's fixed rank count Ranks=
+>>>@# through $(TESTMPILAUNCH). Tier=long puts it in Makefile.test.long; the nightly never runs it.
+>>>@E3=srcSEP3D/test/event_2013_04_11; E1=srcSEP/test/event_2013_04_11; D=$(TESTSEP3D--event-2013-04-11-long--FTE-DmumuDIR); mkdir -p $$D/assets $$D/ephemeris && cp $$E3/event3d.*.in $$D/ && cp $$E3/ephemeris/*.csv $$D/ephemeris/ && cp $$E1/event.event $$D/ && cp $$E1/assets/wso_cr2135_model_frame.harmonics.csv $$D/assets/
+>>>cd $(TESTSEP3D--event-2013-04-11-long--FTE-DmumuDIR) && $(TESTMPILAUNCH) $(TESTSEP3D--event-2013-04-11-long--FTE-DmumuRANKS) ./amps -input event3d.long.fte-dmumu.in > run.log 2> run.err
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-Dmumu_run... done" >> test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff
+
+Check=
+>>>@echo "test_SEP3D--event-2013-04-11-long--FTE-Dmumu_check..." >> test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff
+>>>@# srcSEP3D/test/event_2013_04_11/regression_products.sh assembles the products observers, radial_energy, ledger;
+>>>@# each is compared with output/test_SEP3D/SEP3D--event-2013-04-11-long--FTE-Dmumu--<label>.ref_np<N>.gz (N = MPI ranks of the run) by DiffNum.pl.
+>>>@# The test passes when every comparison is empty: test_SEP3D--event-2013-04-11-long--FTE-Dmumu.diff is then empty. Partial results stay in check/.
+>>>-@(D=$(TESTSEP3D--event-2013-04-11-long--FTE-DmumuDIR); NP=`ls -d $$D/PT/thread* 2>/dev/null | wc -l | tr -d ' '`; rm -rf $$D/check $$D/products; mkdir -p $$D/check; \
+>>>[ "$$NP" = "$(TESTSEP3D--event-2013-04-11-long--FTE-DmumuRANKS)" ] || echo "the run used $$NP MPI ranks, the block declares Ranks=$(TESTSEP3D--event-2013-04-11-long--FTE-DmumuRANKS)" > $$D/check/0-ranks.diff; \
+>>>sh srcSEP3D/test/event_2013_04_11/regression_products.sh $$D $$D/products > $$D/check/0-products.diff 2>&1 && rm -f $$D/check/0-products.diff || echo "regression_products.sh failed" >> $$D/check/0-products.diff; \
+>>>for LABEL in observers radial_energy ledger; do \
+>>>  REF=output/test_SEP3D/SEP3D--event-2013-04-11-long--FTE-Dmumu--$$LABEL$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).ref_np$(TESTSEP3D--event-2013-04-11-long--FTE-DmumuRANKS).gz; \
+>>>  if [ ! -f $$D/products/$$LABEL.dat ]; then echo "product $$LABEL.dat is missing" > $$D/check/$$LABEL.diff; \
+>>>  elif [ -f $$REF ]; then gunzip -c $$REF > $$D/check/$$LABEL.ref; \
+>>>    ${SCRIPTDIR}/DiffNum.pl $$D/products/$$LABEL.dat $$D/check/$$LABEL.ref > $$D/check/$$LABEL.diff; \
+>>>  else echo "reference $$REF is missing" > $$D/check/$$LABEL.diff; fi; \
+>>>done; \
+>>>cat $$D/check/*.diff > test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff)
+>>>@ls -l test_SEP3D--event-2013-04-11-long--FTE-Dmumu$(TESTSEP3D--event-2013-04-11-long--FTE-Dmumu-REF).diff
+>>>@echo Test SEP3D--event-2013-04-11-long--FTE-Dmumu has finished: `date`
+<#
+
 #>
 Name=SEP--Parker_spiral--ParkerEq 
 Family=sep

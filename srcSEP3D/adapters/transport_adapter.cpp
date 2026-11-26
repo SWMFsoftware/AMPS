@@ -1,4 +1,5 @@
 #include "transport_adapter.h"
+#include "shock_return.h"   // absorbing-shock test of one substep
 
 #include <algorithm>
 #include <cmath>
@@ -149,6 +150,87 @@ Core::Status ProductionMoverRegistry::Validate(
       return Core::Status::OK();
   }
   return Invalid("transport selection is not in the production mover registry");
+}
+
+// Rotating-frame inertial terms of the focused movers.  a_frame is the
+// acceleration of the plasma frame due to the rotation (2 Omega x U' and,
+// optionally, Omega x (Omega x x)); A = b.a_frame / v enters the pitch and
+// momentum equations (focused_transport.h).  The same inertial force on the
+// particle, F = -gamma m [2 Omega x (v mu b) + Omega x (Omega x x)], has the
+// guiding-centre drift (F x B)/(q B^2), added to the spatial drift.
+//
+// Option application.sep.transport.frame_inertial_forces (CONFIGURATION.md;
+// srcSEP3D/test/event_2013_04_11/README.md section 2.6).  It exists for uses
+// of the focused movers in a rotating frame where these terms matter (for
+// example electrons in the corona); the 2013-04-11 decks leave it off so the
+// 3-D equations are those of the 1-D movers, which have no inertial terms.
+//
+// Derivation.  In a frame rotating with constant Omega, the plasma velocity
+// is U' = U - Omega x x and a fluid element's inertial acceleration, written
+// in rotating coordinates, is
+//   a_inertial = dU'/dt + 2 Omega x U' + Omega x (Omega x x).
+// The focused transport equation is written in the local plasma frame,
+// which accelerates with a_inertial; its plasma-frame-acceleration terms
+// therefore acquire the rotation part
+//   a_frame = 2 Omega x U'  [+ Omega x (Omega x x)].
+// Only this rotation part is added: the focused coefficients of
+// transport/focused_transport.h carry no dU'/dt (b . DU/Dt) term.
+// Only the component along b enters the gyrotropic equations, through
+// A = (b . a_frame) / v [1/s]:
+//   dmu/dt += -(1 - mu^2) A,   d ln p/dt += -mu A.
+// When U' is exactly parallel to b (the corotating Parker/PFSS ambient),
+// b . (Omega x U') = 0, so only the centrifugal part survives in A; the
+// Coriolis force then acts only through the drift below.
+//
+// Drift.  The fictitious force on the particle's guiding centre in the
+// rotating frame is F = -gamma m [2 Omega x v_gc + Omega x (Omega x x)];
+// the code uses v_gc = v mu b, the plasma-frame parallel velocity.  Its
+// guiding-centre drift is
+//   V_F = (F x B) / (q B^2) = (F x b) / (q |B|)   [m/s],
+// added to the existing V01 guiding-centre drift.  The drift is skipped for
+// neutral species and where |B| = 0.
+//
+// Inputs: the background sample at the substep start (frame U' [m/s], b,
+// |B| [T]), the frame position x [m], the plasma-frame speed v [m/s] and mu.
+// The terms are evaluated once per substep and frozen over it, like every
+// other local coefficient of the focused movers.  Returns zero terms when
+// the option is off or v <= 0.
+struct FrameInertialTerms {
+  double accelerationOverSpeedPerS = 0.0;   // A = (b . a_frame) / v [1/s]
+  Core::Vec3 driftVelocityMPerS;            // V_F [m/s, frame]
+};
+
+static FrameInertialTerms EvaluateFrameInertialTerms(
+    const MoverInput& input, const Background::BackgroundSample& background,
+    const Core::Vec3& positionM, double speedMPerS, double mu) {
+  FrameInertialTerms terms;
+  if (input.inertialForces == RuntimeModel::FrameInertialForces::None ||
+      !(speedMPerS > 0.0)) return terms;
+  const Core::Vec3 omega = input.frameAngularVelocityRadPerS;
+  const bool centrifugal = input.inertialForces ==
+      RuntimeModel::FrameInertialForces::CoriolisAndCentrifugal;
+  // Omega x (Omega x x) = -Omega^2 x_perp (x_perp: x normal to the axis),
+  // the centripetal acceleration of a point at rest in the rotating frame.
+  const Core::Vec3 centrifugalAcceleration =
+      centrifugal ? omega.Cross(omega.Cross(positionM)) : Core::Vec3();
+  // a_frame of the plasma, from the frame bulk velocity U'.
+  const Core::Vec3 plasma = omega.Cross(background.U) * 2.0 + centrifugalAcceleration;
+  terms.accelerationOverSpeedPerS = background.bHat.Dot(plasma) / speedMPerS;
+  if (input.speciesChargeC != 0.0 && background.absB > 0.0) {
+    // Lorentz factor of the plasma-frame speed (the floor only protects the
+    // square root against v rounding to c).
+    const double gamma = 1.0 / std::sqrt(std::max(1e-300,
+        1.0 - speedMPerS * speedMPerS / (Core::Const::c * Core::Const::c)));
+    // Acceleration the rotation imposes on the guiding centre moving with
+    // v mu b: Coriolis plus the optional centrifugal part.
+    const Core::Vec3 particle =
+        omega.Cross(background.bHat * (speedMPerS * mu)) * 2.0 + centrifugalAcceleration;
+    // F = -gamma m a  (relativistic mass gamma m), and V_F = F x b / (q |B|).
+    const Core::Vec3 force = particle * (-gamma * input.speciesMassKg);
+    terms.driftVelocityMPerS = force.Cross(background.bHat) *
+        (1.0 / (input.speciesChargeC * background.absB));
+  }
+  return terms;
 }
 
 MoverResult AdvanceParticle(const MoverInput& input) {
@@ -331,6 +413,14 @@ MoverResult AdvanceParticle(const MoverInput& input) {
     local.dDmuMuDmuPerS = input.local.dDmuMuDmuPerS;
     local.kappaPerpendicularM2PerS = kappaPerpendicularM2PerS;
     local.driftVelocityMPerS = guidingCenterDrift;
+    {
+      // Optional rotating-frame terms (zero unless frame_inertial_forces is
+      // set): A for the pitch and momentum equations, V_F added to the drift.
+      const FrameInertialTerms inertial = EvaluateFrameInertialTerms(
+          input, background, particle.positionM, speed, particle.mu);
+      local.frameAccelerationOverSpeedPerS = inertial.accelerationOverSpeedPerS;
+      local.driftVelocityMPerS += inertial.driftVelocityMPerS;
+    }
     local.scheme = input.pitchScheme ==
             RuntimeModel::PitchAngleSchemeMode::ReflectingMilstein
         ? Transport::PitchAngleScheme::ReflectingMilstein
@@ -363,6 +453,15 @@ MoverResult AdvanceParticle(const MoverInput& input) {
     local.deterministic.fieldAlignedStrainPerS =
         background.fieldAlignedStrain;
     local.deterministic.driftVelocityMPerS = guidingCenterDrift;
+    {
+      // Optional rotating-frame terms, as for focused diffusion: they enter
+      // the deterministic (focusing/flow/cooling) part between scatterings.
+      const FrameInertialTerms inertial = EvaluateFrameInertialTerms(
+          input, background, particle.positionM, speed, particle.mu);
+      local.deterministic.frameAccelerationOverSpeedPerS =
+          inertial.accelerationOverSpeedPerS;
+      local.deterministic.driftVelocityMPerS += inertial.driftVelocityMPerS;
+    }
     local.meanFreePathM = input.local.meanFreePathM;
     local.alfvenSpeedMPerS = background.alfvenSpeedMpS;
     local.plusWaveFraction = input.local.plusWaveFraction;
@@ -387,6 +486,78 @@ MoverResult AdvanceParticle(const MoverInput& input) {
   }
 
   ++result.particle.substep;
+  // Absorbing shock (source.shock.returning_particles = absorb; README of
+  // test/event_2013_04_11 section 2.5).  The tube-line source injects the
+  // 1-D NET escaping spectrum, which already counts only escaping particles
+  // (1-D README section 2.2), so a particle that returns into the downstream
+  // side of an accepted shock leaves the population, as in 1-D.  The test runs after the
+  // substep's move from x0 = particle.positionM to x1 =
+  // result.particle.positionM, against the front moving linearly over the
+  // substep (input.shock holds its geometry at this substep's start).
+  if (input.absorbAtShock && input.shock.active) {
+    // The diffusion normal to the front uses the parallel coefficient and the
+    // field direction at the substep start (Parker only).
+    //   kappa_n dt = kappa_par (b . e_n)^2 dt   [m^2],
+    // e_n the front normal at x0 (radial for the heliocentric sphere).  A
+    // displacement ds along b moves the particle ds (b . e_n) normal to the
+    // front, so on a locally straight line the 1-D bridge along the line,
+    // exp(-d0 d1 / (kappa_par dt)) with arc distances d = g / (b . e_n),
+    // equals exp(-g0 g1 / (kappa_n dt)) with the normal distances g of
+    // shock_return.cpp.  Perpendicular diffusion, when configured, is not
+    // included in kappa_n.
+    // The focused movers keep kappa_n = 0: their substep path is
+    // represented by the straight chord x0 -> x1, tested exactly for a dip
+    // below the moving front.
+    double kappaNormalDtM2 = 0.0;
+    // Separate keyed stream for the bridge draw: the mover's own draws do not
+    // depend on whether the test runs.
+    Transport::RandomKey bridgeKey = key;
+    bridgeKey.purpose = Transport::RandomPurpose::ShockReturnBridge;
+    Transport::KeyedRandomStream bridge(bridgeKey);
+    if (input.model == RuntimeModel::TransportModel::Parker3D) {
+      const GeneratingSphere sphere = ShockGeneratingSphere(input.shock);
+      const Core::Vec3 normal = (particle.positionM - sphere.centerM).Normalized();
+      const double cosine = background.bHat.Dot(normal);
+      kappaNormalDtM2 = input.local.kappaParallelM2PerS * cosine * cosine * dtS;
+    }
+    const ShockReturnTest test = TestShockReturn(
+        particle.positionM, result.particle.positionM, dtS, input.shock,
+        kappaNormalDtM2, &bridge);
+    if (test.hit) {
+      // test.fraction tau in [0,1] locates the crossing on the chord and in
+      // time (t = moverEpochS + tau dt).  Rebuild the front at that time and
+      // project the crossing onto it (from the generating-sphere centre) to
+      // get the front point whose acceptance decides the removal.
+      ExpandingShock atHit = input.shock;
+      atHit.radiusAtStepStartM += input.shock.radialSpeedMPerS * dtS * test.fraction;
+      const GeneratingSphere sphere = ShockGeneratingSphere(atHit);
+      const Core::Vec3 crossing = particle.positionM +
+          (result.particle.positionM - particle.positionM) * test.fraction;
+      const Core::Vec3 frontPoint = sphere.centerM +
+          (crossing - sphere.centerM).Normalized() * sphere.radiusM;
+      // Geometric gate: the outward cap of a finite SSE front (always true
+      // for the heliocentric sphere).  Physical gate: the provider's front
+      // state at the hit epoch must be a supported, accepted shock.  A
+      // crossing through a non-shock part of the front (sub-critical or
+      // unsupported) leaves the particle active.
+      bool accepted = OnOutwardShockCap(atHit, frontPoint, sphere);
+      if (accepted && input.shockAccepted != nullptr) {
+        const Core::Status queried = input.shockAccepted(
+            frontPoint, input.moverEpochS + test.fraction * dtS, &accepted);
+        if (!queried.ok()) return Failed(input, queried);
+      }
+      // Removal: the particle is placed at the crossing and reported as
+      // Absorbed with status InnerBoundary; the AMPS adapter deletes it and
+      // the ledger records the absorbed disposition.
+      if (accepted) {
+        result.particle.positionM = crossing;
+        result.disposition = ParticleDisposition::Absorbed;
+        result.status = Core::Status(Core::StatusCode::InnerBoundary,
+                                     "particle returned to the accepted shock");
+        return result;
+      }
+    }
+  }
   const double radius = result.particle.positionM.Norm();
   if (radius < input.innerRadiusM) {
     result.disposition = ParticleDisposition::Absorbed;
@@ -454,6 +625,9 @@ MoverResult AdvanceParticleRequestedTime(const RequestedTimeAdvance& request) {
     MoverInput substep = original;
     substep.particle = current;
     substep.requestedDtS = remainingS;
+    // Model time at this substep's start: the absorbing shock queries the
+    // front's acceptance at moverEpochS + tau dt.
+    substep.moverEpochS = original.moverEpochS + consumedS;
     if (substep.shock.active) {
       substep.shock.radiusAtStepStartM =
           original.shock.radiusAtStepStartM +

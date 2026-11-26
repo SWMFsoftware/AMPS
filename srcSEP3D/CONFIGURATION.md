@@ -333,6 +333,41 @@ top level) is a grammar error rather than being guessed into
 `application: sep` / `turbulence` or `application: sep` / `transport`.  This is
 intentional: those two blocks represent different physical contracts.
 
+### Corotating frame, observer flux tube, body observers and the 1-D-equivalent source (2026-11-26)
+
+These keys are optional and conditional: a deck that does not use them keeps
+its released meaning and physics fingerprint.  The complete example is
+`test/event_2013_04_11/event3d.nightly.in`; the physics is described in
+`test/event_2013_04_11/README.md`.
+
+| Key | Values | Rule |
+|---|---|---|
+| `mesh.domain.coordinate_frame` | `HCI`, `HCI-corotating`, ... | `HCI-corotating` selects the frame rotating with the Sun about HCI +z (`core/computation_frame.h`) |
+| `mesh.domain.frame_rotation_rate_rad_per_s` | rad/s | exactly with `HCI-corotating`; must equal the reduced event's `ambient.rotation_rate_rad_per_s` |
+| `mesh.domain.frame_reference_epoch_s` | s | exactly with `HCI-corotating`; the frame equals HCI at this epoch |
+| `mesh.active_region.mode` | `observer-flux-tube` | the tube traced through the background field and the observers' collection spheres; needs the runtime-model background, the corotating frame for a rotating ambient, the Sun-centred cube, `radius_at_reference_m = 0`, disabled analytic tube refinement and no solar sphere |
+| `mesh.active_region.observers` | comma list of observer IDs | exactly with `observer-flux-tube`; each listed observer needs `tube_stay_begin_s` / `tube_stay_end_s` |
+| `mesh.active_region.trace_step_m` | m > 0 | field-line arc step bound (the step is min(this, 0.02 r)) |
+| `mesh.active_region.seed_spacing_m` | m >= 0 | lattice spacing on the reference sphere; 0 = half the requested cell size at the first observer |
+| `mesh.active_region.time_spacing_s` | s >= 0 | stay-interval sampling; 0 = a quarter of the collection radius over the frame speed |
+| `observer.ID.kind` | `body` | an ephemeris body (requires `follows_trajectory = true`) |
+| `observer.ID.ephemeris` | `table`, `spice` | exactly for `kind = body` |
+| `observer.ID.ephemeris_file`, `ephemeris_sha256` | path (relative to the file holding the block), 64 hex | exactly for `ephemeris = table`; CSV `time_s,x_m,y_m,z_m,vx_m_per_s,vy_m_per_s,vz_m_per_s` in the model HCI frame |
+| `observer.ID.spice_target`, `spice_center`, `spice_frame`, `spice_kernels`, `spice_reference_utc`, `spice_to_model_rotation` | names, meta-kernel path, UTC, 9 numbers (row-major proper rotation) | exactly for `ephemeris = spice`; needs a build with `-spice-path=<CSPICE>` |
+| `observer.ID.tube_stay_begin_s`, `tube_stay_end_s` | s, begin < end | exactly for an observer listed in `mesh.active_region.observers` |
+| `source.shock.placement` | `front-surface` (absent), `release-surface-on-tube-lines` | the 1-D srcSEP net source on the tube lines; needs `observer-flux-tube`, `normalization = accepted-shock-incident-flux`, `run.time_step_mode = fixed` with `run.time_step_s`, `injection_efficiency`, `species.macroparticle_weight`, `weight_model`, `spectrum_model = local-compression-dsa`; forbids the derived-numerics keys and `physical_particle_rate_per_s` |
+| `source.shock.release_distance_shock_radius_fraction` | (0, 1] | exactly with the tube-line placement: release at (1 + f) times the front's generating-sphere radius (shared with srcSEP) |
+| `source.shock.returning_particles` | `absorb` | exactly with the tube-line placement: a particle crossing into the downstream side of an accepted front is removed |
+| `application.sep.transport.frame_inertial_forces` | `none` (absent), `coriolis`, `coriolis-and-centrifugal` | corotating frame and a focused mover only: the plasma-frame acceleration terms of the focused equation for 2 Omega x U' (+ Omega x (Omega x x)) and the guiding-centre drift of the same force |
+
+With the tube-line source, `log-uniform-momentum-importance` is implemented
+(the 1-D proposal and exact weight); with the front-surface source it stays
+reserved.  In a corotating run the reduced background is published once (it is
+static), cells another rank holds are evaluated at their centres from the
+provider, and particles ending on another rank's leaf are handed to their
+owner after the mover phase, so `run.time_step_s` is not limited by the cell
+size or the MPI decomposition.
+
 ### Schema 6 complete contract: SWCME shock injection
 
 Every schema-6 file contains the required `mesh` / `field_line` block (see

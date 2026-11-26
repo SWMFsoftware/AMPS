@@ -750,6 +750,10 @@ def write_asset(rows, path):
 
 
 def deck(args):
+    # The srcSEP3D decks are written only by a default deck run (no
+    # --output-dir), i.e. into the checked-in directories; deck3d() needs the
+    # raw archive for the Horizons body vectors.
+    raw_archive, write_3d = args.raw, getattr(args, 'output_dir', None) is None
     settings = load_json('event_settings.json')
     derived = load_json('derived.json')
     a = derived['ambient']['deck']
@@ -1120,7 +1124,592 @@ def deck(args):
                'note': 'the 1.1 Rs footpoint is traced through the PFSS shell by srcSEP (REDUCED_ANCHOR line of the run log)'}
     (out / 'deck_summary.json').write_text(json.dumps(summary, indent=1, sort_keys=True) + '\n')
     print(f'wrote {out / "event.event"}, {out / "event.in"}, {out / "event.nightly.in"}, {out / "event.args"}, {asset}')
+    if write_3d:
+        # c_w (the isothermal sound speed [m/s] of the 1-D Parker wind) and rss
+        # (the PFSS source-surface radius [m]) give the Parker-exterior winding
+        # of the inner observers.
+        deck3d(raw_archive, settings, derived, c_w, rss)
 
+
+
+# ---------------------------------------------------------------------------
+# srcSEP3D decks (2026-11-26): the same event in three dimensions
+# ---------------------------------------------------------------------------
+#
+# srcSEP3D/test/event_2013_04_11 holds the 3-D decks.  They #include the 1-D
+# event file (event.event: the shared v1.3 shock and ambient), so the 3-D and
+# 1-D tests share one physical event.  Python writes only the deck text, the
+# body ephemerides in the model frame and the frame-fixed inner observers; the
+# flux tube is traced through the core field by srcSEP3D at run time.
+
+# HERE3D: the srcSEP3D test directory the 3-D products are written to.
+# MOVERS3D: the movers, deck suffix -> the mover's name in the Table test
+# names (only the keys are used here).
+# HOSTS3D: instrument of observations.csv -> the body that carries it (the
+# ephemeris table of its channel observers).
+# DECK3D_NAMES: every 3-D product, relative to HERE3D; check() byte-compares
+# all of them after a regeneration.
+HERE3D = HERE.parent.parent.parent / 'srcSEP3D' / 'test' / 'event_2013_04_11'
+MOVERS3D = {'parker': 'Parker', 'fte-dmumu': 'FTE-Dmumu', 'fte-mfp': 'FTE-MFP'}
+HOSTS3D = {'SOHO/ERNE-HED': 'soho', 'SOHO/ERNE': 'soho', 'ACE/EPAM': 'ace',
+           'GOES-13/EPEAD': 'earth', 'GOES-13 (CCMC/OpSEP)': 'earth'}
+DECK3D_NAMES = ('event3d.nightly.in', 'event3d.long.in',
+                'event3d.mover-parker.in', 'event3d.mover-fte-dmumu.in', 'event3d.mover-fte-mfp.in',
+                'event3d.nightly.parker.in', 'event3d.nightly.fte-dmumu.in', 'event3d.nightly.fte-mfp.in',
+                'event3d.long.parker.in', 'event3d.long.fte-dmumu.in', 'event3d.long.fte-mfp.in',
+                *(f'event3d.convergence-r{tag}au{suffix}.in'
+                  for tag in ('0p005', '0p01', '0p02', '0p04')
+                  for suffix in ('', '.parker', '.fte-dmumu', '.fte-mfp')),
+                'ephemeris/soho.csv', 'ephemeris/ace.csv', 'ephemeris/earth.csv', 'deck3d_summary.json')
+
+
+def horizons_states(path):
+    """Parse VEC_TABLE=3 records: list of (UTC datetime, position [m], velocity [m/s]).
+
+    The records lie between $$SOE and $$EOE.  Each starts with a line holding
+    the epoch ("A.D. 2013-Apr-11 07:00:00.0000"), followed by an X/Y/Z line and
+    a VX/VY/VZ line (further lines, such as LT/RG/RR, are ignored).  Horizons
+    gives km and km/s; both are converted to SI.
+    """
+    text = Path(path).read_text()
+    body = text.split('$$SOE', 1)[1].split('$$EOE', 1)[0]
+    stamp = re.compile(r'A\.D\. (\d{4}-[A-Za-z]{3}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)')
+    number = r'([-+0-9.Ee]+)'
+    records, current, position = [], None, None
+    for line in body.splitlines():
+        match = stamp.search(line)
+        if match:
+            current = datetime.strptime(match.group(1), '%Y-%b-%d %H:%M:%S.%f').replace(tzinfo=UTC)
+            position = None
+            continue
+        xyz = re.search(r'X\s*=\s*' + number + r'\s+Y\s*=\s*' + number + r'\s+Z\s*=\s*' + number, line)
+        vxyz = re.search(r'VX\s*=\s*' + number + r'\s+VY\s*=\s*' + number + r'\s+VZ\s*=\s*' + number, line)
+        if vxyz and current is not None and position is not None:
+            records.append((current, position, tuple(float(v) * 1e3 for v in vxyz.groups())))
+            current = position = None
+        elif xyz and current is not None:
+            position = tuple(float(v) * 1e3 for v in xyz.groups())
+    if not records:
+        raise ValueError(f'no Horizons state vectors in {path}')
+    return records
+
+
+def solar_pole_ecliptic(pole):
+    """Unit solar rotation axis in the Horizons J2000 ecliptic frame.
+
+    pole holds the pole's ICRF right ascension and declination [deg] and the
+    J2000 obliquity [arcsec] (event3d_settings.json "solar_pole").  The unit
+    vector is rotated from the equatorial to the ecliptic frame about +x by
+    the obliquity.
+    """
+    ra, dec = math.radians(pole['right_ascension_deg']), math.radians(pole['declination_deg'])
+    eps = math.radians(pole['obliquity_j2000_arcsec'] / 3600.0)
+    x, y, z = math.cos(dec) * math.cos(ra), math.cos(dec) * math.sin(ra), math.sin(dec)
+    return (x, math.cos(eps) * y + math.sin(eps) * z, -math.sin(eps) * y + math.cos(eps) * z)
+
+
+def model_frame_rows(pole, earth_t0):
+    """Rows of the ecliptic -> model rotation: +z the pole, +x Earth's projection at t0.
+
+    earth_t0 is the geometric Sun->Earth vector at model time 0 in the
+    ecliptic frame.  x is its component perpendicular to the pole
+    (Gram-Schmidt), y = z cross x, so the rows are orthonormal and
+    right-handed; rotate(rows, v) maps an ecliptic vector into the model
+    frame.
+    """
+    dot = lambda a, b: sum(p * q for p, q in zip(a, b))
+    unit = lambda v: tuple(c / math.sqrt(dot(v, v)) for c in v)
+    z = unit(pole)
+    x = unit(tuple(e - dot(earth_t0, z) * c for e, c in zip(earth_t0, z)))
+    y = (z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0])
+    return (x, y, z)
+
+
+def rotate(rows, v):
+    """rows * v: the 3x3 matrix given by its rows applied to the vector v."""
+    return tuple(sum(r * c for r, c in zip(row, v)) for row in rows)
+
+
+def ephemeris_csv(host, states, t0, rows):
+    """Text of ephemeris/<host>.csv: the Horizons states in the model frame.
+
+    states are (UTC datetime, position [m], velocity [m/s]) in the ecliptic
+    frame; each row holds the model time t - t0 [s] and the rotated position
+    and velocity, written with repr() so the file round-trips the doubles.
+    The format is the one srcSEP3D's ParseEphemerisTable reads; the deck
+    records the SHA-256 of this text (ephemeris_sha256).
+    """
+    lines = [f'# {host}: heliocentric geometric state (DE441, JPL Horizons) in the 2013-04-11 model frame',
+             '# (+z the IAU solar pole, +x the projection of the Sun->Earth vector at t0); model time 0 =',
+             f'# {iso(t0)}. GENERATED by srcSEP/test/event_2013_04_11/prepare_event.py deck; do not edit.',
+             'time_s,x_m,y_m,z_m,vx_m_per_s,vy_m_per_s,vz_m_per_s']
+    for when, position, velocity in states:
+        t = (when - t0).total_seconds()
+        x, v = rotate(rows, position), rotate(rows, velocity)
+        lines.append(','.join(repr(value) for value in (t,) + x + v))
+    return '\n'.join(lines) + '\n'
+
+
+def hermite_position(states_model, t):
+    """Cubic Hermite position (the srcSEP3D interpolant) from (t, x, v) samples.
+
+    The same basis as InterpolateEphemeris (srcSEP3D/output/
+    observer_trajectory.cpp), so a position computed here is the one the run
+    sees.  No extrapolation: t must lie inside the samples.
+    """
+    for (ta, xa, va), (tb, xb, vb) in zip(states_model, states_model[1:]):
+        if ta <= t <= tb:
+            h, u = tb - ta, (t - ta) / (tb - ta)
+            h00, h10 = (1 + 2 * u) * (1 - u) ** 2, u * (1 - u) ** 2
+            h01, h11 = u * u * (3 - 2 * u), u * u * (u - 1)
+            return tuple(h00 * a + h10 * h * da + h01 * b + h11 * h * db
+                         for a, da, b, db in zip(xa, va, xb, vb))
+    raise ValueError(f'model time {t} s is outside the ephemeris')
+
+
+def deck3d(raw_archive, settings, derived, c_w, rss):
+    """Write the srcSEP3D decks and ephemerides of the 2013-04-11 event.
+
+    Inputs: the raw archive (Horizons vectors, verified against
+    raw_manifest.json), the 1-D event_settings.json and derived.json, the
+    3-D settings HERE3D/event3d_settings.json, the 1-D wind's isothermal
+    sound speed c_w [m/s] and the source-surface radius rss [m].  Writes every
+    file of DECK3D_NAMES
+    into HERE3D:
+      ephemeris/{soho,ace,earth}.csv      body states in the model frame;
+      event3d.{nightly,long}.in           the mover-independent tier decks;
+      event3d.convergence-r<tag>au.in     the long tier at each collection
+                                          radius of the study (README.md
+                                          section 6);
+      event3d.mover-<mover>.in            the transport part of each mover;
+      event3d.<tier>.<mover>.in           the run decks: two #includes;
+      deck3d_summary.json                 frame rows and checks.
+    The 3-D decks share the physical event with the 1-D decks: they
+    #include the 1-D event.event, and every shared number is taken from the
+    1-D settings or checked against them (a mismatch raises ValueError).
+    """
+    s3 = json.loads((HERE3D / 'event3d_settings.json').read_text())
+    n, s, t = settings['numerics'], settings['source'], settings['transport']
+    g = derived['geometry']
+    mev = 1.0e6 * EV_J
+    manifest = load_json('raw_manifest.json')
+    t0 = utc(derived['model_t0_utc'])
+    end_s = derived['total_iterations'] * n['time_step_s']
+    # The 3-D time step and long-tier length must be those of the 1-D event.
+    if s3['time_step_s'] != n['time_step_s']:
+        raise ValueError('event3d_settings.json time step differs from the 1-D event')
+    if s3['long']['time_steps'] != derived['total_iterations']:
+        raise ValueError('event3d_settings.json long-tier steps differ from the 1-D event')
+    # Model frame from the geometric Earth vector at t0 and the IAU pole.
+    # Each Horizons file is read only after its digest matches the raw
+    # manifest (verified()).
+    states = {host: horizons_states(verified(raw_archive, manifest, name))
+              for host, name in s3['bodies'].items() if host != 'note'}
+    pole = solar_pole_ecliptic(s3['solar_pole'])
+    # Earth at model time 0, interpolated in the ecliptic frame with the
+    # run's interpolant, fixes +x of the model frame.
+    earth = [(((w - t0).total_seconds()), x, v) for w, x, v in states['earth']]
+    earth_t0 = hermite_position(earth, 0.0)
+    rows = model_frame_rows(pole, earth_t0)
+    model = {host: [((w - t0).total_seconds(), rotate(rows, x), rotate(rows, v)) for w, x, v in recs]
+             for host, recs in states.items()}
+    out = HERE3D
+    (out / 'ephemeris').mkdir(parents=True, exist_ok=True)
+    # Write the tables and keep their SHA-256 for the observer blocks: the run
+    # refuses a table whose digest differs from the deck's.
+    digests = {}
+    for host, recs in states.items():
+        text = ephemeris_csv(host, recs, t0, rows)
+        (out / 'ephemeris' / f'{host}.csv').write_text(text)
+        digests[host] = hashlib.sha256(text.encode()).hexdigest()
+    # Earth at t0 in the model frame (y = 0 to round-off by construction) and its
+    # heliographic latitude, compared in deck3d_summary.json with the 1-D
+    # frame's latitude (README.md section 3).
+    e_t0 = hermite_position(model['earth'], 0.0)
+    r_e = math.sqrt(sum(c * c for c in e_t0))
+    b0_geometric = math.degrees(math.asin(e_t0[2] / r_e))
+    # Frame-fixed inner observers on the Parker-exterior line through Earth at
+    # t0 (azimuth lag W(r) of the 1-D winding; constant colatitude outside Rss).
+    theta = math.acos(e_t0[2] / r_e)
+    w_e = winding(r_e, rss, c_w)
+
+    def line_point(r):
+        phi = w_e - winding(r, rss, c_w)
+        return (r * math.sin(theta) * math.cos(phi), r * math.sin(theta) * math.sin(phi), r * math.cos(theta))
+
+    # Mesh radii.  The 3-D inner sphere is the PFSS source surface (README.md
+    # section 2.3, "Inner sphere at 2.5 Rs"); the outer sphere is the 1-D one.
+    m3 = s3['mesh']
+    r_inner = m3['inner_radius_rs'] * RSUN_M
+    if m3['inner_radius_rs'] != settings['decisions']['source_surface_radius_rs']:
+        raise ValueError('event3d_settings.json: the 3-D inner sphere is the PFSS source surface')
+    r_outer = m3['outer_radius_au'] * AU_M
+    if m3['outer_radius_au'] != n['outer_radius_au']:
+        raise ValueError('event3d_settings.json outer radius differs from the 1-D event')
+    a = derived['ambient']['deck']
+    # Reference radius of the documentary Parker record: ACE's distance at t0,
+    # the reference radius of the 1-D ambient.
+    r_ref = g['ace_heliocentric_distance_t0_m']
+    # One channel observer per observed (not excluded) channel of
+    # observations.csv: observer id -> (host body, energy low/high [MeV]).
+    channels = {}
+    with (HERE / 'observations.csv').open(newline='') as stream:
+        for row in csv.DictReader(stream):
+            if row['role'] != 'excluded':
+                channels.setdefault(row['observer'], (HOSTS3D[row['instrument']],
+                                                      float(row['energy_low_mev']), float(row['energy_high_mev'])))
+
+    def observer(w, oid, kind, rho, lo_j, hi_j, bins, cadence, position=(0.0, 0.0, 0.0), host=None,
+                 stay=None, pitch_bins=24, products='flux'):
+        """Append one '#begin observer' block to the deck through w.
+
+        kind is body (follows the host's ephemeris table) or fixed-cartesian
+        (fixed in the corotating frame at position [m]); rho is the
+        collection radius [m]; lo_j/hi_j and bins define the logarithmic
+        energy grid [J]; cadence is the sampling cadence [s]; stay, when
+        given, is the (begin, end) model time [s] during which the
+        observer's collection sphere must stay in the observer flux tube
+        (only the tube observers set it).
+        """
+        w(f'#begin observer: {oid}')
+        w(f'  kind = {kind}')
+        w('  normalization = differential-intensity')
+        for axis, value in zip('xyz', position):
+            w(f'  position_{axis}_m = {value!r}')
+        w(f'  follows_trajectory = {"true" if kind == "body" else "false"}')
+        for axis in 'xyz':
+            w(f'  velocity_{axis}_m_per_s = 0')
+        w(f'  collection_radius_m = {rho!r}')
+        w(f'  shell_radius_m = {AU_M!r}')
+        w(f'  cadence_s = {cadence!r}')
+        w(f'  energy_bins = {bins}')
+        w('  energy_spacing = logarithmic')
+        w(f'  pitch_angle_bins = {pitch_bins}')
+        w(f'  minimum_energy_j = {lo_j!r}')
+        w(f'  maximum_energy_j = {hi_j!r}')
+        w('  minimum_mu = -1')
+        w('  maximum_mu = 1')
+        w('  species = all')
+        w(f'  products = {products}')
+        if kind == 'body':
+            w('  ephemeris = table')
+            w(f'  ephemeris_file = ephemeris/{host}.csv')
+            w(f'  ephemeris_sha256 = {digests[host]}')
+        if stay is not None:
+            w(f'  tube_stay_begin_s = {stay[0]!r}')
+            w(f'  tube_stay_end_s = {stay[1]!r}')
+        w('#end observer')
+
+    def tier_deck(tier, rho_au=None, label=None):
+        # label/rho_au: a convergence-study deck (README.md section 6), the tier
+        # with collection radius rho_au [au] and output prefix event3d-<label>.
+        # Returns the deck as a list of lines.  Blocks: run, mesh (corotating
+        # frame, observer flux tube), the documentary Parker record, the
+        # shared 1-D event (#include), the tube-line shock source, species,
+        # the observers and output.
+        tt = s3[tier]
+        steps = tt['time_steps']
+        # The tube observers must stay in the tube for the whole run of the
+        # tier (the first hour for nightly, the full event for long).
+        stay = (0.0, steps * n['time_step_s'])
+        rho = (tt['collection_radius_au'] if rho_au is None else rho_au) * AU_M
+        cadence = n['time_step_s'] * tt['output_cadence_steps']
+        name = label or tier
+        lines = []
+        w = lines.append
+        w(f'! srcSEP3D schema-6 deck for the 2013-04-11 real-event test, {tier.upper()} tier, mover-independent part.')
+        if label is not None:
+            w(f'! Collection-radius convergence study: collection radius {rho_au!r} au.')
+        w('! GENERATED by srcSEP/test/event_2013_04_11/prepare_event.py deck; do not edit.')
+        w(f'! Model time 0 = {derived["model_t0_utc"]}.  The run starts from')
+        w(f'! event3d.{name}.<mover>.in, which #includes this file and event3d.mover-<mover>.in.')
+        w('')
+        w('#begin run')
+        w(f'  time_step_s = {n["time_step_s"]!r}')
+        w(f'  maximum_time_steps = {steps}')
+        w('  campaign_seed = 1')
+        w('  #begin restart')
+        w('    input_path = none')
+        w('    output_path = none')
+        w('  #end restart')
+        w('#end run')
+        w('')
+        w('#begin mesh')
+        w(f'  global_cell_size_m = {m3["global_cell_size_au"] * AU_M!r}')
+        w(f'  minimum_cell_size_m = {m3["surface_cell_size_m"]!r}')
+        w(f'  cells_per_block_edge = {m3["cells_per_block_edge"]}')
+        w(f'  maximum_level = {m3["maximum_level"]}')
+        w('  memory_budget_bytes = 34359738368')
+        w('  block_overhead_bytes = 1024')
+        w('  #begin domain')
+        w('    preset = solar')
+        w(f'    inner_radius_m = {r_inner!r}')
+        w('    inner_boundary = absorb')
+        w('    outer_radius_mode = explicit')
+        w(f'    outer_radius_m = {r_outer!r}')
+        w('    outer_boundary = escape')
+        w('    ! The domain is fixed along the field lines, which corotate with the Sun.')
+        w('    coordinate_frame = HCI-corotating')
+        w(f'    frame_rotation_rate_rad_per_s = {OMEGA_SUN!r}')
+        w('    frame_reference_epoch_s = 0')
+        w('    origin_x_m = 0')
+        w('    origin_y_m = 0')
+        w('    origin_z_m = 0')
+        w('  #end domain')
+        w('  ! The analytic constant-speed line below is a diagnostic only (the active')
+        w('  ! domain is the observer flux tube traced through the event field).')
+        w('  #begin field_line')
+        w('    origin_x_m = 0')
+        w('    origin_y_m = 0')
+        w('    origin_z_m = 0')
+        w('    start_mode = explicit')
+        for axis, value in zip('xyz', e_t0):
+            w(f'    initial_{axis}_m = {value / r_e * r_inner!r}')
+        w(f'    length_m = {1.5 * AU_M!r}')
+        w('    point_count = 1501')
+        w('  #end field_line')
+        w('  #begin refinement: solar')
+        w('    enabled = true')
+        w(f'    surface_cell_size_m = {m3["surface_cell_size_m"]!r}')
+        w(f'    transition_outer_radius_m = {m3["transition_outer_radius_au"] * AU_M!r}')
+        w(f'    profile = {m3["refinement_profile"]}')
+        w('    exponent = 1')
+        w('    anchor = photosphere')
+        w('  #end refinement')
+        w('  #begin refinement: tube')
+        w('    enabled = false')
+        w(f'    source_longitude_rad = {math.atan2(e_t0[1], e_t0[0])!r}')
+        w(f'    source_colatitude_rad = {theta!r}')
+        w(f'    reference_radius_m = {AU_M!r}')
+        w(f'    radius_at_reference_m = {0.01 * AU_M!r}')
+        w('    radius_mode = constant-angular-width')
+        w(f'    center_cell_size_m = {m3["global_cell_size_au"] * AU_M!r}')
+        w('    transverse_profile = smoothstep')
+        w('    transverse_exponent = 1')
+        w('  #end refinement')
+        w('  #begin active_region')
+        w('    mode = observer-flux-tube')
+        w('    observers = tube-soho, tube-ace, tube-earth')
+        w(f'    trace_step_m = {m3["trace_step_m"]!r}')
+        w(f'    seed_spacing_m = {m3["seed_spacing_m"]!r}')
+        w(f'    time_spacing_s = {m3["time_spacing_s"]!r}')
+        w(f'    reference_radius_m = {AU_M!r}')
+        w('    radius_at_reference_m = 0')
+        w('    radius_mode = constant-angular-width')
+        w(f'    buffer_blocks = {m3["buffer_blocks"]}')
+        w('  #end active_region')
+        w('  #begin memory')
+        for key, value in (('base_cell_bytes', 256), ('base_node_bytes', 128), ('block_structure_bytes', 4096),
+                           ('communication_bytes_per_block', 2048), ('particle_bytes', 160),
+                           ('particles_per_cell', 2), ('halo_fraction', 0.2), ('safety_margin_fraction', 0.25)):
+            w(f'    {key} = {value}')
+        w('  #end memory')
+        w('#end mesh')
+        w('')
+        w('! The Parker record documents the event ambient; the reduced core owns B, U, rho, T.')
+        w('#begin physics: background')
+        w('  provider = runtime-model')
+        w('  model_id = sep-corona-swcme-shock-front-v1')
+        w('  #begin parker')
+        w(f'    reference_radius_m = {r_ref!r}')
+        w(f'    radial_field_at_reference_t = {a["magnetic_field_1au_nT"] * 1e-9!r}')
+        w(f'    solar_rotation_rate_rad_per_s = {OMEGA_SUN!r}')
+        w(f'    solar_wind_speed_m_per_s = {a["wind_speed_km_s"] * 1e3!r}')
+        w(f'    magnetic_polarity = {a["radial_polarity"]}')
+        w(f'    number_density_at_one_au_m3 = {a["electron_density_1au_cm3"] * 1e6!r}')
+        w(f'    temperature_k = {a["proton_temperature_K"]!r}')
+        w(f'    validity_cadence_s = {n["front_cache_cadence_s"]!r}')
+        w('  #end parker')
+        w('#end physics')
+        w('! The shared 1-D event (srcSEP/test/event_2013_04_11/event.event and its assets/),')
+        w('! copied next to this deck by the Table run recipe.')
+        w('#include "event.event"')
+        w('#begin physics: shock')
+        w('  authority = none')
+        w('#end physics')
+        w('')
+        w('! The 1-D net source on every tube line (README.md, section "Source").')
+        w('#begin source: shock')
+        w('  model = reduced-shock-front')
+        w('  enabled = true')
+        w('  placement = release-surface-on-tube-lines')
+        w('  normalization = accepted-shock-incident-flux')
+        w('  ! Net release fraction eta: the 1-D nominal scale (event_settings.json).')
+        w(f'  injection_efficiency = {s["nominal_injection_efficiency"]!r}')
+        w(f'  release_distance_shock_radius_fraction = {s["release_distance_shock_radius_fraction"]!r}')
+        w('  returning_particles = absorb')
+        w(f'  minimum_energy_j = {s["minimum_energy_mev"] * mev!r}')
+        w(f'  maximum_energy_j = {s["maximum_energy_mev"] * mev!r}')
+        w('  spectrum_model = local-compression-dsa')
+        w('  phase_space_power_index = 0')
+        w('  weight_model = log-uniform-momentum-importance')
+        w(f'  samples_per_step = {tt["samples_per_step"]}')
+        w('#end source')
+        w('')
+        w('#begin species')
+        w(f'  macroparticle_weight = {n["macroparticle_weight"]!r}')
+        w('#end species')
+        w('')
+        w('! Tube observers: their collection spheres must stay in the simulated flux tube.')
+        # tube-<host>: the observers that define the tube, 40 bins over the
+        # whole source band, with flux and spectrum products.
+        for host in ('soho', 'ace', 'earth'):
+            observer(w, f'tube-{host}', 'body', rho, s['minimum_energy_mev'] * mev, s['maximum_energy_mev'] * mev,
+                     40, cadence, host=host, stay=stay, products='flux,spectrum')
+        w('')
+        w('! Instrument channels at their host (observations.csv).')
+        # One single-bin observer per instrument channel, for the comparison
+        # with the observations; these do not shape the tube.
+        for oid, (host, lo, hi) in sorted(channels.items()):
+            observer(w, oid, 'body', rho, lo * mev, hi * mev, 1, cadence, host=host)
+        if tier == 'nightly':
+            w('')
+            w('! Inner regression observers on the field line through Earth at t0 (frame-fixed).')
+            # Their collection radius scales with r from the body value
+            # (rho r / r_Earth), as the tube narrows toward the Sun.
+            for r_au in s3['nightly']['inner_observer_radii_au']:
+                r = r_au * AU_M
+                observer(w, f'nightly-r{repr(r_au).replace(".", "p")}au', 'fixed-cartesian', rho * r / r_e,
+                         s['minimum_energy_mev'] * mev, s['maximum_energy_mev'] * mev,
+                         s3['nightly']['inner_observer_energy_bins'], cadence, position=line_point(r),
+                         products='flux,spectrum')
+        w('')
+        w('#begin output')
+        w(f'  cadence_steps = {tt["output_cadence_steps"]}')
+        w('  checkpoint_cadence_steps = 0')
+        w('  directory = PT/plots/sep3d')
+        w(f'  prefix = event3d-{name}')
+        w('  initialization_mesh_tecplot_file = event3d-mesh.dat')
+        w('  initialization_field_line_tecplot_file = event3d-diagnostic-line.dat')
+        w('  initialization_data_tecplot_file = event3d-native-data.dat')
+        w('#end output')
+        return lines
+
+    def mover_deck(mover):
+        # The transport part of one mover, as a list of lines: application sep
+        # (transport selection, substep limits, the shared lambda law),
+        # population control off, storage, the prescribed turbulence, and for
+        # fte-dmumu the PA-ISO pitch-angle block.  The mapping to the 1-D
+        # movers is the table at the top of README.md.
+        lam = t['lambda_reference_au'] * AU_M
+        lam_r = t['lambda_reference_radius_au'] * AU_M
+        transport = {'parker': 'parker', 'fte-dmumu': 'focused-diffusion', 'fte-mfp': 'focused-scattering'}[mover]
+        lines = []
+        w = lines.append
+        w(f'! srcSEP3D transport of the 2013-04-11 test: {mover} (1-D --particle-mover {mover}).')
+        w('! GENERATED by srcSEP/test/event_2013_04_11/prepare_event.py deck; do not edit.')
+        w('#begin application: sep')
+        w('  schema_version = 6')
+        w('  intent = shock-injection')
+        w(f'  transport = {transport}')
+        w(f'  background_cadence_steps = {s3["background_cadence_steps"]}')
+        w('  injection_cadence_steps = 1')
+        w('  #begin transport')
+        for key, value in (('cell_crossing_fraction', 0.4), ('diffusion_fraction', 0.2), ('focusing_fraction', 0.2),
+                           ('cooling_fraction', 0.2), ('field_variation_fraction', 0.2),
+                           ('shock_crossing_fraction', 0.5), ('minimum_substep_s', 1e-12),
+                           ('maximum_substeps', 1000000)):
+            w(f'    {key} = {value}')
+        w('    pitch_angle_scheme = reflecting-milstein')
+        w('    spatial_diffusion_model = mean-free-path')
+        w(f'    pitch_angle_diffusion_model = {"pitch-angle-library" if mover == "fte-dmumu" else "jokipii-1966"}')
+        w('    mean_free_path_model = radial-rigidity-power-law')
+        w('    constant_dmumu_per_s = 0')
+        w('    constant_mean_free_path_m = 0')
+        w(f'    mean_free_path_reference_m = {lam!r}')
+        w(f'    mean_free_path_reference_radius_m = {lam_r!r}')
+        w(f'    mean_free_path_reference_rigidity_v = {t["lambda_reference_rigidity_v"]!r}')
+        w(f'    mean_free_path_radial_exponent = {t["lambda_radial_exponent"]!r}')
+        w(f'    mean_free_path_rigidity_exponent = {t["lambda_rigidity_exponent"]!r}')
+        w('    spatial_quadrature_absolute_tolerance_m2_per_s = 1')
+        w('    spatial_quadrature_relative_tolerance = 1e-6')
+        w('    spatial_quadrature_maximum_recursion = 20')
+        w('    ! 1-D fte-mfp: isotropic scattering in the two Alfven-wave frames, equal rates.')
+        w('    focused_scattering_frame = alfven-wave-frame-isotropic')
+        w('    maximum_scattering_events_per_substep = 100000')
+        w('    perpendicular_diffusion = none')
+        w('    constant_kappa_perpendicular_m2_per_s = 0')
+        w('    kappa_perpendicular_to_parallel_ratio = 0')
+        w('    drifts = none')
+        w('  #end transport')
+        w('  #begin population_control')
+        w('    mode = off')
+        for key in ('minimum', 'target', 'maximum'):
+            w(f'    {key}_particles_per_cell_per_species = 0')
+        w('    cadence_steps = 1')
+        w('  #end population_control')
+        w('  #begin storage')
+        w('    magnetic_gradient = false')
+        w('    velocity_gradient = false')
+        w('    sampling_bytes_per_cell = 0')
+        w('  #end storage')
+        w('  ! Prescribed turbulence: only the zero cross helicity (equal wave branches)')
+        w('  ! enters, through the Alfven-wave frames of focused-scattering.')
+        w('  #begin turbulence')
+        for key, value in (('authority', 'prescribed'), ('model', 'kolmogorov'),
+                           ('amplitude_model', 'constant-delta-b-over-b'), ('delta_b_over_b', 0.3),
+                           ('wave_energy_density_at_reference_j_per_m3', 0),
+                           ('wave_energy_density_radial_exponent', 0), ('normalized_cross_helicity', 0),
+                           ('reference_radius_m', repr(AU_M)), ('k_min_per_m', 1e-10), ('k_max_per_m', 1e-7),
+                           ('k_min_radial_exponent', 2), ('k_max_radial_exponent', 2),
+                           ('spectral_index', repr(5.0 / 3.0)), ('correlation_length_m', repr(0.03 * AU_M)),
+                           ('correlation_length_radial_exponent', 1), ('validity_cadence_s', 60),
+                           ('missing_data', 'fail'), ('resonance_range', 'reject'), ('self_consistent_3d', 'false')):
+            w(f'    {key} = {value}')
+        w('  #end turbulence')
+        w('#end application')
+        if mover == 'fte-dmumu':
+            w('')
+            w('! 1-D fte-dmumu: isotropic D_mumu = v (1 - mu^2) / (2 lambda) with the shared lambda law.')
+            w('#begin physics: pitch_angle_diffusion')
+            w('  model = PA-ISO')
+            w(f'  lambda_reference_m = {lam!r}')
+            w(f'  lambda_reference_rigidity_v = {t["lambda_reference_rigidity_v"]!r}')
+            w('  lambda_rigidity_exponent = 1/3')
+            w(f'  lambda_reference_radius_m = {lam_r!r}')
+            w('  lambda_radial_exponent = 1')
+            w('  step_rule = rate-fraction')
+            w('  rate_fraction = 0.001')
+            w('#end physics')
+        return lines
+
+    # The PA-ISO block writes its exponents as literals; refuse a 1-D law that
+    # no longer matches them.
+    if t['lambda_rigidity_exponent'] != 1.0 / 3.0 or t['lambda_radial_exponent'] != 1.0:
+        raise ValueError('the PA-ISO block writes the lambda exponents 1/3 and 1; update deck3d')
+    # The convergence-study decks: one label per radius, e.g. 0.005 ->
+    # convergence-r0p005au.  The labels must be those listed in DECK3D_NAMES,
+    # which check() compares.
+    radii = s3['convergence']['collection_radius_au']
+    study = [(f'convergence-r{repr(r).replace(".", "p")}au', r) for r in radii]
+    if [label for label, _ in study] != [f'convergence-r{tag}au' for tag in ('0p005', '0p01', '0p02', '0p04')]:
+        raise ValueError('event3d_settings.json convergence radii differ from DECK3D_NAMES; update both')
+    # Write the tier decks, the study decks, the mover decks and, for every
+    # (tier or study label, mover), the two-line run deck that #includes them.
+    for tier in ('nightly', 'long'):
+        (out / f'event3d.{tier}.in').write_text('\n'.join(tier_deck(tier)) + '\n')
+    for label, r in study:
+        (out / f'event3d.{label}.in').write_text('\n'.join(tier_deck('long', r, label)) + '\n')
+    for mover in MOVERS3D:
+        (out / f'event3d.mover-{mover}.in').write_text('\n'.join(mover_deck(mover)) + '\n')
+        for tier in ('nightly', 'long', *(label for label, _ in study)):
+            (out / f'event3d.{tier}.{mover}.in').write_text(
+                f'! srcSEP3D deck: 2013-04-11 event, {tier} tier, {mover}.\n'
+                '! GENERATED by srcSEP/test/event_2013_04_11/prepare_event.py deck; do not edit.\n'
+                f'#include "event3d.{tier}.in"\n#include "event3d.mover-{mover}.in"\n')
+    # deck3d_summary.json: the frame rows (read by test_spice_ephemeris.cpp),
+    # the latitude check, the ephemeris digests and the inner-observer
+    # positions.
+    summary = {'model_frame_rows_from_ecliptic_j2000': rows,
+               'earth_heliographic_latitude_geometric_deg': b0_geometric,
+               'earth_heliographic_latitude_1d_deg': g['earth_heliographic_latitude_deg'],
+               'earth_latitude_difference_deg': b0_geometric - g['earth_heliographic_latitude_deg'],
+               'earth_t0_model_m': e_t0, 'earth_t0_distance_m': r_e,
+               'ephemeris_sha256': digests,
+               'inner_observer_positions_m': {repr(r): line_point(r * AU_M) for r in s3['nightly']['inner_observer_radii_au']},
+               'note': 'geometric Earth latitude from the IAU pole vs the apparent Horizons sub-observer latitude of the 1-D frame'}
+    (out / 'deck3d_summary.json').write_text(json.dumps(summary, indent=1, sort_keys=True) + '\n')
+    print(f'wrote the srcSEP3D decks and ephemerides in {out}')
 
 def check(args):
     """Regenerate every product in a temporary copy and byte-compare."""
@@ -1128,6 +1717,10 @@ def check(args):
     import tempfile
     names = ('derived.json', 'observations.csv', 'event.in', 'event.nightly.in', 'event.args', 'event.event', 'deck_summary.json',
              'assets/wso_cr2135_model_frame.harmonics.csv')
+    # The srcSEP3D products, as paths relative to HERE.
+    names3d = tuple(str(Path('..') / '..' / '..' / 'srcSEP3D' / 'test' / 'event_2013_04_11' / name)
+                    for name in DECK3D_NAMES)
+    names = names + names3d
     saved = {name: (HERE / name).read_bytes() for name in names if (HERE / name).exists()}
     try:
         derive(args)

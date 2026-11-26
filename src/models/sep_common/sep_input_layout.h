@@ -191,6 +191,13 @@ constexpr KeyRule kKeys[] = {
     {"application.sep.transport", "constant_kappa_perpendicular_m2_per_s", kSrcSep3d},
     {"application.sep.transport", "kappa_perpendicular_to_parallel_ratio", kSrcSep3d},
     {"application.sep.transport", "drifts", kSrcSep3d},
+    // srcSEP3D, corotating frame only (2026-11-26): Coriolis / centrifugal
+    // terms of the focused movers; absent means none.
+    // Values none | coriolis | coriolis-and-centrifugal.  The parser requires
+    // mesh.domain.coordinate_frame = HCI-corotating and RunConfiguration3D::
+    // Create a focused mover (srcSEP3D/CONFIGURATION.md, "Corotating frame,
+    // observer flux tube, ...").  srcSEP has no equivalent key.
+    {"application.sep.transport", "frame_inertial_forces", kSrcSep3d},
     {"application.sep.population_control", "mode", kSrcSep3d},
     {"application.sep.population_control",
      "minimum_particles_per_cell_per_species", kSrcSep3d},
@@ -276,6 +283,13 @@ constexpr KeyRule kKeys[] = {
     {"mesh.domain", "corner_margin_m", kSrcSep3d},
     {"mesh.domain", "outer_boundary", kSrcSep3d},
     {"mesh.domain", "coordinate_frame", kSrcSep3d},
+    // srcSEP3D, exactly with coordinate_frame = HCI-corotating (2026-11-26).
+    //   frame_rotation_rate_rad_per_s  Omega [rad/s] about HCI +z; finite,
+    //     nonzero and equal to the reduced event's
+    //     ambient.rotation_rate_rad_per_s, so the ambient is static in the frame;
+    //   frame_reference_epoch_s  model time [s] at which the frame equals HCI.
+    {"mesh.domain", "frame_rotation_rate_rad_per_s", kSrcSep3d},
+    {"mesh.domain", "frame_reference_epoch_s", kSrcSep3d},
     {"mesh.domain", "origin_x_m", kSrcSep3d},
     {"mesh.domain", "origin_y_m", kSrcSep3d},
     {"mesh.domain", "origin_z_m", kSrcSep3d},
@@ -320,6 +334,20 @@ constexpr KeyRule kKeys[] = {
     {"mesh.active_region", "radius_mode", kSrcSep3d},
     {"mesh.active_region", "buffer_blocks", kSrcSep3d},
     {"mesh.active_region", "solar_sphere_radius_m", kSrcSep3d},
+    // srcSEP3D, exactly with mode = observer-flux-tube (2026-11-26).
+    //   observers       comma list of the observer IDs whose collection
+    //                   spheres define the tube (each needs a stay interval);
+    //   trace_step_m    upper bound [m] of the field-line arc step, > 0;
+    //   seed_spacing_m  seed-lattice spacing [m] on the reference sphere,
+    //                   >= 0 (0: half the requested cell size at the first
+    //                   observer);
+    //   time_spacing_s  stay-interval sampling cadence [s], >= 0 (0: a
+    //                   quarter of the collection radius over the frame speed).
+    // All four are required; srcSEP has no 3-D active region.
+    {"mesh.active_region", "observers", kSrcSep3d},
+    {"mesh.active_region", "trace_step_m", kSrcSep3d},
+    {"mesh.active_region", "seed_spacing_m", kSrcSep3d},
+    {"mesh.active_region", "time_spacing_s", kSrcSep3d},
     {"mesh.memory", "base_cell_bytes", kSrcSep3d},
     {"mesh.memory", "base_node_bytes", kSrcSep3d},
     {"mesh.memory", "block_structure_bytes", kSrcSep3d},
@@ -365,13 +393,28 @@ constexpr KeyRule kKeys[] = {
     // Optional alternative (srcSEP reduced net source only): L_ref as a
     // fraction f of the front's generating-sphere radius, L_ref(t)=f R_sh(t).
     // At most one of release_distance_m / this key / the CLI length is given.
-    {"source.shock", "release_distance_shock_radius_fraction", kSrcSep},
+    // srcSEP3D reads the same key (hence kBoth), exactly with
+    // source.shock.placement = release-surface-on-tube-lines and in (0, 1]:
+    // the release surface is the front's generating sphere enlarged to
+    // (1 + f) times its radius, as in the srcSEP net source.
+    {"source.shock", "release_distance_shock_radius_fraction", kBoth},
     {"source.shock", "physical_particle_rate_per_s", kSrcSep3d},
     {"source.shock", "spectrum_model", kSrcSep3d},
     {"source.shock", "phase_space_power_index", kSrcSep3d},
     {"source.shock", "normalization", kSrcSep3d},
     {"source.shock", "normalization_radius_m", kSrcSep3d},
     {"source.shock", "weight_model", kSrcSep3d},
+    // srcSEP3D (2026-11-26): front-surface (absent) or
+    // release-surface-on-tube-lines, the 1-D srcSEP net source on the traced
+    // lines of an observer flux tube; the latter requires
+    // returning_particles = absorb.
+    //   placement            front-surface | release-surface-on-tube-lines;
+    //   returning_particles  transparent | absorb; the key is accepted only
+    //                        with the tube-line placement, which requires
+    //                        absorb (a particle crossing into the downstream
+    //                        side of an accepted front is removed).
+    {"source.shock", "placement", kSrcSep3d},
+    {"source.shock", "returning_particles", kSrcSep3d},
     {"source.shock", "maximum_events_per_species_per_step", kSrcSep3d},
     // Explicit particle-source model (srcSEP3D): reduced-shock-front is the
     // only model; swcme is rejected as not ready (user decision 2026-10-12).
@@ -404,6 +447,32 @@ constexpr KeyRule kKeys[] = {
     {"observer.*", "maximum_mu", kSrcSep3d},
     {"observer.*", "species", kSrcSep3d},
     {"observer.*", "products", kSrcSep3d},
+    // srcSEP3D body observers and observer flux tubes (2026-11-26).
+    //   ephemeris          table | spice, exactly for kind = body;
+    //   ephemeris_file     CSV time_s,x_m,y_m,z_m,vx_m_per_s,vy_m_per_s,
+    //                      vz_m_per_s in the model HCI frame, resolved
+    //                      relative to the file holding the observer block;
+    //   ephemeris_sha256   64 hex digits of that file's bytes;
+    //   spice_target, spice_center, spice_frame  SPICE names of the state
+    //                      query; spice_kernels  meta-kernel path (resolved
+    //                      like ephemeris_file); spice_reference_utc  UTC of
+    //                      model time 0; spice_to_model_rotation  nine numbers,
+    //                      row-major proper rotation from spice_frame to the
+    //                      model HCI frame (all exactly for ephemeris = spice);
+    //   tube_stay_begin_s, tube_stay_end_s  model times [s], begin < end,
+    //                      exactly for an observer listed in
+    //                      mesh.active_region.observers.
+    {"observer.*", "ephemeris", kSrcSep3d},
+    {"observer.*", "ephemeris_file", kSrcSep3d},
+    {"observer.*", "ephemeris_sha256", kSrcSep3d},
+    {"observer.*", "spice_target", kSrcSep3d},
+    {"observer.*", "spice_center", kSrcSep3d},
+    {"observer.*", "spice_frame", kSrcSep3d},
+    {"observer.*", "spice_kernels", kSrcSep3d},
+    {"observer.*", "spice_reference_utc", kSrcSep3d},
+    {"observer.*", "spice_to_model_rotation", kSrcSep3d},
+    {"observer.*", "tube_stay_begin_s", kSrcSep3d},
+    {"observer.*", "tube_stay_end_s", kSrcSep3d},
 
     // ---- output -----------------------------------------------------------------
     {"output", "initialization_mesh_tecplot_file", kBoth},

@@ -323,6 +323,9 @@ Core::Status Validate(const ResolutionConfiguration& configuration) {
       return Invalid("Parker tube parameters are outside their physical range");
     }
   }
+  // An observer flux tube is traced after MPI and the background provider
+  // exist, i.e. after this first validation; BuildActiveRegionPlan requires
+  // the traced geometry.
   if (configuration.activeRegion ==
       RuntimeModel::ActiveRegionMode::ParkerTube) {
     if (configuration.activeSolarSphereRadiusM < 0.0 ||
@@ -474,6 +477,41 @@ double RequestedCellSizeM(const Core::Vec3& positionM,
     requested = std::min(requested, Clamp(
         radial, configuration.solarSurfaceCellSizeM,
         configuration.backgroundCellSizeM));
+  }
+  if (configuration.activeRegion ==
+          RuntimeModel::ActiveRegionMode::ObserverFluxTube &&
+      configuration.observerTube && configuration.observerTube->index) {
+    // Observer flux tube: the radial target inside the tube, graded with
+    // distance d outside it (requested <= 2d, the capture envelope below), so
+    // the blocks the tube crosses refine to the radial target while the rest
+    // of the cube stays coarse.
+    //
+    // h(x) = clamp(max(h_radial(x), 2 (1 - 1e-12) d(x)), h_min, R_outer)
+    //   h_radial  the radial target computed above (at most the global
+    //             background cell size);
+    //   d         the distance to the nearest tube capsule (0 inside);
+    //   R_outer   the domain's outer radius, the coarsest size requested.
+    // The factor 2 (1 - 1e-12) is the capture envelope of the analytic
+    // corridor below (kStrictRefinement and the comment there).  AMPS
+    // samples this function on a lattice, and the nearest sample to a thin
+    // tube can sit up to half a cell diagonal away; requesting about 2 d
+    // makes that sample still ask for refinement, so a block crossed by the
+    // tube is not missed by aliasing.  This branch returns before the
+    // analytic-corridor branch (enableTubeRefinement must be off in this
+    // mode), and it clamps at R_outer rather than at the background size:
+    // far from the tube the blocks may stay coarser than the background
+    // cell size.
+    constexpr double kStrictCapture = 2.0 * (1.0 - 1.0e-12);
+    // Outside the tube the cells grow with the distance d (<= 2d) up to the
+    // domain scale, so the cube away from the tube stays at its coarsest
+    // levels; inside the tube the radial target (capped at the global size)
+    // applies.  The distance query is clipped where 2d reaches that scale.
+    const double coarsestM = configuration.outerRadiusM;
+    const double distance = DistanceToObserverTubeM(
+        *configuration.observerTube, positionM, coarsestM / kStrictCapture);
+    const double graded = std::max(requested, kStrictCapture * distance);
+    return std::max(configuration.minimumCellSizeM,
+                    std::min(coarsestM, graded));
   }
   if (configuration.enableTubeRefinement) {
     const double distance = TubeDistanceM(positionM, configuration);
@@ -767,13 +805,241 @@ Core::Status ValidateGraph(const LeafNeighbourGraph& graph,
   return Core::Status::OK();
 }
 
+// Bounding-volume hierarchy over capsule boxes, used for the many traced
+// lines of an observer flux tube (the analytic corridor keeps its loop).
+//
+// An observer tube has many lines, each with many chords.  With a plain loop
+// the leaf classification and the refinement distance would cost
+// (leaves or lattice points) x (segments).  The hierarchy reduces each query
+// to roughly the logarithm of the segment count.
+//
+// Structure: a binary tree of axis-aligned boxes.  Node k covers the
+// segments order[begin, end), and its box [lo, hi] bounds all their capsule
+// boxes.  A node with 8 or fewer segments is a leaf (left = right = -1).
+// Otherwise its segments are split at the median of the chord midpoints
+// along the widest axis of the node's box (std::nth_element), so the tree is
+// balanced and the build costs O(n log n).  A capsule lies inside its box,
+// so a box test is a conservative filter: a query that misses a node's box
+// cannot touch any capsule in it.
+struct CapsuleBvh {
+  struct Node {
+    Core::Vec3 lo, hi;               // box [m] bounding the node's capsules
+    int left = -1, right = -1;       // child node indices; -1 for a leaf
+    std::size_t begin = 0, end = 0;  // the node's range in `order`
+  };
+  std::vector<Node> nodes;           // nodes[0] is the root (if any)
+  std::vector<std::size_t> order;    // permutation of segment indices, grouped by node
+  const std::vector<TubeSegment>* segments = nullptr;   // referenced, not owned
+
+  // Axis-aligned box of one capsule: the chord's bounding box grown by the
+  // capsule radius on every side.
+  static void Box(const TubeSegment& s, Core::Vec3* lo, Core::Vec3* hi) {
+    for (int axis = 0; axis < 3; ++axis) {
+      const double a = Component(s.firstM, axis), b = Component(s.secondM, axis);
+      SetComponent(lo, axis, std::min(a, b) - s.envelopeRadiusM);
+      SetComponent(hi, axis, std::max(a, b) + s.envelopeRadiusM);
+    }
+  }
+  // Build the subtree over order[begin, end) and return its node index.
+  // Children are built after the parent is appended, so `nodes` may
+  // reallocate during recursion.  The child indices are therefore written
+  // through nodes[index] at the end, not through a reference held across
+  // the recursive calls.
+  int Build(std::size_t begin, std::size_t end) {
+    Node node;
+    node.begin = begin;
+    node.end = end;
+    for (int axis = 0; axis < 3; ++axis) {
+      SetComponent(&node.lo, axis, std::numeric_limits<double>::infinity());
+      SetComponent(&node.hi, axis, -std::numeric_limits<double>::infinity());
+    }
+    for (std::size_t i = begin; i < end; ++i) {
+      Core::Vec3 lo, hi;
+      Box((*segments)[order[i]], &lo, &hi);
+      for (int axis = 0; axis < 3; ++axis) {
+        SetComponent(&node.lo, axis, std::min(Component(node.lo, axis), Component(lo, axis)));
+        SetComponent(&node.hi, axis, std::max(Component(node.hi, axis), Component(hi, axis)));
+      }
+    }
+    const int index = static_cast<int>(nodes.size());
+    nodes.push_back(node);
+    if (end - begin <= 8) return index;
+    int axis = 0;
+    double widest = -1.0;
+    for (int a = 0; a < 3; ++a) {
+      const double width = Component(node.hi, a) - Component(node.lo, a);
+      if (width > widest) { widest = width; axis = a; }
+    }
+    // Median split along the widest axis.  The key first + second is twice
+    // the chord midpoint (the factor 2 does not change the order).
+    const std::size_t middle = begin + (end - begin) / 2;
+    std::nth_element(order.begin() + begin, order.begin() + middle,
+                     order.begin() + end, [&](std::size_t x, std::size_t y) {
+      const TubeSegment& sx = (*segments)[x];
+      const TubeSegment& sy = (*segments)[y];
+      return Component(sx.firstM, axis) + Component(sx.secondM, axis) <
+             Component(sy.firstM, axis) + Component(sy.secondM, axis);
+    });
+    const int left = Build(begin, middle);
+    const int right = Build(middle, end);
+    nodes[index].left = left;
+    nodes[index].right = right;
+    return index;
+  }
+  explicit CapsuleBvh(const std::vector<TubeSegment>& source) : segments(&source) {
+    // `source` must outlive the hierarchy (it is referenced, not copied).
+    order.resize(source.size());
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+    if (!order.empty()) Build(0, order.size());
+  }
+  // true when any capsule intersects the box [minimumM, maximumM] (an AMR
+  // leaf).  Iterative depth-first descent through the nodes whose boxes
+  // overlap the query box.  At a leaf node the exact capsule-box test
+  // SegmentEnvelopeIntersectsBox (the one the analytic corridor uses) is
+  // applied to each segment.  The result equals that of testing every
+  // segment, because the node boxes only prune segments whose capsule boxes
+  // miss the query box.
+  bool Intersects(const Core::Vec3& minimumM, const Core::Vec3& maximumM) const {
+    if (nodes.empty()) return false;
+    std::vector<int> stack{0};
+    while (!stack.empty()) {
+      const Node& node = nodes[stack.back()];
+      stack.pop_back();
+      bool overlap = true;
+      for (int axis = 0; axis < 3 && overlap; ++axis)
+        overlap = Component(node.hi, axis) >= Component(minimumM, axis) &&
+                  Component(node.lo, axis) <= Component(maximumM, axis);
+      if (!overlap) continue;
+      if (node.left < 0) {
+        for (std::size_t i = node.begin; i < node.end; ++i)
+          if (SegmentEnvelopeIntersectsBox((*segments)[order[i]], minimumM, maximumM))
+            return true;
+        continue;
+      }
+      stack.push_back(node.left);
+      stack.push_back(node.right);
+    }
+    return false;
+  }
+};
+
+// Squared Euclidean distance [m^2] from p to the box [lo, hi] (0 inside):
+// the sum over axes of the squared gap between p and the box's slab.  A
+// lower bound for the distance to any capsule inside the box.
+double SquaredDistancePointToBox(const Core::Vec3& p, const Core::Vec3& lo,
+                                 const Core::Vec3& hi) {
+  double sum = 0.0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const double x = Component(p, axis);
+    const double d = x < Component(lo, axis) ? Component(lo, axis) - x
+                   : x > Component(hi, axis) ? x - Component(hi, axis) : 0.0;
+    sum += d * d;
+  }
+  return sum;
+}
+
+// Distance [m] from p to the segment [a, b]: the projection parameter
+// t = (p - a).(b - a) / |b - a|^2 is clamped to [0, 1].  A degenerate segment
+// (a == b) is treated as the point a.
+double DistancePointToSegment(const Core::Vec3& p, const Core::Vec3& a,
+                              const Core::Vec3& b) {
+  const Core::Vec3 ab = b - a;
+  const double length2 = ab.Dot(ab);
+  const double t = length2 > 0.0
+      ? std::max(0.0, std::min(1.0, (p - a).Dot(ab) / length2)) : 0.0;
+  return (p - (a + ab * t)).Norm();
+}
+
 }  // namespace
+
+// The index owns a copy of the capsules in the internal TubeSegment form
+// and the hierarchy built over that copy.  CapsuleBvh holds a pointer to
+// `segments`.  The index is only ever held through a shared_ptr and never
+// copied or moved, so the pointer stays valid for the index's lifetime.
+struct ObserverTubeIndex {
+  std::vector<TubeSegment> segments;
+  std::unique_ptr<CapsuleBvh> bvh;
+};
+
+// Convert the public capsules to TubeSegment (the type that
+// SegmentEnvelopeIntersectsBox and the analytic corridor use), build the
+// hierarchy over them, and publish the index in geometry->index.
+Core::Status IndexObserverTube(ObserverTubeGeometry* geometry) {
+  if (!geometry) return Invalid("observer tube geometry is null");
+  auto index = std::make_shared<ObserverTubeIndex>();
+  index->segments.reserve(geometry->segments.size());
+  for (const ActiveTubeSegment& item : geometry->segments) {
+    TubeSegment segment;
+    segment.firstM = item.firstM;
+    segment.secondM = item.secondM;
+    segment.envelopeRadiusM = item.envelopeRadiusM;
+    index->segments.push_back(segment);
+  }
+  index->bvh.reset(new CapsuleBvh(index->segments));
+  geometry->index = index;
+  return Core::Status::OK();
+}
+
+double DistanceToObserverTubeM(const ObserverTubeGeometry& geometry,
+                               const Core::Vec3& positionM, double capM) {
+  if (!geometry.index || geometry.index->bvh->nodes.empty()) return capM;
+  const CapsuleBvh& bvh = *geometry.index->bvh;
+  double best = capM;
+  // Nearest-child-first depth-first search: the first leaves reached give a
+  // tight bound, so farther boxes are pruned (cost ~ log of the segments).
+  // Stack entries are (squared box distance, node).  A node is skipped when
+  // its box is no closer than the best capsule distance found so far.  The
+  // box contains its capsules, so the box distance is a lower bound and the
+  // pruning never discards the true minimum: the result equals the
+  // brute-force minimum over all capsules, clipped at capM.
+  std::vector<std::pair<double, int>> stack;
+  stack.reserve(64);
+  stack.push_back({SquaredDistancePointToBox(positionM, bvh.nodes[0].lo,
+                                             bvh.nodes[0].hi), 0});
+  while (!stack.empty()) {
+    const std::pair<double, int> top = stack.back();
+    stack.pop_back();
+    if (top.first >= best * best) continue;
+    const CapsuleBvh::Node& node = bvh.nodes[top.second];
+    if (node.left < 0) {
+      for (std::size_t i = node.begin; i < node.end; ++i) {
+        const TubeSegment& s = (*bvh.segments)[bvh.order[i]];
+        const double d = std::max(0.0,
+            DistancePointToSegment(positionM, s.firstM, s.secondM) -
+            s.envelopeRadiusM);
+        best = std::min(best, d);
+      }
+      // Inside a capsule: no distance can be smaller.
+      if (best == 0.0) return 0.0;
+      continue;
+    }
+    const CapsuleBvh::Node& left = bvh.nodes[node.left];
+    const CapsuleBvh::Node& right = bvh.nodes[node.right];
+    const double dl = SquaredDistancePointToBox(positionM, left.lo, left.hi);
+    const double dr = SquaredDistancePointToBox(positionM, right.lo, right.hi);
+    // Push the farther child first so the nearer one is examined next.
+    if (dl < dr) {
+      stack.push_back({dr, node.right});
+      stack.push_back({dl, node.left});
+    } else {
+      stack.push_back({dl, node.left});
+      stack.push_back({dr, node.right});
+    }
+  }
+  return best;
+}
 
 const char* ActiveRegionAlgorithmName() {
   return RuntimeModel::kActiveRegionAlgorithmName;
 }
 
 const char* ActiveRegionAlgorithmName(const ResolutionConfiguration& configuration) {
+  // The observer flux tube has its own algorithm name.  It enters the
+  // recorded active-region identity, so a traced-tube plan is never
+  // mistaken for an analytic-corridor plan.
+  if (configuration.activeRegion ==
+      RuntimeModel::ActiveRegionMode::ObserverFluxTube)
+    return RuntimeModel::kObserverTubeActiveRegionAlgorithmName;
   return configuration.activeSolarSphereRadiusM > 0.0
       ? RuntimeModel::kSolarSphereActiveRegionAlgorithmName
       : RuntimeModel::kActiveRegionAlgorithmName;
@@ -876,15 +1142,57 @@ Core::Status BuildActiveRegionPlan(
   }
 
   std::vector<TubeSegment> segments;
-  const Core::Status segmentStatus = BuildFiniteTubeSegments(
-      configuration, minimumLeafSideM, &segments,
-      &candidate.effectiveLineLengthM);
-  if (!segmentStatus.ok()) return segmentStatus;
+  std::vector<Core::Vec3> sourcePoints, terminalPoints;
+  const bool observerTube = configuration.activeRegion ==
+      RuntimeModel::ActiveRegionMode::ObserverFluxTube;
+  if (observerTube) {
+    // Traced lines of the observer flux tube (observer_flux_tube.h).
+    // The capsules come ready-made from the application (radius = local
+    // spacing + half chord + guard), so the minimum leaf side used by
+    // BuildFiniteTubeSegments does not enter.  effectiveLineLengthM is the
+    // summed chord length of all lines (the total traced line length), not
+    // the length of one line.  Every line contributes its inner end as a
+    // possible source point and its outer end as a possible terminal point.
+    if (!configuration.observerTube)
+      return Invalid("observer flux tube geometry has not been traced");
+    for (const ActiveTubeSegment& item : configuration.observerTube->segments) {
+      TubeSegment segment;
+      segment.firstM = item.firstM;
+      segment.secondM = item.secondM;
+      segment.envelopeRadiusM = item.envelopeRadiusM;
+      candidate.effectiveLineLengthM += (item.secondM - item.firstM).Norm();
+      segments.push_back(segment);
+    }
+    sourcePoints = configuration.observerTube->sourcePointsM;
+    terminalPoints = configuration.observerTube->terminalPointsM;
+  } else {
+    const Core::Status segmentStatus = BuildFiniteTubeSegments(
+        configuration, minimumLeafSideM, &segments,
+        &candidate.effectiveLineLengthM);
+    if (!segmentStatus.ok()) return segmentStatus;
+    // Analytic corridor: one line, so one source and one terminal point.
+    sourcePoints.push_back(segments.front().firstM);
+    terminalPoints.push_back(segments.back().secondM);
+  }
   candidate.segmentCount = segments.size();
+  // The hierarchy keeps a pointer to its segment list: pass the list itself.
+  // Only the observer tube uses it.  The analytic corridor keeps its
+  // original segment loop below, so it gets an empty hierarchy (a static
+  // empty list, so the pointer is valid) and its classification stays
+  // unchanged.
+  static const std::vector<TubeSegment> kNoSegments;
+  const CapsuleBvh bvh(observerTube ? segments : kNoSegments);
   for (std::size_t leafIndex = 0; leafIndex < leaves.size(); ++leafIndex) {
     if (IntersectsSolarNeighbourhood(leaves[leafIndex].minimumM,
                                     leaves[leafIndex].maximumM, configuration)) {
       candidate.leafClass[leafIndex] = ActiveLeafClass::Core;
+      continue;
+    }
+    // Observer tube: a leaf is Core when any capsule intersects it (the same
+    // exact test as the loop below, through the hierarchy).
+    if (observerTube) {
+      if (bvh.Intersects(leaves[leafIndex].minimumM, leaves[leafIndex].maximumM))
+        candidate.leafClass[leafIndex] = ActiveLeafClass::Core;
       continue;
     }
     for (const TubeSegment& segment : segments) {
@@ -902,19 +1210,36 @@ Core::Status BuildActiveRegionPlan(
   const double pointToleranceM = 256.0 *
       std::numeric_limits<double>::epsilon() *
       std::max(1.0, configuration.outerRadiusM);
-  const Core::Vec3 sourcePointM = segments.front().firstM;
-  const Core::Vec3 terminalPointM = segments.back().secondM;
   for (std::size_t index = 0; index < leaves.size(); ++index) {
     if (candidate.leafClass[index] != ActiveLeafClass::Core) continue;
-    if (PointInsideBox(sourcePointM, leaves[index], pointToleranceM))
-      sourceLeaves.push_back(index);
-    if (PointInsideBox(terminalPointM, leaves[index], pointToleranceM))
-      terminalLeaf[index] = 1;
+    // A Core leaf is a source leaf when it contains any line's inner end,
+    // and a terminal leaf when it contains any line's outer end.  For the
+    // analytic corridor both lists have one point, as before.  For the
+    // observer tube the connectivity search below starts from every source
+    // leaf.
+    bool source = false, terminal = false;
+    for (const Core::Vec3& point : sourcePoints)
+      if (PointInsideBox(point, leaves[index], pointToleranceM)) { source = true; break; }
+    for (const Core::Vec3& point : terminalPoints)
+      if (PointInsideBox(point, leaves[index], pointToleranceM)) { terminal = true; break; }
+    if (source) sourceLeaves.push_back(index);
+    if (terminal) terminalLeaf[index] = 1;
   }
   if (sourceLeaves.empty() ||
       std::find(terminalLeaf.begin(), terminalLeaf.end(), 1) ==
           terminalLeaf.end()) {
-    return Invalid("finite Parker tube does not retain its source/end-point leaf");
+    // The message counts Core, source and terminal leaves and segments, so
+    // an under-resolved plan can be diagnosed from the log.  The wording
+    // "finite Parker tube" is shared with the analytic corridor and applies
+    // to the observer tube as well.
+    std::size_t core = 0;
+    for (ActiveLeafClass value : candidate.leafClass)
+      core += value == ActiveLeafClass::Core ? 1 : 0;
+    return Invalid("finite Parker tube does not retain its source/end-point leaf "
+                   "(core leaves " + std::to_string(core) + ", source leaves " +
+                   std::to_string(sourceLeaves.size()) + ", terminal leaves " +
+                   std::to_string(std::count(terminalLeaf.begin(), terminalLeaf.end(), 1)) +
+                   ", segments " + std::to_string(segments.size()) + ")");
   }
 
   // A continuous capsule must form one component in the full (26-neighbor)

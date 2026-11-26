@@ -3,6 +3,9 @@
 *.a
 data
 output
+# srcSEP3D/output/ is a source directory (observers, sampling, publication,
+# restart), not run output: new sources there must not be ignored.
+!srcSEP3D/output/
 !input/test/core-unit-tests.input
 # Registered native-test source decks must survive a fresh checkout. These
 # are existing analytical/verification fixtures, not generated application

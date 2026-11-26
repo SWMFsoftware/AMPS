@@ -1617,16 +1617,24 @@ def _check_makefile_relocation(definition: TestDefinition,
     # Keep this list explicit.  A production-manifest change must update this
     # relocation fixture as well, otherwise the archive audit should fail and
     # expose the disagreement rather than silently accepting a partial build.
+    # The observer-flux-tube mesh, the reduced-front shock surface, the
+    # tube-line shock source, the absorbing shock and the body-observer
+    # ephemerides (observer_flux_tube.o,
+    # reduced_front_shock_surface.o, tube_line_source.o, shock_return.o,
+    # observer_trajectory.o, spice_ephemeris.o) are the CORE_SRC,
+    # ADAPTER_SRC and OUTPUT_SRC members of srcSEP3D/makefile added for the
+    # 3-D 2013-04-11 test.
     application_members = (
-        "parker_geometry.o domain_geometry.o mesh_model.o "
+        "parker_geometry.o domain_geometry.o mesh_model.o observer_flux_tube.o "
         "bg_provider.o bg_parker.o bg_swcme.o bg_swmf.o background_snapshot.o "
         "turbulence_models.o keyed_random.o time_step.o perpendicular_transport.o "
         "parker_transport.o focused_transport.o population_control.o "
         "run_configuration.o particle_normalization.o configuration_io.o standalone_command_line.o runtime.o background_factory.o runtime_adapters.o "
         "transport_adapter.o particle_ledger.o shock_front_background_adapter.o "
+        "reduced_front_shock_surface.o tube_line_source.o shock_return.o "
         "swcme_source_adapter.o source_runtime.o "
         "sampling.o observer_runtime.o publication.o restart.o output_coordinator.o reduced_front_output.o "
-        "point_sampling.o "
+        "point_sampling.o observer_trajectory.o spice_ephemeris.o "
         "validation_metrics.o coronal_cme_application_test.o main_lib.o "
         "amps_particle_adapter.o amps_point_sampler.o")
     # Stage 14 adds the coherent-transport kernel to the coronal archive.

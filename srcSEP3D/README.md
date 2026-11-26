@@ -277,6 +277,33 @@ low-corona-to-1-AU zero-particle case and its native volume/front output
 contract, are documented in
 [`examples/shock-front/README.md`](examples/shock-front/README.md).
 
+## 3-D real-event test: corotating frame, observer flux tube and the 1-D-equivalent source (2026-11-26)
+
+`test/event_2013_04_11` runs the 2013-04-11 real-event test of
+`../srcSEP/test/event_2013_04_11` in 3-D with the same shock, ambient,
+observations and transport law, for the `parker`, `focused-diffusion` (PA-ISO)
+and `focused-scattering` (Alfven-wave frames) movers.  It adds, all opt-in:
+
+- the corotating computation frame (`core/computation_frame.h`);
+- a provider-neutral shock surface (`adapters/shock_surface.h`, with
+  `reduced_front_shock_surface.*` for both geometries of the shared core; the
+  v1.3 heliocentric sphere is no longer rejected);
+- body observers with a checksummed ephemeris table or SPICE
+  (`output/observer_trajectory.*`, `output/spice_ephemeris.*`);
+- the observer flux tube active region (`mesh/observer_flux_tube.*`) with a
+  distance-graded refinement and an observer coverage check;
+- the 1-D net source on the tube lines (`adapters/tube_line_source.*`) and
+  the absorbing shock (`adapters/shock_return.*`);
+- the focused movers' optional Coriolis/centrifugal terms
+  (`application.sep.transport.frame_inertial_forces`);
+- decomposition-independent long steps: provider evaluation of cells the
+  rank does not hold and the hand-off of particles that end on another rank;
+- the radial-energy histogram product (`<prefix>.radial-energy.csv`).
+
+Keys: `CONFIGURATION.md`, "Corotating frame, observer flux tube, ...".
+Physics, decisions, tests and numbers: `test/event_2013_04_11/README.md`.
+Unit tests: `sh test/event_2013_04_11/run_unit_tests.sh` (E3D01-E3D06).
+
 ## V01–V05 controlled extensions and evidence gates
 
 See `V01_V05_IMPLEMENTATION.md` for the algorithms, configuration, tests, and
