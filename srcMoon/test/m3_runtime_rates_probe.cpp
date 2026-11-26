@@ -62,6 +62,15 @@ int main(int argc,char** argv) {
         error.find("hydrogen_to_sodium_reference_weight_ratio")==std::string::npos) return 11;
     std::cout<<"incomplete_hydrogen_install_preserved=1\n";
   }
+  if (argc==3 && std::string(argv[2])=="reject-incomplete-helium-ion") {
+    // The He+ pair follows the same direct-install refusal as tracked H.
+    auto incomplete=configuration;
+    incomplete.heliumIonToSodiumReferenceWeightRatio=0;
+    if (Moon::Runtime::InstallConfiguration(incomplete,&error) ||
+        Moon::Runtime::HasConfiguration() ||
+        error.find("helium_ion_to_sodium_reference_weight_ratio")==std::string::npos) return 12;
+    std::cout<<"incomplete_helium_ion_install_preserved=1\n";
+  }
   if (!Moon::Runtime::InstallConfiguration(configuration,&error)) {
     std::cerr<<error<<'\n';
     std::cout<<"install_preserved="<<(!Moon::Runtime::HasConfiguration() &&
@@ -88,7 +97,10 @@ int main(int argc,char** argv) {
       <<"tracing_maximum_substep_s="<<actual.tracingMaximumSubstepS<<'\n'
       <<"tracing_field_frame="<<actual.tracingFieldFrame<<'\n'
       <<"hydrogen_characteristic_speed_m_s="<<actual.hydrogenCharacteristicSpeedMS<<'\n'
-      <<"hydrogen_to_sodium_reference_weight_ratio="<<actual.hydrogenToSodiumReferenceWeightRatio<<'\n';
+      <<"hydrogen_to_sodium_reference_weight_ratio="<<actual.hydrogenToSodiumReferenceWeightRatio<<'\n'
+      <<"helium_ion_characteristic_speed_m_s="<<actual.heliumIonCharacteristicSpeedMS<<'\n'
+      <<"helium_ion_to_sodium_reference_weight_ratio="<<actual.heliumIonToSodiumReferenceWeightRatio<<'\n'
+      <<"helium_to_sodium_reference_weight_ratio="<<actual.heliumToSodiumReferenceWeightRatio<<'\n';
   if (photons) {
     using Moon::Species::Photochemistry::SolarCase;
     const auto solar=actual.photochemistrySolarCase=="quiet" ? SolarCase::Quiet : SolarCase::Active;

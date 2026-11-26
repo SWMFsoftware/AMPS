@@ -1,0 +1,58 @@
+{
+  "schema": "srcMoon-I23-helium-admission-approval-v1",
+  "approval_status": "APPROVED",
+  "approval_date": "2026-11-25",
+  "authority": "User answers in the 2026-11-25 I23 electron-bath coupling session. Recorded verbatim in HELIUM_ADMISSION_20261125.md.",
+  "resolves": "Decision 3 of srcMoon/test/M3_COMPLETION_FOLLOWUP_20261124.md (stationary 4He I23 pilot inputs) for the coupling scope below.",
+  "bath": {
+    "distribution": "isotropic zero-drift Maxwellian",
+    "thermal_energy_eV": "10",
+    "electron_densities_m3": ["0", "1e6", "1e7"],
+    "frame": "LSO",
+    "frame_note": "at rest in the frozen LSO event frame; frozen environment",
+    "spatial_temporal_model": "uniform and constant over the whole domain; no lunar wake/shadow structure; no solar-wind drift",
+    "target": "stationary, force-free 4He(ground) parents only",
+    "label": "controlled verification bath, not lunar plasma; measured forcing remains R4.1/D06"
+  },
+  "products": {
+    "model": "production HeliumElectronImpact::Compose, inherited-parent-velocity reduced electron reservoir",
+    "tracked": "4He+(1s 2S1/2 ground)",
+    "bath_terms": "one incoming and two outgoing electrons, signed",
+    "formal_I23_status": "SKIPPED / NOT QUALIFIED"
+  },
+  "admission": {
+    "observable_scope": "heavy-particle number, charge and mass budgets and event chronology only; no He+ velocity, energy or pickup observable",
+    "threshold_state": {
+      "rate_fit_threshold_source": "D05 Voronov cfit.dat He row (24.6 eV)",
+      "physical_threshold_source": "authenticated state-profile 4He+:ground formation energy (NIST, 24.587387 eV)",
+      "product_state_assignment": "all ionizations assigned to ground-state 4He+(1s)",
+      "excited_ion_yield": "unknown; the CCC diagnostic fraction above the He+(n=2) onset (<=9.81%) is recorded as energy eligibility, not a yield",
+      "admitted_bound": "the source-derived |fit - physical| threshold difference (about 0.0126 eV) plus evaluation-rounding allowance only",
+      "quotation_note": "The approval question quoted the NIST value as 24.587387 eV. The authenticated profile record (ionization energy/hc = 1.9831066637(20)e7 m^-1) gives 24.5873890 eV; the 2e-6 eV quoting discrepancy does not change the approved rule. The generator uses only the authenticated source value."
+    },
+    "conditional_mean": {
+      "rule": "maximum absolute d ln k / d ln T error = published Kim (1992) minus Voronov analytic-slope-equivalent spread at 10 eV",
+      "approximate_value": "0.120",
+      "interpretation": "model spread, not a confidence interval"
+    },
+    "recoil": {
+      "rule": "approved reservoir RMS impulse bound S = sqrt(2 me Ein) + sqrt(4 me Eout), evaluated by the composer at the UPPER end of the admitted slope error",
+      "maximum_heavy_velocity_error_m_s": "1095",
+      "maximum_heavy_kinetic_error_eV": "0.0249",
+      "note": "conservative upper-end values approved in place of the central 1.073 km/s and 0.0239 eV"
+    },
+    "mechanical_limits_He": {
+      "relative_reference_inertia_error_max": "1e-8",
+      "relative_acceleration_error_max": "1e-8",
+      "relative_nonrelativistic_kinetic_error_max": "1e-4",
+      "heavy_particle_speed_max_m_s": "3e6",
+      "basis": "same numbers as the approved Na P02 limits (M3_P02_NUMERICAL_BUDGET.json), approved for He/He+/electron"
+    }
+  },
+  "startup_controls": {
+    "decision": "explicit .in keys, following the tracked-H precedent",
+    "keys": ["helium_ion_characteristic_speed_m_s", "helium_ion_to_sodium_reference_weight_ratio", "helium_to_sodium_reference_weight_ratio (optional)"],
+    "physical_defaults": "none"
+  },
+  "status_limits": "No observational agreement, physical excited-state or electron-energy claim, measured-forcing claim, moving-target extension, I23 formal PASS or M3 closure is granted. Numerical conservation tolerances and the 2%/3%/0.3% I23 gates are unchanged."
+}

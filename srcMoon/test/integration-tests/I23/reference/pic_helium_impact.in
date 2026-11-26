@@ -1,0 +1,82 @@
+! I23 one-event electron-impact transaction in a controlled, force-free frozen
+! LSO frame: e(bath) + 4He -> 4He+ + 2 e(bath), prescribed 10 eV Maxwellian bath.
+! Build the Na (weight reference), He and He+ species with the source-bound
+! zero-acceleration recipe. The parent and its He+ product stay at rest far
+! from the sphere. This compact mesh is a transaction fixture with no role in
+! the M1 mesh-convergence campaign. Normal SPICE startup and the Moon runtime
+! reader require a complete case. The wrapper writes copies selecting each
+! mover, replaces the maximum substep with the flight interval in seconds and
+! appends the explicit He/He+ timestep/weight keys from the I23 case.
+#begin application: moon
+spice_path = /home/vtenishe/SPICE
+surface_geometry = sphere
+surface_mesh_resolution_m = 1200000
+
+mesh_profile = custom
+mesh_near_surface_cell_size_m = 960000
+mesh_near_surface_extent_m = 200000
+mesh_far_field_cell_size_m = 3840000
+mesh_far_field_extent_m = 10000000
+mesh_outer_cell_size_m = 208452000
+mesh_output_tecplot = false
+mesh_angular_resolution_m_by_sza = 0:960000,30:960000,60:480000,90:480000,120:480000,180:960000
+mesh_terminator_half_width_deg = 15
+mesh_polar_cap_start_latitude_deg = 75
+mesh_polar_resolution_m = 480000
+
+lola_product_id = LDEM_4
+lola_image_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.IMG
+lola_label_file = /data/vtenishe/moon_validation_data/lola/raw/LDEM_4.LBL
+surface_cea_file = unused-sphere.cea
+surface_tecplot_file = unused-sphere.dat
+m2_environment = disabled
+
+simulation_start_utc = 2009-01-24T00:00:00
+simulation_environment_mode = frozen
+random_seed = 731993
+profile_altitude_near_maximum_m = 200000
+profile_altitude_near_step_m = 5000
+profile_altitude_middle_maximum_m = 1000000
+profile_altitude_middle_step_m = 25000
+profile_altitude_far_maximum_m = 10000000
+profile_altitude_far_points_per_decade = 8
+profile_solar_zenith_angles_deg = 0,30,60,90,120,180
+profile_include_body_fixed_poles = true
+profile_include_shell_average = true
+profile_shell_angular_weighting = solid-angle
+
+limb_observer = earth
+limb_plane = sun-moon-earth
+limb_sides = both
+limb_branch_reference = projected-sun
+limb_tangent_maximum_altitude_m = 1000000
+tail_center_direction = anti-lunar
+tail_map_coordinate_system = j2000-ra-dec
+tail_map_display_orientation = west-right
+tail_map_half_width_deg = 7.5
+tail_beam_diameter_deg = 1.0
+tail_exposure_duration_s = 120
+tail_beam_response = unresolved
+tail_temporal_operator = exposure-average
+tracing_clock_mode = common-time
+particle_tracing_mover = force-cut-surface-second-order
+tracing_relative_tolerance = 1e-7
+tracing_absolute_position_tolerance_m = 1e-5
+tracing_absolute_velocity_tolerance_m_s = 1e-7
+tracing_geometry_tolerance_m = 1e-6
+tracing_time_tolerance_s = 1e-9
+tracing_minimum_substep_s = 1e-9
+tracing_maximum_substep_s = 8192
+tracing_adaptive = true
+tracing_maximum_substeps = 1000000
+tracing_maximum_refinements = 64
+tracing_maximum_interactions = 100000
+tracing_maximum_same_point_interactions = 64
+tracing_field_frame = LSO
+tracing_electric_field_v_m = 0,0,0
+tracing_magnetic_field_t = 0,0,0
+chemistry_mode = rate-services
+! The only installed particle reaction is the I23 electron-bath channel.
+! No D04 photon rate is requested.
+ion_surface_boundary = ideal-collector
+#end application

@@ -428,6 +428,21 @@ bool ValidateTracingConfiguration(const Configuration& c,std::string* error) {
     *error="hydrogen_characteristic_speed_m_s and hydrogen_to_sodium_reference_weight_ratio must both be finite and positive";
     return false;
   }
+  // He+ follows the same explicit pair rule as reaction-born H. The optional
+  // neutral He ratio is independent: zero keeps the legacy source-derived He
+  // weight, otherwise it must be a finite positive number.
+  const double heIonSpeed=c.heliumIonCharacteristicSpeedMS;
+  const double heIonRatio=c.heliumIonToSodiumReferenceWeightRatio;
+  if (!((heIonSpeed==0 && heIonRatio==0) ||
+        (heIonSpeed>0 && heIonRatio>0 && std::isfinite(heIonSpeed) && std::isfinite(heIonRatio)))) {
+    *error="helium_ion_characteristic_speed_m_s and helium_ion_to_sodium_reference_weight_ratio must both be finite and positive";
+    return false;
+  }
+  if (!(c.heliumToSodiumReferenceWeightRatio==0 ||
+        (c.heliumToSodiumReferenceWeightRatio>0 && std::isfinite(c.heliumToSodiumReferenceWeightRatio)))) {
+    *error="helium_to_sodium_reference_weight_ratio must be finite and positive when supplied";
+    return false;
+  }
   if(c.ionSurfaceBoundary!="unsupported" && c.ionSurfaceBoundary!="ideal-collector") {
     *error="ion_surface_boundary must be unsupported or ideal-collector";return false;
   }
@@ -668,6 +683,8 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "tracing_geometry_tolerance_m","tracing_time_tolerance_s",
       "tracing_minimum_substep_s","tracing_maximum_substep_s","tracing_adaptive",
       "hydrogen_characteristic_speed_m_s","hydrogen_to_sodium_reference_weight_ratio",
+      "helium_ion_characteristic_speed_m_s","helium_ion_to_sodium_reference_weight_ratio",
+      "helium_to_sodium_reference_weight_ratio",
       "tracing_maximum_substeps","tracing_maximum_refinements",
       "tracing_maximum_interactions","tracing_maximum_same_point_interactions",
       "tracing_electric_field_v_m","tracing_magnetic_field_t","tracing_field_frame"};
@@ -715,7 +732,10 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
         "or force-cut-surface-second-order");return false;
   }
   for (auto item : {std::make_pair("hydrogen_characteristic_speed_m_s",&candidate.hydrogenCharacteristicSpeedMS),
-                    std::make_pair("hydrogen_to_sodium_reference_weight_ratio",&candidate.hydrogenToSodiumReferenceWeightRatio)}) {
+                    std::make_pair("hydrogen_to_sodium_reference_weight_ratio",&candidate.hydrogenToSodiumReferenceWeightRatio),
+                    std::make_pair("helium_ion_characteristic_speed_m_s",&candidate.heliumIonCharacteristicSpeedMS),
+                    std::make_pair("helium_ion_to_sodium_reference_weight_ratio",&candidate.heliumIonToSodiumReferenceWeightRatio),
+                    std::make_pair("helium_to_sodium_reference_weight_ratio",&candidate.heliumToSodiumReferenceWeightRatio)}) {
     if (settings.count(item.first) && !ParsePositiveFinite(settings[item.first].value,item.second)) {
       *error=At(settings[item.first],std::string(item.first)+" must be finite and positive");
       return false;

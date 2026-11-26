@@ -16,6 +16,9 @@ MAINLIBOBJ += species/ElectronImpact.o
 MAINLIBOBJ += species/Photochemistry.o species/MoonChargeExchange.o species/ReactionExecution.o
 MAINLIBOBJ += MoonReactionAdapter.o MoonReactionController.o MoonTracing.o
 MAINLIBOBJ += MoonNativeReactionRegistration.o MoonSemanticRandom.o MoonSodiumCohort.o MoonSodiumCaptureCohort.o
+# I23 prescribed electron-bath owner. Linking it installs nothing: a caller must
+# register it explicitly with a reviewed admission before amps_init.
+MAINLIBOBJ += MoonHeliumImpactCohort.o
 MAINLIBOBJ += MoonTransportClock.o species/PiecewiseHazard.o species/ReactionExposure.o
 # Approved P01--P09 component services. These are the same production kernels
 # linked by supporting probes; linking does not select missing state/threshold

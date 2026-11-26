@@ -339,6 +339,10 @@ preparation and scientific acceptance each keep their actual status.
 3. Approve the stationary ⁴He I23 pilot at the proposed plasma inputs.
    Review the modeled observables and their source-supported error limits
    before physical activation or any extension to moving targets.
+   *Resolved 2026-11-25 for the coupling scope:* the user approved the
+   inputs and a narrow observable admission (heavy budgets and chronology).
+   Moving targets and velocity-sensitive observables remain open.
+   [Record](integration-tests/I23/HELIUM_ADMISSION_20261125.md)
 4. Approve the I24 source-review order. Select the first transport case and
    its applicable energy/angle envelope after quantitative source review.
 

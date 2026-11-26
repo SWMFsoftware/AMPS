@@ -104,16 +104,20 @@ class CampaignBudget:
     def remaining(self):
         return max(0.0, self.wall_s-self.reserve_s-(time.monotonic()-self.started))
 
-    def run(self, command, cwd, log, *, output, allocated_cores=0, environment=None):
+    def run(self, command, cwd, log, *, output, allocated_cores=0, environment=None,
+            artifact_root=None):
         """Run a real command; record limits, resource history and exact argv.
 
         ``allocated_cores`` applies to a reserved MPI job, not the observer.
         CPU-hour usage includes setup/failed attempts for that allocation. A
         caller running several jobs must retain one allocation ledger; this
         class never grants a fresh campaign allowance to each seed.
+        Use artifact_root for a family of sequential children to enforce the
+        disk limit on the whole family while keeping individual resource logs.
         """
         output.mkdir(parents=True, exist_ok=True)
         log.parent.mkdir(parents=True, exist_ok=True)
+        artifact_root = output if artifact_root is None else Path(artifact_root)
         # Become a Linux child subreaper before launching. A daemonized MPI
         # child is then adopted here even if its original parent exits between
         # two /proc polls. Pre-existing children are explicitly excluded.
@@ -154,9 +158,12 @@ class CampaignBudget:
                     except (OSError, ValueError, IndexError):
                         pass
                 peak = max(peak, rss)
-                if now-last_scan >= 5:
+                code = proc.poll()
+                # A quick final child can add output between scans. Check the
+                # complete shared directory even when that child already exited.
+                if now-last_scan >= 5 or (code is not None and artifact_root != output):
                     artifact_size=0
-                    for path in output.rglob('*'):
+                    for path in artifact_root.rglob('*'):
                         try:
                             if path.is_file() and not path.is_symlink():artifact_size+=path.stat().st_size
                         except FileNotFoundError:
@@ -168,7 +175,6 @@ class CampaignBudget:
                 used = allocated_cores*(now-self.started)/3600
                 sampled_cpu=sum(cpu_ticks.values())/ticks_per_second/3600
                 trace.write(f'{now-self.started:.6f},{rss},{artifact_size},{used:.9f},{sampled_cpu:.9f}\n');trace.flush()
-                code = proc.poll()
                 if code is not None and not known:
                     # /proc enumeration is not atomic. A fast launcher can
                     # fork after the preceding table's PID list was captured,
@@ -183,7 +189,7 @@ class CampaignBudget:
                     known.update({pid: record[2] for pid, record in table.items()
                         if record[0] == os.getpid() and pid not in baseline_children})
                     known = descendants(table, proc.pid, known)
-                    if not known:
+                    if not known and artifact_size < self.artifact_bytes and self.remaining() > 0:
                         break
                 if self.remaining() <= 0:
                     reason = 'aggregate campaign work deadline exhausted (cleanup reserve protected)'
@@ -198,7 +204,7 @@ class CampaignBudget:
                     if line.startswith('MemAvailable:'):available=int(line.split()[1])*1024
                 if 0<=available<=self.host_free_floor_bytes:
                     reason='host available memory reached configured reserve'
-                elif shutil.disk_usage(output).free<=self.disk_free_floor_bytes:
+                elif shutil.disk_usage(artifact_root).free<=self.disk_free_floor_bytes:
                     reason='filesystem free space reached configured reserve'
                 if reason:
                     terminate_tree(proc, known, min(5.0, max(.1, self.reserve_s/2)))

@@ -158,6 +158,69 @@ class FormalOwnerControls(unittest.TestCase):
                     folder/'I24/result.json',folder/'I24/stdout.log',code)
                 self.assertEqual(aggregate_result['status'],expected)
 
+    def test_i23_pic_registration_requires_explicit_helium_profile(self):
+        # Validate the actual aggregate CLI before it configures or runs a case.
+        command = [sys.executable, '-B', str(owner.TEST/'run_all_test.py'), '--skip-build',
+                   '--only', 'I23', '--i23-pic-producer', 'absent-producer.json']
+        attempt = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(attempt.returncode, 2)
+        self.assertIn('--i23-pic-producer requires --i23-helium-profile', attempt.stderr)
+        command = [sys.executable, '-B', str(owner.TEST/'run_all_test.py'), '--skip-build',
+                   '--only', 'I24', '--i23-helium-profile', 'absent-profile.json']
+        attempt = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(attempt.returncode, 2)
+        self.assertIn('--i23-helium-profile requires I23 in regression mode', attempt.stderr)
+
+    def test_i23_report_keeps_stronger_child_status(self):
+        # Bookkeeping fixtures only: no MPI, no physical evidence survives.
+        for statuses, expected in ((('PASS','PASS'),'SKIPPED'),(('PASS','FAIL'),'FAIL'),
+                                   (('FAIL','ERROR'),'ERROR'),(('SKIPPED','PASS'),'SKIPPED')):
+            with self.subTest(statuses=statuses), tempfile.TemporaryDirectory() as work:
+                root = Path(work)
+                iterator = iter(statuses)
+                def issue_control(command, cwd, log, *, output):
+                    child = Path(command[command.index('--output-dir')+1])
+                    child.mkdir()
+                    status = next(iterator)
+                    (child/'result.json').write_text(json.dumps({'status':status,
+                        'reason':'temporary orchestration fixture'}))
+                    index = {}
+                    if status == 'FAIL':
+                        if child.name == 'helium-electron-bath':
+                            (child/'native_receipt.json').write_text('{"fixture":true}')
+                        else:
+                            csv = child/'fixture-events-rank-0.csv'
+                            csv.write_text('temporary orchestration fixture')
+                            index = {'result_files':{csv.name:owner.sha(csv)}}
+                    (child/'run_manifest.json').write_text(json.dumps(index))
+                    return {'reason':None,'returncode':{'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}[status]}
+                with patch.object(owner.CampaignBudget,'run',side_effect=issue_control):
+                    result = owner.run('I23',owner.ROOT/'amps',owner.ROOT/'srcMoon/examples/m3_reaction_rates.in',
+                                       root,i23_profile=root/'fixture-profile',i23_pic_producer=root/'fixture-build')
+                self.assertEqual(result['formal_status'],'SKIPPED / NOT QUALIFIED')
+                self.assertEqual(result['status'],expected)
+                self.assertEqual(tuple(row['status'] for row in result['supporting_checks']),statuses)
+                aggregate.validate_supporting_results(result,result['status'])
+                self.assertEqual((root/'I23/receipt.txt').is_file(),'FAIL' in statuses)
+
+    def test_i23_absent_and_corrupt_profile_have_different_statuses(self):
+        # The real child CLI authenticates the profile before compiling. An
+        # absent profile is a dependency SKIP; wrong bytes are an ERROR.
+        for exists,expected,code in ((False,'SKIPPED',77),(True,'ERROR',2)):
+            with self.subTest(existing_corrupt_profile=exists),tempfile.TemporaryDirectory() as work:
+                folder=Path(work)
+                profile=folder/'profile.json'
+                if exists:profile.write_text('{}')
+                result=owner.run('I23',owner.ROOT/'amps',owner.ROOT/'srcMoon/examples/m3_reaction_rates.in',
+                    folder,i23_profile=profile,wall_seconds=120)
+                self.assertEqual(result['supporting_checks'][0]['status'],expected)
+                self.assertEqual(result['status'],expected)
+                self.assertEqual(result['formal_status'],'SKIPPED / NOT QUALIFIED')
+                self.assertFalse((folder/'I23/receipt.txt').exists())
+                aggregate_result=aggregate.load_runner_result('I23',owner.TEST/'integration-tests/I23/test.py',
+                    folder/'I23/result.json',folder/'I23/stdout.log',code)
+                self.assertEqual(aggregate_result['status'],expected)
+
     def test_literal_global_registration(self):
         self.assertEqual(aggregate.validate_registry(),[])
         self.assertEqual(global_owner.audit_architecture(),[])

@@ -576,11 +576,15 @@ def load_tests(loader,tests,pattern):
     import test_m3_qualification_protocol
     import test_m3_transport_clock_protocol
     import test_m3_normal_cohort
+    import test_m3_campaign
+    import test_m3_i23_electron_bath
     tests.addTests(loader.loadTestsFromModule(test_m3_reaction_controller))
     tests.addTests(loader.loadTestsFromModule(test_m3_supporting_protocol))
     tests.addTests(loader.loadTestsFromModule(test_m3_qualification_protocol))
     tests.addTests(loader.loadTestsFromModule(test_m3_transport_clock_protocol))
     tests.addTests(loader.loadTestsFromModule(test_m3_normal_cohort))
+    tests.addTests(loader.loadTestsFromModule(test_m3_campaign))
+    tests.addTests(loader.loadTestsFromModule(test_m3_i23_electron_bath))
     return tests
 
 

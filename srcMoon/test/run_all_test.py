@@ -675,6 +675,9 @@ def run_test(
     i24_mass_inventory: Path | None = None,
     i24_pic_producer: Path | None = None,
     i24_pic_refinement: bool = False,
+    i23_helium_profile: Path | None = None,
+    i23_pic_producer: Path | None = None,
+    i23_pic_refinement: bool = False,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -728,6 +731,14 @@ def run_test(
                 command.append("--i24-pic-refinement")
             if i24_mass_inventory is not None:
                 command.extend(["--i24-mass-inventory",str(i24_mass_inventory)])
+        if test_id=="I23" and i23_helium_profile is not None:
+            # Approved controlled electron bath (2026-11-25); supporting only.
+            command.extend(["--i23-helium-profile",str(i23_helium_profile),
+                            "--test-runtime-seconds",str(test_runtime_seconds)])
+            if i23_pic_producer is not None:
+                command.extend(["--i23-pic-producer",str(i23_pic_producer)])
+            if i23_pic_refinement:
+                command.append("--i23-pic-refinement")
     else:
         command = [
             sys.executable,
@@ -815,6 +826,12 @@ def main() -> int:
         help="extend the I24 PIC matrix with fixed-horizon timestep and fixed-population weight refinement")
     parser.add_argument("--i24-mass-inventory",type=Path,
         help="use a relocated source-backed NIST mass inventory for the I24 sodium comparison")
+    parser.add_argument("--i23-helium-profile",type=Path,
+        help="run the approved controlled 10 eV electron-bath 4He ensemble with this authenticated state profile")
+    parser.add_argument("--i23-pic-producer",type=Path,
+        help="source-bound Na/He/He+ producer manifest for first/second-order I23 native PIC tests at 1 and 8 ranks")
+    parser.add_argument("--i23-pic-refinement",action="store_true",
+        help="extend the I23 PIC matrix with fixed-horizon timestep and fixed-population weight refinement")
     parser.add_argument(
         "--campaign-mode",
         choices=("regression", "qualification"),
@@ -905,6 +922,12 @@ def main() -> int:
         parser.error("--i24-pic-refinement requires --i24-pic-producer")
     if args.i24_mass_inventory is not None and args.i24_sodium_lock is None:
         parser.error("--i24-mass-inventory requires --i24-sodium-lock")
+    if args.i23_helium_profile is not None and ("I23" not in selected or args.campaign_mode!="regression"):
+        parser.error("--i23-helium-profile requires I23 in regression mode")
+    if args.i23_pic_producer is not None and args.i23_helium_profile is None:
+        parser.error("--i23-pic-producer requires --i23-helium-profile")
+    if args.i23_pic_refinement and args.i23_pic_producer is None:
+        parser.error("--i23-pic-refinement requires --i23-pic-producer")
 
     output_root = (
         args.output_dir.resolve()
@@ -1029,6 +1052,7 @@ def main() -> int:
             args.m2_cluster_execute,
             m3_input, args.i21_cohort_plan, args.i21_cohort_plan_sha256,
             args.i24_sodium_lock,args.i24_mass_inventory,args.i24_pic_producer,args.i24_pic_refinement,
+            args.i23_helium_profile,args.i23_pic_producer,args.i23_pic_refinement,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)

@@ -29,6 +29,10 @@ WORKFLOW=('srcMoon/test/build_m3_source_qualification.py','srcMoon/test/build_m2
  'utility/chemical_database/state_profiles/compile_recipe/export.cpp')
 EXPECTED_MAPPING={'Na':'23Na:ground','NA_PLUS':'23Na+:ground'}
 GROUND_CAPTURE_MAPPING = {**EXPECTED_MAPPING, 'H': '1H:ground'}
+# I23 prescribed electron-bath case: neutral Na is the compiled weight
+# reference required by normal Moon startup; He is the stationary parent and
+# He+ the tracked ion. The electrons are untracked bath terms.
+HELIUM_IMPACT_MAPPING = {'Na': '23Na:ground', 'He': '4He:ground', 'He_PLUS': '4He+:ground'}
 
 
 def strict(path):
@@ -47,9 +51,12 @@ def validate_mapping(path):
     # The third tracked particle is the fast H atom formed from the incident
     # plasma proton. Only the collision fixture requests this ABI. The order
     # fixes the species indices shared by the native PIC allocator and mover.
+    # The I23 helium mapping is a separate explicit ABI (Na reference, He, He+).
     if not isinstance(value, dict) or list(value.items()) not in (
-            list(EXPECTED_MAPPING.items()), list(GROUND_CAPTURE_MAPPING.items())):
-        raise ValueError('expected ordered ground-state mapping for Na, NA_PLUS and optionally H')
+            list(EXPECTED_MAPPING.items()), list(GROUND_CAPTURE_MAPPING.items()),
+            list(HELIUM_IMPACT_MAPPING.items())):
+        raise ValueError('expected ordered ground-state mapping for Na, NA_PLUS and optionally H, '
+                         'or the I23 Na, He, He_PLUS mapping')
     return value
 
 

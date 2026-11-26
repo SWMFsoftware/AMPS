@@ -38,6 +38,60 @@ identities and a structural preparation PASS do not launch particle chemistry
 or change this formal gate. Missing inputs remain SKIPPED; corrupt identities
 are ERROR. Full source-family, product and predecessor requirements remain.
 
+## Prescribed electron-bath coupling (2026-11-25)
+
+The approved controlled bath is now coupled to the normal reaction
+controller through the explicit startup owner
+[`MoonHeliumImpactCohort`](../../../MoonHeliumImpactCohort.h). The bath is an
+isotropic zero-drift Maxwellian with `k_B T_e = 10 eV` and
+`n_e ∈ {0, 1e6, 1e7} m⁻³`, at rest in frozen LSO and acting on stationary
+⁴He. Events use the production reduced-reservoir composer under the reviewed
+narrow-scope admission. That admission covers heavy-particle budgets and
+chronology only. [Approval record](HELIUM_ADMISSION_20261125.md) ·
+[Test contract](ELECTRON_BATH_COUPLING_CONTRACT.md)
+
+Two supporting children run under this owner:
+
+- `run_helium_impact.py` compiles an MPI adapter against the production
+  sources. It runs 32,768 parents at each density on 1 and 8 ranks and
+  scores everything independently: rate, lifetime, every reservoir moment
+  and the refusal controls.
+- `run_pic_helium_impact.py` links the probe against a source-bound
+  Na/He/He⁺ producer. It runs one keyed event through normal startup, both
+  movers, the controller, the allocator and MPI. It adds a zero-density
+  control and, with `--refinement`, 1/2/4 steps and ½/¼ weights.
+
+Build the producer in a disposable checkout with the
+[source-qualification builder](../../source_qualification_build/README.md)
+and the [Na/He/He⁺ mapping](reference/compiled_species.json):
+
+```bash
+/usr/bin/python3 -B srcMoon/test/build_m3_source_qualification.py \
+  --checkout "$private_checkout" \
+  --profile test_output/srcMoon/m3-followup-MfThQfny/atomic-family/profile.json \
+  --mapping srcMoon/test/integration-tests/I23/reference/compiled_species.json \
+  --reference-problem homogeneous-zero-acceleration \
+  --spice-path /home/vtenishe/SPICE/cspice --spice-kernels /home/vtenishe/SPICE/Kernels \
+  --wall-seconds 1200 --output-dir "$build_receipt"
+```
+
+Run the children individually, or through the owner as shown in the contract:
+
+```bash
+out=$(mktemp -d -p "$PWD/test_output/srcMoon" i23-bath-XXXXXXXX)
+/usr/bin/python3 -B srcMoon/test/integration-tests/I23/run_helium_impact.py \
+  --output-dir "$out/ensemble" --mpi-ranks 8
+/usr/bin/python3 -B srcMoon/test/integration-tests/I23/run_pic_helium_impact.py \
+  --producer-manifest "$build_receipt/normal_build_evidence.json" \
+  --refinement --output-dir "$out/pic"
+```
+
+Inspect `result.json` and `comparison.csv/png` for the ensemble, and
+`refinement.csv`, `step_populations.png` and the per-rank CSV tables for the
+PIC matrix. Regenerate the admission with `prepare_helium_admission.py` when
+auditing it. A PASS is supporting evidence; formal I23 stays SKIPPED for its
+predecessors and for the physics listed in the approval record.
+
 ## Stationary helium pilot
 
 Use a successful [atomic-family preparation](../../../../utility/chemical_database/state_profiles/ATOMIC_FAMILY_CONTRACT.md)

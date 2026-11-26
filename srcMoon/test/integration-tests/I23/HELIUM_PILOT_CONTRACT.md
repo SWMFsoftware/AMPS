@@ -28,3 +28,12 @@ separate quadrature of the entire interval for the closure check. Uncertainty
 from those integrals is numerical. The fraction sets an upper limit on the
 eligible collisions in this particular model. Individual sampled beam energies
 and emitted-electron angle/energy coverage can reduce the experimental overlap.
+
+**Update 2026-11-25.** The user approved a narrow-scope admission for this
+stationary 10 eV reference: heavy-particle budgets and chronology only, with
+conservative upper-end recoil tolerances. The linked coupling uses it through
+`MoonHeliumImpactCohort`. Its tests follow
+[ELECTRON_BATH_COUPLING_CONTRACT.md](ELECTRON_BATH_COUPLING_CONTRACT.md),
+and the record is [HELIUM_ADMISSION_20261125.md](HELIUM_ADMISSION_20261125.md).
+The pilot itself is unchanged; it still exercises the missing-evidence
+refusal with an empty admission.

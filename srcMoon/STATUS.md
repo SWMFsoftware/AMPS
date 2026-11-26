@@ -1,6 +1,18 @@
 # `srcMoon` development and validation status
 
-**Status date:** 2026-11-24 UTC
+**Status date:** 2026-11-25 UTC
+
+**I23 electron-bath coupling.** The user-approved controlled 10 eV electron
+bath is coupled to the normal reaction controller through a new startup
+owner. Events use the production helium reservoir composer under a reviewed
+narrow-scope admission. Supporting tests passed: 165 ensemble checks and 223
+linked PIC checks. The rebuilt seven-case family passed 722 checks, and the
+nightly diff is zero bytes. Formal I21–I24 remain 4 SKIPPED.
+[Implementation, evidence and limits](#559-i23-prescribed-electron-bath-coupling--2026-11-25-utc)
+
+**M3 campaign runner.** The pinned five-case sodium family ran with one and
+eight MPI ranks. All 334 supporting checks passed. The four formal
+chemistry gates remain open. [Campaign implementation and results](#558-frozen-m3-development-family--2026-11-24-utc)
 
 **Current M3 chemistry development.** The 4.0 keV/u sodium capture
 provider now produces both heavy fragments and accounts for the incoming
@@ -5804,3 +5816,155 @@ position error fell from 1.67 mm to 0.103 mm. The latter campaign took
 169 s and peaked at 28.4 GB. [Checked-in shadow replay](../test_output/srcMoon/m3-production-aPrmWNe5/final-shadow/aggregate/I21/homogeneous/independent-audit/result.json) ·
 [Moving cohort summary](../test_output/srcMoon/m3-production-aPrmWNe5/i21-current-trajectory/summary.json) ·
 [Timing comparison figure](../test_output/srcMoon/m3-production-aPrmWNe5/i21-current-trajectory/campaign/I21/trajectory/independent-audit/numerical_comparison.png)
+
+## 5.58 Frozen M3 development family — 2026-11-24 UTC
+
+The new `run_m3_campaign.py` pins an ordered set of source-bound cases,
+provides one shared wall, RSS and artifact budget, and retains the existing
+individual physics runners. It indexes case and independent check outcomes
+in one CSV. Each I21 cohort additionally compares original parent fates and
+channels across one and eight MPI ranks at every matched timestep. Native
+first-hit and conservation scoring still uses independent source references.
+The four formal results are preserved with their own prerequisite records.
+[Campaign contract](test/qualification/CAMPAIGN_CONTRACT.md) ·
+[Plan and execution commands](test/qualification/README.md#frozen-chemistry-family)
+
+The active source revision is `74b15db8ac95dc72f355d065b83fe950e215ed6c`
+plus the new Python runner and audit changes. The source roadmap identity
+`712e1152bf50af6d9ee1dad8f8a585809ca8b92cf42ac6fc7a009f6c0253ee17`
+controls the early-development exception and resource budget. The canonical
+data roadmap identity
+`d10eca1c539f9cf82940236d9e1aa36af665d43e82ba475925950d582fbf49c4`
+controls the common science criteria and formal predecessor order.
+No raw files or roadmap thresholds changed.
+
+Two private source-matched SPICE builds passed, each at about 173 s, with
+`make -j16`, optimization and debug information after normal clean
+configuration. The standard nightly `make -j test_Moon` passed with a
+zero-byte diff on the current source revision. The family-runner controls
+passed eight tests, formal owner controls passed 11, the independent
+numerical suite passed 42 and the statistical/qualification suite passed
+31. [Build preparation and commands](../test_output/srcMoon/m3-family-t1soz40x/build.py) ·
+[Nightly receipt](../test_output/srcMoon/m3-family-t1soz40x/nightly-reference.json) ·
+[Family runner controls](../test_output/srcMoon/m3-family-t1soz40x/family-controls.log)
+
+The family uses the previously declared Na/Na⁺ quiet-Sun fixtures, the
+immutable D04 rate table SHA-256
+`3aa54915a08258371dbe975949e6afb2ab74618164fadca8bceebe876c926847`,
+the shared r14 lock SHA-256
+`9fd6272f652fa14e33517f1354d9dc3ee6bf47948a07b3438b3b9f4c7b14f0d8`
+and the NIST state inventory SHA-256
+`7c255c05398c9dbaf4d55a8b17550576884dd0c5710773d3f8bfb20cde6f7fa1`.
+The I21 source geometry, statistical keys and scientific case membership
+were held fixed when the plans were bound to the new builds. The formal
+I21–I24 owners still report SKIPPED for the recorded physics and I13–I20
+prerequisites. [Frozen family](../test_output/srcMoon/m3-family-t1soz40x/campaign.json) ·
+[Exact invocation](../test_output/srcMoon/m3-family-t1soz40x/campaign-command.json)
+
+The complete frozen family reported **5 PASS, 0 FAIL, 0 ERROR, 0 SKIPPED**
+and **334 independent checks passed** in **772.6 s**. The peak supervised
+process-tree RSS was 42.9 GB, and the final family output size was 4.45 GB.
+The separate formal readiness summary reported **4 SKIPPED**. Counts by
+supporting case were 22 illuminated I21, 28 shadowed I21, 22 moving I21,
+35 I24 ensemble and 227 I24 live particle/refinement checks. I21 matched all
+128 original parent histories in each of nine 1/8-rank pairs, across the 8,
+16 and 32-step cases. The maximum rank-to-rank serialized first-hit
+difference was exactly zero. [Family result](../test_output/srcMoon/m3-family-t1soz40x/campaign/result.json) ·
+[Comparison table](../test_output/srcMoon/m3-family-t1soz40x/campaign/comparison.csv) ·
+[Run manifest](../test_output/srcMoon/m3-family-t1soz40x/campaign/run_manifest.json)
+
+A separate mixed-input check reported SKIPPED for a missing I21 input and
+ERROR for an intentionally changed SHA-256 pin, and then passed all 35 checks
+of the real sodium capture ensemble. Neither failed input was launched.
+Follow-up reporting changes make `progress.json` finish at its terminal
+status and reject malformed or inconsistent independent child receipts.
+All 334 retained check records replayed identically against the final report
+schema, and all nine final family controls passed. [First mixed result](../test_output/srcMoon/m3-family-t1soz40x/mixed/result.json) ·
+[Retained result replay](../test_output/srcMoon/m3-family-t1soz40x/final-check-schema-replay.json) ·
+[Final controls](../test_output/srcMoon/m3-family-t1soz40x/family-controls-final.log)
+
+The final reporting rerun exercised both real I24 children after the
+intentionally unavailable and changed-pin cases. It retained **2 PASS,
+1 SKIPPED, 1 ERROR, 0 FAIL** and all **262 I24 checks passed**. The terminal
+`progress.json` and `result.json` are byte-identical. The global U16 owner
+passes and now executes the nine new controls in its existing 101-test
+orchestration battery. [Final reporting rerun](../test_output/srcMoon/m3-family-t1soz40x/final-reporting-replay/result.json) ·
+[Global U16](../test_output/srcMoon/m3-family-t1soz40x/global-u16/run_all_summary.json) ·
+[Orchestration log](../test_output/srcMoon/m3-family-t1soz40x/global-u16/U16/orchestration-controls.log)
+
+## 5.59 I23 prescribed electron-bath coupling — 2026-11-25 UTC
+
+Source revision `74b15db8ac95dc72f355d065b83fe950e215ed6c` plus the working
+tree. The source roadmap SHA-256 `712e1152…` governs the approved early-M3
+development, and the data-root roadmap `d10eca1c…` governs the common
+criteria and predecessor order. No raw data, roadmap threshold, test ID or
+reviewed reference changed. Evidence is under
+`test_output/srcMoon/i23-bath-uGAYf6qI/`.
+
+**User decisions.** Before implementation the user approved:
+
+- the controlled bath: `k_B T_e = 10 eV`, `n_e ∈ {0, 1e6, 1e7} m⁻³`,
+  isotropic and zero-drift, at rest in frozen LSO, uniform and constant,
+  stationary ⁴He only (this resolves decision 3 of the 2026-11-24
+  follow-up);
+- production reservoir products with a narrow observable scope: heavy
+  budgets and chronology only;
+- the threshold/state crosswalk (all products He⁺(1s), excited yield
+  unknown) and the Kim − Voronov slope spread (0.120) as the conditional-mean
+  bound;
+- conservative upper-end recoil tolerances (≤1095 m/s RMS, ≤0.0249 eV) and
+  He P02 limits equal to the Na values;
+- explicit He/He⁺ startup keys.
+
+[Approval record](test/integration-tests/I23/HELIUM_ADMISSION_20261125.md)
+
+**Production changes.**
+
+- New `MoonHeliumImpactCohort.{h,cpp}`, linked through the makefile, is an
+  explicit owner registered before particle allocation. It checks the
+  stationary, force-free domain on every accepted segment, uses the
+  production `HeliumElectronImpact::Compose`, and refuses invalid
+  registrations before startup.
+- `MoonInput` and `main_lib.cpp` gain the He⁺ timestep/weight pair and an
+  optional He weight ratio. A He⁺ build previously stopped in
+  `localTimeStep` ("species is not recognized"); a source-less He build
+  stopped dividing by a zero He production rate. Legacy behaviour is
+  unchanged when the keys are absent.
+
+**Admission evidence.** `prepare_helium_admission.py` derives the crosswalk
+(threshold difference 0.012611 eV plus a binary64/extended rounding
+allowance of about 6 × 10⁻³⁴ J) and the model-error file (slope error
+0.12003; upper RMS He⁺ speed bound 1094.7 m/s; kinetic bound 0.02486 eV).
+Both files are frozen and hash-pinned, and every run regenerates them byte
+for byte. The first ensemble attempt was ERROR: the stored binary64 24.6 eV
+fit threshold exceeded an extended-only rounding allowance. The allowance
+was corrected to cover the binary64 representation. The second attempt
+FAILed on an incorrect audit expectation (per-event rather than
+represented-population ledger totals); the audit now scores the totals, as
+the I24 audit does. Production code was not changed for it. Both attempts
+are retained.
+
+| Evidence | Result |
+| --- | --- |
+| Ensemble (`ensemble-3`) | PASS, 165 checks in 73 s. Coefficient `7.7606300991732e-16 m³/s`, matching Decimal Voronov to `1.2e-16`; 2% gate met. At `1e7 m⁻³`, 20,628 of 32,768 parents ionized at one optical depth; endpoint lifetime error 0.71% (gate 3%). Event-time error ≤ `2.3e-16` of the horizon. Zero density keeps every parent. Every event matched the reservoir: +1 e, +mₑ, −e, −I, zero momentum, `E_in = 45.418 eV`, `E_out = 20.831 eV`. Identical 1/8-rank histories. The `1e6` case reuses the keyed draws and tests linear scaling only. |
+| Linked PIC (`pic`) | PASS, 209 checks in 14 launches (176 s): both movers, 1/8 ranks, zero density, 1/2/4 steps, ½/¼ weights. The independent first event at `9.5855e7 s` was reproduced with zero ET error (bound `9.5e-7 s`). He⁺ held 2.625 represented atoms at rest. The bath recorded 2.625 incoming and 5.25 outgoing electrons; ledger closure met. Normal startup installed the He/He⁺ weights and He⁺ timestep from the new keys. |
+| Rebuilt producers | Na/Na⁺ (165 s), Na/Na⁺/H (162 s) and Na/He/He⁺ (153 s) all PASS through the clean source-bound Config/make. |
+| Family attempt 1 (`campaign`) | ERROR, preserved. Six cases PASS (499 checks). The I23 PIC probe failed to compile after the native refusal controls were added (C++ most-vexing-parse). |
+| Family attempt 2 (`campaign-2`) | PASS: 7 cases, **722 independent checks**, 0 FAIL/ERROR/SKIPPED, 1239 s, peak 42.9 GB, 4.7 GB output. Na cases 22/28/22/35/227 checks; I23 ensemble 165 and PIC 223, including six native registration refusals. Formal I21–I24 4 SKIPPED. |
+| Public aggregate (`formal-aggregate`) | `run_all_test.py --only I23` with the new flags: both supporting children PASS; I23 formal SKIPPED. |
+| Nightly (disposable checkout) | `make -j test_Moon` zero-byte diff, reviewed I04 `ed875cef…`. |
+| Controls | Orchestration battery 109 (7 new I23 admission controls), formal owners 14 (3 new), builder protocol 11, runtime configuration 74 (20 new He-key variants). The existing helium pilot passes 25 and reproduces the Kim comparison byte for byte. |
+
+**Open limits.**
+
+- Formal I23 needs same-campaign I13–I20, U16 and the frozen full family.
+- The admission does not cover He⁺ velocity or energy observables, moving
+  targets, drifting or structured baths, other temperatures, Ne/Ar/Na
+  electron impact, excited-He⁺ yields, or measured R4.1/D06 forcing.
+- The bath is not a lunar plasma model.
+- Neutral He keeps its legacy hard-coded timestep ratio (0.1 × Na).
+- A pre-existing `_NE_PLUS_SPEC_` weight-copy line in `main_lib.cpp` copies
+  Ne to Ne instead of Ne⁺. No current build compiles Ne⁺; it was not changed.
+
+[Contract](test/integration-tests/I23/ELECTRON_BATH_COUPLING_CONTRACT.md) ·
+[Run commands](RUN.md#i23-prescribed-electron-bath-coupling)

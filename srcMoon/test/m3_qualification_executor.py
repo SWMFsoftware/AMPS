@@ -370,8 +370,14 @@ def main():
     parser.add_argument('--amps',type=Path)
     parser.add_argument('--producer-evidence',type=Path,help='actual native receipt manifest; never an activation flag')
     parser.add_argument('--producer-evidence-sha256',help='explicit expected digest of that exact producer evidence')
+    parser.add_argument('--expected-plan-sha256',help='bind this launch to an already frozen cohort plan')
+    parser.add_argument('--wall-seconds',type=float,default=3600)
+    parser.add_argument('--development',action='store_true',
+        help='run supporting production checks under the early M3 development exception')
     args=parser.parse_args();value=run(args.case_plan,args.campaign_root,args.output_dir,args.amps,
-        args.producer_evidence,args.producer_evidence_sha256)
+        args.producer_evidence,args.producer_evidence_sha256,
+        expected_plan_sha256=args.expected_plan_sha256,wall_seconds=args.wall_seconds,
+        development=args.development)
     print(json.dumps(value,indent=2));return {'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}[value['status']]
 
 

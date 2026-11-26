@@ -1,0 +1,68 @@
+{
+  "schema": "srcMoon-I23-helium-electron-bath-case-v1",
+  "model_id": "I23-D05-Voronov-4He-10eV-inherited-reservoir-v1",
+  "approval": "reference/helium_admission_approval_20261125.json",
+  "profile_path": "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m3-followup-MfThQfny/atomic-family/profile.json",
+  "profile_sha256": "42943c73a5e26a4a6ad4c8fbf146bc2a8ada2004e439d06fb2c884763b2f71df",
+  "d05_cfit_sha256": "470ea3078c64159eece6a469314dde2356e2d6ccaf618f4eaecb46649d61a5cd",
+  "kim_comparison": {
+    "path": "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m3-i22-i23-E1QrJUHL/helium-final/kim_model_comparison.json",
+    "sha256": "fc1cc2d9ade770cc488d7d9bf7a20c9c442e882c931e42be667f3c41d9a9b3a0"
+  },
+  "ccc_diagnostic": {
+    "path": "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m3-source-search-9wqcZyI0/audit_native.json",
+    "sha256": "41ab6b0e86016a67609540ca96c8195eb30a9cffe03866f1f45abeb59d3fb429"
+  },
+  "bath": {
+    "thermal_energy_eV": "10",
+    "densities_m3": ["0", "1e6", "1e7"],
+    "primary_density_m3": "1e7",
+    "frame": "LSO"
+  },
+  "time_scale": "SPICE-ET-TDB-seconds-past-J2000",
+  "admission_files": {
+    "note": "frozen outputs of prepare_helium_admission.py; each run regenerates them and requires byte equality",
+    "crosswalk": {"path": "reference/helium_state_crosswalk.json", "sha256": "598659f3f4557ffb21ff9923a09cb033f7427ed507adbe4c2193bb1f313e985a"},
+    "model_error": {"path": "reference/helium_model_error.json", "sha256": "3d1570b561a8fccad65efb24e11dd14737fae26149ef13dec09d284d6202c677"}
+  },
+  "ensemble": {
+    "cohort": "I23-D05-4He-10eV-electron-bath-v1",
+    "seed": 731993,
+    "parents": 32768,
+    "optical_depth": "1",
+    "parent_weight": "3",
+    "ion_weight": "2"
+  },
+  "pic": {
+    "cohort": "I23-PIC-helium-electron-bath-v1",
+    "seed": 731993,
+    "position_m": ["1e7", "1001", "1003"],
+    "represented_atoms": "2.625",
+    "reference_weights": {"Na": "7", "He": "3.5", "He_PLUS": "0.875"},
+    "helium_to_sodium_reference_weight_ratio": "0.5",
+    "helium_ion_to_sodium_reference_weight_ratio": "0.125",
+    "helium_ion_characteristic_speed_m_s": "3e6",
+    "continuation_after_event_s": "0.0625"
+  },
+  "numerical_bounds": {
+    "note": "binary64/extended arithmetic allowances only, mirroring the reviewed I24 case; independent of physical model error and of the 2%/3%/0.3% gates",
+    "reservoir_mass_absolute_kg": "0",
+    "reservoir_mass_relative": "5e-14",
+    "reservoir_time_projection_absolute_s": "9.5367431640625e-07",
+    "reservoir_momentum_absolute_kg_m_s": "1e-36",
+    "reservoir_momentum_relative": "5e-14",
+    "reservoir_energy_absolute_J": "1e-31",
+    "reservoir_energy_relative": "5e-14",
+    "reservoir_unit_vector_tolerance": "5e-14",
+    "ledger_mass": ["1e-40", "5e-13"],
+    "ledger_momentum": ["1e-34", "5e-13"],
+    "ledger_energy": ["1e-29", "5e-13"],
+    "arithmetic_relative_tolerance": 5e-12
+  },
+  "numerical_bias_allocation": 0.003,
+  "acceptance": {
+    "coefficient_relative_error_max": 0.02,
+    "ensemble_lifetime_relative_error_max": 0.03,
+    "u16_coefficient_relative_error_max": 1e-12
+  }
+}

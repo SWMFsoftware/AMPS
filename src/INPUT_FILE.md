@@ -1027,6 +1027,27 @@ individual daughter correction needed to preserve the reacted population.
 The I24 runner writes both chosen values in each retained `moon.in`.
 [I24 input and run instructions](../srcMoon/test/integration-tests/I24/README.md)
 
+### Moon helium time step and reference weights
+
+Reaction-born He⁺ has no primary source. Supply both He⁺ fields when the
+executable tracks He⁺ (`_HE_PLUS_SPEC_ >= 0`), and omit both otherwise. The
+parser validates the pair together. Normal startup checks it against the
+compiled species table before mesh allocation. Neither field has a physical
+default.
+
+| Key | Input type and units | Use by AMPS |
+|---|---|---|
+| `helium_ion_characteristic_speed_m_s` | Finite positive real, m/s | Reference speed for the He⁺ cell-crossing time `0.3 * L / speed` in seconds, for a cell of characteristic size `L` in metres. |
+| `helium_ion_to_sodium_reference_weight_ratio` | Finite positive real, dimensionless | Sets the He⁺ reference model-particle weight `W_He+ = ratio * W_Na`. |
+| `helium_to_sodium_reference_weight_ratio` | Optional finite positive real, dimensionless | Sets `W_He = ratio * W_Na` for neutral He parents that no registered He source injects. When it is omitted, the legacy weight derived from an enabled He source rate is unchanged. Startup refuses the key if neutral He is not compiled. |
+
+Neutral He keeps its legacy local time step, 0.1 times the Na step. Each
+event composer sets the individual daughter correction that preserves the
+represented population for any chosen reference weight. Na remains the
+compiled weight-reference species. The I23 electron-impact runner writes
+the chosen values in each retained `moon.in`.
+[I23 input and run instructions](../srcMoon/test/integration-tests/I23/README.md)
+
 ### Optional Moon physical-time cut-cell tracing
 
 Set `particle_tracing_mover` to `force-cut-surface-first-order` or

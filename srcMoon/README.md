@@ -7,7 +7,8 @@ electron-impact pilot. The production charge-exchange test follows both
 daughters through lunar particle transport and records the corresponding
 incident-proton exchange. Formal I21–I24 results and the physical coverage
 of each case are tracked in the [current status](STATUS.md#557-linked-m3-chemistry-development--2026-11-24-utc).
-[Run the sodium charge-exchange case](RUN.md#i24-sodium-charge-exchange-at-40-kevu)
+[Run the sodium charge-exchange case](RUN.md#i24-sodium-charge-exchange-at-40-kevu) ·
+[Run the full sodium development family](test/qualification/README.md#frozen-chemistry-family)
 
 The November 16 M2 completion work adds opt-in finite-disc terrain forcing,
 review-gated December thermal execution, normal-run I19 campaign dispatch and
@@ -1554,3 +1555,44 @@ initial projectile kinetic energy plus released reaction energy to H. It
 writes this bound and its numerical weight ratio of 0.125 to the four
 mover/layout input decks. The two-body event provider calculates the actual
 recoil of each daughter. [Input field definitions](../src/INPUT_FILE.md#moon-neutral-hydrogen-time-step-and-reference-weight)
+
+### Prescribed electron-bath coupling for I23 (2026-11-25)
+
+The explicit startup owner `Moon::Chemistry::HeliumImpactCohort`
+([header](MoonHeliumImpactCohort.h)) couples a declared electron bath to the
+normal reaction controller:
+
+```text
+e(bath) + 4He(ground) -> 4He+(1s ground) + 2 e(bath)
+```
+
+The bath is the user-approved controlled reference: an isotropic, zero-drift
+Maxwellian with `k_B T_e = 10 eV` and `n_e ∈ {0, 1e6, 1e7} m⁻³`, at rest in
+the frozen LSO frame, spatially uniform and constant in time. It is not a
+lunar plasma model. It has no wake or shadow structure, no solar-wind drift
+and no measured D06 forcing.
+
+The hazard is `n_e k_Voronov(T_e)` in s⁻¹. The owner registers it as a
+trajectory-dependent channel, so every accepted mover segment is checked.
+A moving or accelerated He parent stops the run rather than using a rate
+outside the stationary-target domain. Zero density gives zero hazard. Invalid
+density, temperature, drift or frame is refused before the particle buffer
+exists.
+
+At an accepted event the production `HeliumElectronImpact::Compose` supplies
+the He⁺ packet, which inherits the parent velocity, and the signed electron
+reservoir. For a stationary parent the per-event bath change is +1 electron,
++mₑ, −e and −I, with zero momentum. The composer refuses to commit without
+the reviewed admission. The user approved a narrow scope on 2026-11-25:
+heavy-particle number, charge and mass budgets and event chronology. Omitted
+He⁺ recoil up to about 1.1 km/s RMS keeps velocity- and energy-sensitive He⁺
+observables unadmitted. [Approval and derived evidence](test/integration-tests/I23/HELIUM_ADMISSION_20261125.md)
+
+The registration happens explicitly in code before `amps_init`; no `.in`
+key installs this owner. The generic PIC electron-impact executor stays
+disabled. A He/He⁺ executable requires the explicit timestep and
+reference-weight keys described in
+[INPUT_FILE.md](../src/INPUT_FILE.md#moon-helium-time-step-and-reference-weights).
+Na remains compiled as the weight-reference species. Supporting MPI-ensemble
+and linked-PIC tests are owned by I23, and formal I23 remains SKIPPED.
+[I23 tests and commands](test/integration-tests/I23/README.md#prescribed-electron-bath-coupling-2026-11-25)

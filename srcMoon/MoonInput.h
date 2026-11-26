@@ -179,6 +179,16 @@ struct Configuration {
   // Zero for both fields denotes omission in a build without tracked H.
   double hydrogenCharacteristicSpeedMS=0;
   double hydrogenToSodiumReferenceWeightRatio=0;
+  // Reaction-born He+ has no primary source. Its cell-crossing speed in m/s
+  // (for the 0.3*cell/speed timestep estimate) and its dimensionless reference
+  // weight relative to Na are explicit numerical case choices, required as a
+  // pair whenever He+ is compiled. Zero for both denotes omission.
+  double heliumIonCharacteristicSpeedMS=0;
+  double heliumIonToSodiumReferenceWeightRatio=0;
+  // Optional dimensionless He/Na reference-weight ratio. Zero (omitted) keeps
+  // the legacy He weight derived from an enabled He source rate; a positive
+  // value is required for a He build whose parents are not source-injected.
+  double heliumToSodiumReferenceWeightRatio=0;
   bool tracingAdaptive=false;
   int tracingMaximumSubsteps=0,tracingMaximumRefinements=0;
   int tracingMaximumInteractions=0,tracingMaximumSamePointInteractions=0;

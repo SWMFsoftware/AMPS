@@ -1376,3 +1376,25 @@ artifact directory. [Commands and result locations](integration-tests/I24/README
 Add `--i24-pic-refinement` to that command to include second-order checks
 at three time-step and three reference-weight levels, keeping the proton
 beam, parent population and final time fixed. [Levels and outputs](integration-tests/I24/README.md#time-step-and-particle-weight-refinement)
+
+### M3 family runner
+
+Use the [frozen-family campaign](qualification/README.md#frozen-chemistry-family)
+to replay several source-bound I21 cohorts and both I24 sodium comparisons
+under one wall, memory and artifact budget. It uses the existing registered
+science tests and formal readiness owners. The current I22 and I23
+readiness results therefore appear alongside the sodium development results.
+The family plan also accepts the two I23 electron-bath kinds,
+`i23-helium-ensemble` (profile pin) and `i23-helium-pic` (profile and
+Na/He/He⁺ producer pins).
+
+### I23 prescribed electron-bath coupling
+
+The I23 owner accepts `--i23-helium-profile`, `--i23-pic-producer` and
+`--i23-pic-refinement` in regression mode. They run the approved controlled
+10 eV bath as two supporting children, an MPI provider ensemble and a linked
+PIC matrix, while formal I23 remains SKIPPED. The admission and protocol
+controls (`test_m3_i23_electron_bath.py`) run inside the registered U16
+orchestration battery. The He/He⁺ `.in` key controls run in
+`test_m3_runtime_configuration.py`. [Contract](integration-tests/I23/ELECTRON_BATH_COUPLING_CONTRACT.md) ·
+[Approval record](integration-tests/I23/HELIUM_ADMISSION_20261125.md)

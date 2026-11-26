@@ -2,7 +2,9 @@
 """Own the existing I21--I24 formal gates and retain their actual scope.
 
 The I21 owner can execute a pinned fixed or moving cohort. I24 can exercise a
-specified sodium event-plan cohort and a separate linked PIC mover matrix.
+specified sodium event-plan cohort and a separate linked PIC mover matrix. I23
+can exercise the approved controlled helium electron-bath ensemble and its
+linked PIC mover matrix.
 Each owner retains the original formal prerequisites and reports the status
 of each supporting execution.
 """
@@ -31,27 +33,21 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks, deadline,refinement=False):
-    """Supervise each requested I24 CLI and bind its independent artifacts.
+def supervise_children(test_id, directory, result, manifest, choices, deadline):
+    """Supervise each requested supporting CLI and bind its independent artifacts.
 
-    The event-plan cohort and the native PIC matrix measure different things.
-    One missing dependency or failed check must not erase evidence from the
-    other. The formal qualification clock started before predecessor checks;
-    both children share the remaining seconds and the same cleanup reserve.
+    Each child measures something different (an MPI provider ensemble or a
+    linked native PIC matrix). One missing dependency or failed check must not
+    erase evidence from the other. The formal qualification clock started
+    before predecessor checks; all children share the remaining seconds and
+    the same cleanup reserve. ``choices`` items are dicts with key, label,
+    runner, name, wall_flag, arguments and native ('ensemble' or 'pic').
     """
     remaining = deadline - time.monotonic()
     budget = (CampaignBudget(remaining, min(4.0, remaining/10)) if remaining > 0 else None)
-    choices = [('i24_sodium_provider', 'I24 sodium MPI provider', 'run_ground_capture.py',
-                'sodium-ground-capture', '--test-runtime-seconds', ['--mpi-ranks', str(ranks)])]
-    if producer is not None:
-        pic_args = ['--producer-manifest', str(producer.resolve())]
-        if refinement:
-            pic_args.append('--refinement')
-        choices.append(('i24_pic_commissioning', 'I24 sodium PIC commissioning', 'run_pic_ground_capture.py',
-                        'sodium-pic-ground-capture', '--wall-seconds', pic_args))
     rows, failed_receipts = [], []
-    for key, label, script, name, wall_flag, extra in choices:
-        runner = TEST/'integration-tests/I24'/script
+    for choice in choices:
+        key, label, runner, name = choice['key'], choice['label'], choice['runner'], choice['name']
         child = directory/name
         log = directory/(name+'.log')
         log.touch()
@@ -60,11 +56,9 @@ def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks
         try:
             allowance = budget.remaining() if budget else 0
             if allowance <= 0:
-                raise RuntimeError('I24 shared development deadline exhausted before this launch')
-            command = [sys.executable, '-B', str(runner), '--lock', str(lock.resolve()),
-                       '--output-dir', str(child), wall_flag, str(allowance), *extra]
-            if inventory is not None:
-                command += ['--mass-inventory', str(inventory.resolve())]
+                raise RuntimeError(test_id+' shared development deadline exhausted before this launch')
+            command = [sys.executable, '-B', str(runner), *choice['arguments'],
+                       '--output-dir', str(child), choice['wall_flag'], str(allowance)]
             receipt = budget.run(command, ROOT, log, output=directory/(name+'-supervision'))
             entry['supervision'] = receipt
             result_path, manifest_path = child/'result.json', child/'run_manifest.json'
@@ -76,14 +70,14 @@ def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks
                          manifest=str(manifest_path), manifest_sha256=sha(manifest_path))
             status = value['status']
             if {'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}.get(status) != receipt['returncode'] or status not in STATUSES:
-                raise ValueError('I24 child result status contradicts its process exit code')
+                raise ValueError(test_id+' child result status contradicts its process exit code')
             entry['scope'] = value.get('scope', 'native PIC first/second-order single-event commissioning')
             if status == 'FAIL':
                 # Preserve the genuine native evidence for an evaluated failure.
                 # The PIC manifest indexes each rank's emitted CSV, while the
                 # independent ensemble has its own per-parent history index.
-                native = child/'native_receipt.json' if key=='i24_sodium_provider' else manifest_path
-                if key=='i24_pic_commissioning' and not any('-rank-' in f and f.endswith('.csv')
+                native = child/'native_receipt.json' if choice['native']=='ensemble' else manifest_path
+                if choice['native']=='pic' and not any('-rank-' in f and f.endswith('.csv')
                         for f in source.get('result_files',{})):
                     raise ValueError('evaluated PIC failure has no retained native rank tables')
                 failed_receipts.append({'check':label,'native_receipt':str(native),'sha256':sha(native)})
@@ -92,7 +86,7 @@ def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks
         except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError) as error:
             status, reason = 'ERROR', str(error)
             with log.open('a') as stream:
-                stream.write('I24 owner infrastructure error: '+reason+'\n')
+                stream.write(test_id+' owner infrastructure error: '+reason+'\n')
         rows.append({'check':label, 'status':status, 'runner':str(runner), 'log':str(log), 'reason':reason})
     result.update(formal_status='SKIPPED / NOT QUALIFIED', supporting_checks=rows,
                   supporting_counts={s:sum(row['status']==s for row in rows) for s in STATUSES})
@@ -104,14 +98,58 @@ def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks
                           for r in rows if r['status'] in ('FAIL','ERROR')))
             break
     (directory/'stdout.log').write_text(''.join(r['check']+' '+r['status']+': '+r['reason']+'\n'
-                                      for r in rows)+'Formal I24 remains SKIPPED.\n')
+                                      for r in rows)+'Formal '+test_id+' remains SKIPPED.\n')
     (directory/'stderr.log').write_text(''.join(r['check']+': '+r['log']+'\n'
                                       for r in rows if r['status'] in ('FAIL','ERROR')))
 
 
+def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks, deadline,refinement=False):
+    """The I24 sodium MPI provider ensemble and optional linked PIC matrix."""
+    common = ['--lock', str(lock.resolve())]
+    if inventory is not None:
+        common += ['--mass-inventory', str(inventory.resolve())]
+    folder = TEST/'integration-tests/I24'
+    choices = [dict(key='i24_sodium_provider', label='I24 sodium MPI provider', runner=folder/'run_ground_capture.py',
+                    name='sodium-ground-capture', wall_flag='--test-runtime-seconds', native='ensemble',
+                    arguments=[*common, '--mpi-ranks', str(ranks)])]
+    if producer is not None:
+        pic_args = ['--producer-manifest', str(producer.resolve())]
+        if refinement:
+            pic_args.append('--refinement')
+        choices.append(dict(key='i24_pic_commissioning', label='I24 sodium PIC commissioning',
+                            runner=folder/'run_pic_ground_capture.py', name='sodium-pic-ground-capture',
+                            wall_flag='--wall-seconds', native='pic', arguments=[*common, *pic_args]))
+    supervise_children('I24', directory, result, manifest, choices, deadline)
+
+
+def i23_supporting(directory, result, manifest, profile, producer, ranks, deadline, refinement=False):
+    """The I23 prescribed-electron-bath ensemble and optional linked PIC matrix.
+
+    Both children use the user-approved 2026-11-25 controlled bath and the
+    reviewed reduced-reservoir admission pinned in integration-tests/I23.
+    Their PASS is supporting evidence; formal I23 remains SKIPPED.
+    """
+    common = ['--profile', str(profile.resolve())]
+    folder = TEST/'integration-tests/I23'
+    choices = [dict(key='i23_helium_provider', label='I23 helium electron-bath MPI provider',
+                    runner=folder/'run_helium_impact.py', name='helium-electron-bath',
+                    wall_flag='--test-runtime-seconds', native='ensemble',
+                    arguments=[*common, '--mpi-ranks', str(ranks)])]
+    if producer is not None:
+        pic_args = ['--producer-manifest', str(producer.resolve())]
+        if refinement:
+            pic_args.append('--refinement')
+        choices.append(dict(key='i23_pic_commissioning', label='I23 helium electron-bath PIC commissioning',
+                            runner=folder/'run_pic_helium_impact.py', name='helium-pic-electron-bath',
+                            wall_flag='--wall-seconds', native='pic', arguments=[*common, *pic_args]))
+    supervise_children('I23', directory, result, manifest, choices, deadline)
+
+
 def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
         i21_plan=None,i21_plan_sha256=None,wall_seconds=3600,
-        i24_lock=None,i24_mass_inventory=None,i24_pic_producer=None,i24_pic_refinement=False):
+        i24_lock=None,i24_mass_inventory=None,i24_pic_producer=None,i24_pic_refinement=False,
+        i23_profile=None,i23_pic_producer=None,i23_pic_refinement=False,
+        predecessor_root=None):
     """Evaluate explicit prerequisites and produce an honest formal result.
 
     No native receipt is emitted when execution is not possible. The aggregate
@@ -120,6 +158,7 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
     """
     started=time.monotonic()
     output=Path(output).resolve();directory=output/test_id
+    predecessor_root=Path(predecessor_root).resolve() if predecessor_root is not None else output
     directory.mkdir(parents=True,exist_ok=False)
     stdout=directory/'stdout.log';stderr=directory/'stderr.log'
     stdout.write_text('Formal chemistry execution has not started.\n')
@@ -130,7 +169,7 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
         'mpi_ranks':mpi_ranks,'openmp_threads':1,'campaign_mode':mode,
         'observational_scoring':False,'random_seed':None,
         'requested_input_file':str(application.resolve()) if application else None,
-        'input_snapshot_available':False,'predecessors':[],
+        'input_snapshot_available':False,'predecessors':[],'predecessor_root':str(predecessor_root),
         'executable':{'path':str(amps.resolve()),'sha256':sha(amps) if amps.is_file() else None}}
     result={'id':test_id,'name':test_id,'status':'ERROR','scope':'formal-M3-qualification',
         'metrics':{},'criteria_evaluated':False,'blocking_reasons':[]}
@@ -147,6 +186,12 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
             raise ValueError('I24 PIC producer requires an explicit I24 sodium release lock')
         if i24_pic_refinement and i24_pic_producer is None:
             raise ValueError('I24 PIC refinement requires an explicit I24 PIC producer')
+        if i23_profile is not None and (test_id!='I23' or mode!='regression'):
+            raise ValueError('the controlled helium electron-bath case belongs to I23 regression mode')
+        if i23_pic_producer is not None and i23_profile is None:
+            raise ValueError('I23 PIC producer requires an explicit I23 helium state profile')
+        if i23_pic_refinement and i23_pic_producer is None:
+            raise ValueError('I23 PIC refinement requires an explicit I23 PIC producer')
         contract_path=TEST/'integration-tests'/test_id/'reference/acceptance.json'
         contract=json.loads(contract_path.read_text());result['name']=contract['name']
         manifest['acceptance']={'path':str(contract_path),'sha256':sha(contract_path)}
@@ -202,7 +247,7 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
         # to unchanged formal ordering. Malformed/contradictory data are ERROR;
         # a missing or non-PASS prerequisite is a scientific SKIPPED condition.
         for predecessor in contract['linked_predecessor_gates']:
-            path=output/predecessor/'result.json'
+            path=predecessor_root/predecessor/'result.json'
             record={'id':predecessor,'path':str(path),'status':'UNAVAILABLE'}
             if path.is_file():
                 value=json.loads(path.read_text())
@@ -221,6 +266,9 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
         if i24_lock is not None:
             i24_supporting(directory,result,manifest,i24_lock,i24_mass_inventory,i24_pic_producer,
                            mpi_ranks,started+wall_seconds,i24_pic_refinement)
+        elif i23_profile is not None:
+            i23_supporting(directory,result,manifest,i23_profile,i23_pic_producer,
+                           mpi_ranks,started+wall_seconds,i23_pic_refinement)
         elif i21_plan is None or not manifest['input_snapshot_available']:
             stdout.write_text('SKIPPED '+test_id+': '+result['reason']+'\n'
                 'No particle run, lifetime fit, branch score or observation comparison was performed.\n')
@@ -247,7 +295,7 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
             # matrix under the approved early-M3 exception. The candidate
             # qualification selection still checks U14 and I13-I20 before any
             # launch. Neither selection covers the complete I21 family.
-            value=run_cohort(plan,output,child,development=mode=='regression',wall_seconds=remaining,
+            value=run_cohort(plan,predecessor_root,child,development=mode=='regression',wall_seconds=remaining,
                 application=application,expected_plan_sha256=i21_plan_sha256)
             if sha(plan)!=i21_plan_sha256:
                 raise ValueError('I21 cohort plan changed during execution')
@@ -310,13 +358,19 @@ def main():
     parser.add_argument('--i24-pic-producer',type=Path,help='source-bound producer manifest for both native PIC mover orders at 1 and 8 ranks')
     parser.add_argument('--i24-pic-refinement',action='store_true',help='refine native timestep and reference weights at fixed physical horizon and population')
     parser.add_argument('--i24-mass-inventory',type=Path,help='relocated NIST reference mass inventory for that case')
+    parser.add_argument('--i23-helium-profile',type=Path,help='authenticated 4He/4He+ state profile; runs the controlled electron-bath MPI provider in regression mode')
+    parser.add_argument('--i23-pic-producer',type=Path,help='source-bound Na/He/He+ producer manifest for both native PIC mover orders at 1 and 8 ranks')
+    parser.add_argument('--i23-pic-refinement',action='store_true',help='refine native timestep and reference weights at fixed physical horizon and population')
+    parser.add_argument('--predecessor-root',type=Path,help='existing output directory for the same-campaign prerequisites')
     parser.add_argument('--test-runtime-seconds',type=float,default=3600)
     args=parser.parse_args()
     if args.mpi_ranks<1:parser.error('MPI ranks must be positive')
     value=run(args.test_id,args.amps,args.input,args.output_dir,args.mpi_ranks,args.campaign_mode,
         i21_plan=args.i21_cohort_plan,i21_plan_sha256=args.i21_cohort_plan_sha256,
         wall_seconds=args.test_runtime_seconds,i24_lock=args.i24_sodium_lock,i24_mass_inventory=args.i24_mass_inventory,
-        i24_pic_producer=args.i24_pic_producer,i24_pic_refinement=args.i24_pic_refinement)
+        i24_pic_producer=args.i24_pic_producer,i24_pic_refinement=args.i24_pic_refinement,
+        i23_profile=args.i23_helium_profile,i23_pic_producer=args.i23_pic_producer,
+        i23_pic_refinement=args.i23_pic_refinement,predecessor_root=args.predecessor_root)
     print(json.dumps(value,indent=2))
     return {'PASS':0,'FAIL':1,'ERROR':2,'SKIPPED':77}[value['status']]
 

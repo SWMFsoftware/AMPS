@@ -36,8 +36,12 @@ def binary_spacing(value):
     return math.ldexp(1., math.frexp(abs(value))[1]-53)
 
 
-def checked_build(path):
-    """Require the actual clean-build receipts and the effective three-species ABI."""
+def checked_build(path, mapping=MAPPING, description='Na, Na+, H'):
+    """Require the actual clean-build receipts and the effective three-species ABI.
+
+    ``mapping`` defaults to the I24 Na/Na+/H ABI; I23 reuses this exact check
+    with its Na/He/He+ mapping rather than duplicating the receipt audit.
+    """
     if not path.is_file():
         raise MissingPrerequisite('source-bound producer manifest missing: '+str(path))
     producer = json.loads(path.read_text())
@@ -45,8 +49,8 @@ def checked_build(path):
     if (producer['schema'] != 'srcMoon-actual-normal-restore-producer-v1' or producer['status'] != 'PASS'
             or recipe['packet_layout'] != 'conservative-products'
             or recipe['reference_problem'] != 'homogeneous-zero-acceleration'
-            or recipe['mapping']['states'] != MAPPING):
-        raise ValueError('expected a clean force-free Na, Na+, H build with individual particle weights')
+            or recipe['mapping']['states'] != mapping):
+        raise ValueError('expected a clean force-free '+description+' build with individual particle weights')
     if native_sources(producer['production_source_hashes']) != native_sources(production_source_identity()):
         raise ValueError('current authoritative production sources differ from the producer')
     # Hash the retained evidence first. Expiry of the disposable configured

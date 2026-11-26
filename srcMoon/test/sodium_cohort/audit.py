@@ -69,6 +69,32 @@ def authenticate_launch(launch):
     return native
 
 
+def compare_parent_layouts(first, second):
+    """Compare original-parent endpoints independently of MPI order.
+
+    Exact keyed fates and channels are invariant at an identical timestep.
+    The original first-hit oracle scores timing against the frozen numerical
+    criterion. Report the largest serialized inter-layout timing difference
+    in seconds in addition to that criterion.
+    """
+    by_id = lambda rows: {row['original_parent_id']: row for row in rows}
+    a, b = by_id(first), by_id(second)
+    missing = sorted(set(a) ^ set(b), key=int)
+    mismatches = []
+    max_difference = 0.0
+    for parent in sorted(set(a) & set(b), key=int):
+        lhs, rhs = a[parent], b[parent]
+        if (lhs['status'], lhs['channel_id']) != (rhs['status'], rhs['channel_id']):
+            mismatches.append(parent)
+        elif lhs['status'] == 'REACTED':
+            max_difference = max(max_difference, abs(float(lhs['relative_event_time_s']) -
+                                                       float(rhs['relative_event_time_s'])))
+    return {'status': 'FAIL' if missing or mismatches else 'PASS',
+            'matched_original_parents': len(set(a) & set(b)),
+            'unpaired_parent_ids': missing, 'changed_fate_or_channel_parent_ids': mismatches,
+            'maximum_serialized_time_difference_s': max_difference}
+
+
 def run(plan_path,runs_path,output,*,development=False):
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=False)
     records=[];manifest={'scope':'actual cohort audits, NOT whole I21-I24/M3 qualification',
@@ -92,6 +118,7 @@ def run(plan_path,runs_path,output,*,development=False):
         if varying and not development:
             raise ValueError('straight-line trajectory scoring is a numerical development scope')
         verified_runs=[]
+        unmatched_layouts={}
         profile=Path(plan['source_profile']['path'])
         if not profile.is_absolute():profile=Path(plan_path).resolve().parent/profile
         if q.sha(profile)!=plan['source_profile']['sha256']:raise ValueError('frozen physical profile changed')
@@ -104,6 +131,16 @@ def run(plan_path,runs_path,output,*,development=False):
             for path,digest in expected_docs.items():
                 if q.sha(path)!=digest:raise ValueError('input changed while native cohort was executing')
             parent_path=native/'parent_records.csv';parents=q.read_original_parents(parent_path,plan)
+            level=launch['physical_steps']
+            if level in unmatched_layouts:
+                other_ranks,other_parents=unmatched_layouts.pop(level)
+                if other_ranks==launch['mpi_ranks']:
+                    raise ValueError('duplicate MPI layout at matched physical step count')
+                rank_result=compare_parent_layouts(other_parents,parents)
+                (output/f'parent_mpi_steps_{level}.json').write_text(json.dumps(rank_result,indent=2)+'\n')
+                records.append({'name':f'original-parent-MPI-match-{level}', 'status':rank_result['status']})
+            else:
+                unmatched_layouts[level]=(launch['mpi_ranks'],parents)
             reacted={row['original_parent_id'] for row in parents if row['status']=='REACTED'}
             paths=[native/('event_metrics.rank%d.hex.csv'%rank) for rank in range(launch['mpi_ranks'])]
             actual_events=ledger.read_events(paths)
@@ -164,6 +201,8 @@ def run(plan_path,runs_path,output,*,development=False):
                 score=q.score_cohort(parent_path,plan)
                 records.append({'name':'independent-statistics-%02d'%index,'status':score['status']})
             (output/('statistics-%02d.json'%index)).write_text(json.dumps(score,indent=2)+'\n')
+        if unmatched_layouts:
+            raise ValueError('unpaired MPI layout in the frozen step matrix')
         convergence=numerical.verify(verified_runs,plan)
         (output/'numerical.json').write_text(json.dumps(convergence,indent=2)+'\n')
         comparisons=convergence['comparisons']

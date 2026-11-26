@@ -1,0 +1,72 @@
+{
+  "approval": {
+    "date": "2026-11-25",
+    "path": "srcMoon/test/integration-tests/I23/reference/helium_admission_approval_20261125.json",
+    "sha256": "8301e28f9b71626739a719a2c0ba2621982478489d32c2d4336dc7f9095f20f2"
+  },
+  "conditional_mean": {
+    "admitted_maximum_absolute_log_slope_error": "0.12003003713840445",
+    "ccc_mean_incident_energy_eV_recorded_only": "46.08014074991855",
+    "interpretation": "model spread, not a confidence interval",
+    "kim_minus_voronov_slope_equivalent": "0.12003003713840445",
+    "lower_end_mean_incident_energy_eV": "44.21788144679777368181818182",
+    "rule": "maximum absolute d ln k / d ln T error = published Kim (1992) minus Voronov analytic-slope-equivalent spread at 10 eV",
+    "voronov_log_slope_at_10eV": "3.04181818181818181818181818181818181858267327197596"
+  },
+  "energy_reference": "P02:separated-neutral-ground-isotope-atoms-and-free-electron-reference-zero",
+  "formal_I23_status": "SKIPPED / NOT QUALIFIED",
+  "frame": "LSO",
+  "generator": "srcMoon/test/integration-tests/I23/prepare_helium_admission.py",
+  "mechanical": {
+    "basis": "same numbers as the approved Na P02 limits (M3_P02_NUMERICAL_BUDGET.json), approved for He/He+/electron",
+    "heavy_particle_speed_max_m_s": "3e6",
+    "relative_acceleration_error_max": "1e-8",
+    "relative_nonrelativistic_kinetic_error_max": "1e-4",
+    "relative_reference_inertia_error_max": "1e-8"
+  },
+  "observable": "heavy-particle number, charge and mass budgets and event chronology only; no He+ velocity, energy or pickup observable",
+  "recoil": {
+    "admitted_maximum_heavy_kinetic_error_J": "0.00000000000000000000398941981866",
+    "admitted_maximum_heavy_velocity_error_m_s": "1095",
+    "central": {
+      "kinetic_bound_stationary_J": "0.000000000000000000003823070705349998138055634521261364753754374696518989002555945104402721",
+      "kinetic_bound_stationary_eV": "0.02386173049974712175246736572530344836969064608465004616061542877551865",
+      "mean_incident_energy_J": "0.000000000000000007276794966785454545454545454545454546096786113616210121718640",
+      "mean_incident_energy_eV": "45.41818181818181818181818181818181818582673271975960",
+      "outgoing_aggregate_energy_J": "0.000000000000000003337460950394155757168367264545454546096786113616210121718640",
+      "rms_impulse_bound_kg_m_s": "0.000000000000000000000007128320543576944133950347912672657998021019895673313718784641299001708",
+      "rms_speed_bound_m_s": "1072.642758410975308580723658533421240813844678452296749404789509812588"
+    },
+    "rule": "approved reservoir RMS impulse bound S = sqrt(2 me Ein) + sqrt(4 me Eout), evaluated by the composer at the UPPER end of the admitted slope error",
+    "upper_end": {
+      "kinetic_bound_stationary_J": "0.000000000000000000003982223916107988917507651247622048013225182830615446017213196939609836",
+      "kinetic_bound_stationary_eV": "0.02485508670892268746885027439254271394663956153173711817603000281684195",
+      "mean_incident_energy_J": "0.000000000000000007469104287666758379286166754545454546096786113616210121718640",
+      "mean_incident_energy_eV": "46.61848218956586268181818181818181818582673271975960",
+      "outgoing_aggregate_energy_J": "0.000000000000000003529770271275459590999988564545454546096786113616210121718640",
+      "rms_impulse_bound_kg_m_s": "0.000000000000000000000007275182525982436433265125421268284407258739112213319160517133444220499",
+      "rms_speed_bound_m_s": "1094.741994963275978307916576227200630836694612207561707951995346120310"
+    }
+  },
+  "schema": "srcMoon-I23-helium-model-error-v1",
+  "scope": "heavy-particle number, charge and mass budgets and event chronology only; no He+ velocity, energy or pickup observable",
+  "sources": {
+    "/data/vtenishe/Moon-test/AMPS/srcMoon/test/integration-tests/I23/reference/helium_admission_approval_20261125.json": "8301e28f9b71626739a719a2c0ba2621982478489d32c2d4336dc7f9095f20f2",
+    "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m3-followup-MfThQfny/atomic-family/profile.json": "42943c73a5e26a4a6ad4c8fbf146bc2a8ada2004e439d06fb2c884763b2f71df",
+    "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m3-i22-i23-E1QrJUHL/helium-final/kim_model_comparison.json": "fc1cc2d9ade770cc488d7d9bf7a20c9c442e882c931e42be667f3c41d9a9b3a0",
+    "/data/vtenishe/Moon-test/AMPS/test_output/srcMoon/m3-source-search-9wqcZyI0/audit_native.json": "41ab6b0e86016a67609540ca96c8195eb30a9cffe03866f1f45abeb59d3fb429",
+    "/data/vtenishe/moon_validation_data/photochemistry/README.md": "e03148f43bfce71701ed142b6422d2aa5086171c0d6d797b658e4825c5ce084a",
+    "/data/vtenishe/moon_validation_data/photochemistry/processed/electron_impact/lunar_neutral_coefficients.csv": "da7391979a2136c072bd8dc02932af7989a8030ac208fa5982ac975aa1394126",
+    "/data/vtenishe/moon_validation_data/photochemistry/processed/electron_impact/processing_summary.json": "4623d153d8eaff007201f89585209ea13a3639dd12ee562c3cac9874a9e85e63",
+    "/data/vtenishe/moon_validation_data/photochemistry/processed/electron_impact/voronov_coefficients.csv": "8c1e33a9ed64d95de884b01548b7e2757339859b7c8090e996f842c4f6ca9225",
+    "/data/vtenishe/moon_validation_data/photochemistry/provenance.json": "69435a8b2bc259113b31fcb91111f3d5c46c792552505fbe8222db55848d45cc",
+    "/data/vtenishe/moon_validation_data/photochemistry/qa_report.json": "fe8b300630b743e54c7731746d918f510d556009098cfa1942b64a674430a6fb",
+    "/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.dat": "470ea3078c64159eece6a469314dde2356e2d6ccaf618f4eaecb46649d61a5cd",
+    "/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.dat.metadata.json": "ec3a70f2d8e98f3020c15ba65e485d153651d7709f7cf320ef0adfb5649c8328",
+    "/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.f": "7fe7d78c25166084041bea58bb55c2fcc6ad724fba8432c167cf044e6eb1bcc1",
+    "/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.f.metadata.json": "bb58673390c30e8467d96ef259daaf4ce07dfc5a6f2be69569311e6a412ba78a",
+    "/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.txt": "5b12dc3b4b546ef863216d57df7d64c81a553cc5eb32a8cf2d3d275d4158f9ef",
+    "/data/vtenishe/moon_validation_data/photochemistry/raw/electron_impact/voronov/cfit.txt.metadata.json": "41df3eac9a2a2f8c8d5946e8c62d217650cb5a06e5f9c7b39782421c3bab6d49"
+  },
+  "time_scale": "SPICE-ET-TDB-seconds-past-J2000"
+}

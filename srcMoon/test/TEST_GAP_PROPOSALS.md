@@ -384,6 +384,17 @@ replace the current full-product physical-provider contract. Independent recoil
 error/observable scope and source/bath conservation remain required. Unrelated
 ion-surface or spacecraft-composition claims retain their own prerequisite gates.
 
+**I23 update, 2026-11-25.** The inherited-parent-velocity electron reservoir
+now runs under the existing I23 meaning as two supporting children: an MPI
+ensemble and a linked PIC matrix. The user approved a narrow admission:
+heavy-particle budgets and chronology only, with conservative upper-end recoil
+tolerances. No new ID or criterion was introduced. Two gaps remain. A
+velocity- or energy-sensitive He⁺ observable needs its own recoil admission.
+The ensemble's 1e6 and 1e7 m⁻³ densities reuse the same keyed draws, so they
+test linear scaling rather than giving independent lifetime samples; an
+independent second cohort would need a predeclared cohort ID.
+[Contract](integration-tests/I23/ELECTRON_BATH_COUPLING_CONTRACT.md)
+
 ### Approved shared-database implementation — 2026-11-19
 
 The subsequent r3 publication adds reviewed native CHIANTI, Apollo TPD,

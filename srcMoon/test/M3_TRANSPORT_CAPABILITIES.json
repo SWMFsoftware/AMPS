@@ -47,11 +47,14 @@
         "conservative packet transaction adapter",
         "normal-path constant-history controller; analytical native scope only",
         "stationary 4He 10 eV source-bound coefficient, conditional moment and guarded signed-bath packet composer",
-        "optional independent Kim total-cross-section Maxwellian integral quantifying the fraction of modeled collisions in the 100-2000 eV incident-energy window of the Peterson laboratory data"
+        "optional independent Kim total-cross-section Maxwellian integral quantifying the fraction of modeled collisions in the 100-2000 eV incident-energy window of the Peterson laboratory data",
+        "normal-startup MoonHeliumImpactCohort owner coupling the user-approved (2026-11-25) controlled 10 eV zero-drift LSO electron bath to the reaction controller, with stationary/force-free domain checks on every accepted segment",
+        "reviewed narrow-scope admission for the inherited-velocity reduced reservoir (heavy number/charge/mass budgets and event chronology only), reproduced byte-for-byte by a committed generator",
+        "explicit He+ timestep/reference-weight and optional He reference-weight Moon .in keys checked at normal startup"
       ],
       "missing_formal_capabilities": [
-        "qualified ion/secondary-electron recoil and bath mass-energy policy",
-        "source/state/temperature and observable-error admission for the reduced reservoir and actual bath-dependent event exposure coupling",
+        "qualified He+ recoil and secondary-electron policy for velocity- or energy-sensitive observables; the 2026-11-25 admission covers heavy budgets and chronology only",
+        "admission beyond the stationary 4He, kT_e=10 eV, uniform zero-drift controlled bath: other temperatures, spatial bath structure (wake/shadow), drifting baths, moving targets, Ne/Ar/Na channels and a measured excited-He+ yield",
         "measured event forcing when claimed requires R4.1/D06"
       ]
     },

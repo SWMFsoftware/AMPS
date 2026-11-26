@@ -129,6 +129,26 @@ def run_checks(output):
                 ('hydrogen-ratio-alone',change(base,ratio_key,'0.03125'),3,None),
             ])
             hydrogen_diagnostics = {'hydrogen-speed-alone':ratio_key, 'hydrogen-ratio-alone':speed_key}
+            # Reaction-born He+ uses the same explicit pair rule; the neutral He
+            # ratio is optional. Exactly representable parser fixtures only.
+            he_speed_key = 'helium_ion_characteristic_speed_m_s'
+            he_ratio_key = 'helium_ion_to_sodium_reference_weight_ratio'
+            he_neutral_key = 'helium_to_sodium_reference_weight_ratio'
+            helium = change(change(change(base,he_speed_key,'3.125e5'),he_ratio_key,'0.0625'),he_neutral_key,'0.5')
+            variants.extend([
+                ('helium-complete',helium,0,None),
+                ('helium-programmatic-incomplete',helium,0,'reject-incomplete-helium-ion'),
+                ('helium-neutral-ratio-alone',change(base,he_neutral_key,'0.5'),0,None),
+                ('helium-ion-speed-alone',change(base,he_speed_key,'3.125e5'),3,None),
+                ('helium-ion-ratio-alone',change(base,he_ratio_key,'0.0625'),3,None),
+            ])
+            hydrogen_diagnostics.update({'helium-ion-speed-alone':he_ratio_key,'helium-ion-ratio-alone':he_speed_key})
+            for role, key in (('ion-speed',he_speed_key),('ion-ratio',he_ratio_key),('neutral-ratio',he_neutral_key)):
+                for label, invalid in (('zero','0'),('negative','-1'),('infinite','inf'),
+                                       ('nan','nan'),('trailing-unit','4 m/s')):
+                    name = 'helium-'+role+'-'+label
+                    variants.append((name,change(helium,key,invalid),3,None))
+                    hydrogen_diagnostics[name] = key
             # Explicit zero cannot mean "omitted". A partial group, a signed
             # value, a non-finite value and a trailing unit are parser errors.
             for role, key in (('speed',speed_key),('ratio',ratio_key)):
@@ -172,6 +192,14 @@ def run_checks(output):
                             errors.append('installed hydrogen speed or reference-weight ratio differs from input')
                     if mode=='reject-incomplete-hydrogen' and values.get('incomplete_hydrogen_install_preserved')!='1':
                         errors.append('incomplete direct install was not refused before the successful retry')
+                    helium_expected={'legacy':(0,0,0),'helium-complete':(312500,0.0625,0.5),
+                        'helium-programmatic-incomplete':(312500,0.0625,0.5),'helium-neutral-ratio-alone':(0,0,0.5)}
+                    if name in helium_expected:
+                        triple = tuple(float(values.get(key,'nan')) for key in (he_speed_key,he_ratio_key,he_neutral_key))
+                        if triple != helium_expected[name]:
+                            errors.append('installed He+ speed/ratio or He ratio differs from input')
+                    if mode=='reject-incomplete-helium-ion' and values.get('incomplete_helium_ion_install_preserved')!='1':
+                        errors.append('incomplete direct He+ install was not refused before the successful retry')
                     if name in ('quiet-photons','active-photons','all-rate-registries','registry-install-rollback'):
                         solar='active' if name=='active-photons' else 'quiet'
                         if values.get('photon_catalogue_rows')!='17' or values.get('photon_reactive_rows')!='15':

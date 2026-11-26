@@ -484,6 +484,11 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
     case _H_SPEC_:
       CharacteristicSpeed=Moon::Runtime::GetConfiguration().hydrogenCharacteristicSpeedMS;
       break;
+    // Reaction-born He+ uses its explicitly declared cell-crossing speed [m/s].
+    // There is no hidden ion default; startup refuses a He+ build without it.
+    case _HE_PLUS_SPEC_:
+      CharacteristicSpeed=Moon::Runtime::GetConfiguration().heliumIonCharacteristicSpeedMS;
+      break;
 	  case _NA_SPEC_: case _HE_SPEC_:case _NE_SPEC_: case _AR_SPEC_: 
     CharacteristicSpeed=2.0E3;
     break;
@@ -1369,6 +1374,17 @@ void amps_init() {
       exit(__LINE__,__FILE__,"Moon tracked H requires hydrogen_characteristic_speed_m_s and "
           "hydrogen_to_sodium_reference_weight_ratio in the Moon .in section. "
           "Supply both controls when H is compiled, or omit both when H is absent.");
+    // He+ is reaction-born, like tracked H: its timestep speed and reference
+    // weight are explicit numerical choices. Refuse a build/receipt mismatch
+    // before any mesh, weight or particle buffer is constructed.
+    const bool heliumIonConfigured=Moon::Runtime::GetConfiguration().heliumIonCharacteristicSpeedMS>0;
+    if ((_HE_PLUS_SPEC_>=0)!=heliumIonConfigured)
+      exit(__LINE__,__FILE__,"Moon tracked He+ requires helium_ion_characteristic_speed_m_s and "
+          "helium_ion_to_sodium_reference_weight_ratio in the Moon .in section. "
+          "Supply both controls when He+ is compiled, or omit both when He+ is absent.");
+    if (_HE_SPEC_<0 && Moon::Runtime::GetConfiguration().heliumToSodiumReferenceWeightRatio>0)
+      exit(__LINE__,__FILE__,"helium_to_sodium_reference_weight_ratio was supplied, but neutral He "
+          "is not compiled. Remove the key or compile He.");
     Moon::RegisterParticleTracing();
 
 #if _PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ == _PIC_MODE_ON_
@@ -2188,10 +2204,29 @@ if (writeMeshTecplot) {
     }
 
     if (_HE_SPEC_>=0) {
-      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_HE_SPEC_,_NA_SPEC_,1.0);
-
-      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_HE_SPEC_);
+      const double heliumRatio=Moon::Runtime::GetConfiguration().heliumToSodiumReferenceWeightRatio;
+      if (heliumRatio>0) {
+        // Explicit numerical reference weight for He parents that are not
+        // injected by a registered He source (for example, the I23 stationary
+        // electron-impact cohort). The source-derived constant weight below
+        // would divide by a zero He production rate and stop the run.
+        PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_HE_SPEC_,_NA_SPEC_,heliumRatio);
+      }
+      else {
+        // Legacy behavior, unchanged: weight from the enabled He source rate.
+        PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_HE_SPEC_,_NA_SPEC_,1.0);
+        PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_HE_SPEC_);
+      }
       PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_HE_SPEC_,_NA_SPEC_,0.1);
+    }
+
+    // He+ has no primary source. Its reference weight is the declared ratio
+    // to Na; the reaction transaction sets each daughter's individual
+    // correction so represented atoms are conserved for any ratio. Its local
+    // timestep comes from localTimeStep() with the declared He+ speed.
+    if (_HE_PLUS_SPEC_>=0) {
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(
+          _HE_PLUS_SPEC_,_NA_SPEC_,Moon::Runtime::GetConfiguration().heliumIonToSodiumReferenceWeightRatio);
     }
 
     if (_NE_SPEC_>=0) {

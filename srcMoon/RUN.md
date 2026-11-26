@@ -1050,6 +1050,29 @@ admission-control comparisons under the chosen output directory:
 See `result.json`, `comparison.csv`, the exact profile snapshot and the
 separate build/native logs. This controlled run has no measured plasma input.
 
+### I23 prescribed electron-bath coupling
+
+This runs the approved controlled 10 eV bath through the production owner.
+The ensemble needs only the profile and D05. The PIC matrix additionally
+needs a source-bound Na/He/He⁺ producer; build it as described in the
+[I23 README](test/integration-tests/I23/README.md#prescribed-electron-bath-coupling-2026-11-25).
+
+```bash
+producer=test_output/srcMoon/i23-bath-uGAYf6qI/helium-producer/normal_build_evidence.json
+out=$(mktemp -d -p "$PWD/test_output/srcMoon" i23-formal-XXXXXXXX)
+/usr/bin/python3 -B srcMoon/test/run_all_test.py --only I23 --skip-build \
+  --campaign-mode regression --mpi-ranks 8 --test-runtime-seconds 1800 \
+  --i23-helium-profile test_output/srcMoon/m3-followup-MfThQfny/atomic-family/profile.json \
+  --i23-pic-producer "$producer" --i23-pic-refinement --output-dir "$out"
+```
+
+`$out/I23/result.json` lists both supporting children and keeps the formal
+status SKIPPED. Open `$out/I23/helium-electron-bath/comparison.png` for
+survival against `exp(−n_e k t)`, and
+`$out/I23/helium-pic-electron-bath/step_populations.png` for the represented
+He and He⁺ after each step. The producer lives on temporary storage; after a
+reboot, rebuild it and pass the new manifest.
+
 ### I24 sodium charge exchange at 4.0 keV/u
 
 This development runner uses the pinned r14 partial cross section for a
@@ -1081,3 +1104,16 @@ two products' ballistic continuations. Corresponding CSV and EPS files are
 available. Each run uses a fresh output directory. Formal I24 has separate
 predecessor and physical-coverage requirements.
 [Physics and output contract](test/integration-tests/I24/SODIUM_CASE.md)
+
+### Run a frozen family of M3 development cases
+
+The family runner sequences the existing illuminated, dark and moving Na
+photoionization comparisons and the Na charge-exchange ensemble and
+particle matrix. It uses one development-wide deadline and keeps each
+case's original native logs, signed ledgers and independent figures.
+Build or retain the current-source Na/Na⁺ and Na/Na⁺/H SPICE producers,
+then prepare and execute the pinned JSON plan using the
+[chemistry family commands](test/qualification/README.md#frozen-chemistry-family).
+Read `result.json` and `comparison.csv` under the selected output directory.
+The formal I21–I24 decisions and their predecessor receipts are under
+`formal/`.
