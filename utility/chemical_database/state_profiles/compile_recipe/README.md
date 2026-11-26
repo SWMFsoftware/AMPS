@@ -110,6 +110,13 @@ with the existing `PIC::Mover::TotalParticleAcceleration_default` call and adds
 build/header/CPP output. The default `--reference-problem normal-template`
 preserves the supplied force definition byte-for-byte and adds no marker.
 Duplicate/missing definitions, existing marker or unsupported signatures refuse.
+
+`--reference-problem lunar-point-mass-gravity` (I21 decision 1, approved
+2026-11-26) works the same way. It substitutes the production
+`Moon::LunarPointMassReferenceAcceleration`, which applies only the existing
+`OrbitalDynamics::AddLunarPointMassAcceleration` term, and adds
+`_MOON_COHORT_LUNAR_GRAVITY_REFERENCE_=1`. A template that already carries
+either marker refuses. The normal Moon force is unchanged.
 The named experiment retains ALL source/state/rest-mass/hash and exact SI-charge
 checks. A marker never overrides a failed source or actual acceleration-binding
 check in the conditional native owner.

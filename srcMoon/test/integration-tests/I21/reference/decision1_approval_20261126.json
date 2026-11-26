@@ -1,0 +1,17 @@
+{
+  "schema": "srcMoon-I21-decision1-approval-v1",
+  "status": "APPROVED",
+  "approval_date": "2026-11-26",
+  "authority": "User answers in the 2026-11-26 session on decision 1 of srcMoon/test/M3_COMPLETION_FOLLOWUP_20261124.md.",
+  "constant_cohort_rule": "The constant-hazard cohort's strict timing-refinement FAIL (arithmetic floor) stays visible in its original artifacts; any change to its formal role needs a separate review of the contract and evidence.",
+  "varying_rate": "Item 2 is satisfied by the existing pair: the standalone radial fixture (production quadrature and clock, strong variation) and the linked SPICE straight-line case (full PIC path, weak variation). A strongly varying linked case is infeasible with D04 normalization and the frozen static Sun.",
+  "force_path": {"build": "gravity-only reference: production OrbitalDynamics::AddLunarPointMassAcceleration only (reference problem lunar-point-mass-gravity)",
+                 "geometry": "start (0, 1e7, 0) m, velocity (0, 0, 600) m/s, terminator-plane orbit (always lit), 16,384 s, 1,024 parents, fixed-step tracing with one substep per outer step",
+                 "gate": "first-hit time error within the existing 0.2% ceiling at every level; time and event-position errors strictly decreasing 8 -> 16 -> 32 steps; position magnitudes reported without a ceiling"},
+  "controls": {"distance": "prescribed static Sun exactly 1 AU and 2 AU from the start along +x, quiet and active D04, Earth occultation off; rate ratio 4 within 0.1%",
+               "moon_shadow": "start (-4e6, -4e6, 0) m, velocity (0, 122.0703125, 0) m/s, SPICE Sun; analytic entry/exit, zero hazard in the dark, depth carried through",
+               "weights": "Na:Na+ reference weights 7:56 and 56:7 on the existing straight line, 2.625 atoms per parent"},
+  "common": "Na, D04, frozen LSO, sphere Moon, seed 731993, outer steps 8/16/32 x 1 and 8 MPI ranks, both movers",
+  "not_selected": "Earth-shadow crossing",
+  "formal_I21_status": "SKIPPED / NOT QUALIFIED"
+}

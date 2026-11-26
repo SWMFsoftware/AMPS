@@ -2,6 +2,14 @@
 
 **Status date:** 2026-11-26 UTC
 
+**I21 decision 1 implemented.** The user approved the constant-cohort rule,
+accepted the existing varying-rate pair and approved four new controls. All
+eight new cases pass with both movers at 1 and 8 ranks (352 checks). The native
+1 AU / 2 AU rate ratio is 4 to 1e-16. The gravity path's event-position error
+falls with refinement at the movers' orders. The nightly diff is zero bytes.
+Formal I21 remains SKIPPED.
+[Cases, evidence and limits](#562-i21-decision-1-varying-exposure-geometry-and-weights--2026-11-26-utc)
+
 **I24 total proton–sodium capture implemented.** The user-selected case
 H⁺ + Na(3s) → Na⁺ + H(n), n = 1–3, at 1–5 keV/u runs through a new normal-startup
 owner with the Morgan total rate, the Shingal shell split, zero-angle products
@@ -6094,3 +6102,59 @@ modeled. The beam is monoenergetic and prescribed; thermal or measured proton
 baths (R4.1/D06), moving targets, energies outside 1–5 keV/u (solar wind
 slower than 438 km/s), other targets and alpha projectiles are not admitted.
 Formal I24 also needs same-campaign I13–I20 and the U17 100,000-event minimum.
+
+## 5.62 I21 decision 1: varying exposure, geometry and weights — 2026-11-26 UTC
+
+The user approved decision 1 of the M3 completion follow-up and the case
+design. [Contract](test/integration-tests/I21/DECISION1_CONTRACT.md) ·
+[Approval record](test/integration-tests/I21/reference/decision1_approval_20261126.json)
+
+**Rules.** The constant-hazard cohort's strict refinement FAIL (errors about
+5e-17 of the horizon, at the binary64 floor) stays visible; changing its role
+needs a separate review. The existing standalone radial fixture and linked
+SPICE straight line together satisfy the varying-rate item. A strongly varying
+linked case is infeasible with the D04 normalization and a frozen static Sun.
+
+**Production changes.** Both are for verification only; the normal path is
+unchanged.
+- `FrozenProductionField::CreatePrescribedSunAtEpoch` and the sodium-cohort
+  request fields give a frozen photon field with a prescribed static point Sun.
+  Earth occultation is refused with it and the one-solar-radius check stays.
+- `Moon::LunarPointMassReferenceAcceleration` applies only the existing
+  lunar point-mass term. It is selected only by the new compile-recipe
+  reference problem `lunar-point-mass-gravity`.
+
+**Test-side changes.** The native adapter, case preparer and plan builder
+accept the prescribed Sun and the `trajectory-lunar-gravity` case.
+`verify_numerical.py` adds a closed-form Moon-shadow oracle and a Kepler oracle
+(private mpmath contexts). `prepare_decision1_cases.py` generates the case
+files and `compare_distance_endpoints.py` scores the distance ratio.
+`test_m3_i21_decision1.py` (U16) checks the oracles against direct integration
+and an RK4 orbit.
+
+**Results.** [Evidence index](../test_output/srcMoon/i21-decision1-bArC2z4Q/README.md)
+
+| Case | Result (each mover, 1 and 8 ranks) | First-hit error at 8/16/32 steps |
+| --- | --- | --- |
+| Weights 1:8, 8:1 | 22 PASS each; configured 7:56 and 56:7 used; ledgers close | 1.0e-10, 2.5e-11, 6.3e-12 |
+| Prescribed Sun 1 AU, quiet and active | 22 PASS each | 9.7e-11, 2.4e-11, 6.0e-12 |
+| Prescribed Sun 2 AU, quiet and active | 22 PASS each | 2.4e-11 → 1.4e-12 |
+| Moon shadow | 22 PASS each; oracle shadow 18,537.3–46,998.7 s; no native event in it | 3.3e-12, 8.8e-13, 2.6e-13 |
+| Lunar gravity | 22 PASS each; position error 387, 211, 108 km (first order) and 34.7, 9.9, 2.5 km (second order) | 6.5e-11 → 1.8e-11 (first), 5.0e-12 → 3.3e-13 (second) |
+
+The ratio check passes 48: the native 1 AU / 2 AU ratio is 4 to 7e-17 and the
+active/quiet ratio equals the D04 value 1.0895 to 1e-16. Histories at 1 and
+8 ranks are identical in every case. The nightly `make -j test_Moon` diff is
+zero bytes (I04 `ed875cef…`). Controls: orchestration 132, formal owners 16,
+family runner 11, sodium numerical 41, qualification 31, sodium-cohort
+ledger/preparation/commissioning/P02 suites OK.
+
+**Retained ERROR attempt.** In the first campaign four cases ended in ERROR
+from defects in the new test setup (quiet-only decks, a zero-force-only rate
+reference check and a missing oracle attribute). They passed on the rerun.
+
+**Open limits.** Earth-shadow crossing (not selected), spectral dependence of
+the exposure, real ephemeris variation, the Na photoelectron/recoil policy and
+ion surface fate remain open. The gravity path uses a gravity-only reference
+build, not the full Moon force with radiation pressure. Formal I21 also needs
+same-campaign I13–I20 and U14.

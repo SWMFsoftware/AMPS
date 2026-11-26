@@ -332,6 +332,13 @@ preparation and scientific acceptance each keep their actual status.
 
 1. Approve the I21 varying-exposure cases and the rule for reviewing the
    constant cohort’s formal role with its retained failure visible.
+   *Resolved 2026-11-26:* the user approved the rule (the constant-cohort
+   FAIL stays visible; a role change needs separate review), accepted the
+   existing standalone and linked varying-rate pair for item 2, and approved
+   a lunar-gravity path, the 1 vs 2 AU endpoints, the Moon-shadow crossing
+   and the 1:8 and 8:1 weights. All are implemented with supporting PASS;
+   formal I21 remains SKIPPED.
+   [Contract](integration-tests/I21/DECISION1_CONTRACT.md)
 2. Approve the I22 controlled atomic/para-water reference scope, the
    explicitly named effective-photon convention and the source-matched
    U24 reference strategy. Review the charged partition separately after

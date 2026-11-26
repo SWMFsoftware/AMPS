@@ -250,10 +250,14 @@ def source_rate(reference,identities):
     macro=reference['total_acceleration_macro']
     if not isinstance(macro,str):raise ValueError('actual acceleration macro expansion required')
     macro=''.join(macro.split())
+    # Reviewed reference builds only: the core zero-acceleration call, or the
+    # gravity-only production lunar point-mass term (I21 decision 1). The
+    # trajectory oracles separately require the build that matches their case.
     zero_bindings={prefix+'TotalParticleAcceleration_default(a,s,p,x,v,n)'+suffix
         for prefix in ('','PIC::Mover::') for suffix in ('',';')}
-    if macro not in zero_bindings:
-        raise ValueError('homogeneous proof requires the actual existing zero-acceleration production binding')
+    gravity_bindings={'Moon::LunarPointMassReferenceAcceleration(a,s,p,x,v,n)'+suffix for suffix in ('',';')}
+    if macro not in zero_bindings|gravity_bindings:
+        raise ValueError('reference proof requires a reviewed reference acceleration binding (zero force or lunar point mass)')
     visible=reference['point_sun_visible']
     if type(visible) is not int or visible not in (0,1):raise ValueError('actual point-Sun0/1 visibility required')
     sun=reference['sun_position_lso_m'];point=reference['source_position_lso_m']
@@ -322,6 +326,7 @@ class StraightLineExposure:
             raise ValueError('numerical oracle requires actual zero-force motion and no terrain faces')
         self.start=self.vector(receipt['source_position_lso_m'])
         self.sun=self.vector(receipt['sun_position_lso_m'])
+        prescribed_sun(plan,receipt,self.sun)
         self.velocity=self.vector(actual['source_velocity_lso_ms'])
         if self.velocity!=self.vector(wanted['source_velocity_lso_ms']) or not self.velocity[0] or any(self.velocity[1:]):
             raise ValueError('actual and declared nonzero x-only velocity must match')
@@ -376,6 +381,261 @@ class StraightLineExposure:
         def root(depth):
             return depth*self.d0**2/(self.strength+depth*self.d0*self.velocity[0])
         return root(threshold),root(threshold*(1+self.relative_projection_bound))
+
+
+def prescribed_sun(plan,receipt,sun):
+    """A prescribed static Sun (I21 decision 1) must be exactly the planned one."""
+    wanted=plan.get('trajectory_reference',{}).get('prescribed_sun_position_lso_m')
+    geometry=receipt.get('photon_source_geometry','spice-sun')
+    if wanted is None:
+        if geometry!='spice-sun':raise ValueError('unplanned prescribed Sun in the native receipt')
+        return
+    if geometry!='prescribed-static-point-sun':raise ValueError('planned prescribed Sun absent from the native receipt')
+    exact=lambda values:tuple(Decimal.from_float(float(v)) for v in values)
+    if exact(wanted)!=exact(sun):
+        raise ValueError('native prescribed Sun differs from the frozen plan')
+
+
+def _mpmath(digits):
+    """A private mpmath context: the precision never leaks into other code."""
+    try:
+        import mpmath
+    except ImportError as error:
+        raise q.MissingPrerequisite('mpmath is required for the shadow and Kepler oracles: '+str(error))
+    context=mpmath.MPContext();context.dps=digits
+    return context
+
+
+def _vector(mp,values):
+    if not isinstance(values,list) or len(values)!=3:raise ValueError('explicit SI three-vector required')
+    return [mp.mpf(str(Decimal.from_float(q.finite(v,'SI component')))) for v in values]
+
+
+def _dark(mp,point,sun,centre,radius):
+    """Point-Sun ray from point to sun passes through the opaque sphere."""
+    w=[s-p for s,p in zip(sun,point)];m=[c-p for c,p in zip(centre,point)]
+    ww=mp.fsum(x*x for x in w);mw=mp.fsum(a*b for a,b in zip(m,w))
+    s=mw/ww
+    if s<=0 or s>=1:return False
+    return mp.fsum(x*x for x in m)-mw*mw/ww<radius*radius
+
+
+class ShadowCrossingExposure:
+    """Straight zero-force path through one lunar point-Sun shadow (approved 2026-11-26).
+
+    The squared Sun distance along x(t)=x0+v t is a t^2+b t+c, so the
+    inverse-square exposure on a lit interval integrates in closed form,
+    H = k*c0 * 2/sqrt(D) * [atan((2 a t+b)/sqrt(D))], D=4ac-b^2. Entry and
+    exit are the roots of the sphere-to-ray distance minus the radius, found
+    at 50 digits; the hazard is exactly zero between them.
+    """
+    def __init__(self,plan,receipt,initial_rate):
+        mp=self.mp=_mpmath(50)
+        wanted=plan.get('trajectory_reference',{});actual=receipt.get('trajectory_reference',{})
+        if actual.get('zero_force') is not True or actual.get('terrain_faces')!=0:
+            raise ValueError('shadow oracle requires actual zero-force motion and no terrain faces')
+        prescribed_sun(plan,receipt,tuple(Decimal(str(v)) for v in receipt['sun_position_lso_m']))
+        if [float(v) for v in actual['source_velocity_lso_ms']]!=[float(v) for v in wanted.get('source_velocity_lso_ms',[])]:
+            raise ValueError('actual and declared velocity must match')
+        spheres=actual['opaque_spheres']
+        if not isinstance(spheres,list) or len(spheres)!=1:
+            raise ValueError('shadow oracle requires exactly the lunar sphere as occultor')
+        self.start=_vector(mp,receipt['source_position_lso_m']);self.velocity=_vector(mp,actual['source_velocity_lso_ms'])
+        self.sun=_vector(mp,receipt['sun_position_lso_m']);self.centre=_vector(mp,spheres[0]['centre_lso_m'])
+        self.radius=mp.mpf(str(Decimal.from_float(q.finite(spheres[0]['radius_m'],'sphere radius',True))))
+        self.horizon=mp.mpf(str(Decimal.from_float(float(plan['horizon_s']))))
+        if all(v==0 for v in self.velocity) or initial_rate<=0:raise ValueError('shadow oracle needs motion and a lit start')
+        w0=[s-p for s,p in zip(self.sun,self.start)]
+        self.a=mp.fsum(v*v for v in self.velocity);self.b=-2*mp.fsum(v*w for v,w in zip(self.velocity,w0))
+        self.c=mp.fsum(w*w for w in w0);self.D=4*self.a*self.c-self.b**2
+        if self.D<=0:raise ValueError('path meets the point source')
+        self.strength=mp.mpf(str(initial_rate))*self.c
+        def gap(t):
+            point=[x+v*t for x,v in zip(self.start,self.velocity)]
+            w=[s-p for s,p in zip(self.sun,point)];m=[c-p for c,p in zip(self.centre,point)]
+            ww=mp.fsum(x*x for x in w);mw=mp.fsum(a*b for a,b in zip(m,w))
+            return mp.fsum(x*x for x in m)-mw*mw/ww-self.radius**2
+        grid=[self.horizon*k/4096 for k in range(4097)]
+        if _dark(mp,self.start,self.sun,self.centre,self.radius):
+            raise q.MissingPrerequisite('shadow oracle requires a lit start')
+        roots=[]
+        values=[gap(t) for t in grid]
+        for t0,t1,g0,g1 in zip(grid,grid[1:],values,values[1:]):
+            if g0==0 or g1==0 or (g0<0)!=(g1<0):
+                roots.append(mp.findroot(gap,(t0,t1),solver='anderson'))
+        if len(roots)!=2 or not 0<roots[0]<roots[1]<self.horizon:
+            raise q.MissingPrerequisite('shadow oracle requires exactly one entry and one exit inside the horizon')
+        mid=(roots[0]+roots[1])/2
+        if not _dark(mp,[x+v*mid for x,v in zip(self.start,self.velocity)],self.sun,self.centre,self.radius):
+            raise ValueError('shadow oracle roots do not bound a dark interval')
+        self.entry,self.exit=roots
+        self.first_depth=self.strength*(self.F(self.entry)-self.F(0))
+        self.end_depth=self.first_depth+self.strength*(self.F(self.horizon)-self.F(self.exit))
+        # Exact reference: the survival-diagnostic bounds coincide.
+        self.end_depth_upper=self.end_depth_lower=self.end_depth
+
+    def F(self,t):
+        mp=self.mp;root=mp.sqrt(self.D)
+        return 2/root*mp.atan((2*self.a*t+self.b)/root)
+
+    def invert(self,value):
+        mp=self.mp;root=mp.sqrt(self.D)
+        return (root*mp.tan(value*root/2)-self.b)/(2*self.a)
+
+    def point_rate(self,event):
+        positions=(event[f'parent_event_x{i}'] for i in range(3))
+        squared=sum((Decimal(str(s))-Decimal(x.numerator)/Decimal(x.denominator))**2
+                    for s,x in zip(self.sun,positions))
+        return Decimal(str(self.strength))/squared
+
+    def first_hit(self,threshold):
+        mp=self.mp;depth=mp.mpf(str(threshold))
+        if depth>self.end_depth:return None
+        if depth<=self.first_depth:t=self.invert(self.F(0)+depth/self.strength)
+        else:t=self.invert(self.F(self.exit)+(depth-self.first_depth)/self.strength)
+        value=Decimal(mp.nstr(t,45,strip_zeros=False))
+        return value,value
+
+    def expected_position(self,native_time,reference_time):
+        return [Decimal(str(x))+Decimal(str(v))*reference_time for x,v in zip(self.start,self.velocity)]
+
+    def position_allocation(self,horizon):
+        speed=Decimal(str(self.mp.sqrt(self.a)))
+        return Decimal(str(q.NUMERICAL_LIMIT['I21']))*speed*horizon
+
+    def diagnostics(self):
+        return {'oracle':'moon-shadow-crossing-zero-force-straight-line-v1',
+                'shadow_entry_s':self.mp.nstr(self.entry,30),'shadow_exit_s':self.mp.nstr(self.exit,30),
+                'depth_at_entry':self.mp.nstr(self.first_depth,30),'depth_at_horizon':self.mp.nstr(self.end_depth,30)}
+
+    def in_dark(self,time):
+        return Decimal(str(self.entry))<time<Decimal(str(self.exit))
+
+
+class KeplerExposure:
+    """Lunar point-mass (Kepler) orbit with inverse-square exposure (approved 2026-11-26).
+
+    Positions follow the universal two-body solution with the production
+    lunar GM reported by the gravity-only reference build. The exposure is
+    integrated along the analytic orbit by Gauss-Legendre quadrature at
+    30 digits on 256 intervals and inverted by Newton's method. The path must stay lit.
+    """
+    NODES=256
+
+    def __init__(self,plan,receipt,initial_rate):
+        mp=self.mp=_mpmath(30)
+        wanted=plan.get('trajectory_reference',{});actual=receipt.get('trajectory_reference',{})
+        if actual.get('lunar_point_mass_gravity') is not True or actual.get('zero_force') is not False \
+                or actual.get('terrain_faces')!=0:
+            raise ValueError('Kepler oracle requires the actual gravity-only reference build and no terrain faces')
+        prescribed_sun(plan,receipt,tuple(Decimal(str(v)) for v in receipt['sun_position_lso_m']))
+        if [float(v) for v in actual['source_velocity_lso_ms']]!=[float(v) for v in wanted.get('source_velocity_lso_ms',[])]:
+            raise ValueError('actual and declared velocity must match')
+        self.gm=mp.mpf(actual['lunar_gm_m3_s2'])
+        if not self.gm>0:raise ValueError('positive production lunar GM required')
+        self.start=_vector(mp,receipt['source_position_lso_m']);self.velocity=_vector(mp,actual['source_velocity_lso_ms'])
+        self.sun=_vector(mp,receipt['sun_position_lso_m'])
+        spheres=actual['opaque_spheres'];self.spheres=[(_vector(mp,s['centre_lso_m']),
+            mp.mpf(str(Decimal.from_float(q.finite(s['radius_m'],'sphere radius',True))))) for s in spheres]
+        self.horizon=mp.mpf(str(Decimal.from_float(float(plan['horizon_s']))))
+        self.r0=mp.sqrt(mp.fsum(x*x for x in self.start))
+        v2=mp.fsum(v*v for v in self.velocity)
+        self.a=1/(2/self.r0-v2/self.gm)
+        if not self.a>0:raise ValueError('Kepler oracle requires a bound orbit')
+        self.n=mp.sqrt(self.gm/self.a**3)
+        self.sigma=mp.fsum(x*v for x,v in zip(self.start,self.velocity))/mp.sqrt(self.gm)
+        w0=[s-p for s,p in zip(self.sun,self.start)]
+        self.strength=mp.mpf(str(initial_rate))*mp.fsum(w*w for w in w0)
+        self.nodes=[self.horizon*k/self.NODES for k in range(self.NODES+1)]
+        for k,t in enumerate(self.nodes):
+            for point in (self.position(t),self.position(t+self.horizon/(2*self.NODES))) if k<self.NODES else (self.position(t),):
+                if any(_dark(mp,point,self.sun,c,r) for c,r in self.spheres) or mp.sqrt(mp.fsum(x*x for x in point))<=max(r for c,r in self.spheres):
+                    raise q.MissingPrerequisite('Kepler oracle requires an orbit that stays lit and above the surface')
+        self.depths=[mp.mpf(0)]
+        for t0,t1 in zip(self.nodes,self.nodes[1:]):
+            self.depths.append(self.depths[-1]+mp.quad(self.rate,[t0,t1],method='gauss-legendre'))
+        self.end_depth=self.depths[-1]
+        # Exact reference: the survival-diagnostic bounds coincide.
+        self.end_depth_upper=self.end_depth_lower=self.end_depth
+
+    def position(self,t):
+        mp=self.mp
+        if t==0:return list(self.start)
+        root=mp.sqrt(self.a)
+        def kepler(x):
+            return x-(1-self.r0/self.a)*mp.sin(x)+self.sigma/root*(1-mp.cos(x))-self.n*t
+        x=mp.findroot(kepler,self.n*t)
+        f=1-self.a/self.r0*(1-mp.cos(x));g=t-(x-mp.sin(x))/self.n
+        return [f*p+g*v for p,v in zip(self.start,self.velocity)]
+
+    def rate(self,t):
+        point=self.position(t)
+        return self.strength/self.mp.fsum((s-p)**2 for s,p in zip(self.sun,point))
+
+    def depth(self,t):
+        mp=self.mp;k=min(int(t/self.horizon*self.NODES),self.NODES-1)
+        return self.depths[k]+mp.quad(self.rate,[self.nodes[k],t],method='gauss-legendre')
+
+    def point_rate(self,event):
+        positions=(event[f'parent_event_x{i}'] for i in range(3))
+        squared=sum((Decimal(str(s))-Decimal(x.numerator)/Decimal(x.denominator))**2
+                    for s,x in zip(self.sun,positions))
+        return Decimal(str(self.strength))/squared
+
+    def first_hit(self,threshold):
+        mp=self.mp;depth=mp.mpf(str(threshold))
+        if depth>self.end_depth:return None
+        k=max(i for i,h in enumerate(self.depths) if h<=depth)
+        t=self.nodes[min(k,self.NODES-1)]
+        for _ in range(40):
+            step=(self.depth(t)-depth)/self.rate(t)
+            t-=step
+            if abs(step)<=self.horizon*mp.mpf(10)**-26:break
+        else:
+            raise ArithmeticError('Kepler exposure inversion did not converge')
+        value=Decimal(mp.nstr(t,30,strip_zeros=False))
+        return value,value
+
+    def expected_position(self,native_time,reference_time):
+        # Trajectory error is evaluated at the NATIVE event time, so it is not
+        # mixed with the separately scored first-hit time error.
+        return [Decimal(self.mp.nstr(x,30,strip_zeros=False)) for x in self.position(self.mp.mpf(str(native_time)))]
+
+    def position_allocation(self,horizon):
+        return None
+
+    def diagnostics(self):
+        mp=self.mp
+        return {'oracle':'lunar-point-mass-kepler-v1','lunar_gm_m3_s2':mp.nstr(self.gm,25),
+                'semi_major_axis_m':mp.nstr(self.a,25),'period_s':mp.nstr(2*mp.pi/self.n,25),
+                'depth_at_horizon':mp.nstr(self.end_depth,30)}
+
+    def in_dark(self,time):
+        return False
+
+
+TRAJECTORY_ORACLES={'illuminated-zero-force-lso-x-axis-v1':('trajectory-integrated-hazard',None),
+                    'moon-shadow-crossing-zero-force-straight-line-v1':('trajectory-integrated-hazard',ShadowCrossingExposure),
+                    'lunar-point-mass-kepler-v1':('trajectory-lunar-gravity',KeplerExposure)}
+
+
+_ORACLE_CACHE={}
+
+
+def trajectory_motion(plan,receipt,rate):
+    """Independent oracle for a frozen varying-exposure plan (cached per launch geometry)."""
+    if plan.get('test_kind')!='trajectory-integrated-hazard':return None
+    oracle_id=plan.get('trajectory_reference',{}).get('oracle')
+    if oracle_id not in TRAJECTORY_ORACLES:raise ValueError('unknown frozen trajectory oracle')
+    if receipt.get('case_kind')!=TRAJECTORY_ORACLES[oracle_id][0]:
+        raise ValueError('actual transport case does not match the frozen trajectory oracle')
+    key=json.dumps([oracle_id,plan.get('trajectory_reference'),plan.get('horizon_s'),str(rate),
+                    receipt.get('source_position_lso_m'),receipt.get('sun_position_lso_m'),
+                    receipt.get('trajectory_reference'),receipt.get('photon_source_geometry')],sort_keys=True)
+    if key not in _ORACLE_CACHE:
+        oracle=TRAJECTORY_ORACLES[oracle_id][1]
+        _ORACLE_CACHE[key]=oracle(plan,receipt,rate) if oracle else StraightLineExposure(plan,receipt,rate)
+    return _ORACLE_CACHE[key]
 
 
 def homogeneous_timing_breakdown(depth,reference_rate,native,display_text,precision='binary64-log'):
@@ -439,7 +699,10 @@ def verify(runs,plan):
     baseline=None
     timing_breakdown=[]
     varying=plan.get('test_kind')=='trajectory-integrated-hazard'
-    expected_kind='trajectory-integrated-hazard' if varying else 'homogeneous-fixed-position'
+    oracle_id=plan.get('trajectory_reference',{}).get('oracle') if varying else None
+    if varying and oracle_id not in TRAJECTORY_ORACLES:raise ValueError('unknown frozen trajectory oracle')
+    expected_kind=TRAJECTORY_ORACLES[oracle_id][0] if varying else 'homogeneous-fixed-position'
+    position_levels={1:[],8:[]};oracle_diagnostics=None
     for directory,ranks,events in runs:
         if type(ranks) is not int or ranks not in levels:raise ValueError('explicit1/8MPI layouts required')
         directory=Path(directory);receipt_path=directory/'input_receipt.json'
@@ -473,7 +736,10 @@ def verify(runs,plan):
         identities[str(path)]=q.sha(path)
         if {int(r['original_parent_id']) for r in rows}!=set(range(plan['original_parents'])):
             raise ValueError('actual cohort must retain every frozen global original-parent ID')
-        motion=StraightLineExposure(plan,receipt,rate) if varying else None
+        motion=trajectory_motion(plan,receipt,rate)
+        if motion is not None and oracle_diagnostics is None and hasattr(motion,'diagnostics'):
+            oracle_diagnostics=motion.diagnostics()
+        level_position=Decimal(0)
         maximum=Decimal(0);horizon=Decimal.from_float(float(plan['horizon_s']))
         maxima={}
         with localcontext() as context:
@@ -504,9 +770,18 @@ def verify(runs,plan):
                 if motion is not None and expected=='REACTED':
                     positions=[native[f'parent_event_x{i}'] for i in range(3)]
                     actual_position=[Decimal(x.numerator)/Decimal(x.denominator) for x in positions]
-                    position_error=max(abs(x-x0-v*event) for x,x0,v in zip(actual_position,motion.start,motion.velocity))
-                    if position_error>Decimal(str(q.NUMERICAL_LIMIT['I21']))*abs(motion.velocity[0])*horizon:
-                        raise ArithmeticError('native straight-line event position exceeds I21 numerical allocation')
+                    if isinstance(motion,StraightLineExposure):
+                        position_error=max(abs(x-x0-v*event) for x,x0,v in zip(actual_position,motion.start,motion.velocity))
+                        allocation=Decimal(str(q.NUMERICAL_LIMIT['I21']))*abs(motion.velocity[0])*horizon
+                    else:
+                        expected_position=motion.expected_position(actual_time,event)
+                        position_error=max(abs(x-y) for x,y in zip(actual_position,expected_position))
+                        allocation=motion.position_allocation(horizon)
+                        if motion.in_dark(actual_time):
+                            raise ArithmeticError('native event inside the independently located lunar shadow: parent'+str(parent))
+                    if allocation is not None and position_error>allocation:
+                        raise ArithmeticError('native trajectory event position exceeds I21 numerical allocation')
+                    level_position=max(level_position,position_error)
                 error=Decimal(0) if event is None or expected=='SURVIVED' else abs(Decimal(actual_time)-event)/horizon
                 maximum=max(maximum,error)
                 comparisons.append({'mpi_ranks':ranks,'steps':receipt['physical_steps'],'original_parent_id':parent,
@@ -515,6 +790,7 @@ def verify(runs,plan):
                     'reference_root_width_s':None if root_interval is None else str(root_interval[1]-root_interval[0]),
                     'position_error_m':None if position_error is None else str(position_error)})
         levels[ranks].append({'steps':receipt['physical_steps'],'actual':str(maximum),'reference':'0','scale':'1'})
+        position_levels[ranks].append({'steps':receipt['physical_steps'],'maximum_position_error_m':str(level_position)})
         if motion is None:
             timing_breakdown.append({'mpi_ranks':ranks,'steps':receipt['physical_steps'],
                 'events_evaluated':len(events),'optical_clock_precision':precision,'component_extrema':{
@@ -528,6 +804,16 @@ def verify(runs,plan):
     if [r['steps'] for r in levels[1]]!=[r['steps'] for r in levels[8]]:
         raise ValueError('matched1/8MPI refinements must use the same frozen steps')
     status='PASS' if all(r['status']=='PASS' for r in scores.values()) else 'FAIL'
+    # Gravity path (approved 2026-11-26): the event-position (trajectory) error
+    # must also strictly decrease from 8 to 16 to 32 steps; no ceiling applies.
+    position_refinement={}
+    for ranks,rows in position_levels.items():
+        rows.sort(key=lambda r:r['steps'])
+        values=[Decimal(r['maximum_position_error_m']) for r in rows]
+        decreasing=all(b<a or (a==0 and b==0) for a,b in zip(values,values[1:]))
+        position_refinement[str(ranks)]={'levels':rows,'strictly_decreasing':decreasing}
+    if oracle_id=='lunar-point-mass-kepler-v1' and not all(v['strictly_decreasing'] for v in position_refinement.values()):
+        status='FAIL'
     # The installed single-step Na topology has at most ONE accepted parent
     # removal: source clock1, channel1, recoil2 and daughter clock1. Count all
     # launches conservatively even though matched layouts reuse semantic keys.
@@ -538,4 +824,5 @@ def verify(runs,plan):
         'status':status,'scores':scores,
         'comparisons':comparisons,'input_sha256':identities,'finite_uniform_resolution':finite_resolution,
         'homogeneous_timing_breakdown':timing_breakdown,
+        'trajectory_oracle':oracle_diagnostics,'position_refinement':position_refinement if varying else None,
         'scope':'actual per-cohort source-clock timing; no observational or full I21 qualification'}

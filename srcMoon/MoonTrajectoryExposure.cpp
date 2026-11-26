@@ -97,6 +97,27 @@ bool FrozenProductionField::CreateAtEpoch(const T::Controls& controls,bool earth
   *output=std::move(candidate);error->clear();return true;
 #endif
 }
+bool FrozenProductionField::CreatePrescribedSunAtEpoch(const T::Controls& controls,const T::Vector& sun,double et,
+    std::shared_ptr<const FrozenProductionField>*output,std::string*error){
+  if(!output||!error||!Allowed(error))return false;
+  if(!std::isfinite(et))return Reject(error,"explicit frozen field requires finite TDB ephemeris seconds");
+  if(!SunValid(sun,error))return false;
+#if defined(_NO_SPICE_CALLS_)
+  return Reject(error,"prescribed-Sun frozen field still requires furnished SPICE body transforms");
+#else
+  auto candidate=std::make_shared<FrozenProductionField>();candidate->controls_=controls;
+  auto& f=candidate->field_;f.frame=Frames::SolarOrbital;f.frozenGeometryEpochS=et;f.referenceDistanceM=_AU_;
+  f.sunPositionM=sun;
+  SpiceDouble forwardState[6][6],inverseState[6][6];
+  sxform_c(Frames::BodyFixed,Frames::SolarOrbital,et,forwardState);
+  sxform_c(Frames::SolarOrbital,Frames::BodyFixed,et,inverseState);
+  if(failed_c()){reset_c();return Reject(error,"furnished normal SPICE cannot provide the same-epoch body transforms");}
+  std::array<double,36> forward{},inverse{};
+  for(int i=0;i<36;++i){forward[i]=forwardState[i/6][i%6];inverse[i]=inverseState[i/6][i%6];}
+  if(!Surface(f,forward,inverse,error))return false;
+  *output=std::move(candidate);error->clear();return true;
+#endif
+}
 bool FrozenProductionField::Build(const Controller::ExposureRequest& request,
     const std::vector<T::PhotonChannel>& photons,const std::vector<T::ConstantChannel>& constants,
     T::History*output,std::string*error)const{

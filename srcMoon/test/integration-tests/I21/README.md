@@ -170,3 +170,38 @@ Use these paths in the plan-preparation and aggregate commands above. The
 geometry-only comparison uses the Sun direction actually returned by SPICE.
 The reference-segment test also checks the Moon's radius from the authenticated
 build. No observation files are needed for this analytical shadow case.
+
+## Decision-1 cases (approved 2026-11-26)
+
+The user approved decision 1 of the M3 completion follow-up and its case
+design on 2026-11-26. The [decision-1 contract](DECISION1_CONTRACT.md) records
+the rules (the constant-cohort FAIL stays visible; the existing varying-rate
+pair satisfies item 2), the cases, the production changes and the gates.
+Formal I21 remains SKIPPED.
+
+| File | Role |
+| --- | --- |
+| `reference/decision1_approval_20261126.json` | The approvals and case parameters. |
+| `prepare_decision1_cases.py` | Generates `reference/decision1/` (case controls and the straight, active and gravity decks for both movers) from `reference/shadow_sphere.in` and `reference/shadow_controls.json`; `--check` requires byte equality. |
+| `compare_distance_endpoints.py` | Scores the native 1 AU / 2 AU rate ratio (4 within 0.1%) and the active/quiet D04 ratio across the four prescribed-Sun cases. |
+| `../../test_m3_i21_decision1.py` | U16 controls: the shadow and Kepler oracles against direct integration and an RK4 orbit, the generator and the gravity recipe. |
+
+Each case uses the documented chain: `sodium_cohort/prepare_physical_case.py`
+with the case JSON and deck, a one-rank reference run with
+`run_m3_sodium_cohort.py --mode run`, `prepare_cohort.py` for each mover
+(`--trajectory-oracle moon-shadow-crossing-zero-force-straight-line-v1` for
+`moon-shadow`; the Kepler oracle is selected automatically for
+`lunar-gravity`), then `run_all_test.py --only I21 --i21-cohort-plan ...` as in
+the commands above. Use a Na/Na⁺ producer built with
+`--reference-problem homogeneous-zero-acceleration` for the straight-line and
+shadow cases, and with `--reference-problem lunar-point-mass-gravity` for the
+gravity case ([builder](../../source_qualification_build/README.md)). Select
+the `_active` decks for the active endpoint; the normal runtime refuses a deck
+whose solar endpoint differs from the cohort.
+
+The independent audit writes `independent-audit/numerical.json`. For the shadow
+case its `trajectory_oracle` block records the entry and exit times and the
+depth at entry and at the horizon. For the gravity case it records the
+production lunar GM, semi-major axis and period, and `position_refinement`
+lists the maximum event-position error per level, which must strictly
+decrease.

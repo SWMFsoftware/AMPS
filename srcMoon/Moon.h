@@ -604,6 +604,18 @@ namespace Moon {
     memcpy(accl,accl_LOCAL,3*sizeof(double));
   }
 
+  // REFERENCE BUILD ONLY (I21 decision 1, approved 2026-11-26). The production
+  // lunar point-mass term alone, -GM r/|r|^3 with GM = GravityConstant*MASS(MOON),
+  // for the gravity-only reference experiment that the source-qualification
+  // compile recipe selects by name (reference problem lunar-point-mass-gravity).
+  // It adds no force law: it calls the same OrbitalDynamics term used above.
+  // The normal TotalParticleAcceleration is unchanged.
+  void inline LunarPointMassReferenceAcceleration(double *accl,int,long int,double *x,double *,
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *) {
+    accl[0]=accl[1]=accl[2]=0.0;
+    OrbitalDynamics::AddLunarPointMassAcceleration(accl,x);
+  }
+
 
 
   inline double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {

@@ -207,7 +207,7 @@ def run(args):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('profile','mapping','checkout','output-dir'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--reference-problem',choices=('homogeneous-zero-acceleration','normal-template'),required=True)
+    p.add_argument('--reference-problem',choices=('homogeneous-zero-acceleration','lunar-point-mass-gravity','normal-template'),required=True)
     p.add_argument('--wall-seconds',type=float,default=3600)
     p.add_argument('--spice-path',default='/home/vtenishe/SPICE/cspice')
     p.add_argument('--spice-kernels',default='/home/vtenishe/SPICE/Kernels')

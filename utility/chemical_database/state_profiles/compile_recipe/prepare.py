@@ -60,18 +60,32 @@ def source_species_include(canonical,mapping,native):
     if found!=set(selected):raise ValueError('mapped component absent from canonical species table: '+','.join(sorted(set(selected)-found)))
     return ''.join(pieces)
 
+# Named reference experiments: each substitutes ONE existing production
+# function for the acceleration macro and adds its marker. No force law is
+# written here. lunar-point-mass-gravity (I21 decision 1, approved 2026-11-26)
+# applies only the production lunar point-mass term.
+REFERENCE_PROBLEMS={
+    'homogeneous-zero-acceleration':('PIC::Mover::TotalParticleAcceleration_default(a,s,p,x,v,n)',
+                                     '_MOON_COHORT_ZERO_FORCE_REFERENCE_'),
+    'lunar-point-mass-gravity':('Moon::LunarPointMassReferenceAcceleration(a,s,p,x,v,n)',
+                                '_MOON_COHORT_LUNAR_GRAVITY_REFERENCE_'),
+}
+
+
 def reference_template(text,reference_problem='normal-template'):
     """Select an explicit reference experiment in NORMAL AMPS input syntax.
 
     No source-state availability or physical approval is inferred here. The
-    normal default is exactly the caller's template. The opt-in experiment
-    names an existing core function; it never substitutes a test force law.
+    normal default is exactly the caller's template. An opt-in experiment
+    names an existing production function; it never substitutes a test force law.
     """
-    if reference_problem not in ('normal-template','homogeneous-zero-acceleration'):
+    if reference_problem!='normal-template' and reference_problem not in REFERENCE_PROBLEMS:
         raise ValueError('unknown explicit reference problem')
     if reference_problem=='normal-template':return text
-    if re.search(r'(?mi)^\s*define\s+_MOON_COHORT_ZERO_FORCE_REFERENCE_\b',text):
-        raise ValueError('reference template already contains a cohort marker')
+    function,marker=REFERENCE_PROBLEMS[reference_problem]
+    for other in REFERENCE_PROBLEMS.values():
+        if re.search(r'(?mi)^\s*define\s+'+other[1]+r'\b',text):
+            raise ValueError('reference template already contains a cohort marker')
     pattern=re.compile(r'(?m)^([ \t]*define[ \t]+)_PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_\(([^()\r\n]*)\)[ \t]+([^\r\n]+)$')
     matches=list(pattern.finditer(text))
     if len(matches)!=1:raise ValueError('reference experiment requires one simple acceleration definition')
@@ -84,8 +98,7 @@ def reference_template(text,reference_problem='normal-template'):
     if end is None or not blocks[0].end()<match.start()<blocks[0].end()+end.start():
         raise ValueError('acceleration definition is outside normal Exosphere input block')
     replacement=(match.group(1)+'_PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(a,s,p,x,v,n) '
-        'PIC::Mover::TotalParticleAcceleration_default(a,s,p,x,v,n)\n'
-        +match.group(1)+'_MOON_COHORT_ZERO_FORCE_REFERENCE_ 1')
+        +function+'\n'+match.group(1)+marker+' 1')
     return text[:match.start()]+replacement+text[match.end():]
 
 
@@ -170,7 +183,7 @@ def prepare(amps_root,profile_path,mapping_path,template_path,output,*,reference
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     for key in ('amps-root','profile','mapping','template','output-dir'):p.add_argument('--'+key,required=True,type=Path)
-    p.add_argument('--reference-problem',choices=('normal-template','homogeneous-zero-acceleration'),default='normal-template',help='explicit reference experiment; normal-template preserves the supplied force binding')
+    p.add_argument('--reference-problem',choices=('normal-template',*REFERENCE_PROBLEMS),default='normal-template',help='explicit reference experiment; normal-template preserves the supplied force binding')
     p.add_argument('--packet-layout',choices=('template','conservative-products'),default='template',help='explicit particle-record ABI; conservative-products enables normal individual weight correction storage')
     a=p.parse_args()
     try:prepare(a.amps_root,a.profile,a.mapping,a.template,a.output_dir,reference_problem=a.reference_problem,packet_layout=a.packet_layout)

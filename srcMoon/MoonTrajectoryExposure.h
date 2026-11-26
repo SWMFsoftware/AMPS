@@ -19,6 +19,15 @@ class FrozenProductionField {
   static bool CreateAtEpoch(const Species::TrajectoryExposure::Controls& controls,
       bool earthOccultation,double ephemerisTimeS,
       std::shared_ptr<const FrozenProductionField>* output,std::string* error);
+  // VERIFICATION ONLY (I21 decision 1, approved 2026-11-26): the same frozen
+  // field, but with a caller-prescribed static point-Sun position [m, frozen
+  // LSO] instead of the SPICE Sun at this ET. Body transforms still come from
+  // SPICE at the same ET. Earth occultation is not available, because a
+  // prescribed Sun has no consistent Earth geometry. The Sun must lie outside
+  // one solar radius of the Moon's centre, as for the normal field.
+  static bool CreatePrescribedSunAtEpoch(const Species::TrajectoryExposure::Controls& controls,
+      const Species::TrajectoryExposure::Vector& sunPositionM,double ephemerisTimeS,
+      std::shared_ptr<const FrozenProductionField>* output,std::string* error);
   bool Build(const Controller::ExposureRequest& request,
       const std::vector<Species::TrajectoryExposure::PhotonChannel>& photons,
       const std::vector<Species::TrajectoryExposure::ConstantChannel>& constants,

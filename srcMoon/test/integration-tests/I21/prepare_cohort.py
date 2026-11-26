@@ -72,14 +72,32 @@ def prepare_cohort(args):
     case = qualification.strict_object(args.controls)
     _, controls, evidence = validate_controls(args.controls)
     reference = reference_receipt(qualification.strict_object(args.reference))
-    varying = controls['case_kind'] == 'trajectory-integrated-hazard'
+    varying = controls['case_kind'] in ('trajectory-integrated-hazard', 'trajectory-lunar-gravity')
+    gravity = controls['case_kind'] == 'trajectory-lunar-gravity'
+    prescribed = controls.get('photon_source_geometry') == 'prescribed-static-point-sun'
+    oracle = getattr(args, 'trajectory_oracle', None) or (
+        'lunar-point-mass-kepler-v1' if gravity else 'illuminated-zero-force-lso-x-axis-v1')
+    if prescribed and not varying:
+        raise ValueError('the prescribed static Sun is admitted only for the I21 trajectory cases')
     if varying:
-        # The numerical reference is an illuminated x-axis straight line.
-        # Authenticated native receipts will additionally prove zero force,
-        # the same velocity and finite-ray visibility over the whole horizon.
+        # Authenticated native receipts additionally prove the force recipe,
+        # the same velocity and visibility over the whole horizon. The x-axis
+        # oracle needs x-only motion; the shadow and Kepler oracles (I21
+        # decision 1, approved 2026-11-26) accept any nonzero launch velocity.
         velocity = [Decimal(controls[f'source_velocity_lso_ms_{axis}']) for axis in range(3)]
-        if velocity[0] == 0 or any(velocity[1:]) or reference['point_sun_visible'] != 1:
-            raise ValueError('varying exposure requires x-only nonzero velocity and an illuminated initial point')
+        if (oracle == 'lunar-point-mass-kepler-v1') != gravity:
+            raise ValueError('the Kepler oracle belongs exactly to the lunar-gravity case kind')
+        if oracle == 'illuminated-zero-force-lso-x-axis-v1' and (velocity[0] == 0 or any(velocity[1:])):
+            raise ValueError('the x-axis oracle requires x-only nonzero velocity')
+        if not any(velocity) or reference['point_sun_visible'] != 1:
+            raise ValueError('varying exposure requires nonzero velocity and an illuminated initial point')
+    if prescribed:
+        sun = [Decimal(controls[f'prescribed_sun_position_lso_m_{axis}']) for axis in range(3)]
+        full = qualification.strict_object(args.reference)
+        if (full.get('photon_source_geometry') != 'prescribed-static-point-sun'
+                or [Decimal.from_float(float(v)) for v in reference['sun_position_lso_m']]
+                != [Decimal.from_float(float(v)) for v in sun]):
+            raise ValueError('reference receipt was not produced with the same prescribed Sun')
     position = [Decimal(controls['source_position_lso_m_'+str(axis)]) for axis in range(3)]
     if (position != [Decimal(value) for value in reference['source_position_lso_m']]
             or controls['solar_endpoint'] != reference['solar_endpoint']
@@ -116,8 +134,10 @@ def prepare_cohort(args):
             'state_mapping': {}, 'runs': []}}
     if varying:
         plan['trajectory_reference'] = {
-            'oracle': 'illuminated-zero-force-lso-x-axis-v1',
+            'oracle': oracle,
             'source_velocity_lso_ms': [str(value) for value in velocity]}
+        if prescribed:
+            plan['trajectory_reference']['prescribed_sun_position_lso_m'] = [str(value) for value in sun]
     horizon = Decimal(controls['physical_horizon_s'])
     for steps in (8, 16, 32):
         controls_path = output / f'controls-{steps}.json'
@@ -145,6 +165,9 @@ def main():
         parser.add_argument('--'+role,type=Path,required=True)
     parser.add_argument('--reference-sha256',required=True)
     parser.add_argument('--branch-claims',type=int,required=True)
+    parser.add_argument('--trajectory-oracle',choices=('illuminated-zero-force-lso-x-axis-v1',
+        'moon-shadow-crossing-zero-force-straight-line-v1','lunar-point-mass-kepler-v1'),
+        help='independent oracle for a trajectory case (default: x-axis line, or Kepler for lunar gravity)')
     args = parser.parse_args()
     try:
         print(json.dumps(prepare_cohort(args), indent=2))

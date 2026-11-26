@@ -122,6 +122,22 @@ not represented atom counts; the native owner assigns them before cohort
 creation. The preparer preserves any declared unequal ratio and never derives
 either reference weight from the represented number or the other species.
 
+Two verification-only selections were added for I21 decision 1
+(approved 2026-11-26; [contract](../integration-tests/I21/DECISION1_CONTRACT.md)):
+
+* `photon_source_geometry` is `spice-sun` (the default when omitted) or
+  `prescribed-static-point-sun`. The prescribed form requires
+  `prescribed_sun_identity` and `prescribed_sun_position_lso_m_0..2` [m, frozen
+  LSO], and `earth_occultation = off`. The native owner then builds its frozen
+  photon field with that static point Sun instead of the SPICE Sun; the
+  one-solar-radius check still applies. Partial or contradictory input is
+  refused.
+* `case_kind = trajectory-lunar-gravity` selects a moving parent under the
+  gravity-only reference build (`--reference-problem lunar-point-mass-gravity`).
+  The native owner refuses it unless the compiled acceleration macro is exactly
+  `Moon::LunarPointMassReferenceAcceleration(a,s,p,x,v,n)` with its marker, and
+  it records the production lunar GM for the Kepler oracle.
+
 The eight-column CSV must be the profile's pinned atomic crosswalk. All fields
 must agree with its pinned metadata; the selected three states must be available
 and explicitly describe the same 23Na nucleus, neutral/+1/-1 charges, and common

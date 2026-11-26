@@ -580,6 +580,7 @@ def load_tests(loader,tests,pattern):
     import test_m3_i23_electron_bath
     import test_m3_i24_total_capture
     import test_m3_python_environment
+    import test_m3_i21_decision1
     tests.addTests(loader.loadTestsFromModule(test_m3_reaction_controller))
     tests.addTests(loader.loadTestsFromModule(test_m3_supporting_protocol))
     tests.addTests(loader.loadTestsFromModule(test_m3_qualification_protocol))
@@ -589,6 +590,7 @@ def load_tests(loader,tests,pattern):
     tests.addTests(loader.loadTestsFromModule(test_m3_i23_electron_bath))
     tests.addTests(loader.loadTestsFromModule(test_m3_i24_total_capture))
     tests.addTests(loader.loadTestsFromModule(test_m3_python_environment))
+    tests.addTests(loader.loadTestsFromModule(test_m3_i21_decision1))
     return tests
 
 

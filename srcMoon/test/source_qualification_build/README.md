@@ -52,6 +52,9 @@ python3 -B srcMoon/test/build_m3_source_qualification.py \
 `normal-template` retains the supplied canonical force binding instead. The
 explicit homogeneous option uses the existing zero-acceleration function and
 marker through the normal AMPS compile input; it does not invent a force law.
+`lunar-point-mass-gravity` builds the gravity-only reference for the I21
+decision-1 force-driven path: only the production lunar point-mass term is
+applied ([I21 decision-1 contract](../integration-tests/I21/DECISION1_CONTRACT.md)).
 Neither option selects error bounds, a radiation spectrum, source kinetics,
 event execution or observational acceptance.
 

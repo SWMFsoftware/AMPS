@@ -143,6 +143,9 @@ E::Status Prepared::Create(const Species::Photochemistry::Registry& source,const
         (r.exposure.absoluteDepthTolerance==0&&r.exposure.relativeDepthTolerance==0)||
         r.exposure.maximumSegments==0||r.exposure.maximumGeometryIntervals==0)
       return Error(E::Code::InvalidInput,"explicit state IDs/compiled mapping, SUN inertial origin/frame, source reference distance and numerical controls are required");
+    if(r.prescribedSun&&(r.earthOccultation||r.prescribedSunIdentity.empty()||
+        !std::isfinite(r.prescribedSunPositionM[0])||!std::isfinite(r.prescribedSunPositionM[1])||!std::isfinite(r.prescribedSunPositionM[2])))
+      return Error(E::Code::InvalidInput,"a prescribed static Sun needs a finite LSO position, a fixture identity and Earth occultation off");
     auto p=std::shared_ptr<Prepared>(new Prepared);p->request_=r;
     const auto inspected=InspectProfile(r,&p->profile_);if(!inspected.ok())return inspected;
     std::string error;
@@ -187,8 +190,17 @@ E::Status Prepared::RegisterForNormalStartup(){
 }
 bool Prepared::Install(void* user,std::string* error){
   auto& p=*static_cast<Prepared*>(user);
-  if(!Exposure::FrozenProductionField::CreateAtEpoch(p.request_.exposure,p.request_.earthOccultation,
-      Moon::OrbitalMotion::et,&p.geometry_,error))return false;
+  if(p.request_.prescribedSun){
+    const Species::TrajectoryExposure::Vector sun{{p.request_.prescribedSunPositionM[0],
+        p.request_.prescribedSunPositionM[1],p.request_.prescribedSunPositionM[2]}};
+    if(!Exposure::FrozenProductionField::CreatePrescribedSunAtEpoch(p.request_.exposure,sun,
+        Moon::OrbitalMotion::et,&p.geometry_,error))return false;
+    p.exposureIdentity_=p.definition_.identity+";prescribed-static-point-Sun-geometry;"+p.request_.prescribedSunIdentity;
+  }else{
+    if(!Exposure::FrozenProductionField::CreateAtEpoch(p.request_.exposure,p.request_.earthOccultation,
+        Moon::OrbitalMotion::et,&p.geometry_,error))return false;
+    p.exposureIdentity_=p.definition_.identity+";normal-frozen-point-Sun-geometry";
+  }
   p.field_=p.geometry_->geometry();p.field_.referenceDistanceM=p.request_.sourceReferenceDistanceM;
   // Check actual runtime endpoint/source installation, never assume a table
   // loaded during a different preflight became this process's active family.
@@ -205,7 +217,7 @@ bool Prepared::Install(void* user,std::string* error){
   c.resolveInitialState=Resolve;c.openUniform=SemanticRandom::DrawForParticle;c.userData=&p;c.ledger=&p.ledger_;
   c.elementaryChargeC=p.elementaryChargeC_;c.elementaryChargeSourceIdentity=p.elementaryChargeIdentity_;
   c.initializeProduct=SemanticRandom::InitializeStagedProduct;c.productInitializerIdentity="full-genealogy-HMAC-SHA256-child-key-v1";
-  c.exposureHistory=History;c.exposureProviderIdentity=p.definition_.identity+";normal-frozen-point-Sun-geometry";
+  c.exposureHistory=History;c.exposureProviderIdentity=p.exposureIdentity_;
   c.exposureControls.maximumRootRefinements=p.request_.maximumRootRefinements;
   Controller::Channel channel;channel.parentCatalogSpecies=p.definition_.parent.catalogIndex;channel.reaction=*p.provider_.reaction();
   channel.scope=Controller::HazardScope::TrajectoryDependent;channel.kinematics=Kinematics;
@@ -257,12 +269,13 @@ bool Prepared::Kinematics(const Controller::EventContext& event,Species::Reactio
   // value and reject that SAME event. Preserve the accepted source convention
   // and diagnose its affine rate separately from exact distance-only RateS.
   if(event.selectedInstantaneousRateS<=0||!std::isfinite(event.selectedInstantaneousRateS)||
-      event.channelIndex!=0||event.acceptedExposureIdentity!=p.definition_.identity+";normal-frozen-point-Sun-geometry"||event.rateConventionIdentity!="declared-piecewise-affine-first-hit-LEFT-limit"){
+      event.channelIndex!=0||event.acceptedExposureIdentity!=p.exposureIdentity_||event.rateConventionIdentity!="declared-piecewise-affine-first-hit-LEFT-limit"){
     *error="physical photon composition requires the preserved positive accepted LEFT-limit source decision";return false;}
   input.pointSunVisible=1;
   const double dx=p.field_.sunPositionM[0]-event.parent.positionM[0],dy=p.field_.sunPositionM[1]-event.parent.positionM[1],dz=p.field_.sunPositionM[2]-event.parent.positionM[2];
   input.distanceAu=std::hypot(dx,dy,dz)/p.field_.referenceDistanceM;
-  input.photonGeometryIdentity="normal SPICE+actual sphere/LOLA BVH; point-Sun; "+p.request_.sourceReferenceDistanceIdentity;
+  input.photonGeometryIdentity=(p.request_.prescribedSun?"prescribed static point-Sun ("+p.request_.prescribedSunIdentity+")+actual sphere/LOLA BVH; ":
+      std::string("normal SPICE+actual sphere/LOLA BVH; point-Sun; "))+p.request_.sourceReferenceDistanceIdentity;
   E::Composition composition;auto status=p.provider_.Compose(input,&composition);if(!status.ok()){*error=status.message;return false;}
   // Reserve receipt space before returning a prospective policy. This is not
   // yet event publication; callers may only publish entries paired to actual

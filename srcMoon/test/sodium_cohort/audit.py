@@ -163,7 +163,7 @@ def run(plan_path,runs_path,output,*,development=False):
                 (output/('lunar_shadow-%02d.json'%index)).write_text(json.dumps(shadow,indent=2)+'\n')
                 records.append({'name':'independent-fixed-lunar-shadow-%02d'%index,'status':shadow['status']})
             reference_rate,channel=numerical.source_rate(reference,manifest['input_sha256'])
-            motion=numerical.StraightLineExposure(plan,receipt,reference_rate) if varying else None
+            motion=numerical.trajectory_motion(plan,receipt,reference_rate) if varying else None
             inverse_square=numerical.inverse_square_checks(actual_events,motion.point_rate if motion else reference_rate)
             if not actual_events and reference_rate > 0:
                 # An exposed reference still needs actual accepted-event rate

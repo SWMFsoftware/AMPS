@@ -4,6 +4,7 @@
 #include "MoonSemanticRandom.h"
 #include "species/PhysicalReactionEvents.h"
 #include "species/PhysicalStateProfile.h"
+#include <array>
 #include <memory>
 namespace Moon { namespace Chemistry { namespace SodiumCohort {
 namespace E=Species::PhysicalReactionEvents;
@@ -31,6 +32,13 @@ struct Request {
   std::string inertialFrame,inertialOrigin; // origin must explicitly be SUN
   double sourceReferenceDistanceM=0;
   std::string sourceReferenceDistanceIdentity;
+  // VERIFICATION ONLY (I21 decision 1, 2026-11-26). When true, the frozen
+  // photon field uses this static point-Sun position [m, frozen LSO] instead
+  // of the SPICE Sun; earthOccultation must then be false. The identity names
+  // the analytical fixture. False (default) keeps the normal SPICE geometry.
+  bool prescribedSun=false;
+  std::array<double,3> prescribedSunPositionM{};
+  std::string prescribedSunIdentity;
 
 };
 struct ComposedEvent {
@@ -64,6 +72,7 @@ class Prepared : public std::enable_shared_from_this<Prepared> {
   E::SodiumPhotoionization provider_;ReactionLedger ledger_;
   std::shared_ptr<const Exposure::FrozenProductionField> geometry_;
   Species::TrajectoryExposure::Field field_;
+  std::string exposureIdentity_; // controller exposure-provider identity (SPICE or prescribed Sun)
   // Preview receipts are not science events. These entries are composed only
   // for accepted Process; native output MUST pair them with committed ledger
   // identity/count before publishing them as accepted event evidence.

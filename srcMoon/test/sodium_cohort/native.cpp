@@ -66,7 +66,7 @@ Input Parse(const std::string& path,bool sourceOnly){
  if(!doc.root.assignments.empty()||doc.root.blocks.size()!=1||doc.root.blocks[0].kind!="sodium_qualification"||doc.root.blocks[0].name.empty())throw std::runtime_error("one named sodium_qualification block required");
  const auto& b=doc.root.blocks[0];
  const std::set<std::string> known={"application_input","campaign_seed","case_kind","channel_id","constants_file","constants_sha256","crosswalk_file","crosswalk_sha256","earth_occultation","electron_maximum_relative_acceleration_error","electron_maximum_relative_inertial_mass_error","electron_maximum_relative_relativistic_kinetic_error","electron_state_id","energy_absolute_bound","energy_reference_identity","energy_relative_bound","exposure_absolute_depth_tolerance","exposure_maximum_geometry_intervals","exposure_maximum_segments","exposure_relative_depth_tolerance","exposure_root_time_tolerance_s","genealogy_capacity","hazard_maximum_root_refinements","inertial_frame","inertial_origin","ion_compiled_species","ion_maximum_relative_acceleration_error","ion_maximum_relative_inertial_mass_error","ion_maximum_relative_relativistic_kinetic_error","ion_state_id","isotopes_file","isotopes_sha256","mass_absolute_bound","mass_relative_bound","maximum_classical_speed_ms","model_identity","number_absolute_bound","number_relative_bound","momentum_absolute_bound","momentum_relative_bound","original_parents","parent_compiled_species","parent_maximum_relative_acceleration_error","parent_maximum_relative_inertial_mass_error","parent_maximum_relative_relativistic_kinetic_error","parent_state_id","physical_horizon_s","physical_step_s","physical_steps","planner_energy_absolute_bound","planner_energy_relative_bound","planner_mass_absolute_bound","planner_mass_relative_bound","planner_momentum_absolute_bound","planner_momentum_relative_bound","profile_metadata_file","profile_metadata_sha256","profile_native_manifest_file","profile_native_manifest_sha256","represented_number_per_parent","rotation_absolute_bound","rotation_relative_bound","rate_absolute_bound","rate_relative_bound","schema","solar_endpoint","source_position_lso_m_0","source_position_lso_m_1","source_position_lso_m_2","source_reference_distance_identity","source_reference_distance_m","source_velocity_lso_ms_0","source_velocity_lso_ms_1","source_velocity_lso_ms_2","states_file","states_sha256","threshold_absolute_bound","threshold_relative_bound","transport_policy_evidence_file","transport_policy_evidence_sha256","transport_policy_identity","unit_vector_tolerance"};
- for(const auto&a:b.assignments)if(!known.count(a.key)&&a.key!="optical_clock_precision"&&a.key!="photon_energy_policy"&&a.key!="reference_weight_mode"&&a.key!="parent_reference_weight"&&a.key!="ion_reference_weight")throw std::runtime_error(a.where.Prefix()+"unknown sodium_qualification key "+a.key);
+ for(const auto&a:b.assignments)if(!known.count(a.key)&&a.key!="optical_clock_precision"&&a.key!="photon_energy_policy"&&a.key!="photon_source_geometry"&&a.key!="prescribed_sun_identity"&&a.key.rfind("prescribed_sun_position_lso_m_",0)!=0&&a.key!="reference_weight_mode"&&a.key!="parent_reference_weight"&&a.key!="ion_reference_weight")throw std::runtime_error(a.where.Prefix()+"unknown sodium_qualification key "+a.key);
  Owner o{b,{}};Input c;c.cohort=b.name;c.documents=doc.files;
  if(o.Text("schema")!="srcMoon-native-sodium-cohort-v1")throw std::runtime_error("unsupported native sodium cohort schema");
  c.applicationPath=o.Path("application_input");std::string error;
@@ -90,10 +90,23 @@ Input Parse(const std::string& path,bool sourceOnly){
  c.rateBound.absolute=o.Number("rate_absolute_bound");c.rateBound.relative=o.Number("rate_relative_bound");
  if(!c.parents||!c.steps||!(c.duration>0)||!(c.horizon>0)||!(c.representedNumber>0)||static_cast<long double>(c.steps)*c.duration!=c.horizon)throw std::runtime_error("positive complete finite cohort and exact common-step horizon required; declare representable equal steps, never truncate last physical interval");
  for(int k=0;k<3;++k){c.position[k]=o.Double("source_position_lso_m_"+std::to_string(k));c.velocity[k]=o.Double("source_velocity_lso_ms_"+std::to_string(k));}
- c.caseKind=o.Text("case_kind");if(c.caseKind!="homogeneous-fixed-position"&&c.caseKind!="trajectory-integrated-hazard")throw std::runtime_error("unknown explicit cohort case_kind");
+ c.caseKind=o.Text("case_kind");if(c.caseKind!="homogeneous-fixed-position"&&c.caseKind!="trajectory-integrated-hazard"&&c.caseKind!="trajectory-lunar-gravity")throw std::runtime_error("unknown explicit cohort case_kind");
  if(c.caseKind=="homogeneous-fixed-position")for(double v:c.velocity)if(v!=0)throw std::runtime_error("homogeneous fixed-position parent requires explicitly zero initial velocity");
  r.inertialOrigin=o.Text("inertial_origin");r.inertialFrame=o.Text("inertial_frame");r.sourceReferenceDistanceM=o.Double("source_reference_distance_m");r.sourceReferenceDistanceIdentity=o.Text("source_reference_distance_identity");
  const auto occult=o.Text("earth_occultation");if(occult!="on"&&occult!="off")throw std::runtime_error("earth_occultation must explicitly be on/off");r.earthOccultation=occult=="on";
+ // Verification-only prescribed static point Sun (I21 decision 1, 2026-11-26).
+ // Omitted keeps the normal SPICE Sun; partial or contradictory input refuses.
+ if(b.Find("photon_source_geometry")){
+  const auto sun=o.Text("photon_source_geometry");
+  if(sun=="prescribed-static-point-sun"){
+   r.prescribedSun=true;r.prescribedSunIdentity=o.Text("prescribed_sun_identity");
+   for(int k=0;k<3;++k)r.prescribedSunPositionM[k]=o.Double("prescribed_sun_position_lso_m_"+std::to_string(k));
+   if(r.earthOccultation)throw std::runtime_error("a prescribed static Sun requires earth_occultation = off");
+  }else if(sun!="spice-sun")throw std::runtime_error("photon_source_geometry must be spice-sun or prescribed-static-point-sun");
+ }
+ if(!r.prescribedSun&&(b.Find("prescribed_sun_identity")||b.Find("prescribed_sun_position_lso_m_0")||
+     b.Find("prescribed_sun_position_lso_m_1")||b.Find("prescribed_sun_position_lso_m_2")))
+  throw std::runtime_error("prescribed Sun keys require photon_source_geometry = prescribed-static-point-sun");
  r.exposure.rootTimeToleranceS=o.Double("exposure_root_time_tolerance_s");r.exposure.absoluteDepthTolerance=o.Number("exposure_absolute_depth_tolerance");r.exposure.relativeDepthTolerance=o.Number("exposure_relative_depth_tolerance");
  r.exposure.maximumSegments=o.Uint("exposure_maximum_segments");r.exposure.maximumGeometryIntervals=o.Uint("exposure_maximum_geometry_intervals");r.maximumRootRefinements=o.Uint("hazard_maximum_root_refinements");
  auto&d=r.controls;d.identity=o.Text("model_identity");d.channelId=o.Text("channel_id");d.energyReferenceIdentity=o.Text("energy_reference_identity");
@@ -153,16 +166,25 @@ void InputReceipt(const Input& c,const fs::path& out,bool sourceOnly,const Moon:
   f<<",\n  \"transport_origin_et_s\": \""<<transport->originEtS()<<"\"";
   f<<",\n  \"optical_clock_precision\": "<<Json(c.source.random.clockPrecision==Moon::Species::ReactionExecution::OpticalDepthPrecision::Binary64Log?"binary64-log":"compensated-extended-log");
   f<<",\n  \"geometry_basis_et_s\": \""<<geometry->frozenGeometryEpochS<<"\",\n  \"sun_position_lso_m\": [\""<<geometry->sunPositionM[0]<<"\",\""<<geometry->sunPositionM[1]<<"\",\""<<geometry->sunPositionM[2]<<"\"],\n  \"source_position_lso_m\": [\""<<c.position[0]<<"\",\""<<c.position[1]<<"\",\""<<c.position[2]<<"\"],\n  \"actual_source_distance_m\": \""<<std::hypot(geometry->sunPositionM[0]-c.position[0],geometry->sunPositionM[1]-c.position[1],geometry->sunPositionM[2]-c.position[2])<<"\",\n  \"total_acceleration_macro\": "<<Json(NativeAccelerationMacro);
-  if(c.caseKind=="trajectory-integrated-hazard"){
-    // A straight-line audit needs actual launch velocity and actual
-    // occultors. A point-visibility flag alone says nothing about the rest
-    // of a flight. Report geometry without interpreting its visibility.
-    bool zeroForce=false;
+  f<<",\n  \"photon_source_geometry\": "<<Json(c.source.prescribedSun?"prescribed-static-point-sun":"spice-sun");
+  if(c.source.prescribedSun)f<<",\n  \"prescribed_sun_identity\": "<<Json(c.source.prescribedSunIdentity);
+  if(c.caseKind=="trajectory-integrated-hazard"||c.caseKind=="trajectory-lunar-gravity"){
+    // A trajectory audit needs actual launch velocity and actual occultors.
+    // A point-visibility flag alone says nothing about the rest of a flight.
+    // Report geometry without interpreting its visibility. The gravity case
+    // also reports the production lunar GM used by its reference build.
+    bool zeroForce=false,lunarGravity=false;
 #if defined(_MOON_COHORT_ZERO_FORCE_REFERENCE_) && _MOON_COHORT_ZERO_FORCE_REFERENCE_ == 1
     zeroForce=PIC::Mover::ForceCutSurface::Acceleration==nullptr &&
       Moon::SodiumCohortInput::ExactZeroAccelerationMacro(NativeAccelerationMacro);
 #endif
+#if defined(_MOON_COHORT_LUNAR_GRAVITY_REFERENCE_) && _MOON_COHORT_LUNAR_GRAVITY_REFERENCE_ == 1
+    lunarGravity=PIC::Mover::ForceCutSurface::Acceleration==nullptr &&
+      Moon::SodiumCohortInput::ExactLunarGravityReferenceMacro(NativeAccelerationMacro);
+#endif
     f<<",\n  \"trajectory_reference\": {\"zero_force\":"<<(zeroForce?"true":"false")
+      <<",\"lunar_point_mass_gravity\":"<<(lunarGravity?"true":"false")
+      <<",\"lunar_gm_m3_s2\":\""<<GravityConstant*_MASS_(_MOON_)<<"\""
       <<",\"source_velocity_lso_ms\":[\""<<c.velocity[0]<<"\",\""<<c.velocity[1]<<"\",\""<<c.velocity[2]
       <<"\"],\"terrain_faces\":"<<geometry->terrainFaces.size()<<",\"opaque_spheres\":[";
     bool firstSphere=true;
@@ -210,6 +232,13 @@ int Execute(const Input& c,std::shared_ptr<S::Prepared> prepared,const fs::path&
     throw std::runtime_error("homogeneous source must use the actual configured core zero-acceleration macro with no overriding callback; a marker flag alone is not proof");
 #if !defined(_MOON_COHORT_ZERO_FORCE_REFERENCE_) || _MOON_COHORT_ZERO_FORCE_REFERENCE_ != 1
   throw std::runtime_error("homogeneous reference requires the explicitly reviewed zero-force compile recipe and effective macro proof; a normal Moon-force binary cannot serve this case");
+#endif
+ }
+ if(c.caseKind=="trajectory-lunar-gravity"){
+  if(PIC::Mover::ForceCutSurface::Acceleration!=nullptr||!Moon::SodiumCohortInput::ExactLunarGravityReferenceMacro(NativeAccelerationMacro))
+    throw std::runtime_error("lunar-gravity reference requires the actual configured Moon::LunarPointMassReferenceAcceleration macro with no overriding callback");
+#if !defined(_MOON_COHORT_LUNAR_GRAVITY_REFERENCE_) || _MOON_COHORT_LUNAR_GRAVITY_REFERENCE_ != 1
+  throw std::runtime_error("lunar-gravity reference requires the explicitly reviewed lunar-point-mass-gravity compile recipe");
 #endif
  }
  // The explicit physical cohort dt replaces only this isolated reference

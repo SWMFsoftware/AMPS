@@ -1390,6 +1390,15 @@ Na/He/He⁺ producer pins), and the two I24 total-capture kinds,
 `i24-total-capture-ensemble` (case pin) and `i24-total-capture-pic` (case
 and Na/Na⁺/H producer pins).
 
+### I21 decision-1 cases
+
+The I21 owner runs the decision-1 plans (approved 2026-11-26) through its
+existing `--i21-cohort-plan` path: 1:8 and 8:1 weights, a prescribed static
+Sun at 1 and 2 AU, a Moon-shadow crossing and a lunar-gravity path, each with
+both movers. `test_m3_i21_decision1.py` runs in the U16 orchestration battery.
+[Contract](integration-tests/I21/DECISION1_CONTRACT.md) ·
+[Commands](integration-tests/I21/README.md#decision-1-cases-approved-2026-11-26)
+
 ### Python interpreter check for the I23/I24 supporting runners
 
 The six I23/I24 supporting runners check their third-party packages through

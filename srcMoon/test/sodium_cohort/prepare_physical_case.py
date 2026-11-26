@@ -162,7 +162,8 @@ def validate_controls(case_path):
     if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]*', cohort):
         raise ValueError('cohort_id must be one unquoted native owner name')
     controls = value['controls']
-    unknown = set(controls) - REQUIRED - WEIGHT_KEYS - {'optical_clock_precision'}
+    unknown = set(controls) - REQUIRED - WEIGHT_KEYS - {'optical_clock_precision', 'photon_source_geometry',
+        'prescribed_sun_identity', *(f'prescribed_sun_position_lso_m_{i}' for i in range(3))}
     if unknown:
         raise ValueError('unknown case controls: ' + ', '.join(sorted(unknown)))
     missing = [k for k in sorted(REQUIRED) if controls.get(k) is None]
@@ -181,6 +182,25 @@ def validate_controls(case_path):
         if selected not in ('binary64-log','compensated-extended-log'):
             raise ValueError('optical_clock_precision must be binary64-log or compensated-extended-log')
         result['optical_clock_precision']=selected
+    # Verification-only prescribed static point Sun (I21 decision 1,
+    # 2026-11-26). Omitted keeps the normal SPICE Sun.
+    sun_keys = {'prescribed_sun_identity', *(f'prescribed_sun_position_lso_m_{i}' for i in range(3))}
+    if 'photon_source_geometry' in controls:
+        geometry = controls['photon_source_geometry']
+        if geometry not in ('spice-sun', 'prescribed-static-point-sun'):
+            raise ValueError('photon_source_geometry must be spice-sun or prescribed-static-point-sun')
+        result['photon_source_geometry'] = geometry
+        if geometry == 'prescribed-static-point-sun':
+            if any(controls.get(k) is None for k in sun_keys):
+                raise MissingConfiguration('a prescribed Sun needs its identity and three LSO coordinates')
+            if controls.get('earth_occultation') != 'off':
+                raise ValueError('a prescribed static Sun requires earth_occultation off')
+            for key in sorted(sun_keys):
+                if key != 'prescribed_sun_identity':
+                    decimal(controls[key], key)
+                result[key] = str(controls[key])
+    if set(controls) & sun_keys and result.get('photon_source_geometry') != 'prescribed-static-point-sun':
+        raise ValueError('prescribed Sun keys require photon_source_geometry prescribed-static-point-sun')
     weight_mode = result['reference_weight_mode']
     if weight_mode == 'explicit':
         if any(controls.get(k) is None for k in WEIGHT_KEYS):
@@ -230,7 +250,8 @@ def validate_controls(case_path):
         raise ValueError('positive root-time tolerance and at least one positive exposure bound required')
     if result['inertial_origin'] != 'SUN':
         raise ValueError('native physical cohort requires explicitly SUN-origin inertial coordinates')
-    if result['case_kind'] not in ('homogeneous-fixed-position', 'trajectory-integrated-hazard') \
+    if result['case_kind'] not in ('homogeneous-fixed-position', 'trajectory-integrated-hazard',
+                                   'trajectory-lunar-gravity') \
             or result['solar_endpoint'] not in ('quiet', 'active') \
             or result['earth_occultation'] not in ('on', 'off'):
         raise ValueError('unsupported explicit case/solar/occultation selection')
