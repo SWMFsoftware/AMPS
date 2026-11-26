@@ -40,6 +40,8 @@ sys.path.insert(0, str(TEST / 'sodium_cohort'))
 sys.path.insert(0, str(HERE))
 from voronov_verification import MissingPrerequisite, independent_rows, preflight, reference, reference_log_slope
 from verify_numerical import source_uniform
+sys.path.insert(0, str(TEST))  # srcMoon/test: shared common/ helpers
+from common.python_environment import describe as python_environment, require as require_python
 import prepare_helium_admission as admission_tool
 
 EXIT = {'PASS': 0, 'FAIL': 1, 'ERROR': 2, 'SKIPPED': 77}
@@ -324,7 +326,8 @@ def run(profile, data_root, output, ranks=8, wall_seconds=3600):
                     source_revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                     seed=case['ensemble']['seed'], cohort=case['ensemble']['cohort'], parents=case['ensemble']['parents'],
                     mpi_layouts=list(dict.fromkeys((1, ranks))), openmp_threads=1, commands=[],
-                    model=case['model_id'], formal_status='SKIPPED / NOT QUALIFIED')
+                    model=case['model_id'], formal_status='SKIPPED / NOT QUALIFIED',
+                    python=python_environment())
     checks = []
     result = dict(status='ERROR', scope=manifest['scope'], formal_status=manifest['formal_status'], checks=checks)
     stdout, stderr = output / 'stdout.log', output / 'stderr.log'
@@ -349,6 +352,9 @@ def run(profile, data_root, output, ranks=8, wall_seconds=3600):
             if process.returncode:
                 raise RuntimeError('native command exited %d (see %s)' % (process.returncode, stderr))
         bundle, ref, hashes = prepare_inputs(case, profile, data_root, output)
+        # After input authentication (a corrupt input stays ERROR) and before any
+        # compilation or MPI launch: a missing package is SKIPPED, not a late ERROR.
+        require_python(('matplotlib',), MissingPrerequisite)  # PNG/EPS figures
         manifest['input_sha256'] = hashes
         shutil.copyfile(CASE, output / 'case.json')
         dump(output / 'independent_reference.json', {k: str(v) for k, v in ref.items()})

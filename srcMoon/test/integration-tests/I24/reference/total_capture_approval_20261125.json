@@ -1,0 +1,18 @@
+{
+  "schema": "srcMoon-I24-total-capture-approval-v1",
+  "status": "APPROVED",
+  "approval_date": "2026-11-25",
+  "authority": "User answers in the 2026-11-25 session: decision 4 selection after SOURCE_REVIEW_20261125.md, then four implementation details.",
+  "resolves": "Decision 4 of srcMoon/test/M3_COMPLETION_FOLLOWUP_20261124.md (first I24 transport channel).",
+  "channel": "H+ + Na(3s) -> Na+ + H(n), n = 1, 2, 3 (total one-electron capture with an explicit shell mix)",
+  "total_rate": "installed Morgan et al. 1985 Table 2 Na column, ProtonNaMorgan1985LogLog source-knot log-log law",
+  "state_split": "Shingal et al. 1986 Table 4 (A34); shell partials interpolated log-log between adjacent rows, then normalized; no extrapolation outside 1-10 keV/u",
+  "energy_envelope_eV_per_u": ["1000", "5000"],
+  "energy_envelope_note": "projectile energy per u in the target rest frame; outside is refused, never extrapolated",
+  "kinematics": "zero-angle exchange in the pair center-of-mass frame with exact momentum and energy closure",
+  "recoil_bound": {"theta_max_com_deg": "0.4", "basis": "largest source-supported extent (Courbin et al. 1990, 0.5 keV/u), applied at all 1-5 keV/u", "use": "Na+ velocity observables admitted only above the resulting impulse scale; tail beyond is an unquantified limitation"},
+  "product_state": "prompt H(n) with state-specific Q; radiative decay to H(1s) booked at the event as energy leaving into the untracked environment; H trajectory unchanged",
+  "hydrogen_levels": "NIST ASD H I levels; shell excitation = statistical-weight centroid over nlj levels; sample the shell n only",
+  "retained": "the 4.0 keV/u H(1s) isotropic case stays a software and kinematics fixture",
+  "formal_I24_status": "SKIPPED / NOT QUALIFIED"
+}

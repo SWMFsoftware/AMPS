@@ -65,6 +65,31 @@ class FamilyControls(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'exactly these pinned input roles'):
             campaign.read_family(self.plan, digest)
 
+    def test_i24_total_capture_cases_bind_own_case_and_producer(self):
+        # Administrative identities only: the commands are formed, not run.
+        case = campaign.descriptor(campaign.TOTAL_CAPTURE_CASE)
+        producer = self.input_path('producer.json', 'administrative producer identity')
+        digest = self.family(
+            {'name': 'na-total-ensemble', 'kind': 'i24-total-capture-ensemble', 'inputs': {'case': case}},
+            {'name': 'na-total-pic', 'kind': 'i24-total-capture-pic',
+             'inputs': {'case': case, 'producer': campaign.descriptor(producer)}},
+        )
+        ensemble, pic = campaign.read_family(self.plan, digest)
+        self.assertEqual((ensemble['test_id'], pic['test_id']), ('I24', 'I24'))
+        command = campaign.case_command(ensemble, self.root/'a', self.root, 60)
+        self.assertEqual(command[0], str(campaign.RUNNERS['i24-total-capture-ensemble']))
+        self.assertNotIn('--lock', command)
+        command = campaign.case_command(pic, self.root/'b', self.root, 60)
+        self.assertIn('--refinement', command)
+        self.assertEqual(command[command.index('--producer-manifest')+1], str(producer))
+        # A different case file cannot be substituted for the runner's own.
+        foreign = self.input_path('case.json', 'administrative foreign case identity')
+        digest = self.family({'name': 'na-total-ensemble', 'kind': 'i24-total-capture-ensemble',
+                              'inputs': {'case': campaign.descriptor(foreign)}})
+        other, = campaign.read_family(self.plan, digest)
+        with self.assertRaisesRegex(ValueError, 'its own pinned case file'):
+            campaign.case_command(other, self.root/'c', self.root, 60)
+
     def test_duplicate_physical_matrix_rejected(self):
         binding = {'plan': campaign.descriptor(self.input_path('cohort.json','administrative identity'))}
         digest = self.family(*({'name': name, 'kind': 'i21-cohort', 'inputs': binding}

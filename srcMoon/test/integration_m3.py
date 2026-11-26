@@ -103,22 +103,43 @@ def supervise_children(test_id, directory, result, manifest, choices, deadline):
                                       for r in rows if r['status'] in ('FAIL','ERROR')))
 
 
-def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks, deadline,refinement=False):
-    """The I24 sodium MPI provider ensemble and optional linked PIC matrix."""
-    common = ['--lock', str(lock.resolve())]
-    if inventory is not None:
-        common += ['--mass-inventory', str(inventory.resolve())]
+def i24_supporting(directory, result, manifest, lock, inventory, producer, ranks, deadline,refinement=False,
+                   total_capture=False):
+    """The I24 supporting children.
+
+    With ``lock``: the 4.0 keV/u H(1s) software fixture (MPI provider and, with
+    a producer, the linked PIC matrix). With ``total_capture``: the approved
+    2026-11-25 total-capture case H+ + Na(3s) -> Na+ + H(n) at 1-5 keV/u
+    (MPI ensemble and, with a producer, its linked PIC matrix). Both use the
+    same Na/Na+/H producer. Their PASS is supporting; formal I24 stays SKIPPED.
+    """
     folder = TEST/'integration-tests/I24'
-    choices = [dict(key='i24_sodium_provider', label='I24 sodium MPI provider', runner=folder/'run_ground_capture.py',
-                    name='sodium-ground-capture', wall_flag='--test-runtime-seconds', native='ensemble',
-                    arguments=[*common, '--mpi-ranks', str(ranks)])]
+    pic_args = []
     if producer is not None:
         pic_args = ['--producer-manifest', str(producer.resolve())]
         if refinement:
             pic_args.append('--refinement')
-        choices.append(dict(key='i24_pic_commissioning', label='I24 sodium PIC commissioning',
-                            runner=folder/'run_pic_ground_capture.py', name='sodium-pic-ground-capture',
-                            wall_flag='--wall-seconds', native='pic', arguments=[*common, *pic_args]))
+    choices = []
+    if lock is not None:
+        common = ['--lock', str(lock.resolve())]
+        if inventory is not None:
+            common += ['--mass-inventory', str(inventory.resolve())]
+        choices.append(dict(key='i24_sodium_provider', label='I24 sodium MPI provider', runner=folder/'run_ground_capture.py',
+                            name='sodium-ground-capture', wall_flag='--test-runtime-seconds', native='ensemble',
+                            arguments=[*common, '--mpi-ranks', str(ranks)]))
+        if producer is not None:
+            choices.append(dict(key='i24_pic_commissioning', label='I24 sodium PIC commissioning',
+                                runner=folder/'run_pic_ground_capture.py', name='sodium-pic-ground-capture',
+                                wall_flag='--wall-seconds', native='pic', arguments=[*common, *pic_args]))
+    if total_capture:
+        choices.append(dict(key='i24_total_capture', label='I24 total-capture MPI provider',
+                            runner=folder/'run_total_capture.py', name='sodium-total-capture',
+                            wall_flag='--test-runtime-seconds', native='ensemble',
+                            arguments=['--mpi-ranks', str(ranks)]))
+        if producer is not None:
+            choices.append(dict(key='i24_total_capture_pic', label='I24 total-capture PIC commissioning',
+                                runner=folder/'run_pic_total_capture.py', name='sodium-pic-total-capture',
+                                wall_flag='--wall-seconds', native='pic', arguments=list(pic_args)))
     supervise_children('I24', directory, result, manifest, choices, deadline)
 
 
@@ -148,6 +169,7 @@ def i23_supporting(directory, result, manifest, profile, producer, ranks, deadli
 def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
         i21_plan=None,i21_plan_sha256=None,wall_seconds=3600,
         i24_lock=None,i24_mass_inventory=None,i24_pic_producer=None,i24_pic_refinement=False,
+        i24_total_capture=False,
         i23_profile=None,i23_pic_producer=None,i23_pic_refinement=False,
         predecessor_root=None):
     """Evaluate explicit prerequisites and produce an honest formal result.
@@ -182,8 +204,10 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
             raise ValueError('the controlled sodium provider case belongs to I24 regression mode')
         if i24_mass_inventory is not None and i24_lock is None:
             raise ValueError('I24 mass inventory requires an explicit I24 sodium release lock')
-        if i24_pic_producer is not None and i24_lock is None:
-            raise ValueError('I24 PIC producer requires an explicit I24 sodium release lock')
+        if i24_total_capture and (test_id!='I24' or mode!='regression'):
+            raise ValueError('the approved total-capture case belongs to I24 regression mode')
+        if i24_pic_producer is not None and i24_lock is None and not i24_total_capture:
+            raise ValueError('I24 PIC producer requires an explicit I24 sodium release lock or the total-capture case')
         if i24_pic_refinement and i24_pic_producer is None:
             raise ValueError('I24 PIC refinement requires an explicit I24 PIC producer')
         if i23_profile is not None and (test_id!='I23' or mode!='regression'):
@@ -263,9 +287,9 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
             # production executor/kinematics and cannot open a PASS path.
             raise ValueError('capability register claims completion without an installed formal execution protocol')
         result.update(status='SKIPPED',reason='; '.join(result['blocking_reasons']))
-        if i24_lock is not None:
+        if i24_lock is not None or i24_total_capture:
             i24_supporting(directory,result,manifest,i24_lock,i24_mass_inventory,i24_pic_producer,
-                           mpi_ranks,started+wall_seconds,i24_pic_refinement)
+                           mpi_ranks,started+wall_seconds,i24_pic_refinement,i24_total_capture)
         elif i23_profile is not None:
             i23_supporting(directory,result,manifest,i23_profile,i23_pic_producer,
                            mpi_ranks,started+wall_seconds,i23_pic_refinement)
@@ -358,6 +382,7 @@ def main():
     parser.add_argument('--i24-pic-producer',type=Path,help='source-bound producer manifest for both native PIC mover orders at 1 and 8 ranks')
     parser.add_argument('--i24-pic-refinement',action='store_true',help='refine native timestep and reference weights at fixed physical horizon and population')
     parser.add_argument('--i24-mass-inventory',type=Path,help='relocated NIST reference mass inventory for that case')
+    parser.add_argument('--i24-total-capture',action='store_true',help='run the approved 2026-11-25 total-capture MPI ensemble (and PIC matrix with a producer) in regression mode')
     parser.add_argument('--i23-helium-profile',type=Path,help='authenticated 4He/4He+ state profile; runs the controlled electron-bath MPI provider in regression mode')
     parser.add_argument('--i23-pic-producer',type=Path,help='source-bound Na/He/He+ producer manifest for both native PIC mover orders at 1 and 8 ranks')
     parser.add_argument('--i23-pic-refinement',action='store_true',help='refine native timestep and reference weights at fixed physical horizon and population')
@@ -369,6 +394,7 @@ def main():
         i21_plan=args.i21_cohort_plan,i21_plan_sha256=args.i21_cohort_plan_sha256,
         wall_seconds=args.test_runtime_seconds,i24_lock=args.i24_sodium_lock,i24_mass_inventory=args.i24_mass_inventory,
         i24_pic_producer=args.i24_pic_producer,i24_pic_refinement=args.i24_pic_refinement,
+        i24_total_capture=args.i24_total_capture,
         i23_profile=args.i23_helium_profile,i23_pic_producer=args.i23_pic_producer,
         i23_pic_refinement=args.i23_pic_refinement,predecessor_root=args.predecessor_root)
     print(json.dumps(value,indent=2))

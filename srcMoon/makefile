@@ -19,6 +19,9 @@ MAINLIBOBJ += MoonNativeReactionRegistration.o MoonSemanticRandom.o MoonSodiumCo
 # I23 prescribed electron-bath owner. Linking it installs nothing: a caller must
 # register it explicitly with a reviewed admission before amps_init.
 MAINLIBOBJ += MoonHeliumImpactCohort.o
+# I24 total proton-sodium capture owner (approved 2026-11-25). Linking it
+# installs nothing: a caller must register it explicitly before amps_init.
+MAINLIBOBJ += MoonSodiumTotalCaptureCohort.o species/SodiumTotalCapture.o
 MAINLIBOBJ += MoonTransportClock.o species/PiecewiseHazard.o species/ReactionExposure.o
 # Approved P01--P09 component services. These are the same production kernels
 # linked by supporting probes; linking does not select missing state/threshold

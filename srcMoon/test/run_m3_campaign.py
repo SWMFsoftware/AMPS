@@ -14,6 +14,7 @@ import sys
 import time
 
 from campaign_budget import CampaignBudget
+from common.python_environment import describe as python_environment, message as python_message
 import m3_qualification as q
 
 TEST = Path(__file__).resolve().parent
@@ -29,6 +30,10 @@ KINDS = {
     # admission files are pinned inside the runner, the profile/producer here.
     'i23-helium-ensemble': ('I23', ('profile',)),
     'i23-helium-pic': ('I23', ('profile', 'producer')),
+    # Approved 2026-11-25 total H+ + Na(3s) capture at 1-5 keV/u. The pinned
+    # case JSON must be the runner's own; its sources are pinned inside it.
+    'i24-total-capture-ensemble': ('I24', ('case',)),
+    'i24-total-capture-pic': ('I24', ('case', 'producer')),
 }
 RUNNERS = {
     'i21-cohort': TEST/'m3_qualification_executor.py',
@@ -36,7 +41,10 @@ RUNNERS = {
     'i24-sodium-pic': TEST/'integration-tests/I24/run_pic_ground_capture.py',
     'i23-helium-ensemble': TEST/'integration-tests/I23/run_helium_impact.py',
     'i23-helium-pic': TEST/'integration-tests/I23/run_pic_helium_impact.py',
+    'i24-total-capture-ensemble': TEST/'integration-tests/I24/run_total_capture.py',
+    'i24-total-capture-pic': TEST/'integration-tests/I24/run_pic_total_capture.py',
 }
+TOTAL_CAPTURE_CASE = TEST/'integration-tests/I24/reference/total_capture_case.json'
 # The underlying native runners separately bind their compilation and data
 # dependencies. Retain the Python entry points and independent scorers as
 # well, since their working-tree bytes can change without a new Git revision.
@@ -48,6 +56,11 @@ FAMILY_TOOLS = (
     TEST/'integration-tests/I23/prepare_helium_admission.py',
     TEST/'integration-tests/I23/reference/helium_case.json',
     TEST/'integration-tests/I23/reference/helium_admission_approval_20261125.json',
+    TEST/'integration-tests/I24/prepare_total_capture.py',
+    TEST/'integration-tests/I24/acquire_hydrogen_levels.py',
+    TEST/'integration-tests/I24/run_pic_ground_capture.py',
+    TOTAL_CAPTURE_CASE,
+    TEST/'integration-tests/I24/reference/total_capture_approval_20261125.json',
 )
 
 
@@ -130,6 +143,13 @@ def case_command(case, target, predecessors, allowance):
     if case['kind'] == 'i23-helium-pic':
         return [runner, '--producer-manifest', inputs['producer']['path'], '--refinement',
                 '--wall-seconds', str(allowance), '--profile', inputs['profile']['path'], *common]
+    if case['kind'] in ('i24-total-capture-ensemble', 'i24-total-capture-pic'):
+        if Path(inputs['case']['path']).resolve() != TOTAL_CAPTURE_CASE.resolve():
+            raise ValueError('the total-capture runner reads only its own pinned case file')
+        if case['kind'] == 'i24-total-capture-ensemble':
+            return [runner, '--test-runtime-seconds', str(allowance), '--mpi-ranks', '8', *common]
+        return [runner, '--producer-manifest', inputs['producer']['path'], '--refinement',
+                '--wall-seconds', str(allowance), *common]
     source = ['--lock', inputs['lock']['path'], '--mass-inventory', inputs['mass_inventory']['path']]
     if case['kind'] == 'i24-sodium-ensemble':
         return [runner, '--test-runtime-seconds', str(allowance),
@@ -145,7 +165,7 @@ def checks_from_case(kind, directory, result):
         if (audit.get('status'), audit.get('checks')) != (result['status'], result.get('checks')):
             raise ValueError('I21 owner and independent audit disagree')
         checks = audit['checks']
-    elif kind in ('i24-sodium-pic', 'i23-helium-pic'):
+    elif kind in ('i24-sodium-pic', 'i23-helium-pic', 'i24-total-capture-pic'):
         layouts = result.get('checks')
         if not isinstance(layouts, dict) or any(
                 not isinstance(values, dict) or any(type(passed) is not bool for passed in values.values())
@@ -198,7 +218,14 @@ def run(plan, expected, output, wall_seconds=3600, predecessors=None, amps=None)
                 'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'wall_seconds': str(wall_seconds), 'mpi_ranks': [1, 8], 'openmp_threads': 1,
                 'observational_scoring': False, 'predecessor_root': str(predecessors),
-                'runner': descriptor(Path(__file__).resolve()), 'plan': str(plan), 'expected_plan_sha256': expected}
+                'runner': descriptor(Path(__file__).resolve()), 'plan': str(plan), 'expected_plan_sha256': expected,
+                'python': python_environment()}
+    # Children inherit this interpreter. A missing package makes the cases
+    # that need it SKIPPED; warn before the first launch.
+    missing_packages = [name for name, version in manifest['python']['packages'].items() if version is None]
+    if missing_packages:
+        print('WARNING: ' + python_message(missing_packages) + '; cases that need them will report SKIPPED',
+              file=sys.stderr, flush=True)
 
     def guarded(row, work):
         try:

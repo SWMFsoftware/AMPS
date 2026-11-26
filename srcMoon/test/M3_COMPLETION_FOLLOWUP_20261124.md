@@ -345,6 +345,15 @@ preparation and scientific acceptance each keep their actual status.
    [Record](integration-tests/I23/HELIUM_ADMISSION_20261125.md)
 4. Approve the I24 source-review order. Select the first transport case and
    its applicable energy/angle envelope after quantitative source review.
+   *Resolved 2026-11-25:* the user selected total one-electron capture
+   H⁺ + Na(3s) → Na⁺ + H(n) at 1–5 keV/u: the Morgan 1985 total rate, the
+   Shingal 1986 state split, zero-angle exchange with a source-based recoil
+   bound, and prompt H(n) with a radiative-decay energy ledger.
+   The user approved the implementation details the same day, and the case
+   is implemented with supporting ensemble and linked-PIC tests; formal I24
+   remains SKIPPED.
+   [Review and decision](integration-tests/I24/SOURCE_REVIEW_20261125.md) ·
+   [Implementation contract](integration-tests/I24/TOTAL_CAPTURE_CONTRACT.md)
 
 The immediate software work is case preparation, independent oracles and
 runner/manifest integration. Physical activation and cluster qualification

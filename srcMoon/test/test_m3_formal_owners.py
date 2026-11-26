@@ -69,6 +69,47 @@ class FormalOwnerControls(unittest.TestCase):
         self.assertEqual(attempt.returncode, 2)
         self.assertIn('--i24-pic-producer requires --i24-sodium-lock', attempt.stderr)
 
+    def test_i24_total_capture_requires_i24_regression(self):
+        # The approved total-capture flag is refused outside I24 regression.
+        command = [sys.executable, '-B', str(owner.TEST/'run_all_test.py'), '--skip-build',
+                   '--only', 'I23', '--i24-total-capture']
+        attempt = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(attempt.returncode, 2)
+        self.assertIn('--i24-total-capture requires I24 in regression mode', attempt.stderr)
+
+    def test_i24_total_capture_children_keep_stronger_status(self):
+        # Bookkeeping fixtures only: no MPI and no scientific evidence. The
+        # total-capture case needs no r14 lock; its PIC child shares the producer.
+        for statuses, expected in ((('PASS','PASS'),'SKIPPED'),(('PASS','FAIL'),'FAIL'),(('ERROR','PASS'),'ERROR')):
+            with self.subTest(statuses=statuses), tempfile.TemporaryDirectory() as work:
+                root = Path(work)
+                iterator = iter(statuses)
+                names = []
+                def issue_control(command, cwd, log, *, output):
+                    child = Path(command[command.index('--output-dir')+1])
+                    child.mkdir()
+                    names.append(child.name)
+                    status = next(iterator)
+                    (child/'result.json').write_text(json.dumps({'status':status,
+                        'reason':'temporary orchestration fixture'}))
+                    index = {}
+                    if status == 'FAIL':
+                        if child.name == 'sodium-total-capture':
+                            (child/'native_receipt.json').write_text('{"fixture":true}')
+                        else:
+                            csv = child/'fixture-events-rank-0.csv'
+                            csv.write_text('temporary orchestration fixture')
+                            index = {'result_files':{csv.name:owner.sha(csv)}}
+                    (child/'run_manifest.json').write_text(json.dumps(index))
+                    return {'reason':None,'returncode':{'PASS':0,'FAIL':1,'ERROR':2}[status]}
+                with patch.object(owner.CampaignBudget,'run',side_effect=issue_control):
+                    result = owner.run('I24',owner.ROOT/'amps',owner.ROOT/'srcMoon/examples/m3_reaction_rates.in',
+                                       root,i24_total_capture=True,i24_pic_producer=root/'fixture-build')
+                self.assertEqual(names,['sodium-total-capture','sodium-pic-total-capture'])
+                self.assertEqual(result['formal_status'],'SKIPPED / NOT QUALIFIED')
+                self.assertEqual(result['status'],expected)
+                aggregate.validate_supporting_results(result,result['status'])
+
     def test_i24_report_keeps_stronger_child_status(self):
         # These temporary fixtures exercise bookkeeping only. No MPI is
         # launched and no fixture survives this test as scientific evidence.

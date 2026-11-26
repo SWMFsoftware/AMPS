@@ -14,7 +14,7 @@ Units: SI (J, kg, m/s) with eV shown alongside. Frame: LSO. Time: SPICE ET.
 Exit codes: 0 PASS, 2 ERROR, 77 SKIPPED (missing source).
 """
 import argparse
-from decimal import Decimal as D, localcontext
+from decimal import Context, Decimal as D, localcontext
 import csv
 import hashlib
 import json
@@ -66,6 +66,17 @@ def long_double_spacing(value):
 
 
 def derive(case, approval, profile_path, data_root):
+    """Derive the admission records in a fixed Decimal context.
+
+    The outer arithmetic uses the standard 28-digit context and the inner
+    block 70 digits, independent of the caller's ambient Decimal context
+    (another module may change it). The frozen bytes were produced this way.
+    """
+    with localcontext(Context(prec=28)):
+        return _derive(case, approval, profile_path, data_root)
+
+
+def _derive(case, approval, profile_path, data_root):
     profile = json.loads(Path(profile_path).read_text())
     states = {}
     with Path(profile['states']['path']).open(newline='') as stream:

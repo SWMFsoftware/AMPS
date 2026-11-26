@@ -1596,3 +1596,46 @@ reference-weight keys described in
 Na remains compiled as the weight-reference species. Supporting MPI-ensemble
 and linked-PIC tests are owned by I23, and formal I23 remains SKIPPED.
 [I23 tests and commands](test/integration-tests/I23/README.md#prescribed-electron-bath-coupling-2026-11-25)
+
+### Total proton–sodium charge exchange for I24 (2026-11-25)
+
+The explicit startup owner `Moon::Chemistry::SodiumTotalCaptureCohort`
+([header](MoonSodiumTotalCaptureCohort.h)) and the provider
+`Moon::Species::SodiumTotalCapture` ([header](species/SodiumTotalCapture.h))
+implement the first I24 transport channel selected by the user:
+
+```text
+H+(beam) + 23Na(3s) -> 23Na+(2p6) + H(n),   n = 1, 2, 3
+```
+
+* **Rate.** `ν = n_p σ_tot(E) g` [s⁻¹]. `σ_tot` is the installed Morgan et
+  al. (1985) Table 2 Na law (source-knot log-log), loaded through its
+  hash-checked publication. `E = ½ u g²` is the projectile energy per u in
+  the target rest frame. Only 1–5 keV/u (438–980 km/s) is admitted;
+  slower or faster beams are refused, never extrapolated.
+* **Final shell.** One keyed uniform selects n from the Shingal et al. (1986)
+  A34 shell partials, interpolated log-log between printed rows and
+  normalized. Capture into H(n=2) is 80–95% in the envelope and H(1s)
+  0.03–0.5%.
+* **Kinematics.** Zero-angle exchange in the pair centre-of-mass frame:
+  H continues along the incident relative velocity and Na⁺ opposite.
+  Momentum and energy close exactly with `Q(n) = IE(H) − IE(Na) − E_exc(n)`,
+  which gives Na⁺ its small longitudinal recoil (about 0.5 m/s at 3 keV/u).
+  `E_exc(n)` is the statistical-weight centroid of the NIST ASD H I levels.
+* **Radiation.** The prompt H(n) is booked as H(1s) with its excitation
+  radiated at the event into the untracked environment, together with the
+  consumed proton. Photon momentum is omitted; its H recoil (≤ 3.9 m/s) is
+  reported per event.
+* **Limits.** The omitted transverse Na⁺ recoil is bounded by the approved
+  0.4° COM angle: at most 2.0 × 10⁻³ eV (129 m/s) at 1 keV/u and
+  9.9 × 10⁻³ eV (288 m/s) at 5 keV/u. Na⁺ velocity observables are admitted
+  only above that scale. The parent must be stationary and force-free; the
+  beam is monoenergetic and prescribed (no thermal or measured D06 bath).
+
+The registration happens explicitly in code before `amps_init`; no `.in`
+key installs this owner. The 4.0 keV/u H(1s) isotropic case remains as a
+software fixture. Supporting MPI-ensemble and linked-PIC tests are owned by
+I24, and formal I24 remains SKIPPED.
+[Contract](test/integration-tests/I24/TOTAL_CAPTURE_CONTRACT.md) ·
+[Source review and decisions](test/integration-tests/I24/SOURCE_REVIEW_20261125.md) ·
+[I24 tests and commands](test/integration-tests/I24/README.md#total-proton-sodium-capture-2026-11-25)

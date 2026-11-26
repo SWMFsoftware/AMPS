@@ -1,0 +1,55 @@
+{
+  "schema": "srcMoon-I24-total-capture-case-v1",
+  "model_id": "hplus-na3s-total-capture-forward-1to5kev-u-v1",
+  "approval": "reference/total_capture_approval_20261125.json",
+  "sources": {
+    "shingal1986": {"path": "test_output/chemical_database/sodium-source-UaBhHI7b/acquisition-v2/shingal1986.pdf",
+                    "sha256": "58bc33f7f8e7dd960ff2972edf0bd3999ada697e8ec666f04da97bc08e7e8078",
+                    "locator": "Table 4, printed page 318, PDF page 11"},
+    "nist_asd_h_i": {"path": "test_output/srcMoon/i24-total-capture-sources-6FOcGlg2/nist-asd-h-i-levels.csv",
+                     "sha256": "307b4500662af9e10825e51d998dee3f1015baef1daf9ec32a488b0b37fa20cb",
+                     "locator": "NIST ASD H I levels, eV, CSV; retrieval.json in the same folder"},
+    "morgan1985_directory": {"path": "test_output/srcMoon/m3-charge-exchange-research-20261117",
+                             "sha256": "7c412cb93f827b3412b6da000e674c63237cacb0e201733a6f5a4f431359952e",
+                             "locator": "nist_morgan_1985_retry2.pdf, Table 2 Na column, printed page 984"},
+    "mass_inventory": {"path": "test_output/srcMoon/m3-approved-products-20261118T163142Z/source-acquisition-v2/reference_mass_inventory.json",
+                       "sha256": "7c255c05398c9dbaf4d55a8b17550576884dd0c5710773d3f8bfb20cde6f7fa1"}
+  },
+  "derived_files": {
+    "note": "frozen outputs of prepare_total_capture.py; each run regenerates them and requires byte equality; their SHA-256s are compiled into the provider",
+    "shingal_table4.csv": "462760edaa5e13fea4b489a1cb81498167e7042d4101b9a44207142928c8d89a",
+    "hydrogen_levels.csv": "1d9f99878f08a25940d5f1fbc72e953a69b913e703f6a800c4565167fdd12199"
+  },
+  "morgan_oracle": {
+    "note": "printed Table 2 Na column (10^-16 cm^2), transcribed for the independent Python oracle",
+    "energy_kev_u": ["1.0", "2.0", "3.0", "5.0", "7.0", "10.0"],
+    "sigma_1e-16_cm2": ["43", "68", "75", "66", "53", "24"]
+  },
+  "envelope_ev_per_u": ["1000", "5000"],
+  "theta_max_com_deg": "0.4",
+  "ensemble": {
+    "energies_kev_u": ["1.5", "3.0", "4.0", "4.75"],
+    "refusal_energies_ev_per_u": ["990", "5010"],
+    "cohort_prefix": "I24-Morgan-Shingal-23Na-total-capture-forward-v1",
+    "seed": 731993,
+    "parents": 32768,
+    "proton_density_m3": "2.5e6",
+    "optical_depth": "1",
+    "parent_weight": "3",
+    "daughter_weights": ["2", "4"]
+  },
+  "pic": {
+    "energy_kev_u": "3.0",
+    "cohort": "I24-PIC-total-capture-v1",
+    "position_m": ["10000000", "1001", "1003"],
+    "beam_unit_vector": ["0.6", "0.8", "0"],
+    "represented_atoms": "2.625",
+    "reference_weights": {"Na": "7", "Na_PLUS": "56", "H": "0.875"},
+    "hydrogen_to_sodium_weight_ratio": "0.125",
+    "continuation_s": "0.0625"
+  },
+  "stochastic_family_alpha": 0.01,
+  "arithmetic_relative_tolerance": 5e-12,
+  "recoil_relative_tolerance": 1e-9,
+  "recoil_tolerance_note": "Na+ recoil momentum error divided by m_e g. The recoil is a near-cancellation of -Q/v and -v/2 (a.u.) computed from ~6e4-fold larger COM terms in long double; 1e-9 bounds that cancellation with margin while resolving the physical recoil."
+}

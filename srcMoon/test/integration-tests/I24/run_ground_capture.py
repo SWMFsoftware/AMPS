@@ -22,6 +22,8 @@ CASE = HERE / "reference/sodium_case.json"
 DEFAULT_INVENTORY = ROOT / "test_output/srcMoon/m3-approved-products-20261118T163142Z/source-acquisition-v2/reference_mass_inventory.json"
 sys.path.insert(0, str(TEST / "sodium_cohort"))
 from verify_numerical import source_uniform
+sys.path.insert(0, str(TEST))  # srcMoon/test: shared common/ helpers
+from common.python_environment import describe as python_environment, require as require_python
 EXIT = {"PASS": 0, "FAIL": 1, "ERROR": 2, "SKIPPED": 77}
 
 
@@ -222,7 +224,8 @@ def run(lock, inventory, output, ranks=8, wall_seconds=3600):
     manifest = dict(schema="srcMoon-I24-ground-capture-manifest-v1", scope="compiled MPI provider and event planner",
                     source_revision=subprocess.check_output(["git","rev-parse","HEAD"], cwd=ROOT, text=True).strip(),
                     seed=case["seed"], cohorts=case["parents"], mpi_layouts=list(dict.fromkeys((1,ranks))),
-                    openmp_threads=1, commands=[], model=case["model_id"], formal_status="SKIPPED / NOT QUALIFIED")
+                    openmp_threads=1, commands=[], model=case["model_id"], formal_status="SKIPPED / NOT QUALIFIED",
+                    python=python_environment())
     checks = []
     result = dict(status="ERROR", scope=manifest["scope"], formal_status=manifest["formal_status"], checks=checks)
     stdout, stderr = output/"stdout.log", output/"stderr.log"
@@ -244,6 +247,9 @@ def run(lock, inventory, output, ranks=8, wall_seconds=3600):
             if result.returncode:
                 raise RuntimeError("native command exited %d (see %s)" % (result.returncode, stderr))
         bundle_args, ref, hashes = prepare_inputs(lock, inventory, output)
+        # After input authentication (a corrupt input stays ERROR) and before any
+        # compilation or MPI launch: a missing package is SKIPPED, not a late ERROR.
+        require_python(("matplotlib",), MissingPrerequisite)  # PNG/EPS figures
         manifest["input_sha256"] = hashes
         shutil.copyfile(CASE, output/"case.json")
         dump(output/"source_reference.json", {k:str(v) for k,v in ref.items()})

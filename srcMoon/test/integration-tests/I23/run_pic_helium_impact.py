@@ -33,6 +33,7 @@ sys.path.insert(0, str(TEST))
 from build_m2_qualification import sha256
 from campaign_budget import CampaignBudget
 from common.moon_testlib import _probe_compile_command
+from common.python_environment import describe as python_environment, require as require_python
 
 TEMPLATE = HERE / 'reference/pic_helium_impact.in'
 MAPPING = {'Na': '23Na:ground', 'He': '4He:ground', 'He_PLUS': '4He+:ground'}
@@ -176,7 +177,7 @@ def main(args):
               'formal_I23_status': 'SKIPPED / NOT QUALIFIED'}
     manifest = {'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'runner': str(Path(__file__).resolve()), 'source_cohort': pic['cohort'], 'seed': pic['seed'],
-                'mpi_layouts': [1, 8], 'openmp_threads': 1, 'commands': []}
+                'mpi_layouts': [1, 8], 'openmp_threads': 1, 'commands': [], 'python': python_environment()}
     try:
         if not 0 < args.wall_seconds <= 3600:
             raise ValueError('development limit is one hour')
@@ -195,6 +196,9 @@ def main(args):
         build = checked_build(producer, MAPPING, 'Na, He, He+')
         manifest['producer'] = {'path': str(producer), 'sha256': sha(producer)}
         bundle, ref, hashes = prepare_inputs(case, args.profile, args.data_root, output)
+        # After input authentication (a corrupt input stays ERROR) and before any
+        # compilation or MPI launch: a missing package is SKIPPED, not a late ERROR.
+        require_python(('matplotlib',), MissingPrerequisite)  # PNG/EPS figures
         manifest['sources'] = hashes
         with localcontext() as context:
             context.prec = 70

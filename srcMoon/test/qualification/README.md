@@ -91,6 +91,8 @@ approved independent timing criterion. [Campaign contract](CAMPAIGN_CONTRACT.md)
 | `i24-sodium-pic` | `lock`, `mass_inventory`, `producer` | The actual r14 Na/Na⁺/H SPICE producer with both movers and the fixed-horizon timestep and fixed-population weight matrix. |
 | `i23-helium-ensemble` | `profile` | The approved controlled 10 eV electron-bath ⁴He ensemble (32,768 parents at 0, 1e6 and 1e7 m⁻³, 1 and 8 ranks) through the production provider and reviewed reservoir composer. |
 | `i23-helium-pic` | `profile`, `producer` | The Na/He/He⁺ SPICE producer with both movers, the zero-density control and the fixed-horizon timestep and fixed-population weight matrix. |
+| `i24-total-capture-ensemble` | `case` | The approved total H⁺ + Na(3s) capture (32,768 parents at 1.5, 3.0, 4.0 and 4.75 keV/u, 1 and 8 ranks) through the production provider. The pin must be `integration-tests/I24/reference/total_capture_case.json`. |
+| `i24-total-capture-pic` | `case`, `producer` | The Na/Na⁺/H SPICE producer with both movers, the native registration refusals and the fixed-horizon timestep and fixed-population weight matrix at 3.0 keV/u. |
 
 Each pin is an object with `path` and `sha256`. Relative paths are resolved
 against the plan's directory. For a typical family, run from the repository

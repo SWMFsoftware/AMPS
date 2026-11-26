@@ -56,6 +56,20 @@ does not establish availability to `/usr/bin/python3`. On another machine use
 a reviewed profile with actual interpreter/compiler/MPI/SPICE paths. These
 dependency checks establish execution readiness only, not lunar validation.
 
+On this machine a login shell may put another `python3` first on `PATH`
+(for example an unrelated virtual environment without these packages); call
+`/usr/bin/python3` explicitly. Since 2026-11-25 the I23 and I24 supporting
+runners (`run_helium_impact.py`, `run_pic_helium_impact.py`,
+`run_ground_capture.py`, `run_pic_ground_capture.py`, `run_total_capture.py`,
+`run_pic_total_capture.py`) check their packages after authenticating their
+inputs and before any compilation or MPI launch. A missing package gives
+SKIPPED with the interpreter path and this command in the reason; a corrupt
+input is still ERROR. Each run manifest records `python` (executable, version
+and the numpy, scipy, matplotlib and mpmath versions). `run_all_test.py` and
+`run_m3_campaign.py` print the interpreter at start, warn when a package is
+missing, and record it in `run_all_summary.json` or the family manifest. The
+shared helper is `srcMoon/test/common/python_environment.py`.
+
 ## M2 supporting verification before M1 closure
 
 ### Description
@@ -1072,6 +1086,35 @@ survival against `exp(−n_e k t)`, and
 `$out/I23/helium-pic-electron-bath/step_populations.png` for the represented
 He and He⁺ after each step. The producer lives on temporary storage; after a
 reboot, rebuild it and pass the new manifest.
+
+### I24 total proton–sodium capture (1–5 keV/u)
+
+This runs the user-approved (2026-11-25) total capture
+H⁺ + Na(3s) → Na⁺ + H(n), n = 1–3, through the production owner. The
+ensemble needs only the pinned sources listed in
+`integration-tests/I24/reference/total_capture_case.json`; no r14 lock is
+used. The PIC matrix additionally needs a source-bound Na/Na⁺/H producer,
+the same build as the 4.0 keV/u fixture
+([build instructions](test/source_qualification_build/README.md#build-the-i24-sodium-capture-case)).
+Use `/usr/bin/python3`, which provides matplotlib for the figures.
+
+```bash
+producer=test_output/srcMoon/i24-total-capture-tHMz4IwN/sodium-capture-producer/normal_build_evidence.json
+out=$(mktemp -d -p "$PWD/test_output/srcMoon" i24-formal-XXXXXXXX)
+/usr/bin/python3 -B srcMoon/test/run_all_test.py --only I24 --skip-build \
+  --campaign-mode regression --mpi-ranks 8 --test-runtime-seconds 1800 \
+  --i24-total-capture --i24-pic-producer "$producer" --i24-pic-refinement \
+  --output-dir "$out"
+```
+
+`$out/I24/result.json` lists both supporting children and keeps the formal
+status SKIPPED. `$out/I24/sodium-total-capture/comparison.png` shows the
+survival at 1.5, 3.0, 4.0 and 4.75 keV/u against `exp(−t/τ)`, the native
+shell frequencies against the Shingal log-log fractions, and the provider's
+σ_tot against the Morgan law. `$out/I24/sodium-pic-total-capture/refinement.csv`
+lists the event time, shell and closure errors of every mover, rank, step and
+weight case. The producer lives on temporary storage; after a reboot, rebuild
+it and pass the new manifest.
 
 ### I24 sodium charge exchange at 4.0 keV/u
 

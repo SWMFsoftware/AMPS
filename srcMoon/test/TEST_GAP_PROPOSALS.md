@@ -182,7 +182,13 @@ the precise subset addressed; it does not declare their complete scopes closed.
   against D05 and test rate integration over a declared electron distribution.
 - **U17 / I24:** declare reactants/products and authoritative charge-exchange
   cross sections, then test production stoichiometry and momentum/weight
-  bookkeeping.
+  bookkeeping. *2026-11-25:* the user-selected first transport channel, total
+  H⁺ + Na(3s) → Na⁺ + H(n) at 1–5 keV/u, now has supporting production tests
+  of stoichiometry, shell selection, zero-angle momentum and energy, the
+  radiation ledger and weights (`integration-tests/I24/TOTAL_CAPTURE_CONTRACT.md`).
+  The scattering tail, thermal or measured proton baths, moving targets,
+  other energies, other targets and the U17 100,000-event formal minimum
+  remain open.
 - **U18 / I25-I26:** repair and qualify D06 before testing interpolation,
   frames, gaps, and production E/B/plasma driver wiring.
 - **U19-U21 / I27-I28:** declare the He reservoir, Ne accommodation law, and Ar

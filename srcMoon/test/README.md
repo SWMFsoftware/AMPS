@@ -1386,7 +1386,32 @@ science tests and formal readiness owners. The current I22 and I23
 readiness results therefore appear alongside the sodium development results.
 The family plan also accepts the two I23 electron-bath kinds,
 `i23-helium-ensemble` (profile pin) and `i23-helium-pic` (profile and
-Na/He/He⁺ producer pins).
+Na/He/He⁺ producer pins), and the two I24 total-capture kinds,
+`i24-total-capture-ensemble` (case pin) and `i24-total-capture-pic` (case
+and Na/Na⁺/H producer pins).
+
+### Python interpreter check for the I23/I24 supporting runners
+
+The six I23/I24 supporting runners check their third-party packages through
+`common/python_environment.py` after input authentication and before any
+native work. A missing package is SKIPPED (naming the interpreter and
+`/usr/bin/python3`); a corrupt input remains ERROR. Run manifests and the
+orchestrator summaries record the interpreter. `test_m3_python_environment.py`
+runs in the U16 orchestration battery: with matplotlib hidden, each runner must
+report SKIPPED with no native command, and a corrupt-input stub must remain
+ERROR. [Machine Python policy](../RUN.md#python-environment-for-this-machine)
+
+### I24 total proton–sodium capture
+
+The I24 owner accepts `--i24-total-capture` in regression mode. It runs the
+user-approved (2026-11-25) capture H⁺ + Na(3s) → Na⁺ + H(n) at 1–5 keV/u as
+a supporting MPI ensemble and, with `--i24-pic-producer` (and optionally
+`--i24-pic-refinement`), a linked PIC matrix. No r14 lock is needed for this
+case; `--i24-sodium-lock` still selects the 4.0 keV/u H(1s) fixture, and both
+may be given together. Formal I24 remains SKIPPED. The generator and oracle
+controls (`test_m3_i24_total_capture.py`) run inside the registered U16
+orchestration battery. [Contract](integration-tests/I24/TOTAL_CAPTURE_CONTRACT.md) ·
+[Source review and decisions](integration-tests/I24/SOURCE_REVIEW_20261125.md)
 
 ### I23 prescribed electron-bath coupling
 

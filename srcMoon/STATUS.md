@@ -1,6 +1,21 @@
 # `srcMoon` development and validation status
 
-**Status date:** 2026-11-25 UTC
+**Status date:** 2026-11-26 UTC
+
+**I24 total proton–sodium capture implemented.** The user-selected case
+H⁺ + Na(3s) → Na⁺ + H(n), n = 1–3, at 1–5 keV/u runs through a new normal-startup
+owner with the Morgan total rate, the Shingal shell split, zero-angle products
+and a radiation ledger. Supporting tests passed: 256 ensemble and 359 linked PIC
+checks. The rebuilt nine-case family passed 1,337 checks and the nightly diff is
+zero bytes. Formal I21–I24 remain 4 SKIPPED.
+[Implementation, evidence and limits](#561-i24-total-protonsodium-capture--2026-11-26-utc)
+
+**I24 first transport channel selected.** A quantitative source review found
+that capture into H(1s) is only 0.03–0.4% of proton capture at 0.5–4 keV/u.
+The user selected total one-electron capture H⁺ + Na(3s) → Na⁺ + H(n) at
+1–5 keV/u, with zero-angle exchange under a source-based recoil bound. No
+code changed; formal I24 remains SKIPPED.
+[Review, decision and open items](#560-i24-first-transport-channel-source-review--2026-11-25-utc)
 
 **I23 electron-bath coupling.** The user-approved controlled 10 eV electron
 bath is coupled to the normal reaction controller through a new startup
@@ -5968,3 +5983,114 @@ are retained.
 
 [Contract](test/integration-tests/I23/ELECTRON_BATH_COUPLING_CONTRACT.md) ·
 [Run commands](RUN.md#i23-prescribed-electron-bath-coupling)
+
+## 5.60 I24 first transport channel source review — 2026-11-25 UTC
+
+Decision 4 of the [M3 completion follow-up](test/M3_COMPLETION_FOLLOWUP_20261124.md)
+asked for a quantitative source review before selecting the first
+charge-exchange transport case. The review used only retained, hash-pinned
+sources: Shingal et al. 1986 and 1987, Courbin-Gaussorgues et al. 1990,
+Knoop's thesis Chapter 5 and Morgan et al. 1985.
+
+**Findings.**
+- Shingal's A34 Table 4 puts capture into H(1s) at 0.03–0.4% of the total
+  at 0.5–4 keV/u. Capture into H(n=2) is 83–95% and H(n=3) 5–17%. Knoop's
+  MOTRIMS measurement independently attributes 85% of outer-shell capture
+  at 4 keV/u to H(n=2). The existing 4.0 keV/u H(1s) case is therefore a
+  software and kinematics fixture, not a Na⁺ production model.
+- The theoretical totals of Shingal (−20% to +2%) and Courbin (−8% to −30%)
+  lie inside Morgan's ±20–50% category (b) rating of the evaluated Na
+  inputs. Morgan has no Na value below 1 keV/u.
+- Knoop measures outer-shell capture scattering below 0.5 mrad at 4–25 keV/u.
+  Courbin computes angular extents of 0.4° at 0.5 keV/u and 0.1° at 2 keV/u.
+  Both imply a Na⁺ recoil of about 10⁻³ eV or less. The approved isotropic
+  sensitivity law gives 28–810 eV. No acquired source quantifies the tail.
+
+**User decision.** Total one-electron capture into H(n=1, 2, 3) at
+1–5 keV/u: the installed Morgan total rate and the Shingal state split.
+Zero-angle exchange in the pair center-of-mass frame closes momentum and
+energy exactly under a source-based recoil bound. Prompt H(n) carries its
+state-specific Q, and its radiative decay is booked as energy leaving the
+system. Energies outside the envelope are refused.
+
+**Open before implementation.** The state-split rule between and beyond
+Shingal's energy rows, the energy-dependent recoil bound, the H(n=3)
+cascade and H(2s) share for the decay ledger, and the NIST identities.
+Physics choices among them need user approval.
+
+No production code, runtime selection or test threshold changed. No
+numerical rows were admitted and no figures were digitized. Formal I24
+remains SKIPPED. [Review and decision](test/integration-tests/I24/SOURCE_REVIEW_20261125.md) ·
+[Evidence and scripts](../test_output/srcMoon/i24-source-review-y16WTCTy/sources.json)
+
+## 5.61 I24 total proton–sodium capture — 2026-11-26 UTC
+
+After the source review in section 5.60 the user approved the implementation
+details: log-log interpolation of the Shingal shell partials, a constant 0.4°
+centre-of-mass recoil bound, radiative decay booked at the event, and NIST ASD
+H I shell centroids. [Contract](test/integration-tests/I24/TOTAL_CAPTURE_CONTRACT.md) ·
+[Approval record](test/integration-tests/I24/reference/total_capture_approval_20261125.json)
+
+**Production code.** `species/SodiumTotalCapture.{h,cpp}` (provider) and
+`MoonSodiumTotalCaptureCohort.{h,cpp}` (normal-startup owner) are new and in
+the makefile. No existing physics file changed.
+- Rate `n_p σ_tot(E) g` with the installed Morgan 1985 law; only
+  1000–5000 eV/u is admitted, otherwise refused.
+- One keyed uniform selects the shell n from the Shingal log-log partials.
+- Zero-angle pair-COM products close momentum and energy exactly with
+  `Q(n) = IE(H) − IE(Na) − E_exc(n)`. The bath loses the proton and gains
+  `E_exc(n)`. Per-event bounds report the omitted transverse recoil and the
+  photon recoil.
+- The owner checks a stationary, force-free target on every accepted segment.
+  It refuses a non-LSO frame, energies outside the envelope, negative density,
+  zero solver effort and a wrong elementary charge.
+
+**Inputs.** `acquire_hydrogen_levels.py` retained the NIST ASD H I response
+(`307b4500…`). `prepare_total_capture.py` derives `shingal_table4.csv`
+(`462760ed…`) and `hydrogen_levels.csv` (`1d9f9987…`) from it and the Shingal
+PDF; the provider compiles both digests and every run regenerates them byte
+for byte. Morgan is loaded from its hash-checked publication (`7c412cb9…`).
+
+**Results.** [Evidence index](../test_output/srcMoon/i24-total-capture-tHMz4IwN/README.md)
+- Ensemble, 32,768 parents at 1.5, 3.0, 4.0 and 4.75 keV/u, 1 and 8 ranks:
+  256 PASS in 61 s. The rate matches the Decimal Morgan oracle to 1e-16; the
+  lifetime errors are 0.20–0.50% (gate 3%). Every event's shell equals the
+  independently recomputed keyed selection. Product velocities, Q(n), radiated
+  and bath energies and all bounds match the oracle at the 1e-16 level. All 12
+  shell-frequency binomial tests pass at a 1% family false-alarm probability.
+- Linked PIC at 3.0 keV/u, 12 launches (two movers, 1 and 8 ranks, 2 and 4
+  steps, ½ and ¼ weights): 359 PASS in 134 s. The owner's keyed draw equals
+  the independent HMAC value (shell 2). The event epoch error is 1.5e-8 s
+  (bound 9.5e-7 s). All six native refusals hold.
+- Through `run_all_test.py --only I24 --i24-total-capture`: both children
+  PASS; formal I24 SKIPPED.
+- Clean source-bound producers for Na/Na⁺/H, Na/Na⁺ and Na/He/He⁺ PASS. The
+  nine-case family (five Na cases, two I23, two I24 total capture) passed
+  1,337 independent checks in 1,330 s at 42.9 GB peak. The nightly
+  `make -j test_Moon` diff is zero bytes (I04 `ed875cef…`).
+- Controls: orchestration 123 (including the new I24 and interpreter suites),
+  formal owners 16, family runner 11, all OK under `/usr/bin/python3` and the
+  shell's venv interpreter.
+
+**Retained non-PASS attempt.** The first ensemble (`ensemble/`) is ERROR: it
+was launched with the shell's venv `python3`, which lacks matplotlib, and the
+runner imported it only for the final figure. All 256 checks had passed.
+
+**Interpreter check.** The six I23/I24 supporting runners now check their
+packages after input authentication and before any native work. A missing
+package is SKIPPED with the interpreter and `/usr/bin/python3` named; a
+corrupt input stays ERROR. Manifests and orchestrator summaries record the
+interpreter; `run_all_test.py` and `run_m3_campaign.py` warn at start. Under
+the venv interpreter the I24 aggregate now reports both children SKIPPED in
+4 s with no native command. With `/usr/bin/python3` and the final runners
+the I24 total-capture children pass again (256 and 359), and the I23 and
+4.0 keV/u I24 children pass (165, 79 PIC; 35 and the PIC matrix). The I23
+admission generator now fixes its own Decimal context; its frozen bytes
+reproduce at any caller precision.
+
+**Open limits.** The scattering tail beyond 0.4° COM is unquantified. Capture
+into n ≥ 4, fine structure within a shell and H(2s) metastability are not
+modeled. The beam is monoenergetic and prescribed; thermal or measured proton
+baths (R4.1/D06), moving targets, energies outside 1–5 keV/u (solar wind
+slower than 438 km/s), other targets and alpha projectiles are not admitted.
+Formal I24 also needs same-campaign I13–I20 and the U17 100,000-event minimum.

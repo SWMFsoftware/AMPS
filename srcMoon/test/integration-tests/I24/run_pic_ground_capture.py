@@ -21,6 +21,7 @@ from build_m2_qualification import production_source_identity, sha256
 from campaign_budget import CampaignBudget
 from run_m3_moon_force_tracers import native_sources
 from common.moon_testlib import _probe_compile_command
+from common.python_environment import describe as python_environment, require as require_python
 
 COHORT = 'I24-PIC-ground-capture-v1'
 TEMPLATE = HERE / 'reference/pic_ground_capture.in'
@@ -268,7 +269,7 @@ def main(args):
             'formal_I24_status':'SKIPPED / NOT QUALIFIED'}
     manifest={'source_revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
               'runner':str(Path(__file__).resolve()),'source_cohort':COHORT,'seed':731993,'mpi_layouts':[1,8],
-              'openmp_threads':1,'commands':[]}
+              'openmp_threads':1,'commands':[],'python':python_environment()}
     try:
         if not 0 < args.wall_seconds <= 3600:
             raise ValueError('development limit is one hour')
@@ -288,6 +289,9 @@ def main(args):
         with localcontext() as context:
             context.prec=70
             argv,ref,hashes=prepare_inputs(args.lock,args.mass_inventory,output)
+            # After input authentication (a corrupt input stays ERROR) and before any
+            # compilation or MPI launch: a missing package is SKIPPED, not a late ERROR.
+            require_python(('matplotlib',), MissingPrerequisite)  # PNG/EPS figures
             hit = -D.from_float(source_uniform(731993,COHORT,0)).ln()/ref['rate']
             dt = float(hit+D(1)/16)
             # In the stationary-target LSO fixture energy conservation bounds

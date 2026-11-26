@@ -25,6 +25,9 @@ import sys
 import time
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common.python_environment import describe as python_environment, message as python_message
+
 
 TEST_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = TEST_ROOT.parents[1]
@@ -678,6 +681,7 @@ def run_test(
     i23_helium_profile: Path | None = None,
     i23_pic_producer: Path | None = None,
     i23_pic_refinement: bool = False,
+    i24_total_capture: bool = False,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -722,9 +726,14 @@ def run_test(
             command.extend(["--i21-cohort-plan",str(i21_cohort_plan),
                 "--i21-cohort-plan-sha256",i21_cohort_plan_sha256,
                 "--test-runtime-seconds",str(test_runtime_seconds)])
-        if test_id=="I24" and i24_sodium_lock is not None:
-            command.extend(["--i24-sodium-lock",str(i24_sodium_lock),
-                            "--test-runtime-seconds",str(test_runtime_seconds)])
+        if test_id=="I24" and (i24_sodium_lock is not None or i24_total_capture):
+            # The 4.0 keV/u H(1s) fixture needs the r14 lock; the approved
+            # 2026-11-25 total-capture case uses its own pinned sources.
+            if i24_sodium_lock is not None:
+                command.extend(["--i24-sodium-lock",str(i24_sodium_lock)])
+            if i24_total_capture:
+                command.append("--i24-total-capture")
+            command.extend(["--test-runtime-seconds",str(test_runtime_seconds)])
             if i24_pic_producer is not None:
                 command.extend(["--i24-pic-producer",str(i24_pic_producer)])
             if i24_pic_refinement:
@@ -826,6 +835,8 @@ def main() -> int:
         help="extend the I24 PIC matrix with fixed-horizon timestep and fixed-population weight refinement")
     parser.add_argument("--i24-mass-inventory",type=Path,
         help="use a relocated source-backed NIST mass inventory for the I24 sodium comparison")
+    parser.add_argument("--i24-total-capture",action="store_true",
+        help="run the approved total H+ + Na(3s) capture ensemble at 1-5 keV/u (and its PIC matrix with --i24-pic-producer)")
     parser.add_argument("--i23-helium-profile",type=Path,
         help="run the approved controlled 10 eV electron-bath 4He ensemble with this authenticated state profile")
     parser.add_argument("--i23-pic-producer",type=Path,
@@ -916,8 +927,10 @@ def main() -> int:
         parser.error("an explicit I21 cohort plan requires selecting I21")
     if args.i24_sodium_lock is not None and ("I24" not in selected or args.campaign_mode!="regression"):
         parser.error("--i24-sodium-lock requires I24 in regression mode")
-    if args.i24_pic_producer is not None and args.i24_sodium_lock is None:
-        parser.error("--i24-pic-producer requires --i24-sodium-lock")
+    if args.i24_total_capture and ("I24" not in selected or args.campaign_mode!="regression"):
+        parser.error("--i24-total-capture requires I24 in regression mode")
+    if args.i24_pic_producer is not None and args.i24_sodium_lock is None and not args.i24_total_capture:
+        parser.error("--i24-pic-producer requires --i24-sodium-lock or --i24-total-capture")
     if args.i24_pic_refinement and args.i24_pic_producer is None:
         parser.error("--i24-pic-refinement requires --i24-pic-producer")
     if args.i24_mass_inventory is not None and args.i24_sodium_lock is None:
@@ -928,6 +941,15 @@ def main() -> int:
         parser.error("--i23-pic-producer requires --i23-helium-profile")
     if args.i23_pic_refinement and args.i23_pic_producer is None:
         parser.error("--i23-pic-refinement requires --i23-pic-producer")
+
+    # Report the interpreter once. Runners that need a missing package report
+    # SKIPPED themselves; the warning only makes the cause visible up front.
+    python = python_environment()
+    print(f"Python: {python['executable']} ({python['version']})", flush=True)
+    missing_packages = [name for name, version in python["packages"].items() if version is None]
+    if missing_packages:
+        print("WARNING: " + python_message(missing_packages) +
+              "; tests that need them will report SKIPPED", file=sys.stderr, flush=True)
 
     output_root = (
         args.output_dir.resolve()
@@ -978,6 +1000,7 @@ def main() -> int:
             if m2_build_result["status"] == "ERROR":
                 summary = {
                     "source_revision": git_revision(),
+                    "python": python,
                     "m2_build": m2_build_result,
                     "counts": {"executed": 0, "PASS": 0, "FAIL": 0,
                                "SKIPPED": 0, "ERROR": 0},
@@ -1002,6 +1025,7 @@ def main() -> int:
         if build_result["status"] == "ERROR":
             summary = {
                 "source_revision": git_revision(),
+                "python": python,
                 "build": build_result,
                 "counts": {
                     "executed": 0,
@@ -1053,6 +1077,7 @@ def main() -> int:
             m3_input, args.i21_cohort_plan, args.i21_cohort_plan_sha256,
             args.i24_sodium_lock,args.i24_mass_inventory,args.i24_pic_producer,args.i24_pic_refinement,
             args.i23_helium_profile,args.i23_pic_producer,args.i23_pic_refinement,
+            args.i24_total_capture,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)
@@ -1077,6 +1102,7 @@ def main() -> int:
 
     summary = {
         "source_revision": git_revision(),
+        "python": python,
         "build": build_result,
         "m2_build": m2_build_result,
         "build_reused": args.skip_build,

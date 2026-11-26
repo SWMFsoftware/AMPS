@@ -43,6 +43,13 @@ identities and a structural preparation PASS do not launch particle chemistry
 or change this formal gate. Missing inputs remain SKIPPED; corrupt identities
 are ERROR. Full source-family, product and predecessor requirements remain.
 
+The [2026-11-25 quantitative source review](SOURCE_REVIEW_20261125.md)
+shows that capture into H(1s) is only 0.03–0.4% of proton capture at
+0.5–4 keV/u. The user then selected total one-electron capture into H(n)
+at 1–5 keV/u as the first transport case, with zero-angle exchange under a
+source-based recoil bound. That case is not implemented yet; the 4.0 keV/u
+H(1s) case below stays as a software and kinematics fixture.
+
 The [first-channel source review](SOURCE_ADMISSION_20261124.md) identifies
 the retained D119990 gaps, the state-resolved Na calculation candidates
 and a higher-energy proton–He alternative with documented lab-frame angle
@@ -176,3 +183,63 @@ part of the step. The native per-reaction charge changes are integers in
 units of the elementary charge. Multiply each by its represented population
 to obtain packet charge. The run manifest records the actual loaded SPICE
 kernel paths and hashes. [Source-bound build command](../../source_qualification_build/README.md#build-the-i24-sodium-capture-case)
+
+## Total proton-sodium capture (2026-11-25)
+
+The user selected this as the first I24 transport case after the
+[quantitative source review](SOURCE_REVIEW_20261125.md) and approved its four
+implementation details the same day. The full specification, including the
+oracle, controls and limits, is the
+[total-capture contract](TOTAL_CAPTURE_CONTRACT.md). Formal I24 remains
+**SKIPPED / NOT QUALIFIED**; these are supporting children of the I24 owner.
+
+| File | Role |
+| --- | --- |
+| `reference/total_capture_approval_20261125.json` | The user decisions (channel, envelope, state split, angle bound, radiation ledger, NIST levels). |
+| `acquire_hydrogen_levels.py` | Retrieves the NIST ASD H I levels into a new, immutable folder with a receipt. |
+| `prepare_total_capture.py` | Derives `reference/shingal_table4.csv` (every printed row of Shingal 1986 Table 4) and `reference/hydrogen_levels.csv` (NIST nlj levels, n ≤ 3) from the hash-pinned sources. The provider compiles their SHA-256s; every run regenerates them and requires byte equality. |
+| `reference/total_capture_case.json` | Source pins, Morgan oracle knots, energies, cohorts, densities, weights, tolerances and the PIC geometry. |
+| `total_capture_probe.cpp`, `total_capture_setup.h` | MPI adapter over the production provider: one energy per launch, refusal and event controls. |
+| `run_total_capture.py` | Authenticates and regenerates the inputs, compiles the adapter, runs 1.5, 3.0, 4.0 and 4.75 keV/u at 1 and 8 ranks, and audits with an independent Decimal oracle. |
+| `pic_total_capture_probe.cpp`, `run_pic_total_capture.py` | One controlled event through normal startup, both movers, 1 and 8 ranks, optional step and weight refinement, plus native registration refusals. |
+
+Run both through the owner (see [RUN.md](../../../RUN.md#i24-total-protonsodium-capture-15-kevu)):
+
+```bash
+producer=test_output/srcMoon/i24-total-capture-tHMz4IwN/sodium-capture-producer/normal_build_evidence.json
+out=$(mktemp -d -p "$PWD/test_output/srcMoon" i24-formal-XXXXXXXX)
+/usr/bin/python3 -B srcMoon/test/run_all_test.py --only I24 --skip-build \
+  --campaign-mode regression --mpi-ranks 8 --test-runtime-seconds 1800 \
+  --i24-total-capture --i24-pic-producer "$producer" --i24-pic-refinement \
+  --output-dir "$out"
+```
+
+**What the ensemble checks.** For each energy: the direct rate against
+`n σ_Morgan g` (contract ≤ 1%, arithmetic ≤ 5e-12); the three shell
+fractions and both NIST shell centroids; the exact first-hit classification
+and event time of all 32,768 parents from the keyed source clock; the
+endpoint lifetime (≤ 3%); the selected shell of every event against the
+keyed Kinematics uniform; both product velocities against the zero-angle
+two-body solution; Q(n), radiated energy, bath energy and the three
+recoil bounds; product identities, charges and weights; refusals below and
+above the envelope, for negative or nonfinite density and for a closed
+uniform; weight rescaling; identical parent histories at 1 and 8 ranks; and
+exact binomial tests of the shell frequencies at a 1% family false-alarm
+probability. Outputs: `comparison.csv`, `comparison.png/eps`, per-rank
+`E*-mpi-*/parents-rank-*.csv`, `rate.csv`, `event-controls.csv`.
+
+**What the PIC matrix checks.** One stationary Na packet (2.625 atoms) at
+(1e7, 1001, 1003) m in frozen LSO and a 3.0 keV/u beam. The owner's keyed
+shell uniform must equal the independent HMAC value; the event epoch, the
+step populations, both daughters' weights, clocks and ballistic
+continuation, the zero-angle velocities, Q(n), the radiated energy and the
+signed proton-plus-radiation bath are then reconstructed independently.
+`registration-controls.csv` records six native refusals: non-LSO frame,
+energy below and above the envelope, negative density, zero solver effort
+and a wrong elementary charge. With `--refinement` the second-order mover
+also runs 2 and 4 steps and ½ and ¼ reference weights at both rank counts.
+
+The family runner accepts `i24-total-capture-ensemble` (pin: the case JSON)
+and `i24-total-capture-pic` (pins: the case JSON and the Na/Na⁺/H producer).
+The generator and oracle controls (`test_m3_i24_total_capture.py`) run in
+the registered U16 orchestration battery.
