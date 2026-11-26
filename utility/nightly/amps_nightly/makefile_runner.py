@@ -34,7 +34,7 @@ from . import legacy, procs
 from .machines import COMPILE_JOBS_VAR, Config, Machine
 from .plan import RUN, Item, makefile_manifest
 from .registry import UNASSIGNED
-from .table import DEFAULT_TABLE, TableTest, display_name, family_by_name, read_table
+from .table import DEFAULT_TABLE, MANIFESTS, TableTest, display_name, family_by_name, read_table
 
 TOOL_PARSER = DEFAULT_TABLE.parents[1] / "utility" / "TestScripts" / "table_parser.cpp"
 
@@ -50,16 +50,18 @@ def workspace_table(ws: Path) -> List[TableTest]:
     return read_table(path if path.is_file() else None)
 
 
-def manifest(ws: Path, machine: Machine, env: Dict[str, str], log) -> List[Tuple[str, str, str]]:
+def manifest(ws: Path, machine: Machine, env: Dict[str, str], log,
+             target: str = "test_manifest") -> List[Tuple[str, str, str]]:
     """(name, family, exception code) of the tests selected in this workspace.
 
-    Uses the workspace's own `make test_manifest`. A commit made before that target existed gets the
-    list from this tool's table_parser run on the workspace's own Table (families from this tool's Table).
+    Uses the workspace's own `make test_manifest` (or the runner's manifest_target: test_long_manifest lists the
+    Tier=long tests of Makefile.test.long). A commit made before that target existed gets the list from this tool's
+    table_parser run on the workspace's own Table (families from this tool's Table).
     """
     try:
-        return makefile_manifest(ws)
+        return makefile_manifest(ws, target=target)
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
-        log("make test_manifest unavailable in the tested commit ({}); using this tool's table_parser".format(error))
+        log("make {} unavailable in the tested commit ({}); using this tool's table_parser".format(target, error))
     work = ws / ".nightly-manifest"
     work.mkdir(exist_ok=True)
     subprocess.run(["g++", "-std=c++14", str(TOOL_PARSER), "-o", "table_parser"], cwd=str(work), check=True,
@@ -69,11 +71,13 @@ def manifest(ws: Path, machine: Machine, env: Dict[str, str], log) -> List[Tuple
                    env=dict(env, AMPS_TABLE_HOST=machine.table_host))
     # Makefile.conf first: the compiler-specific rules of Makefile.test (ifeq ($(COMPILE.c),gcc) ... SKIP or Ref=)
     # are evaluated while it is read, so COMPILE.c must already be defined
-    done = subprocess.run(["make", "-s", "-f", str(ws / "Makefile.conf"), "-f", "Makefile.test", "test_manifest"],
+    # (Makefile.test.long, which defines test_long_manifest, uses the variables of Makefile.test)
+    extra = [] if target == "test_manifest" else ["-f", MANIFESTS[target][1]]
+    done = subprocess.run(["make", "-s", "-f", str(ws / "Makefile.conf"), "-f", "Makefile.test"] + extra + [target],
                           cwd=str(work), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                           timeout=300)
     if done.returncode != 0:
-        raise RuntimeError("test_manifest from this tool's table_parser failed: " + done.stderr.strip()[-300:])
+        raise RuntimeError("{} from this tool's table_parser failed: {}".format(target, done.stderr.strip()[-300:]))
     families = family_by_name(workspace_table(ws))
     tests = []
     for line in done.stdout.splitlines():

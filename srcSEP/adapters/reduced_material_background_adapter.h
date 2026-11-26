@@ -44,9 +44,9 @@ class Owner final : public M::Owner {
     const auto velocity=[&](const Position& point,double epoch) {
       const auto state=view_.PrimitiveAt(point,epoch);
       if(!state.ok())return Core::Result<Position>::Failure(state.status.code,state.status.message);
-      if(!state.value.parkerExterior)
+      if(!state.value.materialQualified)
         return Core::Result<Position>::Failure(Core::StatusCode::UnsupportedCapability,
-            "PFSS trajectory is not qualified as material Parker exterior evolution");
+            "PFSS trajectory is not qualified as material evolution for this profile");
       return Core::Result<Position>::Success(state.value.velocityMPerS);
     };
     // Zero duration performs no RK evaluations. Validate its actual initial
@@ -73,7 +73,8 @@ class Owner final : public M::Owner {
     result.epochS=epoch;result.positionM=position;result.outwardNormal=f.outwardNormal;
     result.normalSpeedMPerS=f.normalSpeedMPerS;
     if(f.upstreamValid) {
-      M::Query query;query.positionM=position;query.epochS=epoch;query.region=M::Region::ParkerExterior;
+      M::Query query;query.positionM=position;query.epochS=epoch;
+      query.region=f.upstream.coronalOpen?M::Region::CoronalOpen:M::Region::ParkerExterior;
       const auto upstream=Sample(query);if(!upstream.ok())return R::Failure(upstream.status.code,upstream.status.message);
       result.upstream=upstream.value;result.upstream->side=M::Side::UpstreamLimit;
       result.upstream->interfaceIdentity=result.stableIdentity;

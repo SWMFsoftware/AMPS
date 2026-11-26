@@ -164,6 +164,23 @@ struct Options {
   // indistinguishable from an operator's explicit override.
   bool injectionParticlesProvided = false;
 
+  // Diffusive-shock-acceleration source of the field-line shock injection
+  // (srcSEP/field_line.cpp).  Both settings are opt-in: when not given on the
+  // command line the production globals keep their historical values
+  // (compression capped at s = 3 and inverse-CDF sampling of the physical
+  // momentum spectrum), so existing runs are bit-for-bit unchanged.
+  //  * shockMaximumCompressionRatio caps the shock compression s before the
+  //    DSA phase-space index q = 3 s / (s - 1) is formed.  +infinity ("none")
+  //    applies no cap and uses the shock model's Rankine-Hugoniot s as solved.
+  //  * shockLogUniformEnergySampling draws injection momenta log-uniformly
+  //    between the source bounds and corrects each macroparticle weight by
+  //    the exact density ratio target/proposal, so the represented physical
+  //    spectrum is unchanged in expectation while high energies are populated.
+  double shockMaximumCompressionRatio = 3.0;
+  bool shockMaximumCompressionRatioProvided = false;
+  bool shockLogUniformEnergySampling = false;
+  bool shockEnergySamplingProvided = false;
+
   // WP30 driver controls.  Each "Provided" bit preserves provenance when the
   // value remains a default and lets the final RunConfiguration enforce the
   // documented defaults < input file < command line precedence.

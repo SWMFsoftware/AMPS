@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import time
 import unittest
@@ -134,6 +135,29 @@ test_Moon-restart_check:
 \t@if [ -f run_test_Moon-restart/ParticleData.restart ]; then : > test_Moon-restart.diff; \\
 \telse echo "no restart file" > test_Moon-restart.diff; fi
 """
+
+
+@unittest.skipUnless(shutil.which("g++") and shutil.which("make"), "needs g++ and make")
+class LongManifest(unittest.TestCase):
+    """A tested tree without a manifest target gets its list from this tool's table_parser on the tree's own Table:
+    test_manifest the nightly tests, test_long_manifest the Tier=long ones."""
+
+    def test_fallback_per_target(self):
+        from amps_nightly.machines import parse_machine
+        m = parse_machine({"schema_version": 1, "machine": "box", "upload": "/srv/incoming",
+                           "configs": [{"config": "gnu", "config_pl": ["-install"]}]}, Path("box.json"))
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "MakefileTest").mkdir()
+            (ws / "MakefileTest" / "Table").write_text("#>\nName=Alpha\nFamily=pic-field-solver\n<#\n"
+                                                       "#>\nName=Zeta-long\nFamily=sep-long\nTier=long\nRanks=4\n<#\n")
+            (ws / "Makefile.conf").write_text("COMPILE.c=gcc\n")
+            messages = []
+            long_ = makefile_runner.manifest(ws, m, dict(os.environ), messages.append, "test_long_manifest")
+            nightly = makefile_runner.manifest(ws, m, dict(os.environ), messages.append)
+        self.assertEqual((long_, nightly), ([("Zeta-long", "sep-long", "")], [("Alpha", "pic-field-solver", "")]))
+        self.assertIn("make test_long_manifest unavailable in the tested commit", messages[0])
+        self.assertIn("make test_manifest unavailable in the tested commit", messages[1])
 
 
 class RunDependencies(unittest.TestCase):

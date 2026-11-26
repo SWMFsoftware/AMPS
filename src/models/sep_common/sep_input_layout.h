@@ -287,6 +287,16 @@ constexpr KeyRule kKeys[] = {
     {"mesh.field_line", "initial_z_m", kBoth},
     {"mesh.field_line", "length_m", kBoth},
     {"mesh.field_line", "point_count", kBoth},
+    // Optional (srcSEP reduced material line only): first chord arc [m] of a
+    // geometric vertex spacing that keeps length_m and point_count.
+    {"mesh.field_line", "first_segment_length_m", kSrcSep},
+    // Optional (srcSEP reduced material line only), all three or none: an
+    // HCI point [m] on the line. srcSEP then traces the core field from it
+    // sunward to mesh.domain.inner_radius_m and starts the line there, so
+    // initial_x/y/z_m must be omitted (one authority for the line's base).
+    {"mesh.field_line", "anchor_x_m", kSrcSep},
+    {"mesh.field_line", "anchor_y_m", kSrcSep},
+    {"mesh.field_line", "anchor_z_m", kSrcSep},
     {"mesh.field_line", "start_mode", kSrcSep3d},
     {"mesh.field_line", "end_radius_m", kSrcSep3d},
     {"mesh.refinement.solar", "enabled", kBoth},
@@ -348,6 +358,14 @@ constexpr KeyRule kKeys[] = {
     {"source.shock", "spectrum_charge_number", kBoth},
     {"source.shock", "spectrum_normalization", kBoth},
     {"source.shock", "spectrum_reference_intensity_per_m2_s_sr_j", kBoth},
+    // Optional (srcSEP reduced net source only): L_ref [m], the signed normal
+    // distance of the upstream release surface from the shock. Equivalent to
+    // --shock-release-distance-m; giving both is an error.
+    {"source.shock", "release_distance_m", kSrcSep},
+    // Optional alternative (srcSEP reduced net source only): L_ref as a
+    // fraction f of the front's generating-sphere radius, L_ref(t)=f R_sh(t).
+    // At most one of release_distance_m / this key / the CLI length is given.
+    {"source.shock", "release_distance_shock_radius_fraction", kSrcSep},
     {"source.shock", "physical_particle_rate_per_s", kSrcSep3d},
     {"source.shock", "spectrum_model", kSrcSep3d},
     {"source.shock", "phase_space_power_index", kSrcSep3d},

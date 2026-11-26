@@ -499,6 +499,12 @@ void amps_init_mesh() {
           // material field line and cannot be repaired by particle advection.
           const auto built=SEP::ReducedShock::Native::BuildInitialLine(&field_line);
           if(!built.ok())exit(__LINE__,__FILE__,built.message.c_str());
+        } else if(initialization.parkerFirstSegmentLengthM>0) {
+          exit(__LINE__,__FILE__,"mesh.field_line.first_segment_length_m is "
+              "implemented only for the reduced material line (--reduced-shock-event)");
+        } else if(initialization.parkerAnchorSpecified) {
+          exit(__LINE__,__FILE__,"mesh.field_line.anchor_{x,y,z}_m is "
+              "implemented only for the reduced material line (--reduced-shock-event)");
         } else SEP::ParkerSpiral::CreateFileLine(
             &field_line, origin, initial, initialization.parkerLengthM,
             initialization.parkerPointCount,

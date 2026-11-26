@@ -18,13 +18,13 @@ struct SphereState {
 };
 
 Core::Result<SphereState> Sphere(const Provider& provider,double timeS) {
-  const auto trajectory=provider.Trajectory(timeS);
-  if(!trajectory.ok())return Core::Result<SphereState>::Failure(
-      trajectory.status.code,trajectory.status.message);
-  const double sine=std::sin(provider.Event().halfWidthRad);
-  const double center=trajectory.value.apexRadiusM/(1+sine);
+  // The provider owns the generating sphere of every geometry profile (finite
+  // SSE cap or closed heliocentric sphere); never re-derive it here.
+  const auto sphere=provider.Sphere(timeS);
+  if(!sphere.ok())return Core::Result<SphereState>::Failure(
+      sphere.status.code,sphere.status.message);
   return Core::Result<SphereState>::Success(
-      {center*provider.Event().direction,center*sine});
+      {sphere.value.centerM,sphere.value.radiusM});
 }
 
 double SignedDistance(const Provider& provider,CoronalCME::Vec3 point,

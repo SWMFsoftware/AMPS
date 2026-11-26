@@ -492,6 +492,60 @@ MeanFreePathResult EvaluateCorrelationMeanFreePath(
   return result;
 }
 
+Status ValidateRadialRigidityPowerLaw(
+    const RadialRigidityPowerLawParameters& p) {
+  // Reference scales must be strictly positive so the two power-law ratios
+  // are defined for every positive sample; exponents may have either sign.
+  if (!std::isfinite(p.referenceMeanFreePathM) ||
+      p.referenceMeanFreePathM <= 0.0 ||
+      !std::isfinite(p.referenceRadiusM) || p.referenceRadiusM <= 0.0 ||
+      !std::isfinite(p.referenceRigidityV) || p.referenceRigidityV <= 0.0 ||
+      !std::isfinite(p.radialExponent) ||
+      !std::isfinite(p.rigidityExponent)) {
+    return Status::Error(StatusCode::InvalidCoefficient,
+        "radial-rigidity power-law mean free path requires positive finite "
+        "lambda_ref [m], r_ref [m], R_ref [V] and finite exponents");
+  }
+  return Status::Ok();
+}
+
+MeanFreePathResult EvaluateRadialRigidityPowerLawMeanFreePath(
+    double heliocentricRadiusM, const SpeciesProperties& species,
+    double momentumKgMPerS, const RadialRigidityPowerLawParameters& p,
+    double speedOfLightMPerS) {
+  MeanFreePathResult result;
+  const Status parameters = ValidateRadialRigidityPowerLaw(p);
+  if (!parameters.ok()) { result.status = parameters; return result; }
+  if (!std::isfinite(heliocentricRadiusM) || heliocentricRadiusM <= 0.0) {
+    result.status = Status::Error(StatusCode::InvalidArgument,
+        "radial-rigidity mean free path requires a positive radius [m]");
+    return result;
+  }
+  // R = p c / |q| [V]; the shared helper validates the species charge/mass.
+  const ScalarResult rigidity =
+      RigidityVolt(momentumKgMPerS, species, speedOfLightMPerS);
+  if (!rigidity.status.ok()) { result.status = rigidity.status; return result; }
+  if (!(rigidity.value > 0.0)) {
+    result.status = Status::Error(StatusCode::InvalidCoefficient,
+        "radial-rigidity mean free path is undefined at zero rigidity");
+    return result;
+  }
+  // Evaluate the product in logarithmic form: for the large radial and
+  // rigidity ranges of a corona-to-1-AU run the separate pow() factors stay
+  // well inside double range, but the log form makes that explicit and keeps
+  // the result independent of the order of the two factors.
+  const double logLambda = std::log(p.referenceMeanFreePathM) +
+      p.radialExponent * std::log(heliocentricRadiusM / p.referenceRadiusM) +
+      p.rigidityExponent * std::log(rigidity.value / p.referenceRigidityV);
+  result.lambdaParallelM = std::exp(logLambda);
+  result.valueState = ValueState::Finite;
+  result.status = std::isfinite(result.lambdaParallelM) &&
+      result.lambdaParallelM > 0.0 ? Status::Ok() :
+      Status::Error(StatusCode::InvalidCoefficient,
+                    "radial-rigidity mean free path overflowed");
+  return result;
+}
+
 SpatialDiffusionResult IntegrateSpatialDiffusion(
     double speedMPerS, const PitchAngleFunction& dmumu,
     const SpatialQuadratureConfiguration& configuration) {

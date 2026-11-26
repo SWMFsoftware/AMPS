@@ -6,10 +6,11 @@ test orchestrator: [ORCHESTRATOR.md](ORCHESTRATOR.md).
 Everything is one tool, `amps-nightly` (Python 3.8+, standard library only):
 
 ```sh
-utility/nightly/amps-nightly check            # Table, families.json, runners.json and machines/ agree
+utility/nightly/amps-nightly check            # Table, families.json, runners*.json and machines/ agree
 utility/nightly/amps-nightly machines         # machine files, their report columns and last uploads
 utility/nightly/amps-nightly plan [--list]    # what the routine runs and skips on this machine, and why
 utility/nightly/amps-nightly run [--dry-run]  # 1: the nightly test procedure on this machine (runners.json)
+utility/nightly/amps-nightly run --routine long   # the same for the long (periodic) routine (runners.long.json)
 utility/nightly/amps-nightly pack             # 2: tar each finished run with its logs, send it to the server
 utility/nightly/amps-nightly update           # 3: (server) take the tarballs, update results.db, archive, pages
 utility/nightly/amps-nightly --help
@@ -27,13 +28,14 @@ The three nightly steps also exist as scripts, like `run_test_amps.sh`, `scp_tes
 `process_amps_tests.sh` of the old routine: `nightly_run.sh`, `nightly_pack.sh` and `nightly_update.sh`
 (each passes its arguments on to the command above).
 
-What runs where is decided by four files:
+What runs where is decided by these files:
 
 | file | decides |
 |---|---|
-| `machines/<machine>.json` | the test machines; each configuration in it (compiler) is one report column |
+| `machines/<machine>.json` | the test machines; each configuration in it (compiler) is one report column; `routines`: the routines other than the nightly that run there, and when |
 | `runners.json` | the test runners the nightly executes, in order, with their commands; tests switched off for now (`disabled`) |
-| `MakefileTest/Table` | the Makefile.test tests, which machines run them (`@@(...)`), their family (`Family=`) |
+| `runners.<routine>.json` | the same for another routine, e.g. `runners.long.json`: the long tests, run periodically (section "Long tests") |
+| `MakefileTest/Table` | the Makefile.test tests, which machines run them (`@@(...)`), their family (`Family=`), their tier (`Tier=long`, `Ranks=`) |
 | `families.json` | the rows of the report |
 
 ## Adding and removing machines
@@ -88,6 +90,67 @@ back to their state after the install, and the test's log says so when an earlie
 So a test's compile rule must set everything it needs (`-application`, data paths, `-openmp`, link and
 compiler options) and cannot rely on what an earlier test configured.
 
+## Long tests (the periodic "long" routine)
+
+Tests too long for a night (the 2013-04-11 SEP real-event runs: a full event on 32 MPI ranks) run in a second
+routine, `long`, once a week. It is generic: any application's tests can join it.
+
+**A Makefile.test test** becomes a long test with two lines in the keyword part of its `MakefileTest/Table` block
+(before `Compile=`/`Rundir=`/`Run=`/`Check=`):
+
+```
+#>
+Name=SEP--event-2013-04-11-long--Parker
+Family=sep-long
+Tier=long
+Ranks=32
+...
+Run=
+>>>cd $(TESTSEP--event-2013-04-11-long--ParkerDIR) && $(TESTMPILAUNCH) $(TESTSEP--event-2013-04-11-long--ParkerRANKS) ./amps ...
+```
+
+- `Tier=long` puts the block into `Makefile.test.long` (its list: `make -s test_long_manifest`) instead of
+  `Makefile.test`, so the nightly never runs it. `make test_<name>` works from the AMPS root as for any test.
+- `Ranks=<N>` (required with `Tier=long`, not allowed without) is the test's fixed number of MPI ranks: its run
+  rule launches `$(TESTMPILAUNCH) $(TEST<name>RANKS) ./amps` (`TESTMPILAUNCH` defaults to `mpirun -np`), and its
+  references hold for that count.
+- `Family=` names a family of the group `long` in `families.json` (e.g. `sep-long`); nightly tests use the
+  group `legacy`.
+- The name must not start with the name of a nightly test (`X--long` would be counted as a result file of `X`).
+
+**Another application's test program** joins the long routine as a runner entry in `runners.long.json` (same
+fields as in `runners.json`, ORCHESTRATOR.md section 2; runner ids must differ from the nightly's), with its
+results in a family of the group `long`. `runners.long.json` holds one runner now, `legacy-long`: the built-in
+Makefile.test runner with `"manifest_target": "test_long_manifest"`.
+
+**Where and when it runs** is the `routines` object of a machine file; a machine without it does not run the
+long routine. On passion:
+
+```json
+"routines": {"long": {"enabled": true, "start": "Sat 10:00", "time_limit_h": 32, "lanes": 1, "compile_lanes": 1,
+                      "timeouts_s": {"compile": 3600, "rundir": 600, "run": 86400, "check": 1800},
+                      "make_vars": {"TESTMPILAUNCH": "mpirun -np"}, "max_ranks": 32, "stale_after_h": 192}}
+```
+
+While the routine runs, `time_limit_h` replaces `night_limit_h`, `lanes` and `compile_lanes` replace the
+machine's, and `timeouts_s` and `make_vars` are merged into the machine's. `start` is `<day> HH:MM` (weekly) or
+`HH:MM` (daily). `max_ranks` (default: `cores`) is the most ranks a long test may use there (`check` reports a
+larger `Ranks=`). `stale_after_h` (default 192) is when the report flags the routine's results as old.
+
+**By hand** (results stay on the machine; `pack` does not send them):
+
+```sh
+utility/nightly/amps-nightly plan --routine long --list
+utility/nightly/amps-nightly run --routine long --dry-run
+utility/nightly/amps-nightly run --routine long --only legacy-long --test 'SEP--event-2013-04-11-long--Parker' --no-upload
+```
+
+`run --routine long` works in `{workdir}/nights/<YYYYMMDD-HHMM>-long/`; its run ids end in `-long`
+(`20261128T1600Z-passion-gnu-long`) and its runs are recorded with `"routine": "long"`. The report shows the
+nightly table as before (the newest **nightly** run of each column), and below it a section "Long validation
+runs (periodic)" with each long test's newest result, the date and commit of the run it comes from, and when
+it last passed.
+
 ## Running the nightly procedure
 
 Three steps, like the three scripts of the old routine:
@@ -141,17 +204,23 @@ Its version-controlled original is `bin/amps_nightly_test.sh`; the copy in `~/bi
 ```
 
 which writes `~/bin/amps_nightly_test.sh`, its settings `~/bin/amps_nightly_test.conf` (`AMPSTEST`,
-`BRANCH`, `UPDATE_SITE`, `PYTHON`), and one crontab line at the machine file's `start`, below a marker comment;
-the crontab is saved to `$AMPSTEST/backup/` first. `amps-nightly uninstall` removes them again. On passion:
+`BRANCH`, `UPDATE_SITE`, `PYTHON`), and one crontab line per routine below a marker comment: the nightly's at the
+machine file's `start`, and one for each routine its `routines` enables, at that routine's `start`, passing
+`--routine <name>`. The crontab is saved to `$AMPSTEST/backup/` first. `amps-nightly uninstall` removes them
+again. `install --time HH:MM` changes the nightly's time, `install --routine long --time 'Sun 06:00'` the long
+routine's. On passion:
 
 ```
 # amps-nightly: AMPS nightly testing (added by 'amps-nightly install'; remove with 'amps-nightly uninstall')
 00 20 * * *  /home/vtenishe/bin/amps_nightly_test.sh >> /data/vtenishe/AMPSTEST/logs/cron.log 2>&1
+00 10 * * 6  /home/vtenishe/bin/amps_nightly_test.sh --routine long >> /data/vtenishe/AMPSTEST/logs/cron.log 2>&1
 ```
 
 Each night the script
 
-1. takes a lock (one night at a time);
+1. takes a lock (one night at a time, of any routine: two routines never run at once on a machine). The
+   nightly gives up when the lock is taken; another routine (`--routine long`) waits for it up to
+   `LOCK_WAIT_H` hours (default 6), then gives up; both say so in the log;
 2. downloads AMPS: `git clone --depth 1` of `BRANCH` into `$TESTDIR/AMPS` (`~/Tmp_AMPS_test/AMPS`; the
    night before is kept as `AMPS.prev` and used if the download fails);
 3. pulls SWMF_data: the nightly's own copy at the machine file's `swmf_data`, reset to the newest commit
@@ -161,7 +230,8 @@ Each night the script
    `run --dry-run`), runs `$TESTDIR/AMPS/utility/nightly/nightly_run.sh --commit <downloaded commit>`, then
    `nightly_pack.sh`,
    and on the server (`UPDATE_SITE=yes`) `nightly_update.sh`;
-5. logs everything to `$AMPSTEST/logs/nightly-YYYYMMDD-HHMM.log` (kept 60 days).
+5. logs everything to `$AMPSTEST/logs/nightly-YYYYMMDD-HHMM.log` (kept 60 days); another routine to
+   `$AMPSTEST/logs/<routine>-YYYYMMDD-HHMM.log` (`long-20261128-1000.log`).
 
 So the orchestrator, `runners.json` and the machine files come from the branch on GitHub, and a change to them
 takes effect the night after it is pushed; a working checkout does not affect the nightly. The tests run on
@@ -192,6 +262,8 @@ www/archive/index.html   every stored night of every column, newest first, linke
 www/archive/YYYY/MM/DD/<machine>-<config>/   one night of one column, like the legacy AMPS_TEST_RESULTS:
             index.html (night summary, with links to the previous and next night of the column),
             nav.json (those links), run.json, results.jsonl, runners.json, logs/<runner>/...
+www/archive/YYYY/MM/DD/<machine>-<config>-<routine>/   one run of another routine (passion-gnu-long), linked to
+            the previous and next run of that routine
 ```
 
 On passion, Firefox runs under an AppArmor profile that lets it read files under `$HOME` and `/tmp`

@@ -172,6 +172,18 @@ int main(int argc,char** argv) {
       Require(!M::Require(static_cast<M::Profile>(i),M::Use::PhysicalDownstream).ok(),"local diagnostic became volume support");
     }
     Require(!M::Require(M::Profile::ReducedParkerV1,M::Use::MaterialTransport,M::Region::CoronalOpen).ok(),"PFSS inherited Parker admission");
+    // The open-shell reduced profile admits exactly the Parker exterior and
+    // open PFSS tubes; closed corona, sheath/ejecta volumes and downstream
+    // use stay unqualified.
+    Require(M::Require(M::Profile::ReducedPfssOpenParkerV1,M::Use::MaterialTransport,M::Region::ParkerExterior).ok()&&
+        M::Require(M::Profile::ReducedPfssOpenParkerV1,M::Use::MaterialTransport,M::Region::CoronalOpen).ok(),
+        "open-shell reduced profile rejected a qualified region");
+    for(auto region:{M::Region::Unspecified,M::Region::CoronalClosed,M::Region::Sheath,M::Region::Ejecta,
+        M::Region::Transition,M::Region::PostEvent})
+      Require(!M::Require(M::Profile::ReducedPfssOpenParkerV1,M::Use::MaterialTransport,region).ok(),
+          "open-shell reduced profile admitted an unqualified region");
+    Require(!M::Require(M::Profile::ReducedPfssOpenParkerV1,M::Use::PhysicalDownstream).ok(),
+        "open-shell reduced profile became downstream volume support");
     Require(!M::Require(M::Profile::ReducedParkerV1,M::Use::SnapshotExchange,M::Region::Unspecified,2).ok(),"unknown revision admitted");
     Require(!M::Require(M::Profile::ReducedParkerV1,static_cast<M::Use>(99)).ok(),"unknown operation admitted");
 

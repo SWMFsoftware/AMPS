@@ -107,6 +107,24 @@ struct Configuration {
   Vec3 parkerInitialPointM;
   double parkerLengthM = 0.0;
   std::uint64_t parkerPointCount = 0;
+  // Optional mesh.field_line.first_segment_length_m. Zero keeps uniform arc
+  // spacing. A positive value selects geometric arcs a q^k (k=0..N-2) with
+  // the same total length; it is implemented only for the reduced material
+  // line, whose moving inner end is re-extended by one first-segment arc.
+  double parkerFirstSegmentLengthM = 0.0;
+  // Optional mesh.field_line.anchor_{x,y,z}_m (reduced material line only).
+  // When set, the material line is the core field line through this HCI
+  // point at the initial epoch: srcSEP traces it sunward to innerRadiusM and
+  // starts the line there. initial_{x,y,z}_m are then absent from the file,
+  // and parkerInitialPointM holds only the radial projection of the anchor on
+  // the inner sphere, used as the seed of the analytic mesh-refinement tube.
+  bool parkerAnchorSpecified = false;
+  Vec3 parkerAnchorM;
+  // Optional source.shock.release_distance_m: L_ref [m] of the reduced net
+  // source. Zero means "not written in the file".
+  double reducedReleaseDistanceM = 0.0;
+  // Optional source.shock.release_distance_shock_radius_fraction (zero: unset).
+  double reducedReleaseShockRadiusFraction = 0.0;
   // Ambient wind speed [m/s] and solar rotation rate [rad/s] of the Parker
   // winding.  Decision D4: physics: swcme owns both, so they are not written
   // in the file; the parser copies them from the canonical SWCME1D resolver

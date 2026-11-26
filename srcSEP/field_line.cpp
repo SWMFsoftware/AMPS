@@ -45,6 +45,7 @@ int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::Injectio
 
 
 int SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
+bool SEP::FieldLine::InjectionParameters::LogUniformMomentumSampling=false;
 int SEP::FieldLine::InjectionParameters::UseAnalyticShockModel=SEP::FieldLine::InjectionParameters::AnalyticShockModel_Tenishev2005;
 
 namespace {
@@ -662,6 +663,46 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     // p^-q.  The number spectrum is dN/dp proportional to p^(2-q), hence the
     // explicit density index q-2 below.  Sampling its normalized inverse CDF
     // eliminates the ambiguous historical log-p proposal weight.
+    if (InjectionParameters::LogUniformMomentumSampling) {
+      // Importance sampling of the same physical spectrum (opt-in,
+      // --shock-energy-sampling log-uniform).  Target density in the
+      // dimensionless momentum x = p/pmin on [1, pmax/pmin]:
+      //   pi(x) = x^(2-q) / Int_1^X x'^(2-q) dx'        (dN/dp ~ p^(2-q))
+      // Proposal: log-uniform, g(x) = 1 / [x ln X].  Each macroparticle
+      // carries the weight w = pi(x)/g(x) (shared, tested helper), whose
+      // expectation under g is exactly 1, so the represented physical number
+      // and every moment of the spectrum are unbiased while the proposal
+      // populates the high-energy channels compared with observations.
+      // Working in x instead of SI momentum (~1e-21 kg m/s) keeps x^(2-q)
+      // finite for weak shocks with large q.  Non-relativistically
+      // d ln E = 2 d ln p, so the proposal is also log-uniform in energy.
+      SEP::Injection::Spectrum scaled;
+      scaled.measure=SEP::Injection::Measure::Momentum;
+      scaled.minimum=1.0;
+      scaled.maximum=pmax/pmin;
+      scaled.powerIndex=q-2.0;
+      const double logRange=std::log(scaled.maximum);
+      if (!(std::isfinite(logRange) && logRange>0.0))
+        exit(__LINE__,__FILE__,"log-uniform shock sampling requires pmax > pmin");
+      for (int i=0;i<nParticles;i++) {
+        SEP::Transport::KeyedRandomStream random=SourceRandom(
+            sourceEvent,static_cast<std::uint64_t>(i),
+            SEP::Injection::RandomPurpose::Spectrum);
+        double x=std::exp(random.UniformOpen01()*logRange);
+        // u is in the open interval (0,1), so x < X mathematically; only an
+        // exp() rounding of the last ulp can reach the endpoint.  Mapping that
+        // measure-zero case onto the closed bound keeps the sample inside the
+        // density's support without biasing any finite interval.
+        if (x>scaled.maximum) x=scaled.maximum;
+        const SEP::Transport::ScalarResult weight=
+            SEP::Injection::ImportanceWeightForLogUniformProposal(scaled,x);
+        if (!weight.status.ok()) exit(__LINE__,__FILE__,weight.status.message.c_str());
+        pAbsTable[i]=pmin*x;
+        WeightCorrectionTable[i]=weight.value;
+      }
+      return true;
+    }
+
     SEP::Injection::Spectrum spectrum;
     spectrum.measure=SEP::Injection::Measure::Momentum;
     spectrum.minimum=pmin;

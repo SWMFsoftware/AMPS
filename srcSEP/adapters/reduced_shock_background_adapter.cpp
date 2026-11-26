@@ -57,6 +57,9 @@ Core::Result<AmbientSample> ConvertAmbient(
   out.massDensityKgM3=primitive.plasma.massDensityKgM3;
   out.pressurePa=primitive.plasma.pressurePa;out.protonTemperatureK=primitive.protonTemperatureK;
   out.parkerExterior=primitive.region==SEP::CoronaSwcme::AmbientRegion::ParkerExterior;
+  out.coronalOpen=primitive.region==SEP::CoronaSwcme::AmbientRegion::PfssOpen;
+  out.materialQualified=out.parkerExterior||
+      (out.coronalOpen&&event.ambient.ambient.isothermalFluxTubeOpenWind);
   out.ambientRegion=static_cast<int>(primitive.region);out.magneticSector=primitive.magneticSector;
   out.epochS=epoch;out.generation=generation;out.eventIdentity=event.physicsFingerprint;
   if(!FiniteSample(out)||!std::isfinite(out.protonNumberDensityM3)||out.protonNumberDensityM3<=0||
@@ -150,6 +153,9 @@ Core::Status IntervalView::RequirePhysicalDownstream() const {
   const auto valid=ValidateEpoch(departureS_);if(!valid.ok())return valid;
   return provider_->RequireCapability(CoronaSwcme::ShockFront::VolumeCapability::PhysicalDownstreamVolume);
 }
+double IntervalView::SpeedBoundMPerS() const {
+  return provider_?provider_->Ambient().SpeedBoundMPerS():std::numeric_limits<double>::infinity();
+}
 Core::Result<SurfaceSphere> IntervalView::SphereAt(double epoch) const {
   using Return=Core::Result<SurfaceSphere>;
   const auto valid=ValidateEpoch(epoch);if(!valid.ok())return Return::Failure(valid.code,valid.message);
@@ -208,7 +214,10 @@ Core::Result<Background::Material::Descriptor> IntervalView::MaterialDescriptor(
     std::uint64_t geometry,std::uint64_t snapshot,const std::string& nativeIdentity) const {
   namespace M=Background::Material;using R=Core::Result<M::Descriptor>;
   const auto valid=ValidateEpoch(departureS_);if(!valid.ok())return R::Failure(valid.code,valid.message);
-  M::Descriptor d;d.profile=M::Profile::ReducedParkerV1;d.revision=1;
+  // The open-shell closure is a distinct audited profile; every earlier event
+  // keeps the exterior-only identity byte for byte.
+  M::Descriptor d;d.profile=provider_->Event().ambient.ambient.isothermalFluxTubeOpenWind?
+      M::Profile::ReducedPfssOpenParkerV1:M::Profile::ReducedParkerV1;d.revision=1;
   d.capabilities=M::MaterialRequirements|M::Bit(M::Capability::ShockSurface);
   d.backgroundGeneration=generation_;d.geometryGeneration=geometry;d.geometryGenerationPresent=true;d.snapshotGeneration=snapshot;
   d.eventIdentity=d.physicalConfigurationIdentity=identity_;d.nativeConfigurationIdentity=nativeIdentity;
@@ -233,10 +242,14 @@ Core::Result<Background::Material::State> IntervalView::MaterialStateAt(
   // This smooth ambient API cannot impersonate either limiting shock state.
   // FrontAt owns those limits. In particular no downstream volume is inferred
   // merely because the undisturbed reference can be queried behind a front.
-  if(q.region!=M::Region::ParkerExterior||q.side!=M::Side::Smooth||!q.interfaceIdentity.empty())
-    return R::Failure(Core::StatusCode::UnsupportedCapability,"neutral reduced material query requires the smooth Parker exterior; use the explicit front API for jump limits");
+  const bool openShell=d.profile==M::Profile::ReducedPfssOpenParkerV1;
+  if((q.region!=M::Region::ParkerExterior&&!(openShell&&q.region==M::Region::CoronalOpen))||
+      q.side!=M::Side::Smooth||!q.interfaceIdentity.empty())
+    return R::Failure(Core::StatusCode::UnsupportedCapability,"neutral reduced material query requires the smooth Parker exterior (or, for the open-shell profile, an open PFSS tube); use the explicit front API for jump limits");
   const auto sample=AmbientAt(q.positionM,q.epochS);if(!sample.ok())return R::Failure(sample.status.code,sample.status.message);
-  if(!sample.value.parkerExterior)return R::Failure(Core::StatusCode::UnsupportedCapability,"PFSS state is not qualified as a material Parker exterior");
+  if(!sample.value.materialQualified)return R::Failure(Core::StatusCode::UnsupportedCapability,"PFSS state is not qualified as a material region");
+  if((q.region==M::Region::ParkerExterior)!=sample.value.parkerExterior)
+    return R::Failure(Core::StatusCode::OutOfDomain,"query region differs from the sampled core region");
   const auto primitive=provider_->Ambient().Evaluate({q.positionM[0],q.positionM[1],q.positionM[2]},q.epochS);
   if(!primitive.ok())return R::Failure(primitive.status.code,primitive.status.message);
   const auto& a=sample.value;const auto& composition=provider_->Event().ambient.composition;
@@ -252,7 +265,8 @@ Core::Result<Background::Material::State> IntervalView::MaterialStateAt(
   state.species=std::vector<M::Species>{{"electron",a.electronNumberDensityM3,primitive.value.electronTemperatureK},
       {"proton",a.protonNumberDensityM3,a.protonTemperatureK},
       {"alpha",a.alphaNumberDensityM3,composition.alphaTemperatureK}};
-  const auto branch=identity_+":ParkerExterior:sector:"+std::to_string(a.magneticSector);
+  const auto branch=identity_+(a.parkerExterior?":ParkerExterior:sector:":":CoronalOpen:sector:")+
+      std::to_string(a.magneticSector);
   state.velocityGradientPerS=M::Gradient{a.velocityGradientPerS,branch,true};
   state.magneticGradientTPerM=M::Gradient{a.magneticGradientTPerM,branch,true};
   const auto checked=M::Validate(d,q,state);if(!checked.ok())return R::Failure(checked.code,checked.message);
@@ -422,6 +436,29 @@ FrontSummary CurrentFrontSummary(){
     summary.apexShockAccepted=epoch->apexShockAccepted;
   }
   return summary;
+}
+
+bool HeliocentricSphereFront() {
+  return gState.provider&&gState.provider->Event().geometryModel==
+      CoronaSwcme::ShockFront::GeometryModel::HeliocentricSphere;
+}
+
+Core::Status ReportFittedFront(double epochS,std::ostream* writer) {
+  using CoronaSwcme::ShockFront::HistoryModel;
+  if(!gState.provider||gState.provider->Event().historyModel!=HistoryModel::FittedQuadratic)
+    return Core::Status::Success();
+  // Use the live provider at the requested physical epoch. The cache
+  // snapshot can be older than the particle step. This query only exposes
+  // the state the material/shock adapter already owns.
+  const auto apex=gState.provider->Trajectory(epochS);
+  if(!apex.ok())return apex.status;
+  if(!writer)return Core::Status::Success();
+  std::ostringstream line;
+  line<<std::setprecision(17)<<"REDUCED_FITTED_FRONT epoch_s="<<epochS
+      <<" apex_radius_m="<<apex.value.apexRadiusM<<" apex_speed_m_s="<<apex.value.apexSpeedMPerS
+      <<" event="<<EventIdentity()<<'\n';
+  *writer<<line.str();
+  return Core::Status::Success();
 }
 
 } } // namespace SEP::ReducedShock

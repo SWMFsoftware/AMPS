@@ -157,8 +157,14 @@ $(BUILD)/test_shock_front: test/shock_front/test_reduced.cpp \
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
 		$(CORONAL_ARCHIVE) -o $@
 
-shock-front-test: $(BUILD)/test_shock_front
+$(BUILD)/test_shock_front_sphere: test/shock_front/test_heliocentric_sphere.cpp \
+		$(BUILD)/libsep_corona_swcme.a coronal-lib
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \
+		$(CORONAL_ARCHIVE) -o $@
+
+shock-front-test: $(BUILD)/test_shock_front $(BUILD)/test_shock_front_sphere
 	$(BUILD)/test_shock_front
+	$(BUILD)/test_shock_front_sphere
 
 $(BUILD)/shock_forecast_core: forecast/core_cli.cpp $(BUILD)/libsep_corona_swcme.a coronal-lib
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(BUILD)/libsep_corona_swcme.a \

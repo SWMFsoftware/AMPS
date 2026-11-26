@@ -15,9 +15,13 @@ struct ReleasePoint {
   ReducedShock::Position xM{},normal{};
   ReducedShock::FrontSample normalFoot;
 };
+// verticesAtBirth may be the contiguous range [firstIndex, firstIndex+size)
+// of a line with lineVertexCount vertices (0: the whole line); segments are
+// then whole-line indices, as in ReducedShock::ConnectLine.
 Core::Result<std::vector<ReleasePoint>> ReferenceIntersections(
     const ReducedShock::IntervalView&,const std::vector<ReducedShock::Position>&
-    verticesAtBirth,double birthEpochS,double normalDistanceM,double toleranceM);
+    verticesAtBirth,double birthEpochS,double normalDistanceM,double toleranceM,
+    std::size_t firstIndex=0,std::size_t lineVertexCount=0);
 
 // eta is an explicitly prescribed NET first-passage number fraction. Phi is
 // the conserved tube flux [T m^2], so A=Phi/|B| and A/|b.n| is the shock patch

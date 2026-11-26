@@ -1,0 +1,14 @@
+{
+ "line_base_radius_rsun": 1.1,
+ "line_first_segment_m": 15305400.000000002,
+ "line_length_m": 478335991813.18805,
+ "line_point_count": 326,
+ "nightly_line_first_segment_m": 61221600.00000001,
+ "nightly_line_point_count": 85,
+ "note": "the 1.1 Rs footpoint is traced through the PFSS shell by srcSEP (REDUCED_ANCHOR line of the run log)",
+ "source_surface_foot_azimuth_deg": 87.60374752046148,
+ "source_surface_foot_carrington_longitude_deg": 172.97641714953556,
+ "source_surface_radius_rsun": 2.5,
+ "wind_critical_radius_rsun": 8.427480468917077,
+ "wind_isothermal_sound_speed_m_s": 106385.13283302232
+}

@@ -54,6 +54,27 @@ bool SameBranch(const AmbientPrimitive& a,const AmbientPrimitive& b) {
   return a.region==b.region&&a.magneticSector==b.magneticSector;
 }
 
+// Subsonic root 0<y<1 of the isothermal Parker/Bernoulli relation
+// y - ln y = rhs. g(z)=e^z-z-rhs, z=ln y, is strictly decreasing for z<0 with
+// g(-rhs-1)=e^(-rhs-1)+1>0 and g(0)=1-rhs<0, so bisection in z brackets the
+// unique root for every rhs>1 without the radial solver's y floor.
+Core::Result<double> SubsonicParkerY(double rhs) {
+  using Return=Core::Result<double>;
+  if(!std::isfinite(rhs)||!(rhs>1))return Return::Failure(
+      Core::StatusCode::NumericalFailure,
+      "open-tube isothermal wind has no subsonic solution here: the PFSS tube "
+      "would need a sonic point inside the source surface");
+  double low=-rhs-1,high=0;
+  for(int i=0;i<300&&high-low>4*std::numeric_limits<double>::epsilon()*(1-low);++i) {
+    const double middle=0.5*(low+high);
+    if(std::exp(middle)-middle-rhs>0)low=middle;else high=middle;
+  }
+  const double y=std::exp(0.5*(low+high));
+  if(!(y>0)||!(y<1))return Return::Failure(Core::StatusCode::NumericalFailure,
+      "open-tube isothermal wind root left the subsonic branch");
+  return Return::Success(y);
+}
+
 } // namespace
 
 const char* Name(AmbientRegion region) noexcept {
@@ -105,7 +126,24 @@ Core::Status ValidateDefinition(const AmbientDefinition& definition) {
       s.solarRadiusM>0&&s.firstValidPlasmaRadiusM>=s.solarRadiusM&&
       s.firstValidPlasmaRadiusM<a.sourceSurfaceRadiusM&&
       s.coverageRadiusM>a.sourceSurfaceRadiusM;
-  if(!composition||!ambient||!support||definition.coordinateFrame.empty()||
+  // Optional v1.3 closures. Earlier profiles leave both at their inactive
+  // defaults; an active closure must be finite and lie inside its support.
+  const double calibrationRadius=CoronalCME::Norm(a.magneticCalibrationPositionM);
+  const bool wind=a.windSpeedAtReferenceMPerS==0||
+      (std::isfinite(a.windSpeedAtReferenceMPerS)&&a.windSpeedAtReferenceMPerS>0);
+  const bool calibration=!a.magneticCalibration||
+      (std::isfinite(calibrationRadius)&&
+       calibrationRadius>=s.firstValidPlasmaRadiusM&&
+       calibrationRadius<=s.coverageRadiusM&&
+       std::isfinite(a.magneticCalibrationEpochS)&&
+       a.magneticCalibrationEpochS>=s.startS&&a.magneticCalibrationEpochS<=s.endS&&
+       std::isfinite(a.magneticCalibrationMagnitudeT)&&
+       a.magneticCalibrationMagnitudeT>0);
+  // The tube closure replaces the open-shell density law; it cannot be
+  // combined with the radial rho U r^2 alternative.
+  const bool openClosure=!a.isothermalFluxTubeOpenWind||!a.sphericalOpenMassFlux;
+  if(!composition||!ambient||!support||!wind||!calibration||!openClosure||
+      definition.coordinateFrame.empty()||
       definition.physicsFingerprint.empty())
     return Core::Status::Failure(Core::StatusCode::InvalidConfiguration,
         "canonical ambient definition is incomplete or outside its physical domain");
@@ -136,18 +174,7 @@ Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::CreateResolved(
   // memoization, not an axisymmetric field approximation. Keep the failure
   // result and signed-zero azimuthal limits; other source points still execute
   // EvaluateCartesian normally. No query outside its actual domain is repaired.
-  const double axialInside=definition.ambient.sourceSurfaceRadiusM*
-      (1-64*std::numeric_limits<double>::epsilon());
-  model->axialSourceRadiiM_[2]=axialInside;
-  for(unsigned i=1;i<=2;++i) {
-    model->axialSourceRadiiM_[2-i]=std::nextafter(model->axialSourceRadiiM_[3-i],0.0);
-    model->axialSourceRadiiM_[2+i]=std::nextafter(model->axialSourceRadiiM_[1+i],
-        std::numeric_limits<double>::infinity());
-  }
-  for(unsigned j=0;j<model->axialSourceRadiiM_.size();++j)
-    for(unsigned i=0;i<8;++i)
-      model->axialSourceFields_[8*j+i]=model->pfss_.EvaluateCartesian({
-          i&1?-0.0:0.0,i&2?-0.0:0.0,i&4?-model->axialSourceRadiiM_[j]:model->axialSourceRadiiM_[j]});
+  model->CacheAxialSourceFields();
   const auto& c=model->definition_.composition;
   model->ions_={{"H+",1,1,CoronalCME::Constants::kProtonMassKg,c.protonTemperatureK}};
   if(c.alphaToProtonNumberRatio>0)model->ions_.push_back({"He++",
@@ -157,17 +184,57 @@ Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::CreateResolved(
       model->definition_.ambient.electronDensityAtReferenceM3,c.electronTemperatureK,
       model->ions_,c.includeElectronMass,c.gammaAdiabatic,0);
   if(!reference.ok())return Return::Failure(reference.status.code,reference.status.message);
-  model->soundSquared_=reference.value.pressurePa/reference.value.massDensityKgM3;
-  model->criticalRadiusM_=CoronalCME::Constants::kSolarGravitationalParameterM3PerS2/
-      (2*model->soundSquared_);
-  const auto referenceWind=CoronalCME::SolveRadialIsothermalParker(
-      {model->definition_.ambient.referenceRadiusM},std::sqrt(model->soundSquared_),
-      model->criticalRadiusM_,1);
+  const double referenceRadius=model->definition_.ambient.referenceRadiusM;
+  const double gm=CoronalCME::Constants::kSolarGravitationalParameterM3PerS2;
+  const auto referenceSpeed=[&](double sound)->Core::Result<double> {
+    const auto point=CoronalCME::SolveRadialIsothermalParker({referenceRadius},
+        sound,gm/(2*sound*sound),1);
+    if(!point.ok())return Core::Result<double>::Failure(point.status.code,point.status.message);
+    return Core::Result<double>::Success(point.value[0].speedMPerS);
+  };
+  const double targetWind=model->definition_.ambient.windSpeedAtReferenceMPerS;
+  if(targetWind>0) {
+    // Parker (1958) transonic isothermal wind: U/c_w=F(r/r_c), r_c=GM/(2c_w^2),
+    // with F increasing. U(r_ref)=c_w F(2 r_ref c_w^2/GM) is therefore strictly
+    // increasing in c_w and the measured U(r_ref) has exactly one root. The
+    // logarithmic bracket runs from r_c=2 r_ref (deeply subsonic at r_ref, yet
+    // inside the Parker solver's resolved branch) to r_c=1e-4 r_ref; a target
+    // outside it is a configuration failure, never a clamped wind.
+    const double lowSound=std::sqrt(gm/(4*referenceRadius));
+    double low=std::log(lowSound),high=std::log(100*lowSound);
+    const auto lower=referenceSpeed(std::exp(low)),upper=referenceSpeed(std::exp(high));
+    if(!lower.ok()||!upper.ok()||!(lower.value<targetWind)||!(upper.value>targetWind))
+      return Return::Failure(Core::StatusCode::InvalidConfiguration,
+          "reference wind speed is outside the isothermal Parker bracket");
+    for(int i=0;i<200&&high-low>4*std::numeric_limits<double>::epsilon()*std::abs(high);++i) {
+      const double middle=0.5*(low+high);
+      const auto speed=referenceSpeed(std::exp(middle));
+      if(!speed.ok())return Return::Failure(speed.status.code,speed.status.message);
+      if(speed.value<targetWind)low=middle;else high=middle;
+    }
+    const double sound=std::exp(0.5*(low+high));
+    const auto fitted=referenceSpeed(sound);
+    if(!fitted.ok()||std::abs(fitted.value-targetWind)>1e-9*targetWind)
+      return Return::Failure(Core::StatusCode::NumericalFailure,
+          "isothermal Parker wind fit did not reproduce the reference speed");
+    model->soundSquared_=sound*sound;
+  } else {
+    model->soundSquared_=reference.value.pressurePa/reference.value.massDensityKgM3;
+  }
+  model->criticalRadiusM_=gm/(2*model->soundSquared_);
+  // The open-tube closure continues the exterior's subsonic branch down each
+  // PFSS tube. If the exterior is already supersonic at the source surface,
+  // the tube would need its own sonic point inside the shell, which this
+  // closure does not solve; reject rather than mix branches.
+  if(model->definition_.ambient.isothermalFluxTubeOpenWind&&
+      !(model->criticalRadiusM_>model->definition_.ambient.sourceSurfaceRadiusM))
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,
+        "isothermal flux-tube open wind requires the Parker critical radius above the source surface");
+  const auto referenceWind=referenceSpeed(std::sqrt(model->soundSquared_));
   if(!referenceWind.ok())return Return::Failure(
       referenceWind.status.code,referenceWind.status.message);
-  const double referenceRadius=model->definition_.ambient.referenceRadiusM;
   model->massFluxPerSr_=reference.value.massDensityKgM3*
-      referenceWind.value[0].speedMPerS*referenceRadius*referenceRadius;
+      referenceWind.value*referenceRadius*referenceRadius;
 
   const int count=model->definition_.ambient.windTablePoints;
   const double begin=std::log(model->definition_.support.solarRadiusM);
@@ -191,7 +258,45 @@ Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::CreateResolved(
   model->winding_.resize(radii.size());
   for(std::size_t i=1;i<radii.size();++i)model->winding_[i]=
       model->winding_[i-1]+model->IntegrateWinding(radii[i-1],radii[i]);
+  const auto& a=model->definition_.ambient;
+  if(a.magneticCalibration) {
+    // B is linear in the harmonic coefficients in both the PFSS shell and the
+    // Parker continuation, while U, rho and topology do not depend on their
+    // amplitude. One factor therefore reproduces the declared |B| exactly.
+    const auto unit=model->Evaluate(a.magneticCalibrationPositionM,
+        a.magneticCalibrationEpochS);
+    if(!unit.ok())return Return::Failure(unit.status.code,
+        "magnetic calibration point: "+unit.status.message);
+    const double magnitude=Norm(unit.value.magneticFieldT);
+    model->magneticFactor_=a.magneticCalibrationMagnitudeT/magnitude;
+    if(!std::isfinite(model->magneticFactor_)||!(model->magneticFactor_>0))
+      return Return::Failure(Core::StatusCode::NumericalFailure,
+          "magnetic calibration factor is not finite and positive");
+    model->pfss_=model->pfss_.Scaled(model->magneticFactor_);
+    model->CacheAxialSourceFields();
+    const auto check=model->Evaluate(a.magneticCalibrationPositionM,
+        a.magneticCalibrationEpochS);
+    if(!check.ok()||std::abs(Norm(check.value.magneticFieldT)-
+        a.magneticCalibrationMagnitudeT)>1e-12*a.magneticCalibrationMagnitudeT)
+      return Return::Failure(Core::StatusCode::NumericalFailure,
+          "calibrated magnetogram does not reproduce the declared |B|");
+  }
   return Return::Success(std::move(model));
+}
+
+void AmbientModel::CacheAxialSourceFields() {
+  const double axialInside=definition_.ambient.sourceSurfaceRadiusM*
+      (1-64*std::numeric_limits<double>::epsilon());
+  axialSourceRadiiM_[2]=axialInside;
+  for(unsigned i=1;i<=2;++i) {
+    axialSourceRadiiM_[2-i]=std::nextafter(axialSourceRadiiM_[3-i],0.0);
+    axialSourceRadiiM_[2+i]=std::nextafter(axialSourceRadiiM_[1+i],
+        std::numeric_limits<double>::infinity());
+  }
+  for(unsigned j=0;j<axialSourceRadiiM_.size();++j)
+    for(unsigned i=0;i<8;++i)
+      axialSourceFields_[8*j+i]=Field({
+          i&1?-0.0:0.0,i&2?-0.0:0.0,i&4?-axialSourceRadiiM_[j]:axialSourceRadiiM_[j]});
 }
 
 Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
@@ -213,6 +318,15 @@ Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
 Core::Result<std::shared_ptr<const AmbientModel>> AmbientModel::Create(
     const AmbientDefinition& definition) {
   return CreateResolved(definition,nullptr);
+}
+
+double AmbientModel::SpeedBoundMPerS() const {
+  double logMaximum=logSpeed_.empty()?0:logSpeed_.front();
+  for(double value:logSpeed_)logMaximum=std::max(logMaximum,value);
+  // Hermite interpolation between monotone nodes can exceed a node value by
+  // a small fraction of one interval's increase; the 1% margin covers it.
+  return 1.01*std::max(std::exp(logMaximum),std::sqrt(soundSquared_))+
+      std::abs(definition_.ambient.rotationRateRadPerS)*definition_.ambient.sourceSurfaceRadiusM;
 }
 
 double AmbientModel::WindSpeed(double radiusM) const {
@@ -254,6 +368,44 @@ double AmbientModel::Winding(double radiusM) const {
   return winding_[i]+IntegrateWinding(std::exp(logRadius_[i]),radiusM);
 }
 
+Core::Result<Vec3> AmbientModel::Field(Vec3 body) const {
+  return definition_.ambient.isothermalFluxTubeOpenWind?pfss_.EvaluateFieldCartesian(body):
+      pfss_.EvaluateCartesian(body);
+}
+
+Core::Result<std::pair<FieldLineTopology,Vec3>> AmbientModel::TraceOpenByRadius(Vec3 start) const {
+  using Return=Core::Result<std::pair<FieldLineTopology,Vec3>>;
+  const auto& a=definition_.ambient;
+  const double inside=a.sourceSurfaceRadiusM*(1-64*std::numeric_limits<double>::epsilon());
+  const double r0=Norm(start);
+  if(!(r0>definition_.support.solarRadiusM)||!(r0<inside))return Trace(start);
+  const auto initial=Field(start);
+  if(!initial.ok())return Return::Failure(initial.status.code,initial.status.message);
+  const double sign=CoronalCME::Dot(initial.value,start)>=0?1.0:-1.0;
+  constexpr double kMinimumRadialCosine=0.2;
+  bool valid=true;
+  const auto slope=[&](Vec3 x)->Vec3 {
+    if(!valid)return {};
+    const double r=Norm(x);
+    // RK stages of the last step can exceed the shell by roundoff only.
+    if(r>inside)x=(inside/r)*x;
+    const auto b=Field(x);
+    if(!b.ok()){valid=false;return {};}
+    const double radial=CoronalCME::Dot(b.value,x)/Norm(x);
+    if(!(sign*radial>=kMinimumRadialCosine*Norm(b.value))){valid=false;return {};}
+    return b.value/radial;
+  };
+  const int steps=std::max(1,static_cast<int>(std::ceil((inside-r0)/a.traceStepM)));
+  const double h=(inside-r0)/steps;
+  Vec3 x=start;
+  for(int i=0;i<steps&&valid;++i) {
+    const Vec3 k1=slope(x),k2=slope(x+0.5*h*k1),k3=slope(x+0.5*h*k2),k4=slope(x+h*k3);
+    if(valid)x=x+(h/6)*(k1+2*k2+2*k3+k4);
+  }
+  if(!valid||!std::isfinite(Norm(x)))return Trace(start);
+  return Return::Success({FieldLineTopology::OpenToOuterBoundary,(inside/Norm(x))*x});
+}
+
 Core::Result<std::pair<FieldLineTopology,Vec3>> AmbientModel::Trace(Vec3 start) const {
   using Return=Core::Result<std::pair<FieldLineTopology,Vec3>>;
   const auto& a=definition_.ambient;
@@ -279,7 +431,7 @@ Core::Result<std::pair<FieldLineTopology,Vec3>> AmbientModel::Trace(Vec3 start) 
       const double step=std::min({a.traceStepM,0.4*(radius-solar),
           0.4*(a.sourceSurfaceRadiusM-radius)});
       const auto direction=[&](Vec3 query)->Core::Result<Vec3> {
-        const auto field=pfss_.EvaluateCartesian(query);
+        const auto field=Field(query);
         if(!field.ok())return Core::Result<Vec3>::Failure(
             field.status.code,field.status.message);
         if(Norm(field.value)<=a.minimumMagneticFieldT)return Core::Result<Vec3>::Failure(
@@ -347,7 +499,7 @@ Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epoch
     if(foot.x==0&&foot.y==0)for(std::size_t j=0;j<axialSourceRadiiM_.size();++j)
       if(std::abs(foot.z)==axialSourceRadiiM_[j]){axialIndex=8*j+axialKey;break;}
     const auto source=axialIndex<axialSourceFields_.size()?
-        axialSourceFields_[axialIndex]:pfss_.EvaluateCartesian(foot);
+        axialSourceFields_[axialIndex]:Field(foot);
     if(!source.ok())return Return::Failure(source.status.code,source.status.message);
     const double radialField=CoronalCME::Dot(source.value,Unit(foot))*
         std::pow(ambient.sourceSurfaceRadiusM/radius,2);
@@ -362,21 +514,38 @@ Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epoch
     out.region=AmbientRegion::ParkerExterior;
     out.magneticSector=radialField>0?1:-1;
   } else {
-    const auto field=pfss_.EvaluateCartesian(body);
+    const auto field=Field(body);
     if(!field.ok())return Return::Failure(field.status.code,field.status.message);
     out.magneticFieldT=Rotate(field.value,rotation);
-    const auto topology=Trace(body);
+    const auto topology=ambient.isothermalFluxTubeOpenWind?TraceOpenByRadius(body):Trace(body);
     if(!topology.ok())return Return::Failure(topology.status.code,topology.status.message);
     const Vec3 corotation={-ambient.rotationRateRadPerS*position.y,
         ambient.rotationRateRadPerS*position.x,0};
     if(topology.value.first==FieldLineTopology::OpenToOuterBoundary) {
-      const auto source=pfss_.EvaluateCartesian(topology.value.second);
+      const auto source=Field(topology.value.second);
       if(!source.ok())return Return::Failure(source.status.code,source.status.message);
       const double sourceRadial=CoronalCME::Dot(source.value,Unit(topology.value.second));
       if(std::abs(sourceRadial)<=ambient.minimumMagneticFieldT)
         return Return::Failure(Core::StatusCode::NumericalFailure,
             "open tube has unresolved source-surface flux");
-      if(ambient.sphericalOpenMassFlux) {
+      double alongSpeed=speed;
+      if(ambient.isothermalFluxTubeOpenWind) {
+        // Steady corotating-frame isothermal wind along this open tube (see
+        // AmbientInput). The tube area is A=Phi/|B|; the Bernoulli constant
+        // and the mass flux per unit flux K are those of the exterior Parker
+        // wind continued from the tube's source-surface foot, so u, rho and
+        // B are continuous at Rss. The rotating frame's centrifugal term is
+        // omitted exactly as in the exterior Parker solution: below Rss it is
+        // at most Omega^2 Rss^3/(2 GM) ~ 2e-4 of the gravitational potential.
+        const double magnitude=Norm(field.value);
+        const double rss=ambient.sourceSurfaceRadiusM;
+        const double rc=criticalRadiusM_;
+        const auto y=SubsonicParkerY(4*std::log(rss/rc)-3+
+            2*std::log(std::abs(sourceRadial)/magnitude)+4*rc/radius);
+        if(!y.ok())return Return::Failure(y.status.code,y.status.message);
+        alongSpeed=std::sqrt(soundSquared_*y.value);
+        density=massFluxPerSr_/(rss*rss*std::abs(sourceRadial))*magnitude/alongSpeed;
+      } else if(ambient.sphericalOpenMassFlux) {
         // Radial Parker reference: rho U r^2 is the prescribed invariant.
         // This is a kinematic plasma closure and does not claim that a radial
         // wind is force-balanced across a nonradial PFSS field.
@@ -388,7 +557,7 @@ Core::Result<AmbientPrimitive> AmbientModel::Evaluate(Vec3 position,double epoch
       }
       out.magneticSector=sourceRadial>0?1:-1;
       out.region=AmbientRegion::PfssOpen;
-      out.velocityMPerS=corotation+(out.magneticSector*speed)*Unit(out.magneticFieldT);
+      out.velocityMPerS=corotation+(out.magneticSector*alongSpeed)*Unit(out.magneticFieldT);
     } else {
       const auto base=CoronalCME::EvaluatePlasmaFromElectronDensity(
           ambient.closedBaseElectronDensityM3,composition.electronTemperatureK,

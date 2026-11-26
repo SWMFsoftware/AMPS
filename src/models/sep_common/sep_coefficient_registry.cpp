@@ -44,7 +44,9 @@ const std::vector<Descriptor>& PitchAngleRegistry() {
       {"jokipii-1966", "Dmumu and dDmumu/dmu", "1/s; 1/s",
        "source-bound B, deltaB2, species, and finite spectral bounds"},
       {"florinskiy", "Dmumu and dDmumu/dmu", "1/s; 1/s",
-       "source-bound branch variances, Alfven speed, and correlation length"}};
+       "source-bound branch variances, Alfven speed, and correlation length"},
+      {"isotropic-from-mfp", "Dmumu and dDmumu/dmu", "1/s; 1/s",
+       "active lambda_parallel provider; D=v(1-mu^2)/(2 lambda)"}};
   return values;
 }
 
@@ -57,7 +59,9 @@ const std::vector<Descriptor>& MeanFreePathRegistry() {
       {"chen-2024", "lambda_parallel", "m",
        "published radial and energy power law"},
       {"from-spatial", "lambda_parallel", "m",
-       "isotropic closure lambda=3*kappa/v"}};
+       "isotropic closure lambda=3*kappa/v"},
+      {"radial-rigidity-power-law", "lambda_parallel", "m",
+       "lambda_ref_m, r_ref_m, R_ref_V, radial and rigidity exponents"}};
   return values;
 }
 
@@ -85,6 +89,8 @@ const char* PitchAngleName(PitchAngleKind kind) {
     case PitchAngleKind::Constant: return "constant";
     case PitchAngleKind::Jokipii1966: return "jokipii-1966";
     case PitchAngleKind::Florinskiy: return "florinskiy";
+    case PitchAngleKind::IsotropicFromMeanFreePath:
+      return "isotropic-from-mfp";
   }
   return "unknown";
 }
@@ -95,6 +101,8 @@ const char* MeanFreePathName(MeanFreePathKind kind) {
     case MeanFreePathKind::Tenishev2005: return "tenishev-2005";
     case MeanFreePathKind::Chen2024: return "chen-2024";
     case MeanFreePathKind::FromSpatial: return "from-spatial";
+    case MeanFreePathKind::RadialRigidityPowerLaw:
+      return "radial-rigidity-power-law";
   }
   return "unknown";
 }
@@ -138,6 +146,8 @@ bool ParsePitchAngle(const std::string& text, PitchAngleKind* kind) {
   else if (value == "jokipii-1966" || value == "jokipii")
     *kind = PitchAngleKind::Jokipii1966;
   else if (value == "florinskiy") *kind = PitchAngleKind::Florinskiy;
+  else if (value == "isotropic-from-mfp")
+    *kind = PitchAngleKind::IsotropicFromMeanFreePath;
   else return false;
   return true;
 }
@@ -149,6 +159,8 @@ bool ParseMeanFreePath(const std::string& text, MeanFreePathKind* kind) {
   else if (value == "tenishev-2005") *kind = MeanFreePathKind::Tenishev2005;
   else if (value == "chen-2024") *kind = MeanFreePathKind::Chen2024;
   else if (value == "from-spatial") *kind = MeanFreePathKind::FromSpatial;
+  else if (value == "radial-rigidity-power-law")
+    *kind = MeanFreePathKind::RadialRigidityPowerLaw;
   else return false;
   return true;
 }
@@ -192,10 +204,32 @@ Status ValidateConfiguration(const Configuration& configuration) {
   }
   if (configuration.source != SourceMode::Prescribed &&
       (configuration.meanFreePath == MeanFreePathKind::Tenishev2005 ||
-       configuration.meanFreePath == MeanFreePathKind::Chen2024)) {
+       configuration.meanFreePath == MeanFreePathKind::Chen2024 ||
+       configuration.meanFreePath ==
+           MeanFreePathKind::RadialRigidityPowerLaw)) {
     return Status::Error(StatusCode::InvalidCoefficient,
-        "Tenishev-2005 and Chen-2024 are prescribed MFP models and cannot "
-        "consume self-consistent or SWMF turbulence");
+        "Tenishev-2005, Chen-2024 and radial-rigidity-power-law are "
+        "prescribed MFP models and cannot consume self-consistent or SWMF "
+        "turbulence");
+  }
+  if (configuration.meanFreePath == MeanFreePathKind::RadialRigidityPowerLaw) {
+    const Status law = CoefficientPhysics::ValidateRadialRigidityPowerLaw(
+        configuration.radialRigidityPowerLaw);
+    if (!law.ok()) return law;
+  }
+  // isotropic-from-mfp evaluates the mean-free-path provider.  from-spatial
+  // in turn integrates the pitch-angle provider, so the pair would recurse
+  // without end; a coupled source would also relabel a prescribed lambda as
+  // a source-bound Dmumu.  Both combinations are rejected explicitly.
+  if (configuration.pitchAngle == PitchAngleKind::IsotropicFromMeanFreePath) {
+    if (configuration.meanFreePath == MeanFreePathKind::FromSpatial)
+      return Status::Error(StatusCode::InvalidCoefficient,
+          "isotropic-from-mfp pitch-angle and from-spatial MFP providers form "
+          "a conversion cycle");
+    if (configuration.source != SourceMode::Prescribed)
+      return Status::Error(StatusCode::InvalidCoefficient,
+          "isotropic-from-mfp is a prescribed closure and requires "
+          "coefficient-source=prescribed");
   }
   if (configuration.source != SourceMode::Prescribed &&
       configuration.pitchAngle == PitchAngleKind::Configured) {
@@ -312,6 +346,21 @@ std::string ConfigurationFingerprint(const Configuration& configuration) {
   addBytes(values, sizeof(values));
   addBytes(&configuration.spatialQuadrature.maximumRecursion,
            sizeof(configuration.spatialQuadrature.maximumRecursion));
+  // The power-law scales are hashed only when that provider is selected.
+  // Configurations that existed before the provider was added therefore keep
+  // their published fingerprints byte for byte, while two power-law runs
+  // that differ in any of the five parameters remain distinguishable.
+  if (configuration.meanFreePath == MeanFreePathKind::RadialRigidityPowerLaw) {
+    const std::string tag = "radial-rigidity-power-law-v1";
+    addBytes(tag.data(), tag.size());
+    const double law[] = {
+        configuration.radialRigidityPowerLaw.referenceMeanFreePathM,
+        configuration.radialRigidityPowerLaw.referenceRadiusM,
+        configuration.radialRigidityPowerLaw.referenceRigidityV,
+        configuration.radialRigidityPowerLaw.radialExponent,
+        configuration.radialRigidityPowerLaw.rigidityExponent};
+    addBytes(law, sizeof(law));
+  }
   std::ostringstream output;
   output << std::hex << std::setw(16) << std::setfill('0') << hash;
   return output.str();

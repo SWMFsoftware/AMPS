@@ -4,10 +4,16 @@
 "runners"   one entry per test runner (an existing test program), run in this order:
               kind "command"   prepare commands, then the runner command, in its own workspace; its report
                                is read by the named reader (amps_nightly/readers.py)
-              kind "makefile"  the Makefile.test tests, run by the orchestrator itself (makefile_runner.py)
+              kind "makefile"  the Makefile.test tests, run by the orchestrator itself (makefile_runner.py);
+                               "manifest_target" names the make target that lists them (test_manifest, or
+                               test_long_manifest for the Tier=long tests of Makefile.test.long)
 "disabled"  tests switched off without being deleted: reported as SKIPPED with the reason until "until".
 Commands are argv lists, or strings run by /bin/bash -c. {placeholders} are filled from the machine file
 and the run (see ORCHESTRATOR.md). Keys starting with "_" are comments and are ignored.
+
+Routines: runners.json is the routine "nightly", run every night. Another routine <name> (e.g. "long", run
+periodically: `amps-nightly run --routine long`) is the file runners.<name>.json next to it, with the same
+schema; a machine runs it only when its machine file enables it ("routines": {"<name>": {...}}).
 """
 
 from __future__ import annotations
@@ -20,13 +26,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from .table import MANIFESTS
+
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "runners.json"
+NIGHTLY = "nightly"                 # the routine of runners.json
+ROUTINE_NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
 KINDS = ("makefile", "command")
 WORKSPACES = ("configured", "plain")
+DEFAULT_MANIFEST_TARGET = "test_manifest"
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 _RUNNER_KEYS = {"id", "kind", "title", "enabled", "note", "requires", "requires_vars", "workspace", "prepare",
                 "command", "env", "time_limit_min", "jobs", "results", "families", "logs", "expect",
-                "resources", "locks", "after"}
+                "resources", "locks", "after", "manifest_target"}
 _DISABLED_KEYS = {"test", "reason", "source", "machines", "configs", "until"}
 Command = Union[str, List[str]]
 
@@ -71,6 +82,7 @@ class Source:
     logs: List[str] = field(default_factory=list)            # globs of log files to archive
     campaign: str = ""                        # expect: src/test campaign whose suites this runner reports
     match: List[str] = field(default_factory=list)           # expect: suite-ID globs within the campaign
+    manifest_target: str = DEFAULT_MANIFEST_TARGET           # kind makefile: the make target listing its tests
 
     @property
     def family(self) -> str:
@@ -171,6 +183,14 @@ def _source(raw: Any, number: int) -> Source:
         jobs=_positive(raw, "jobs", where, 0, minimum=0), families=_text(raw, "families", where),
         logs=_strings(raw, "logs", where), campaign=_text(expect, "src_test_campaign", where),
         match=_strings(expect, "match", where))
+    if "manifest_target" in raw:
+        target = raw["manifest_target"]
+        if kind != "makefile":
+            raise RoutineError(where + ": manifest_target is only for kind makefile")
+        if target not in MANIFESTS:
+            raise RoutineError("{}: manifest_target must be one of {} (the targets table_parser writes)".format(
+                where, ", ".join(sorted(MANIFESTS))))
+        source.manifest_target = target
     if kind == "command":
         source.command = _command(raw.get("command"), where + ": command")
         results = raw.get("results")
@@ -223,33 +243,75 @@ def _checkout(raw: Any) -> Checkout:
                     companions)
 
 
+def file_name(routine: str) -> str:
+    """runners.json for the nightly routine, runners.<routine>.json for another."""
+    return "runners.json" if routine == NIGHTLY else "runners.{}.json".format(routine)
+
+
+def routine_path(routine: str, nightly: Optional[Path] = None) -> Path:
+    """The file of a routine: the nightly's runners.json (default: utility/nightly/runners.json), or
+    runners.<routine>.json next to it."""
+    nightly = Path(nightly) if nightly else DEFAULT_PATH
+    return nightly if routine == NIGHTLY else nightly.with_name(file_name(routine))
+
+
+def routine_names(nightly: Optional[Path] = None) -> List[str]:
+    """nightly, then every routine that has a runners.<routine>.json next to runners.json, by name."""
+    nightly = Path(nightly) if nightly else DEFAULT_PATH
+    found = []
+    for path in sorted(nightly.parent.glob("runners.*.json")) if nightly.parent.is_dir() else []:
+        name = path.name[len("runners."):-len(".json")]
+        if ROUTINE_NAME.match(name) and name != NIGHTLY:
+            found.append(name)
+    return [NIGHTLY] + found
+
+
 class Routine:
-    def __init__(self, data: Any):
+    def __init__(self, data: Any, name: str = NIGHTLY):
+        if not ROUTINE_NAME.match(name):
+            raise RoutineError("routine name {!r} must be lower case letters, digits and -".format(name))
+        self.name = name                    # the routine: nightly (runners.json), or <name> (runners.<name>.json)
+        self.label = label = file_name(name)
         if not isinstance(data, dict) or data.get("schema_version") != 1:
-            raise RoutineError("runners.json must be an object with schema_version 1")
-        _unknown(data, {"schema_version", "checkout", "runners", "disabled"}, "runners.json")
+            raise RoutineError("{} must be an object with schema_version 1".format(label))
+        _unknown(data, {"schema_version", "checkout", "runners", "disabled"}, label)
         if not isinstance(data.get("runners"), list) or not isinstance(data.get("disabled", []), list):
-            raise RoutineError("runners.json: runners and disabled must be lists")
-        self.checkout = _checkout(data.get("checkout"))
-        self.sources = [_source(raw, n) for n, raw in enumerate(data["runners"], 1)]
+            raise RoutineError("{}: runners and disabled must be lists".format(label))
+        try:
+            self.checkout = _checkout(data.get("checkout"))
+            self.sources = [_source(raw, n) for n, raw in enumerate(data["runners"], 1)]
+        except RoutineError as error:
+            raise RoutineError(str(error) if name == NIGHTLY else "{}: {}".format(label, error))
         ids = [s.id for s in self.sources]
         duplicates = sorted({i for i in ids if ids.count(i) > 1})
         if duplicates:
-            raise RoutineError("runners.json: runner id used twice: {}".format(", ".join(duplicates)))
-        self.disabled = [_disabled(raw, n) for n, raw in enumerate(data.get("disabled", []), 1)]
-        for entry in self.disabled:
-            if entry.source and entry.source not in ids:
-                raise RoutineError("disabled[{}]: unknown runner {!r}".format(entry.number, entry.source))
+            raise RoutineError("{}: runner id used twice: {}".format(label, ", ".join(duplicates)))
+        try:
+            self.disabled = [_disabled(raw, n) for n, raw in enumerate(data.get("disabled", []), 1)]
+            for entry in self.disabled:
+                if entry.source and entry.source not in ids:
+                    raise RoutineError("disabled[{}]: unknown runner {!r}".format(entry.number, entry.source))
+        except RoutineError as error:
+            raise RoutineError(str(error) if name == NIGHTLY else "{}: {}".format(label, error))
 
     @classmethod
-    def load(cls, path: Optional[Path] = None) -> "Routine":
+    def load(cls, path: Optional[Path] = None, name: str = NIGHTLY) -> "Routine":
         path = Path(path) if path else DEFAULT_PATH
         try:
-            return cls(json.loads(path.read_text()))
+            return cls(json.loads(path.read_text()), name)
         except RoutineError:
             raise
         except (OSError, ValueError) as error:
             raise RoutineError("cannot read {}: {}".format(path, error))
+
+    @classmethod
+    def load_routine(cls, name: str, nightly: Optional[Path] = None) -> "Routine":
+        """The routine `name`, from runners.json (nightly) or the runners.<name>.json next to it."""
+        path = routine_path(name, nightly)
+        if name != NIGHTLY and not path.is_file():
+            raise RoutineError("no routine {!r}: {} does not exist (routines: {})".format(
+                name, path, ", ".join(routine_names(nightly))))
+        return cls.load(path, name)
 
     def source(self, sid: str) -> Optional[Source]:
         return next((s for s in self.sources if s.id == sid), None)

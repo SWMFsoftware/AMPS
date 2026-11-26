@@ -184,6 +184,43 @@ MeanFreePathResult EvaluateCorrelationMeanFreePath(
     double momentumKgMPerS, double correlationLengthAtReferenceM,
     double referenceRadiusM);
 
+// Prescribed radial-rigidity power law for the parallel mean free path,
+//
+//   lambda_parallel = lambda_ref * (r / r_ref)^a * (R / R_ref)^b ,
+//
+// with heliocentric radius r [m] and magnetic rigidity R = p c / |q| [V]
+// (p is the relativistic momentum magnitude [kg m/s]; p c [J] / |q| [C] = V).
+// The species-general rigidity form is the same definition srcSEP3D uses for
+// its "radial-rigidity-power-law" model.  For protons, R_ref = 1 GV and
+// b = 1/3 reproduce the frequently published (p c / 1 GeV)^(1/3) dependence,
+// e.g. Liu et al. (2025, ApJ, doi:10.3847/1538-4357/adc4e3, Eqs. 14-16):
+// lambda_ref = 0.3 AU at r_ref = 1 AU with a = 1.
+//
+// All five parameters are explicit configuration; a default-constructed
+// object is deliberately invalid so a run that selects this provider without
+// stating its law fails at configuration instead of using hidden constants.
+struct RadialRigidityPowerLawParameters {
+  double referenceMeanFreePathM = 0.0;  // lambda_ref [m], > 0
+  double referenceRadiusM = 0.0;        // r_ref [m], > 0
+  double referenceRigidityV = 0.0;      // R_ref [V], > 0
+  double radialExponent = 0.0;          // a [dimensionless], finite
+  double rigidityExponent = 0.0;        // b [dimensionless], finite
+};
+
+Status ValidateRadialRigidityPowerLaw(
+    const RadialRigidityPowerLawParameters& parameters);
+
+// Pure kernel: no background, turbulence, or PIC state is read.  The radius
+// is the provider-frame heliocentric distance of the coefficient sample.
+// Zero rigidity yields an explicit InvalidCoefficient status (the law is not
+// defined there for b > 0); callers that handle p = 0 as ballistic must do
+// so before calling.  The result is always Finite on success.
+MeanFreePathResult EvaluateRadialRigidityPowerLawMeanFreePath(
+    double heliocentricRadiusM, const SpeciesProperties& species,
+    double momentumKgMPerS,
+    const RadialRigidityPowerLawParameters& parameters,
+    double speedOfLightMPerS = 299792458.0);
+
 enum class ResonanceGapPolicy { Reject, Ballistic };
 
 struct SpatialQuadratureConfiguration {

@@ -1,6 +1,7 @@
 #include "reduced_shock_boundary.h"
 #include "reduced_shock_geometry.h"
 #include "util/sep_run_configuration.h"
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -20,7 +21,7 @@ double EpochAt(const Transport::PICAdapter::ParticleContext& context,double elap
 }
 struct Root {bool active=false;double arc=0;int sign=1;};
 Core::Result<Root> PolarRoot(const ReducedShock::Native::MaterialView& mesh,double epoch,
-    const ReducedShock::SurfaceSphere& sphere) {
+    double shock) {
   using R=Core::Result<Root>;Root root;
   const auto controls=ReducedShock::Native::Controls(mesh.interval.ArrivalS()-mesh.interval.DepartureS(),mesh.arc[1]);
   const auto height=[&](std::size_t i) {
@@ -29,7 +30,6 @@ Core::Result<Root> PolarRoot(const ReducedShock::Native::MaterialView& mesh,doub
   const auto first=height(0),last=height(mesh.vertices.size()-1);
   if(!first.ok())return R::Failure(first.status.code,first.status.message);
   if(!last.ok())return R::Failure(last.status.code,last.status.message);
-  const double shock=sphere.centerM[2]+sphere.radiusM;
   if(shock<first.value[2]||shock>last.value[2])return R::Success(root);
   std::size_t left=0,right=mesh.vertices.size()-1;
   auto a=first.value,b=last.value;
@@ -75,18 +75,18 @@ Core::Result<Root> PolarRoot(const ReducedShock::Native::MaterialView& mesh,doub
     if(!point.ok())return R::Failure(point.status.code,point.status.message);
     if(point.value[2]<=shock){left=middle;a=point.value;}else{right=middle;b=point.value;}
   }
-  // This is an exact specialization of the supplied core geometry, not an
-  // origin-centred substitute shock: the finite-SSE apex is C_z+a. On the
-  // positive solar-rotation axis, the qualified Parker exterior has radial U
-  // and B. Its scalar flow map preserves vertex ordering, so a binary search
-  // locates the unique leading intersection on the advected material chords.
-  // We still call the actual trajectory and RH/front evaluators. No U*dt
-  // approximation, cached front time, or copied compression is introduced.
+  // On the positive solar-rotation axis, the qualified Parker exterior
+  // has radial U and B. Its scalar flow map preserves vertex ordering, so
+  // binary search brackets the core's leading ray intersection on the
+  // actual advected chords. The fitted cap may have a tilted axis, and its
+  // leading root on this line is then not the apex.
   if(a[0]!=0||a[1]!=0||b[0]!=0||b[1]!=0||!(b[2]>a[2]))
     return R::Failure(Core::StatusCode::InvalidState,"qualified polar material flow lost its axis/order invariant");
   const auto front=mesh.interval.FrontAt({{0,0,shock}},epoch);
   if(!front.ok())return R::Failure(front.status.code,front.status.message);
-  if(front.value.supportEdge)return R::Failure(Core::StatusCode::UnsupportedCapability,"polar apex unexpectedly lies on a finite-front support edge");
+  if(front.value.supportEdge||!(front.value.outwardNormal[2]>0))
+    return R::Failure(Core::StatusCode::UnsupportedCapability,
+        "polar ray reached a grazing or unsupported leading barrier");
   if(!front.value.acceptedShock)return R::Success(root);
   root.active=true;root.arc=mesh.arc[left]+(shock-a[2])/(b[2]-a[2])*(mesh.arc[right]-mesh.arc[left]);
   return R::Success(root);
@@ -95,8 +95,11 @@ Core::Result<Root> EvaluateRootAt(const ReducedShock::Native::MaterialView& mesh
   using R=Core::Result<Root>;
   const auto sphere=mesh.interval.SphereAt(epoch);
   if(!sphere.ok())return R::Failure(sphere.status.code,sphere.status.message);
-  bool polar=sphere.value.centerM[0]==0&&sphere.value.centerM[1]==0&&
-      sphere.value.direction[0]==0&&sphere.value.direction[1]==0&&sphere.value.direction[2]==1;
+  const auto& front=sphere.value;
+  // Strict interior support proves there is one forward leading root
+  // on the +Z ray. Tangent and outside-support cases retain the general
+  // intersection path and its typed validity checks.
+  bool polar=front.direction[2]>front.minimumRayCosine;
   double previous=0;
   for(const auto& point:mesh.vertices) {
     polar=polar&&point[0]==0&&point[1]==0&&point[2]>previous;previous=point[2];
@@ -105,7 +108,18 @@ Core::Result<Root> EvaluateRootAt(const ReducedShock::Native::MaterialView& mesh
     const auto ambient=mesh.interval.PrimitiveAt(mesh.vertices.front(),epoch);
     if(!ambient.ok())return R::Failure(ambient.status.code,ambient.status.message);
     polar=ambient.value.parkerExterior&&ambient.value.velocityMPerS[0]==0&&ambient.value.velocityMPerS[1]==0;
-    if(polar)return PolarRoot(mesh,epoch,sphere.value);
+    if(polar) {
+      if(front.direction[2]==1&&front.direction[0]==0&&front.direction[1]==0&&
+         front.centerM[0]==0&&front.centerM[1]==0)
+        return PolarRoot(mesh,epoch,front.centerM[2]+front.radiusM);
+      // Reuse the production finite-SSE solver at this actual epoch.
+      // It applies the same support and picks the same leading branch
+      // as the general chord-intersection path, without visiting all
+      // of the unrelated advected segments on a proved radial line.
+      const auto leading=mesh.interval.LeadingPointOnRay({{0,0,1}},epoch);
+      if(!leading.ok())return R::Failure(leading.status.code,leading.status.message);
+      return PolarRoot(mesh,epoch,leading.value[2]);
+    }
   }
   // Curved/nonpolar lines retain the complete finite-front intersection path
   // and its multiple-root/support checks. No geometrical shortcut is inferred
@@ -131,6 +145,82 @@ Core::Result<Root> EvaluateRootAt(const ReducedShock::Native::MaterialView& mesh
   }
   return R::Success(root);
 }
+// Verified piecewise-linear shock-root table over the retained step (opt-in,
+// --shock-boundary-root-table). Nodes are exact roots. An interval [a,b] is
+// accepted only when the exact roots at its 1/4, 1/2 and 3/4 epochs have the
+// same activity and upstream sign as both nodes and, when active, lie within
+// boundaryToleranceM of the linear interpolant of the node arcs; otherwise it
+// is bisected. An interval that cannot be resolved above a 1e-9 relative
+// width (e.g. a connectivity change inside it) is flagged for exact queries,
+// so the table never interpolates across a topology change.
+struct RootTable {
+  std::shared_ptr<const ReducedShock::Native::MaterialView> owner;
+  std::vector<double> epochs;   // node epochs, increasing, covering the view
+  std::vector<Root> roots;      // exact roots at the nodes
+  std::vector<char> exact;      // interval i -> answer queries exactly
+};
+Core::Status BuildRootTable(const std::shared_ptr<const ReducedShock::Native::MaterialView>& mesh,RootTable* table) {
+  const double a=mesh->interval.DepartureS(),b=mesh->interval.ArrivalS();
+  const double tolerance=Run::Active().get().reducedParticles.boundaryToleranceM;
+  struct Node{double t;Root r;};
+  const auto exactAt=[&](double t)->Core::Result<Root>{return EvaluateRootAt(*mesh,t);};
+  std::vector<Node> done;std::vector<char> flags;
+  const auto first=exactAt(a);if(!first.ok())return Core::Status::Failure(first.status.code,first.status.message);
+  done.push_back({a,first.value});
+  if(!(b>a)){table->owner=mesh;table->epochs={a};table->roots={first.value};table->exact={};return Core::Status::Success();}
+  // Depth-first refinement from left to right keeps the node list ordered.
+  std::vector<Node> pending;
+  const int initial=8;
+  for(int k=initial;k>=1;--k) {
+    const double t=k==initial?b:a+(b-a)*k/initial;
+    const auto r=exactAt(t);if(!r.ok())return Core::Status::Failure(r.status.code,r.status.message);
+    pending.push_back({t,r.value});
+  }
+  while(!pending.empty()) {
+    const Node left=done.back(),right=pending.back();
+    const double width=right.t-left.t;
+    bool accept=left.r.active==right.r.active&&left.r.sign==right.r.sign;
+    if(accept)for(double f:{0.25,0.5,0.75}) {
+      const auto m=exactAt(left.t+f*width);if(!m.ok())return Core::Status::Failure(m.status.code,m.status.message);
+      if(m.value.active!=left.r.active||(m.value.active&&m.value.sign!=left.r.sign)){accept=false;break;}
+      if(m.value.active&&std::abs(m.value.arc-(left.r.arc+f*(right.r.arc-left.r.arc)))>tolerance){accept=false;break;}
+    }
+    const double middle=left.t+0.5*width;
+    if(accept||!(width>1e-9*(b-a))||middle<=left.t||middle>=right.t) {
+      flags.push_back(accept?0:1);done.push_back(right);pending.pop_back();
+      continue;
+    }
+    const auto m=exactAt(middle);if(!m.ok())return Core::Status::Failure(m.status.code,m.status.message);
+    pending.push_back({middle,m.value});
+  }
+  table->owner=mesh;table->epochs.clear();table->roots.clear();
+  for(const auto& node:done){table->epochs.push_back(node.t);table->roots.push_back(node.r);}
+  table->exact=std::move(flags);
+  return Core::Status::Success();
+}
+Core::Result<Root> TableRootAt(const std::shared_ptr<const ReducedShock::Native::MaterialView>& mesh,double epoch) {
+  using R=Core::Result<Root>;
+  static thread_local RootTable table;
+  if(!std::isfinite(epoch)||epoch<mesh->interval.DepartureS()||epoch>mesh->interval.ArrivalS())
+    return EvaluateRootAt(*mesh,epoch);
+  if(table.owner!=mesh) {
+    const auto built=BuildRootTable(mesh,&table);
+    if(!built.ok()){table.owner.reset();return R::Failure(built.code,built.message);}
+  }
+  const auto& t=table.epochs;
+  if(t.size()<2)return R::Success(table.roots.front());
+  std::size_t i=static_cast<std::size_t>(std::upper_bound(t.begin(),t.end(),epoch)-t.begin());
+  i=i==0?0:std::min(i-1,t.size()-2);
+  if(epoch==t[i])return R::Success(table.roots[i]);
+  if(epoch==t[i+1])return R::Success(table.roots[i+1]);
+  if(table.exact[i])return EvaluateRootAt(*mesh,epoch);
+  Root root=table.roots[i];
+  if(root.active) {
+    const double f=(epoch-t[i])/(t[i+1]-t[i]);
+    root.arc=table.roots[i].arc+f*(table.roots[i+1].arc-table.roots[i].arc);
+  }
+  return R::Success(root);
+}
 Core::Result<Root> RootAt(const std::shared_ptr<const ReducedShock::Native::MaterialView>& mesh,double epoch) {
   // The shock's material coordinate depends only on this immutable line view
   // and the EXACT epoch, never on the particle or its random stream. Focused
@@ -152,6 +242,7 @@ Core::Result<Root> RootAt(const std::shared_ptr<const ReducedShock::Native::Mate
   };
   static thread_local Cache cache;
   if(cache.owner!=mesh){cache.roots.clear();cache.owner=mesh;}
+  if(Run::Active().get().reducedParticles.boundaryRootTable)return TableRootAt(mesh,epoch);
   // NaN cannot be used as an ordered-map key: it is not strictly ordered and
   // could compare equivalent to an unrelated valid timestamp. Let the actual
   // provider reject every nonfinite/out-of-interval query before any lookup.

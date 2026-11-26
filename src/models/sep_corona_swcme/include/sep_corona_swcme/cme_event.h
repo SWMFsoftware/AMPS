@@ -58,6 +58,35 @@ struct AmbientInput {
   // changing BG3D-2 semantics while making the density closure fingerprinted.
   bool sphericalOpenMassFlux = false;
   std::string harmonics;
+  // Optional reduced-front v1.3 closures; zero/false keeps every earlier
+  // profile byte-identical.  windSpeedAtReferenceMPerS>0 selects the radial
+  // isothermal Parker (1958) transonic wind whose single isothermal sound
+  // speed c_w is the unique root of U(referenceRadiusM;c_w)=this speed.  The
+  // wind then owns ONLY U(r) and rho(r)=Fm/(U r^2); species temperatures,
+  // pressure and every RH/characteristic speed keep the measured Composition.
+  double windSpeedAtReferenceMPerS = 0.0;
+  // One multiplicative magnetogram amplitude, fixed so |B| at the declared
+  // HCI position/epoch equals the declared magnitude.  PFSS and the Parker
+  // continuation are linear in the harmonic coefficients, so this rescales B
+  // everywhere without changing topology, sectors, U or rho.
+  bool magneticCalibration = false;
+  CoronalCME::Vec3 magneticCalibrationPositionM;
+  double magneticCalibrationEpochS = 0.0;
+  double magneticCalibrationMagnitudeT = 0.0;
+  // Optional v1.3 open-corona closure (requires sphericalOpenMassFlux=false).
+  // Every open PFSS tube carries the SAME isothermal Parker wind as the
+  // exterior: steady and field-aligned in the corotating frame, so the
+  // rigidly rotating potential field is an exact solution of ideal induction.
+  // Continuity fixes rho u/|B| = K, the mass flux per unit magnetic flux of
+  // the tube's source-surface foot, K = Fm/(Rss^2 |B_r,ss|).  The isothermal
+  // Bernoulli integral along the tube, through the exterior's critical point,
+  // fixes u: with y=u^2/c_w^2 it is the SUBSONIC root of
+  //   y - ln y = 4 ln(Rss/r_c) - 3 + 2 ln(|B_r,ss|/|B|) + 4 r_c/r,
+  // which reduces to the radial Parker relation where |B| = |B_r,ss|(Rss/r)^2
+  // and is continuous with the exterior at Rss (Kopp & Holzer 1976 tube form
+  // of Parker 1958).  A point without a subsonic root is rejected, never
+  // clamped.  False keeps every earlier profile byte-identical.
+  bool isothermalFluxTubeOpenWind = false;
 };
 
 // Frozen closure inputs used by later material-map stages. A vector-potential

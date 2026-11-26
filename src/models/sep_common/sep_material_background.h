@@ -40,7 +40,7 @@ enum class Profile : std::uint32_t {
   Swcme3dSseFullIcmeDiagnosticV1, CoronalBundleSnapshotV1,
   CoronalEllipsoidLivePlannedV1, FullCoronaCrossRayPlannedV1,
   Swcme1dAdiabaticOuterWindV1, Swcme3dSpherePfssParkerKinematicV1,
-  Swcme3dSpherePfssParkerThermalV1
+  Swcme3dSpherePfssParkerThermalV1, ReducedPfssOpenParkerV1
 };
 enum class Use { SnapshotExchange, MaterialTransport, PhysicalDownstream };
 enum class Region { Unspecified, ParkerExterior, CoronalOpen, CoronalClosed,
@@ -98,7 +98,16 @@ inline Core::Result<ProfileInfo> Lookup(Profile profile) {
     // closed native gate until event physics and the lifecycle are qualified.
     {Profile::Swcme3dSpherePfssParkerThermalV1,"swcme3d-sphere-pfss-parker-thermal-v1",
         MaterialRequirements|Bit(Capability::ShockSurface),false,
-        "SWCME3D spherical thermal transport requires a qualified event wind and native geometry, source, escape and restart"}
+        "SWCME3D spherical thermal transport requires a qualified event wind and native geometry, source, escape and restart"},
+    // Reduced v1.3 ambient (shock_front schema v1.3, open_wind_density_model
+    // = isothermal-flux-tube): the Parker exterior of ReducedParkerV1 plus the
+    // OPEN PFSS tubes below the source surface. There the potential field is
+    // static in the corotating frame and the plasma flows along it, so the
+    // rigidly rotating field solves ideal induction exactly; rho u/|B| is
+    // constant along each tube (continuity) and u is the isothermal Bernoulli
+    // continuation of the exterior Parker wind (field-aligned momentum).
+    // Closed tubes remain unqualified; the downstream volume remains absent.
+    {Profile::ReducedPfssOpenParkerV1,"reduced-pfss-open-parker-v1",MaterialRequirements|512,true,""}
   };
   for(const auto& item:profiles)if(item.profile==profile)
     return Core::Result<ProfileInfo>::Success(item);
@@ -122,7 +131,10 @@ inline Core::Status Require(Profile profile,Use use,Region region=Region::Unspec
     return Core::Status::Failure(Core::StatusCode::UnsupportedCapability,info.value.missing);
   // The existing qualification is the Parker EXTERIOR ambient and upstream
   // source/absorbing-return model. Its local RH limits never imply a volume.
-  if(use==Use::PhysicalDownstream||region!=Region::ParkerExterior)
+  // Only the open-shell profile adds the open PFSS corona (CoronalOpen).
+  const bool qualifiedRegion=region==Region::ParkerExterior||
+      (profile==Profile::ReducedPfssOpenParkerV1&&region==Region::CoronalOpen);
+  if(use==Use::PhysicalDownstream||!qualifiedRegion)
     return Core::Status::Failure(Core::StatusCode::UnsupportedCapability,
         "profile has no qualified material evolution in the requested region/downstream volume");
   return Core::Status::Success();

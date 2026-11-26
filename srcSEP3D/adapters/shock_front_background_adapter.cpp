@@ -73,6 +73,14 @@ Core::Status ShockFrontBackgroundAdapter::Create(
           eventPath.string());
   if(!resolved.ok())return Invalid("cannot resolve shock-front event: "+
       resolved.status.message);
+  // srcSEP3D's source/surface consumers are written for the finite SSE cap
+  // (half width, cap axis, support rim). The v1.3 closed heliocentric sphere
+  // is qualified only for the srcSEP field-line consumer; reject it here
+  // instead of letting a pi half-width reach SSE-specific geometry.
+  if(resolved.value->geometryModel!=
+      SEP::CoronaSwcme::ShockFront::GeometryModel::FiniteSseFixedWidth)
+    return Invalid("srcSEP3D reduced shock-front consumers support only "
+        "geometry.model=finite-sse-fixed-width");
   const auto shared=SEP::CoronaSwcme::ShockFront::Provider::Create(resolved.value);
   if(!shared.ok())return Invalid("cannot construct shock-front provider: "+
       shared.status.message);

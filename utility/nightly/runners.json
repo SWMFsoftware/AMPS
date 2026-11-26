@@ -41,6 +41,19 @@
       "requires_vars": ["enceladus_shape_manifest", "enceladus_validation_data", "spice_path", "spice_kernels"]
     },
     {
+      "id": "sep-event-inputs",
+      "title": "srcSEP 2013-04-11 event inputs: prepare_event.py check",
+      "workspace": "plain",
+      "command": ["{python}", "-B", "srcSEP/test/event_2013_04_11/prepare_event.py", "check",
+                  "--raw", "{sep_validation_data}/event_2013_04_11"],
+      "env": {"PYTHONPATH": "{sep_python_path}"},
+      "time_limit_min": 10,
+      "note": "regenerates every checked-in input of the SEP--event-2013-04-11 tests (derived.json, observations.csv, event.event, event.in, event.nightly.in, event.args, the WSO asset, deck_summary.json) from the raw archives and byte-compares them, so a change of the preparation script, its settings or the archives is caught; the Table tests themselves only read the checked-in files. About 5 s.",
+      "results": {"reader": "exit-code"},
+      "families": "app-sep",
+      "requires_vars": ["sep_validation_data", "sep_python_path"]
+    },
+    {
       "id": "sep",
       "title": "srcSEP: build and all test steps (tools/sep_test_orchestrator.py)",
       "command": ["{python}", "tools/sep_test_orchestrator.py", "--app", "srcsep", "--output-dir", "{out}/run"],

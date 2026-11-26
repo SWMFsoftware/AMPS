@@ -279,6 +279,51 @@ void CopyIdentity(const CP::LocalInputView& input,
   sample->sourceChecksum = input.checksum;
 }
 
+// Defined below; the isotropic-from-mfp pitch-angle closure evaluates the
+// active mean-free-path provider at the same particle context and momentum.
+MeanFreePathSample EvaluateMeanFreePath(const ParticleContext& context,
+                                        double momentumKgMPerS,
+                                        const std::string& identity);
+
+// Isotropic closure from the active lambda_parallel provider:
+//   D_mumu       = v (1 - mu^2) / (2 lambda)        [1/s]
+//   dD_mumu/dmu  = -v mu / lambda                   [1/s]
+// v is the particle speed [m/s] for momentum p, lambda [m].  The registry
+// rejects the from-spatial MFP provider with this closure (that provider
+// integrates this kernel and would recurse).  An infinite (ballistic) lambda
+// is the exact zero-scattering limit, reported as a finite zero coefficient
+// in the same way as the slab kernel reports an unresonant sample.
+CP::PitchAngleResult EvaluateIsotropicFromMeanFreePath(
+    const ParticleContext& context, double momentumKgMPerS,
+    double speedMPerS, double mu) {
+  CP::PitchAngleResult result;
+  if (!std::isfinite(mu) || std::fabs(mu) > 1.0) {
+    result.status = Status::Error(StatusCode::InvalidArgument,
+        "isotropic-from-mfp requires |mu|<=1");
+    return result;
+  }
+  const MeanFreePathSample lambda =
+      EvaluateMeanFreePath(context, momentumKgMPerS, "isotropic-from-mfp");
+  if (!lambda.status.ok()) { result.status = lambda.status; return result; }
+  if (lambda.valueState == CP::ValueState::Ballistic) {
+    result.dMuMuPerS = 0.0;
+    result.dDmuMuDmuPerS = 0.0;
+    result.valueState = CP::ValueState::Finite;
+    result.status = Status::Ok();
+    return result;
+  }
+  const ScalarResult dMuMu = Coefficient::IsotropicDmumuFromMeanFreePath(
+      lambda.lambdaParallelM, speedMPerS, mu);
+  if (!dMuMu.status.ok()) { result.status = dMuMu.status; return result; }
+  result.dMuMuPerS = dMuMu.value;
+  result.dDmuMuDmuPerS = -speedMPerS * mu / lambda.lambdaParallelM;
+  result.valueState = CP::ValueState::Finite;
+  result.status = std::isfinite(result.dDmuMuDmuPerS) ? Status::Ok()
+      : Status::Error(StatusCode::InvalidCoefficient,
+                      "isotropic-from-mfp derivative is not finite");
+  return result;
+}
+
 CP::PitchAngleResult EvaluatePitchKernel(
     const ParticleContext& context, const CP::LocalInputView& input,
     const CP::SpeciesProperties& species, double momentumKgMPerS, double mu) {
@@ -295,6 +340,9 @@ CP::PitchAngleResult EvaluatePitchKernel(
     case Coefficient::PitchAngleKind::Constant:
       return CP::EvaluateConstantDmumu(
           configuration.constantDmumuPerS, mu);
+    case Coefficient::PitchAngleKind::IsotropicFromMeanFreePath:
+      return EvaluateIsotropicFromMeanFreePath(
+          context, momentumKgMPerS, speed.value, mu);
     case Coefficient::PitchAngleKind::Jokipii1966:
       return CP::EvaluateJokipiiSlab(
           input, configuration.spectrum, species, speed.value, mu);
@@ -508,6 +556,18 @@ MeanFreePathSample EvaluateMeanFreePath(const ParticleContext& context,
                    SEP::Scattering::Tenishev2005AIAA::beta);
       sample.valueState = CP::ValueState::Finite;
       sample.status = Status::Ok();
+      break;
+    }
+    case Coefficient::MeanFreePathKind::RadialRigidityPowerLaw: {
+      // lambda = lambda_ref (r/r_ref)^a (R/R_ref)^b, R = p c/|q| [V], using
+      // the provider-frame heliocentric radius of this immutable sample.
+      const CP::MeanFreePathResult lambda =
+          CP::EvaluateRadialRigidityPowerLawMeanFreePath(
+              input.heliocentricRadiusM, species, momentumKgMPerS,
+              configuration.radialRigidityPowerLaw, SpeedOfLight);
+      sample.status = lambda.status;
+      sample.valueState = lambda.valueState;
+      sample.lambdaParallelM = lambda.lambdaParallelM;
       break;
     }
     case Coefficient::MeanFreePathKind::Chen2024: {

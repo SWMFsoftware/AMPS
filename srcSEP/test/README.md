@@ -12,6 +12,18 @@ and fifteen 20-minute outputs, with a frozen five-hour numerical reference.
 See the [case guide](cme_shock_evolution/README.md) and
 [observation package](cme_shock_evolution/observed_2020_11_29/README.md).
 
+## 2013-04-11 real-event tests
+
+Legacy cases `SEP--event-2013-04-11--Parker`, `--FTE-Dmumu` and `--FTE-MFP`
+transport protons along the field line through Earth for the SEP event of
+11 April 2013 with each production mover. The shock, solar wind and field
+come from real observations (Lario et al. 2014 shock heights, the Wind
+shock, OMNI plasma, the WSO magnetogram); the comparison data are SOHO/ERNE,
+ACE/EPAM and GOES-13. The nightly cases run the first hour on a coarse grid
+and compare four products with DiffNum against AMPS references; the
+full-event validation tier is proposed separately. See the
+[case guide](event_2013_04_11/README.md).
+
 ## Stage 13 spherical SWCME3D
 
 `make -C srcSEP test-stage13-cases SEP_EXECUTABLE=/absolute/build/amps`

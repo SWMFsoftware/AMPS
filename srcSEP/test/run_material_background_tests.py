@@ -61,7 +61,7 @@ def main():
         shutil.copytree(REPO/'src/general/input',root/'src/general/input',ignore=ignore)
         shutil.copytree(REPO/'srcSEP/adapters',root/'srcSEP/adapters',ignore=ignore)
         (root/'srcSEP/util').mkdir()
-        for name in ('sep_common_header_path.h','sep_reduced_geometry.h','sep_reduced_geometry.cpp'):
+        for name in ('sep_common_header_path.h','sep_reduced_geometry.h','sep_reduced_geometry.cpp','sep_geometric_spacing.h'):
             shutil.copy2(REPO/'srcSEP/util'/name,root/'srcSEP/util'/name)
         (root/'src/pic').mkdir()
         shutil.copy2(REPO/'src/pic/pic_field_line_geometry.h',root/'src/pic')

@@ -59,7 +59,7 @@ def main():
         copy(REPO/'srcSEP/adapters', root/'srcSEP/adapters')
         (root/'srcSEP/util').mkdir()
         shutil.copy2(REPO/'srcSEP/util/sep_common_header_path.h', root/'srcSEP/util')
-        for name in ['sep_reduced_geometry.h', 'sep_reduced_geometry.cpp',
+        for name in ['sep_reduced_geometry.h', 'sep_reduced_geometry.cpp', 'sep_geometric_spacing.h',
                      'sep_reduced_particle_options.h', 'sep_reduced_source.h', 'sep_reduced_source.cpp',
                      'sep_absorbing_bridge.h', 'sep_absorbing_bridge.cpp',
                      'sep_parker_core.h', 'sep_parker_core.cpp',

@@ -56,10 +56,19 @@ int main() {
               "parallel-diffusion-library" &&
           C::SpatialRegistry()[2].units == "m2/s; m/s",
           "COEF01 parallel-diffusion-library spatial provider missing");
-  Require(C::PitchAngleRegistry().size() == 4,
+  // Five pitch-angle and six mean-free-path providers since the 2013-04-11
+  // event test added isotropic-from-mfp and radial-rigidity-power-law (both
+  // appended, so the earlier entries and their ordinals are unchanged).
+  Require(C::PitchAngleRegistry().size() == 5,
           "COEF01 pitch-angle registry size changed");
-  Require(C::MeanFreePathRegistry().size() == 5,
+  Require(C::PitchAngleRegistry()[4].canonicalName == "isotropic-from-mfp",
+          "COEF01 isotropic-from-mfp pitch-angle provider missing");
+  Require(C::MeanFreePathRegistry().size() == 6,
           "COEF01 mean-free-path registry size changed");
+  Require(C::MeanFreePathRegistry()[5].canonicalName ==
+              "radial-rigidity-power-law" &&
+          C::MeanFreePathRegistry()[5].units == "m",
+          "COEF01 radial-rigidity-power-law provider missing");
   Require(C::SpatialRegistry()[0].units == "m2/s; m/s",
           "COEF01 spatial SI units missing");
   Require(C::PitchAngleRegistry()[0].units == "1/s; 1/s",
@@ -195,5 +204,197 @@ int main() {
           constant.dDmuMuDmuPerS == 0.0,
           "COEF06 parsed constant did not reach the production kernel value");
   std::cout << "PASS COEF06: CLI constant Dmumu reaches the pure provider value\n";
+
+  // ---------------------------------------------------------------------
+  // COEF07-COEF10 cover the providers added for the 2013-04-11 real-event
+  // nightly test (srcSEP/test/event_2013_04_11).  Independent references are
+  // closed-form evaluations written out here, not calls of the kernel under
+  // test, so a factor, unit or exponent regression in the kernel fails.
+  namespace CP = SEP::Transport::CoefficientPhysics;
+  const double au = 1.495978707e11;          // IAU exact [m]
+  const double c = 299792458.0;              // [m/s]
+  const double e = 1.602176634e-19;          // [C]
+  const double mp = 1.67262192595e-27;       // [kg], CODATA 2022
+  CP::SpeciesProperties proton;
+  proton.modelSpecies = 0;
+  proton.name = "proton";
+  proton.signedChargeC = e;
+  proton.restMassKg = mp;
+  proton.nucleonCount = 1.0;
+  // Liu et al. (2025) Eqs. 14-16: lambda = 0.3 AU (r/AU) (pc/1 GeV)^(1/3).
+  CP::RadialRigidityPowerLawParameters liu;
+  liu.referenceMeanFreePathM = 0.3 * au;
+  liu.referenceRadiusM = au;
+  liu.referenceRigidityV = 1.0e9;
+  liu.radialExponent = 1.0;
+  liu.rigidityExponent = 1.0 / 3.0;
+
+  // COEF07: closed-form oracle.  For a 10 MeV proton the exact relativistic
+  // pc = sqrt(T^2 + 2 T m c^2); R = pc/e.  At r = 0.5 AU the law gives
+  // 0.3 AU * 0.5 * (R / 1 GV)^(1/3).  A 1 GV proton at r_ref returns lambda_ref
+  // exactly (to rounding of the log form), and the exponents are checked by
+  // doubling r and multiplying R by 8 (factor 2 each).
+  {
+    const double restJ = mp * c * c;
+    const double kineticJ = 10.0e6 * e;
+    const double pcJ = std::sqrt(kineticJ * kineticJ + 2.0 * kineticJ * restJ);
+    const double p = pcJ / c;
+    const double rigidityV = pcJ / e;
+    const double expected = 0.3 * au * 0.5 * std::cbrt(rigidityV / 1.0e9);
+    const CP::MeanFreePathResult tenMeV =
+        CP::EvaluateRadialRigidityPowerLawMeanFreePath(0.5 * au, proton, p, liu, c);
+    Require(tenMeV.status.ok() && tenMeV.valueState == CP::ValueState::Finite &&
+            Near(tenMeV.lambdaParallelM / expected, 1.0, 1.0e-13),
+            "COEF07 10 MeV proton lambda differs from the closed form");
+    const double p1GV = 1.0e9 * e / c;
+    const CP::MeanFreePathResult reference =
+        CP::EvaluateRadialRigidityPowerLawMeanFreePath(au, proton, p1GV, liu, c);
+    Require(reference.status.ok() &&
+            Near(reference.lambdaParallelM / (0.3 * au), 1.0, 1.0e-13),
+            "COEF07 reference point does not return lambda_ref");
+    const CP::MeanFreePathResult scaled =
+        CP::EvaluateRadialRigidityPowerLawMeanFreePath(2.0 * au, proton,
+                                                       8.0 * p1GV, liu, c);
+    Require(scaled.status.ok() &&
+            Near(scaled.lambdaParallelM / (4.0 * 0.3 * au), 1.0, 1.0e-13),
+            "COEF07 radial or rigidity exponent is not applied");
+    Require(!CP::EvaluateRadialRigidityPowerLawMeanFreePath(
+                au, proton, 0.0, liu, c).status.ok(),
+            "COEF07 zero rigidity was accepted");
+    Require(!CP::EvaluateRadialRigidityPowerLawMeanFreePath(
+                au, proton, p1GV, CP::RadialRigidityPowerLawParameters(), c)
+                 .status.ok(),
+            "COEF07 default (unstated) power law was accepted");
+  }
+  std::cout << "PASS COEF07: radial-rigidity power law matches the closed form\n";
+
+  // COEF08: registry admission.  The provider requires its stated law, is a
+  // prescribed model, and the isotropic closure cannot pair with from-spatial
+  // (which would recurse) or with a coupled source.
+  {
+    C::Configuration law;
+    law.meanFreePath = C::MeanFreePathKind::RadialRigidityPowerLaw;
+    Require(!C::ValidateConfiguration(law).ok(),
+            "COEF08 power-law provider accepted without parameters");
+    law.radialRigidityPowerLaw = liu;
+    Require(C::ValidateConfiguration(law).ok(),
+            "COEF08 stated power law was rejected");
+    law.pitchAngle = C::PitchAngleKind::IsotropicFromMeanFreePath;
+    law.spatial = C::SpatialKind::FromMeanFreePath;
+    Require(C::ValidateConfiguration(law).ok(),
+            "COEF08 shared-lambda configuration was rejected");
+    for (const char* mover : {"parker", "fte-dmumu", "fte-mfp"})
+      Require(C::ValidateMoverCompatibility(law, mover).ok(),
+              std::string("COEF08 shared-lambda configuration rejected for ") +
+                  mover);
+    C::Configuration cycle = law;
+    cycle.meanFreePath = C::MeanFreePathKind::FromSpatial;
+    Require(!C::ValidateConfiguration(cycle).ok(),
+            "COEF08 isotropic-from-mfp/from-spatial cycle was accepted");
+    C::Configuration coupled = law;
+    coupled.source = C::SourceMode::SelfConsistent;
+    Require(!C::ValidateConfiguration(coupled).ok(),
+            "COEF08 prescribed power law accepted a coupled source");
+    // Fingerprints: unchanged for configurations that do not select the
+    // law (pre-existing published identities), sensitive to it when selected.
+    C::Configuration other;
+    const std::string before = C::ConfigurationFingerprint(other);
+    other.radialRigidityPowerLaw = liu;
+    Require(C::ConfigurationFingerprint(other) == before,
+            "COEF08 unselected power-law parameters changed a fingerprint");
+    C::Configuration changed = law;
+    changed.radialRigidityPowerLaw.radialExponent = 2.0;
+    Require(C::ConfigurationFingerprint(changed) !=
+                C::ConfigurationFingerprint(law),
+            "COEF08 power-law parameters are absent from the fingerprint");
+  }
+  std::cout << "PASS COEF08: power-law and isotropic-closure admission rules\n";
+
+  // COEF09: closure identity.  With D_mumu = v(1-mu^2)/(2 lambda) the
+  // production from-dmumu quadrature kappa = (v^2/8) Int (1-mu^2)^2/D dmu
+  // must equal v lambda / 3 (the from-mfp closure used by parker), so the
+  // three movers see one lambda_parallel.  Exact algebra: Int_{-1}^{1}
+  // (1-mu^2) dmu = 4/3.
+  {
+    const double v = 4.37e7;               // ~10 MeV proton [m/s]
+    const double lambda = 0.15 * au;       // [m]
+    CP::SpatialQuadratureConfiguration quadrature;
+    quadrature.absoluteToleranceM2PerS = 0.0;
+    quadrature.relativeTolerance = 1.0e-10;
+    quadrature.maximumRecursion = 40;
+    const CP::SpatialDiffusionResult kappa = CP::IntegrateSpatialDiffusion(
+        v,
+        [&](double muValue) {
+          CP::PitchAngleResult result;
+          const ScalarResult d =
+              C::IsotropicDmumuFromMeanFreePath(lambda, v, muValue);
+          result.status = d.status;
+          result.dMuMuPerS = d.value;
+          result.dDmuMuDmuPerS = -v * muValue / lambda;
+          result.valueState = CP::ValueState::Finite;
+          return result;
+        },
+        quadrature);
+    const ScalarResult closure = C::KappaFromMeanFreePath(lambda, v);
+    Require(kappa.status.ok() && closure.status.ok() &&
+            Near(kappa.kappaParallelM2PerS / (v * lambda / 3.0), 1.0, 1.0e-8) &&
+            Near(closure.value / (v * lambda / 3.0), 1.0, 1.0e-15),
+            "COEF09 isotropic Dmumu quadrature differs from v*lambda/3");
+  }
+  std::cout << "PASS COEF09: isotropic Dmumu reproduces kappa = v lambda / 3\n";
+
+  // COEF10: the CLI reaches the registry and source controls.  The values
+  // are the event-test law in SI; missing parameters and malformed source
+  // controls must stop the parse before any simulation state is touched.
+  {
+    SEP::Util::CLI::Options parsed;
+    std::string parseErrors;
+    Require(Parse({"--mean-free-path-provider=radial-rigidity-power-law",
+                   "--pitch-angle-diffusion-provider=isotropic-from-mfp",
+                   "--spatial-diffusion-provider=from-mfp",
+                   "--mfp-reference-m=4.487936121e10",
+                   "--mfp-reference-radius-m=1.495978707e11",
+                   "--mfp-reference-rigidity-v=1e9",
+                   "--mfp-radial-exponent=1",
+                   "--mfp-rigidity-exponent=0.3333333333333333",
+                   "--shock-maximum-compression-ratio=none",
+                   "--shock-energy-sampling=log-uniform"},
+                  &parsed, &parseErrors),
+            "COEF10 event-test CLI was rejected: " + parseErrors);
+    Require(parsed.coefficients.meanFreePath ==
+                C::MeanFreePathKind::RadialRigidityPowerLaw &&
+            parsed.coefficients.pitchAngle ==
+                C::PitchAngleKind::IsotropicFromMeanFreePath &&
+            parsed.coefficients.radialRigidityPowerLaw.referenceMeanFreePathM ==
+                4.487936121e10 &&
+            parsed.coefficients.radialRigidityPowerLaw.rigidityExponent ==
+                0.3333333333333333 &&
+            std::isinf(parsed.shockMaximumCompressionRatio) &&
+            parsed.shockMaximumCompressionRatioProvided &&
+            parsed.shockLogUniformEnergySampling &&
+            parsed.shockEnergySamplingProvided,
+            "COEF10 parsed values did not reach the configuration");
+    SEP::Util::CLI::Options missing;
+    Require(!Parse({"--mean-free-path-provider=radial-rigidity-power-law",
+                    "--mfp-reference-m=4.487936121e10"},
+                   &missing, &parseErrors),
+            "COEF10 incomplete power law was accepted");
+    SEP::Util::CLI::Options defaults;
+    Require(Parse({}, &defaults, &parseErrors) &&
+                defaults.shockMaximumCompressionRatio == 3.0 &&
+                !defaults.shockMaximumCompressionRatioProvided &&
+                !defaults.shockLogUniformEnergySampling &&
+                !defaults.shockEnergySamplingProvided,
+            "COEF10 default source controls changed");
+    for (const char* bad : {"--shock-maximum-compression-ratio=1",
+                            "--shock-maximum-compression-ratio=0.5",
+                            "--shock-maximum-compression-ratio=abc",
+                            "--shock-energy-sampling=uniform"}) {
+      SEP::Util::CLI::Options rejected;
+      Require(!Parse({bad}, &rejected, &parseErrors),
+              std::string("COEF10 malformed source control accepted: ") + bad);
+    }
+  }
+  std::cout << "PASS COEF10: CLI configures the shared lambda and DSA source\n";
   return 0;
 }

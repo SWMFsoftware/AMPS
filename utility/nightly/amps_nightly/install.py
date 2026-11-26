@@ -4,9 +4,12 @@
 install
     copies utility/nightly/bin/amps_nightly_test.sh to ~/bin (unchanged, so it can be compared with the
     repository's version each night), writes its settings to ~/bin/amps_nightly_test.conf and adds one
-    crontab line, below a marker comment. Run again, it updates the copy and keeps the settings.
+    crontab line per routine the machine runs, below a marker comment: the nightly's at the machine file's
+    "start" every day, and one for each routine enabled in its "routines" at that routine's "start"
+    (e.g. "Sat 10:00": weekly), which passes --routine <name> to the script. Run again, it updates the copy and
+    keeps the settings.
 uninstall
-    removes the crontab line and the two files; the nightly's data (AMPSTEST) stays.
+    removes the crontab lines and the two files; the nightly's data (AMPSTEST) stays.
 
 Both show every change first and need a yes (or --yes); the crontab is saved before it is changed.
 """
@@ -20,14 +23,16 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
+
+from .machines import parse_start
 
 SCRIPT = Path(__file__).resolve().parent.parent / "bin" / "amps_nightly_test.sh"
 SCRIPT_NAME = "amps_nightly_test.sh"
 CONF_NAME = "amps_nightly_test.conf"
 MARKER = "# amps-nightly: AMPS nightly testing (added by 'amps-nightly install'; remove with 'amps-nightly uninstall')"
 SETTINGS = ("AMPSTEST", "TESTDIR", "BRANCH", "UPDATE_SITE", "PYTHON", "REPOSITORY", "SWMF_DATA_REPOSITORY",
-            "SWMF_DATA_BRANCH", "KEEP_LOG_DAYS")
+            "SWMF_DATA_BRANCH", "KEEP_LOG_DAYS", "LOCK_WAIT_H")
 CONF_HEADER = """# Settings of ~/bin/amps_nightly_test.sh (written by 'amps-nightly install'; see the script's header).
 # AMPSTEST: the nightly's logs and SWMF_data (and on the server: results, archive, web pages);
 # TESTDIR: where the tests run (the machine file's workdir); BRANCH: the AMPS branch downloaded and tested;
@@ -82,9 +87,13 @@ def write_crontab(text: str) -> None:
         raise InstallError("crontab - failed: " + done.stderr.strip())
 
 
-def cron_line(start: str, script: Path, cron_log: Path) -> str:
-    hour, _, minute = start.partition(":")
-    return "{:02d} {:02d} * * *  {} >> {} 2>&1".format(int(minute or 0), int(hour), script, cron_log)
+def cron_line(start: str, script: Path, cron_log: Path, routine: str = "nightly") -> str:
+    """The crontab line that starts the script at `start`: "HH:MM" every day, "<Day> HH:MM" on that day of each week;
+    a routine other than the nightly is passed to the script (--routine <name>)."""
+    day, hour, minute = parse_start(start)
+    return "{:02d} {:02d} * * {}  {}{} >> {} 2>&1".format(
+        minute, hour, "*" if day is None else day, script, "" if routine == "nightly" else " --routine " + routine,
+        cron_log)
 
 
 def without_entry(text: str) -> Tuple[str, List[str]]:
@@ -108,7 +117,9 @@ class Plan:
 
 
 def plan_install(bin_dir: Path, settings: Dict[str, str], start: str, crontab: str,
-                 source: Path = SCRIPT, now: Optional[dt.datetime] = None) -> Plan:
+                 source: Path = SCRIPT, now: Optional[dt.datetime] = None,
+                 routines: Sequence[Tuple[str, str]] = ()) -> Plan:
+    """start: the nightly's start time; routines: (routine, start) of the other routines the machine runs."""
     now = now or dt.datetime.now()
     bin_dir = Path(bin_dir).expanduser()
     target, conf = bin_dir / SCRIPT_NAME, bin_dir / CONF_NAME
@@ -130,16 +141,19 @@ def plan_install(bin_dir: Path, settings: Dict[str, str], start: str, crontab: s
         plan.lines.append("{}  {}:".format("replace " if old_conf is not None else "write   ", conf))
         plan.lines += ["             " + l for l in text.splitlines() if not l.startswith("#")]
         plan.files[conf] = text
-    line = cron_line(start, target, root / "logs" / "cron.log")
+    lines = [cron_line(start, target, root / "logs" / "cron.log")] + \
+        [cron_line(when, target, root / "logs" / "cron.log", name) for name, when in routines]
     rest, removed = without_entry(crontab)
-    new = rest + MARKER + "\n" + line + "\n"
-    if removed == [MARKER, line]:
-        plan.lines.append("keep     the crontab entry: " + line)
+    new = rest + MARKER + "\n" + "".join(line + "\n" for line in lines)
+    if removed == [MARKER] + lines:
+        for line in lines:
+            plan.lines.append("keep     the crontab entry: " + line)
     else:
         for old in removed:
             plan.lines.append("crontab  remove: " + old)
         plan.lines.append("crontab  add:    " + MARKER)
-        plan.lines.append("                 " + line)
+        for line in lines:
+            plan.lines.append("                 " + line)
         plan.backup = root / "backup" / "crontab-{}.txt".format(now.strftime("%Y%m%d-%H%M%S"))
         plan.lines.append("         (the current crontab is saved to {} first)".format(plan.backup))
         plan.crontab = new

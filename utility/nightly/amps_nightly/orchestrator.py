@@ -13,6 +13,8 @@ night's run directory. `amps-nightly pack` (transfer.py) then sends each run dir
     {workdir}/nights/<YYYYMMDD-HHMM>/
         orchestrator.log
         runs/<column>/       run.json results.jsonl runners.json logs/<runner>/... DONE   (packed and sent)
+    {workdir}/nights/<YYYYMMDD-HHMM>-<routine>/   the same, for a routine other than the nightly (--routine long:
+                                    runners.long.json, with the machine's values replaced by its "routines" entry)
 
 Every step's output in a log is cut to its first 256 KB and last 768 KB (trim_log): some tests print
 hundreds of thousands of lines, and the start and the end of a step are what explain a failure.
@@ -35,12 +37,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from . import makefile_runner, procs, transfer, workspace
-from .machines import Config, Machine
+from .machines import STAGES, Config, Machine
 from .plan import RUN, SKIP, Item, SourcePlan, apply_rules, machine_vars, makefile_item, plan
 from .readers import READERS, ReadContext, ResultsUnavailable, one_line
 from .records import make_run_id, unique_rows, utc_text, write_run_dir
 from .registry import UNASSIGNED, Registry
-from .runners import Routine, Source
+from .runners import NIGHTLY, Routine, Source
 
 BUILTIN_PLACEHOLDERS = {"python", "ws", "out", "tmp", "jobs", "mpiexec", "table_host"}
 MAX_LOG_BYTES = 50 * 2 ** 20                     # larger logs keep their first 10 MB and last 40 MB
@@ -164,7 +166,9 @@ class Night:
         self.started = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
         self.local_start = self.started.astimezone()
         self.workdir = Path(machine.workdir).expanduser()
-        self.root = self.workdir / "nights" / self.local_start.strftime("%Y%m%d-%H%M")
+        self.routine_name = routine.name          # machine is expected to be machine.for_routine(routine.name)
+        self.root = self.workdir / "nights" / (self.local_start.strftime("%Y%m%d-%H%M") +
+                                               ("" if routine.name == NIGHTLY else "-" + routine.name))
         self.deadline = time.time() + machine.night_limit_h * 3600
         self.mirrors = workspace.Mirrors(self.workdir / "mirrors", routine.checkout)
         self.log_file = self.root / "orchestrator.log"
@@ -212,8 +216,10 @@ class Night:
         try:
             running.write_text(self.root.name + "\n")
             self._clean_old_nights()
-            self.log("night {} on {}: configurations {}; runners {}".format(
-                self.root.name, self.machine.machine, ", ".join(c.config for c in self.configs),
+            self.log("night {} on {}{}: configurations {}; runners {}".format(
+                self.root.name, self.machine.machine,
+                "" if self.routine_name == NIGHTLY else " (routine {}, {})".format(self.routine_name, self.routine.label),
+                ", ".join(c.config for c in self.configs),
                 ", ".join(s.id for s in self.routine.sources if s.enabled and (not self.only or s.id in self.only))))
             checkout_error = ""
             try:
@@ -233,15 +239,20 @@ class Night:
             lock.close()
 
     def _clean_old_nights(self) -> None:
-        # the previous night's installed copies (the old routine started with rm -rf GNU)
+        # the previous night's installed copies (the old routine started with rm -rf GNU). Another routine (long)
+        # removes only its own runners' copies and nights: the nightly's failed workspaces stay for debugging until
+        # the next nightly, which removes everything as before.
+        own = None if self.routine_name == NIGHTLY else {s.id for s in self.routine.sources}
         for config in self.machine.configs:
             folder = self.workdir / config.folder
             for old in sorted(folder.iterdir()) if folder.is_dir() else []:
-                if (old / WORKSPACE_MARK).is_file():
+                if (old / WORKSPACE_MARK).is_file() and (own is None or old.name in own):
                     shutil.rmtree(str(old), ignore_errors=True)
         nights = self.workdir / "nights"
         for old in sorted(nights.iterdir()) if nights.is_dir() else []:
             if not old.is_dir() or old == self.root:
+                continue
+            if own is not None and not old.name.endswith("-" + self.routine_name):
                 continue
             if any(r.is_dir() and not (r / transfer.PACKED_FILE).exists() for r in (old / "runs").glob("*")):
                 # results 'amps-nightly pack' has not sent yet: keep them (and the log), drop the workspaces
@@ -255,7 +266,7 @@ class Night:
                            stderr=subprocess.DEVNULL)
 
     def run_config(self, config: Config, checkout_error: str) -> Path:
-        run_id = make_run_id(self.machine.machine, config.config, self.started)
+        run_id = make_run_id(self.machine.machine, config.config, self.started, self.routine_name)
         rundir = self.root / "runs" / config.column
         rundir.mkdir(parents=True, exist_ok=True)
         rows: List[Dict[str, Any]] = []
@@ -317,6 +328,7 @@ class Night:
                 "commit": self.mirrors.commits.get("", ""), "commit_inferred": False,
                 "started": utc_text(self.started), "finished": utc_text(finished), "complete": complete,
                 "producer": "amps-nightly run", "night": self.local_start.strftime("%Y-%m-%d"),
+                "routine": self.routine_name,
                 "notes": "; ".join(["{} {}".format(p, c[:12]) for p, c in self.mirrors.commits.items() if p]
                                    + ([self.note] if self.note else []))}
 
@@ -361,7 +373,7 @@ class Night:
             rows = self._failed(sp, "setup", stopped, runner_log)
         elif source.kind == "makefile":
             try:
-                found = makefile_runner.manifest(ws, self.machine, env, self.log)
+                found = makefile_runner.manifest(ws, self.machine, env, self.log, source.manifest_target)
                 items = [makefile_item(name, family, code) for name, family, code in found]
                 apply_rules(items, source, self.machine, config, self.routine, self.local_start.date())
                 if self.tests:
@@ -523,8 +535,10 @@ def describe(machine: Machine, routine: Routine, registry: Registry, configs: Se
     lines = []
     night = Night(machine, routine, registry, configs, only, echo=lambda _: None)
     for config in configs:
-        lines.append("{} (column {}): each runner is installed in {}/<runner>/AMPS".format(
-            config.config, config.column, night.workdir / config.folder))
+        lines.append("{} (column {}{}): each runner is installed in {}/<runner>/AMPS".format(
+            config.config, config.column,
+            "" if routine.name == NIGHTLY else ", routine {} of {}".format(routine.name, routine.label),
+            night.workdir / config.folder))
         for sp in plan(machine, config, routine, registry, night.local_start.date()):
             if only and sp.source.id not in only:
                 continue
@@ -549,9 +563,15 @@ def describe(machine: Machine, routine: Routine, registry: Registry, configs: Se
                                  machine.compile_lanes, "" if machine.compile_lanes == 1 else "s",
                                  machine.compile_jobs_for(config), machine.lanes,
                                  sum(1 for i in sp.items if i.action == RUN)))
+                if sp.source.manifest_target != "test_manifest":
+                    lines.append("      tests: make -s {}; make variables {}; time limits {}".format(
+                        sp.source.manifest_target, " ".join("{}={}".format(k, shlex.quote(v)) for k, v in
+                                                            sorted((machine.make_vars or {}).items())) or "none",
+                        ", ".join("{} {} s".format(k, machine.timeouts_s[k]) for k in STAGES)))
                 continue
             for command in sp.source.prepare:
                 lines.append("      prepare: " + " ".join(shlex.quote(a) for a in command_argv(command, values)))
             lines.append("      command: " + " ".join(shlex.quote(a) for a in command_argv(sp.source.command, values)))
-            lines.append("      results: {} {}".format(sp.source.results["reader"], fill(sp.source.results["file"], values)))
+            lines.append("      results: {} {}".format(sp.source.results["reader"],
+                                                       fill(sp.source.results.get("file", ""), values)).rstrip())
     return lines

@@ -158,7 +158,8 @@ Core::Result<std::shared_ptr<const Event>> Event::Create(const Definition& input
       input.physicalOuterRadiusM <= input.physicalInnerRadiusM ||
       input.ambient.support.firstValidPlasmaRadiusM > input.physicalInnerRadiusM ||
       input.ambient.support.coverageRadiusM < input.physicalOuterRadiusM ||
-      input.ambient.support.startS < 0 || input.ambient.ambient.sphericalOpenMassFlux)
+      input.ambient.support.startS < 0 || input.ambient.ambient.sphericalOpenMassFlux ||
+      input.ambient.ambient.isothermalFluxTubeOpenWind)
     return Return::Failure(
         StatusCode::InvalidConfiguration,
         "spherical open-field candidate requires explicit identities, HCI frame, "

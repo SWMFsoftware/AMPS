@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from .machines import REPO_ROOT, Config, Machine
 from .registry import Registry, UNASSIGNED
 from .runners import Routine, Source
-from .table import display_name, read_table, required_capabilities
+from .table import MANIFESTS, NIGHTLY, display_name, read_table, required_capabilities
 
 RUN, SKIP = "run", "skip"
 CORE_MANIFEST = REPO_ROOT / "src" / "test" / "manifest.json"
@@ -66,13 +66,14 @@ def host_selected(selector: str, host: str) -> bool:
     return (host in text) if "0+" in text else (host not in text)
 
 
-def makefile_manifest(amps_dir: Path, timeout: int = 300) -> List[Tuple[str, str, str]]:
-    """(name, family, exception code) from `make -s test_manifest` of a configured tree."""
-    done = subprocess.run(["make", "-s", "test_manifest"], cwd=str(amps_dir), stdout=subprocess.PIPE,
+def makefile_manifest(amps_dir: Path, timeout: int = 300, target: str = "test_manifest") -> List[Tuple[str, str, str]]:
+    """(name, family, exception code) from `make -s test_manifest` (or another manifest target, such as
+    test_long_manifest) of a configured tree."""
+    done = subprocess.run(["make", "-s", target], cwd=str(amps_dir), stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, universal_newlines=True, timeout=timeout)
     if done.returncode != 0:
-        raise RuntimeError("make test_manifest failed in {}: {}".format(
-            amps_dir, (done.stderr.strip().splitlines() or ["exit code {}".format(done.returncode)])[-1]))
+        raise RuntimeError("make {} failed in {}: {}".format(
+            target, amps_dir, (done.stderr.strip().splitlines() or ["exit code {}".format(done.returncode)])[-1]))
     tests = []
     for line in done.stdout.splitlines():
         parts = line.split("|")
@@ -81,14 +82,16 @@ def makefile_manifest(amps_dir: Path, timeout: int = 300) -> List[Tuple[str, str
     return tests
 
 
-def configured_host(amps_dir: Path) -> str:
-    """HOSTNAME= of Makefile.test in a configured tree that has the test_manifest target, else ""."""
+def configured_host(amps_dir: Path, target: str = "test_manifest") -> str:
+    """HOSTNAME= of Makefile.test in a configured tree whose generated makefile (Makefile.test, or Makefile.test.long
+    for test_long_manifest) has the manifest target, else ""."""
     makefile = amps_dir / "Makefile.test"
     try:
         text = makefile.read_text(errors="replace")
-    except OSError:
+        defining = text if target == "test_manifest" else (amps_dir / MANIFESTS[target][1]).read_text(errors="replace")
+    except (OSError, KeyError):
         return ""
-    if "\ntest_manifest:" not in text:
+    if "\n{}:".format(target) not in defining:
         return ""
     for line in text.splitlines():
         if line.startswith("HOSTNAME="):
@@ -96,27 +99,31 @@ def configured_host(amps_dir: Path) -> str:
     return ""
 
 
-def legacy_items(machine: Machine, amps_dir: Optional[Path], table: Optional[Path]) -> Tuple[List[Item], str]:
+def legacy_items(machine: Machine, amps_dir: Optional[Path], table: Optional[Path],
+                 target: str = "test_manifest") -> Tuple[List[Item], str]:
+    """The Makefile.test tests of a makefile runner: the tests its manifest target lists (test_manifest: the nightly
+    tier, test_long_manifest: the Tier=long tests)."""
     tree = amps_dir or REPO_ROOT
+    tier = MANIFESTS.get(target, (NIGHTLY, ""))[0]
     # An explicit configured tree requests its exact compiler-selected manifest
     # and retains the host check below. Otherwise an explicit Table is the
     # caller's source of selection, even when the default checkout happens to
     # contain a Makefile.test from an earlier configuration. Only the implicit
     # default may use that cached manifest. This keeps --table and private
     # planning fixtures independent of unrelated local build state.
-    if amps_dir or (table is None and configured_host(tree) == machine.table_host):
-        if configured_host(tree) != machine.table_host:
+    if amps_dir or (table is None and configured_host(tree, target) == machine.table_host):
+        if configured_host(tree, target) != machine.table_host:
             raise RuntimeError("{} was configured for host {!r}, not {!r}".format(
-                tree, configured_host(tree) or "?", machine.table_host))
-        items = [makefile_item(name, family, code) for name, family, code in makefile_manifest(tree)]
-        return items, "exact list from 'make test_manifest' in {}".format(tree)
+                tree, configured_host(tree, target) or configured_host(tree) or "?", machine.table_host))
+        items = [makefile_item(name, family, code) for name, family, code in makefile_manifest(tree, target=target)]
+        return items, "exact list from 'make {}' in {}".format(target, tree)
     seen: Dict[str, Item] = {}
     for test in read_table(table):
-        if host_selected(test.selector, machine.table_host) and test.name not in seen:
+        if test.tier == tier and host_selected(test.selector, machine.table_host) and test.name not in seen:
             seen[test.name] = makefile_item(test.name, test.family, "")
     return (list(seen.values()),
-            "from MakefileTest/Table for host {!r}; compiler-specific SKIP rules are applied at run time".format(
-                machine.table_host))
+            "from MakefileTest/Table for host {!r}{}; compiler-specific SKIP rules are applied at run time".format(
+                machine.table_host, "" if tier == NIGHTLY else ", Tier={} blocks".format(tier)))
 
 
 # ----------------------------------------------------------------------------- src/test selection
@@ -169,7 +176,7 @@ def plan(machine: Machine, config: Config, routine: Routine, registry: Registry,
     plans: List[SourcePlan] = []
     for source in routine.sources:
         if not source.enabled:
-            plans.append(SourcePlan(source, False, "switched off in runners.json" +
+            plans.append(SourcePlan(source, False, "switched off in " + routine.label +
                                     (" ({})".format(source.note) if source.note else "")))
             continue
         if config.sources is not None and source.id not in config.sources:
@@ -177,7 +184,7 @@ def plan(machine: Machine, config: Config, routine: Routine, registry: Registry,
             continue
         try:
             if source.kind == "makefile":
-                items, note = legacy_items(machine, amps_dir, table)
+                items, note = legacy_items(machine, amps_dir, table, source.manifest_target)
             elif source.campaign:
                 items = [Item(source.family or registry.family_for_suite(s), s, RUN)
                          for s in core_suites(source, manifest)]

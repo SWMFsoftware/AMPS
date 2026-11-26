@@ -1,5 +1,9 @@
 #include "sep_reduced_geometry.h"
 #include "pic_field_line_geometry.h"
+#include "sep_geometric_spacing.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <iomanip>
 #include <sstream>
 
@@ -130,13 +134,19 @@ Core::Result<Position> TraceMagnetic(const IntervalView& view,const Position& x,
 }
 Core::Result<std::vector<Position>> BuildInitialLine(const IntervalView& view,
     const Position& initial,double length,std::size_t count,double epoch,
-    const GeometryControls& c) {
+    const GeometryControls& c,double firstArc) {
   using Return=Core::Result<std::vector<Position>>;
   if(!std::isfinite(length)||length<=0||count<2)
     return Return::Failure(Core::StatusCode::InvalidConfiguration,"invalid core line length or vertex count");
+  std::vector<double> arcs(count-1,length/static_cast<double>(count-1));
+  if(firstArc!=0) {
+    std::string error;
+    if(!GeometricArcs(length,count,firstArc,&arcs,&error))
+      return Return::Failure(Core::StatusCode::InvalidConfiguration,error);
+  }
   std::vector<Position> points;points.reserve(count);points.push_back(initial);
-  const double arc=length/static_cast<double>(count-1);
   for(std::size_t i=1;i<count;++i) {
+    const double arc=arcs[i-1];
     const auto state=view.PrimitiveAt(points.back(),epoch);
     if(!state.ok())return Return::Failure(state.status.code,state.status.message);
     if(state.value.magneticSector==0)
@@ -151,8 +161,87 @@ Core::Result<std::vector<Position>> BuildInitialLine(const IntervalView& view,
   }
   return Return::Success(std::move(points));
 }
+Core::Result<Position> TraceSunwardToRadius(const IntervalView& view,const Position& anchor,
+    double radius,double epoch,const GeometryControls& c,double radiusTolerance,std::size_t maximumSteps) {
+  using Return=Core::Result<Position>;
+  double r=G::Norm(anchor);
+  if(!G::Finite(anchor)||!std::isfinite(radius)||!(radius>0)||!(r>radius)||
+      !std::isfinite(c.positionToleranceM)||!(c.positionToleranceM>0)||
+      !std::isfinite(radiusTolerance)||!(radiusTolerance>0))
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,
+        "sunward trace requires a finite anchor outside a positive target radius");
+  Position x=anchor;
+  for(std::size_t step=0;step<maximumSteps;++step) {
+    const double remaining=r-radius;
+    if(remaining<=radiusTolerance)return Return::Success(x);
+    const auto state=view.PrimitiveAt(x,epoch);
+    if(!state.ok())return Return::Failure(state.status.code,state.status.message);
+    if(state.value.magneticSector==0)
+      return Return::Failure(Core::StatusCode::UnsupportedCapability,
+          "sunward trace reached a closed core tube; the anchor line is not open");
+    Position outward;
+    for(int d=0;d<3;++d)outward[d]=state.value.magneticSector*state.value.magneticFieldT[d];
+    // TraceMagnetic follows opposite its supplied outward chord: sunward.
+    const auto next=TraceMagnetic(view,x,outward,remaining,epoch,c);
+    if(!next.ok())return Return::Failure(next.status.code,next.status.message);
+    const double rn=G::Norm(next.value);
+    if(!(rn<r))return Return::Failure(Core::StatusCode::NumericalFailure,
+        "sunward magnetic trace does not decrease heliocentric radius");
+    if(rn<radius-c.positionToleranceM-radiusTolerance)return Return::Failure(Core::StatusCode::NumericalFailure,
+        "sunward magnetic trace crossed the target sphere beyond its tolerance");
+    x=next.value;r=rn;
+  }
+  return Return::Failure(Core::StatusCode::NumericalFailure,
+      "sunward magnetic trace did not reach the target radius within its step limit");
+}
+RadialBounds BuildRadialBounds(const std::vector<Position>& departure,const Position& center) {
+  RadialBounds bounds;bounds.center=center;
+  const std::size_t segments=departure.size()>1?departure.size()-1:0;
+  bounds.prefixMaximumHigh.resize(segments);bounds.suffixMinimumLow.resize(segments);
+  bounds.finite=segments>0;
+  std::vector<double> low(segments);
+  bounds.arc.assign(departure.size(),0.0);
+  for(std::size_t i=0;i<segments;++i) {
+    const double a=G::Norm(G::Difference(departure[i],center));
+    const double b=G::Norm(G::Difference(departure[i+1],center));
+    const double chord=G::Norm(G::Difference(departure[i+1],departure[i]));
+    const double high=std::max(a,b);low[i]=std::min(a,b)-0.5*chord;
+    bounds.arc[i+1]=bounds.arc[i]+chord;
+    bounds.finite=bounds.finite&&std::isfinite(high)&&std::isfinite(low[i]);
+    bounds.prefixMaximumHigh[i]=i?std::max(bounds.prefixMaximumHigh[i-1],high):high;
+  }
+  for(std::size_t k=segments;k-->0;)
+    bounds.suffixMinimumLow[k]=k+1<segments?std::min(bounds.suffixMinimumLow[k+1],low[k]):low[k];
+  return bounds;
+}
+VertexRange CandidateVertices(const RadialBounds& bounds,double inner,double outer,double reach) {
+  VertexRange range;
+  const std::size_t segments=bounds.prefixMaximumHigh.size();
+  if(segments==0)return range;
+  // Nonfinite geometry is never excluded: the full checks must see it.
+  if(!bounds.finite||!std::isfinite(inner)||!std::isfinite(outer)||!std::isfinite(reach)) {
+    range.count=segments+1;return range;
+  }
+  // Segments before 'first' satisfy max(r_i,r_i+1)+reach < inner; segments
+  // after 'last' satisfy min(r_i,r_i+1)-l_i/2-2 reach > outer: neither can
+  // meet the band (moved chord radii: see CandidateVertices above).
+  const auto& high=bounds.prefixMaximumHigh;const auto& low=bounds.suffixMinimumLow;
+  const std::size_t first=static_cast<std::size_t>(
+      std::lower_bound(high.begin(),high.end(),inner-reach)-high.begin());
+  const std::size_t end=static_cast<std::size_t>(
+      std::upper_bound(low.begin(),low.end(),outer+2*reach)-low.begin());
+  if(first>=end)return range;
+  range.first=first;range.count=end-first+1;
+  return range;
+}
+VertexRange CandidateVertices(const std::vector<Position>& departure,
+    const Position& center,double inner,double outer,double reach) {
+  return CandidateVertices(BuildRadialBounds(departure,center),inner,outer,reach);
+}
 Core::Result<std::vector<Connection>> ConnectLine(const IntervalView& view,
-    const std::vector<Position>& points,double epoch,double tolerance) {
+    const std::vector<Position>& points,double epoch,double tolerance,
+    std::size_t firstIndex,std::size_t lineVertexCount) {
+  const std::size_t total=lineVertexCount?lineVertexCount:points.size();
   using Return=Core::Result<std::vector<Connection>>;
   if(points.size()<2||!std::isfinite(tolerance)||tolerance<=0)
     return Return::Failure(Core::StatusCode::InvalidConfiguration,"invalid reduced line intersection inputs");
@@ -203,10 +292,10 @@ Core::Result<std::vector<Connection>> ConnectLine(const IntervalView& view,
           "supported reduced intersection does not meet its spatial tolerance");
       const auto front=view.FrontAt(canonical.value,epoch);
       if(!front.ok())return Return::Failure(front.status.code,front.status.message);
-      Connection hit;hit.segment=segment;hit.fraction=fraction;hit.arcLengthM=arc+fraction*length;
+      Connection hit;hit.segment=firstIndex+segment;hit.fraction=fraction;hit.arcLengthM=arc+fraction*length;
       hit.surfaceResidualM=residual;hit.front=front.value;
       hit.tangent=unresolvedTangent||std::abs(G::Dot(delta,front.value.outwardNormal))<=64*eps*length;
-      if(fraction==1&&segment+2<points.size()){hit.segment=segment+1;hit.fraction=0;}
+      if(fraction==1&&firstIndex+segment+2<total){hit.segment=firstIndex+segment+1;hit.fraction=0;}
       if(!result.empty()&&result.back().segment==hit.segment&&result.back().fraction==hit.fraction)continue;
       result.push_back(std::move(hit));
     }
@@ -215,14 +304,36 @@ Core::Result<std::vector<Connection>> ConnectLine(const IntervalView& view,
   return Return::Success(std::move(result));
 }
 Core::Result<std::vector<Connection>> ConnectMaterialLine(const IntervalView& view,
-    const std::vector<Position>& departure,double epoch,double tolerance,const GeometryControls& controls) {
+    const std::vector<Position>& departure,double epoch,double tolerance,const GeometryControls& controls,
+    const RadialBounds* bounds) {
   using Return=Core::Result<std::vector<Connection>>;
-  std::vector<Position> moved;moved.reserve(departure.size());
-  for(const auto& point:departure) {
-    const auto target=MoveVertex(view,point,view.DepartureS(),epoch,controls);
+  if(departure.size()<2||!std::isfinite(tolerance)||tolerance<=0)
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,"invalid reduced line intersection inputs");
+  const auto sphere=view.SphereAt(epoch);if(!sphere.ok())return Return::Failure(sphere.status.code,sphere.status.message);
+  // Every vertex moves at most (speed bound)*|elapsed| plus the trajectory's
+  // own position tolerance; the intersection tolerance widens the band too.
+  const double reach=view.SpeedBoundMPerS()*std::abs(epoch-view.DepartureS())+
+      controls.positionToleranceM+tolerance;
+  const bool reuse=bounds&&bounds->center==sphere.value.centerM&&
+      bounds->prefixMaximumHigh.size()+1==departure.size();
+  const auto range=reuse?CandidateVertices(*bounds,sphere.value.radiusM,sphere.value.radiusM,reach):
+      CandidateVertices(departure,sphere.value.centerM,sphere.value.radiusM,sphere.value.radiusM,reach);
+  if(range.count==0)return Return::Success({});
+  std::vector<Position> moved;moved.reserve(range.count);
+  for(std::size_t i=range.first;i<range.first+range.count;++i) {
+    const auto target=MoveVertex(view,departure[i],view.DepartureS(),epoch,controls);
     if(!target.ok())return Return::Failure(target.status.code,target.status.message);
     moved.push_back(target.value);
   }
-  return ConnectLine(view,moved,epoch,tolerance);
+  auto connections=ConnectLine(view,moved,epoch,tolerance,range.first,departure.size());
+  if(!connections.ok())return connections;
+  // Material coordinate of each root on the departure chords.
+  if(!connections.value.empty()) {
+    const RadialBounds local=reuse?RadialBounds{}:BuildRadialBounds(departure,sphere.value.centerM);
+    const auto& arc=reuse?bounds->arc:local.arc;
+    for(auto& hit:connections.value)
+      hit.arcLengthM=arc[hit.segment]+hit.fraction*(arc[hit.segment+1]-arc[hit.segment]);
+  }
+  return connections;
 }
 } }

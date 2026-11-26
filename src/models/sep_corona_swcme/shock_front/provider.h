@@ -15,7 +15,12 @@ namespace SEP { namespace CoronaSwcme { namespace ShockFront {
 
 using AssetReader = std::function<Core::Result<std::string>(const std::string&)>;
 
-enum class HistoryModel { ConstantSpeed, QuinticPulseThenConstant };
+enum class HistoryModel { ConstantSpeed, QuinticPulseThenConstant, FittedQuadratic,
+                          DataDrivenPchip };
+// FiniteSseFixedWidth is the v1.1/v1.2 self-similar expanding cap.  The v1.3
+// HeliocentricSphere is the closed Sun-centred front |x|=R(t): its outward
+// normal is radial and its normal speed is dR/dt at every point.
+enum class GeometryModel { FiniteSseFixedWidth, HeliocentricSphere };
 enum class Phase { CoronalHistory, SwcmeOuter };
 enum class TrajectoryValidityPolicy { ReportOnly, RequireDeclaredShockCoverage };
 
@@ -99,6 +104,10 @@ struct Configuration {
   std::string particleMode;
   AmbientDefinition ambient;
   HistoryModel historyModel = HistoryModel::QuinticPulseThenConstant;
+  GeometryModel geometryModel = GeometryModel::FiniteSseFixedWidth;
+  // SSE: physical cap axis.  HeliocentricSphere: the unit observer direction,
+  // used only as the (mu,phi) chart pole of the closed mesh and as the exact
+  // observer-facing point reported as the epoch apex.
   CoronalCME::Vec3 direction;
   double halfWidthRad = 0.0;
   double physicalInnerRadiusM = 0.0;
@@ -106,6 +115,17 @@ struct Configuration {
   double initialApexSpeedMPerS = 0.0;
   double finalPulseSpeedMPerS = 0.0;
   double accelerationDurationS = 0.0;
+  // Fitted branch only. Time is elapsed SI seconds from the same UTC
+  // origin as the ambient, with the start of the fitted interval at zero.
+  double fittedAccelerationMPerS2 = 0.0;
+  double fittedEndS = 0.0;
+  double fittedDragHorizonS = 0.0;
+  // Data-driven branch only: strictly increasing elapsed-SI knot times and
+  // heliocentric front radii, plus the monotone Fritsch-Butland PCHIP slopes
+  // (shared with SWCME data_driven kinematics) computed once at resolution.
+  std::vector<double> knotTimesS;
+  std::vector<double> knotRadiiM;
+  std::vector<double> knotSlopesMPerS;
   double handoffApexRadiusM = 0.0;
   double dragGammaPerM = 0.0;
   double effectiveTrajectoryWindMPerS = 0.0;
@@ -146,6 +166,19 @@ struct TrajectoryState {
   double apexSpeedMPerS = 0.0;
   double apexAccelerationMPerS2 = 0.0;
 };
+
+// Evaluate the fitted HCI apex radius and speed at an admitted epoch.
+// The caller owns the fitted interval and any outer continuation.
+TrajectoryState EvaluateFittedApex(double epochS,double radiusM,
+    double speedMPerS,double accelerationMPerS2);
+
+// Evaluate the monotone cubic Hermite front radius, speed and acceleration
+// through the supplied knots.  No extrapolation is performed: an epoch
+// outside [times.front(),times.back()] is OutOfDomain.  Exact knot epochs
+// return the supplied radius exactly.
+Core::Result<TrajectoryState> EvaluatePchipApex(
+    const std::vector<double>& timesS,const std::vector<double>& radiiM,
+    const std::vector<double>& slopesMPerS,double epochS);
 
 struct GeometrySample {
   std::uint64_t stableId = 0;
@@ -205,6 +238,10 @@ struct GeneratingSphere {
 };
 Core::Result<GeometrySample> EvaluateSseRay(
     const SseKinematicState& state,CoronalCME::Vec3 rayDirection,
+    std::uint64_t stableId=0);
+// Exact closed heliocentric sphere: x=R ray, n=ray, Vn=dR/dt.
+Core::Result<GeometrySample> EvaluateHeliocentricSphereRay(
+    double radiusM,double radialSpeedMPerS,CoronalCME::Vec3 rayDirection,
     std::uint64_t stableId=0);
 
 // Exact constant-coefficient quadratic-drag state matched at (th,Rh,Vh).
@@ -331,6 +368,7 @@ class Provider final {
 };
 
 const char* Name(HistoryModel) noexcept;
+const char* Name(GeometryModel) noexcept;
 const char* Name(Phase) noexcept;
 const char* Name(FrontStatus) noexcept;
 const char* Name(HtDiagnosticStatus) noexcept;

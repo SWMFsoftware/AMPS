@@ -1,11 +1,17 @@
 """Static report pages generated from the results store.
 
-    <www>/index.html                         test families x columns (machine + compiler)
-    <www>/family/<family>/<column>.html      tests of one family in one column
+    <www>/index.html                         test families x columns (machine + compiler), then one section per
+                                             routine other than the nightly (long: runners.long.json)
+    <www>/family/<family>/<column>.html      tests of one family in one column (nightly runs)
+    <www>/family/<family>/<column>.<routine>.html   the same for a routine other than the nightly
     <www>/archive/index.html                 every stored night of every column, newest first
     <www>/archive/<YYYY/MM/DD>/<column>/index.html   one night: runners, failed tests, logs, and links to
-                                             the previous and next night of the column (from nav.json)
+                                             the previous and next night of the column (from nav.json); a run of
+                                             another routine is in <column>-<routine>/, linked to that routine's runs
     <www>/assets/report.css, report.js
+
+The nightly columns show the newest NIGHTLY run of each column, whatever other routines ran since; a routine's
+section shows each test's newest result in that routine's runs, with the date and commit of the run it comes from.
 
 Pages are plain HTML that work without a server; report.js only adds the status filter buttons.
 """
@@ -20,7 +26,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .records import parse_time
+from .machines import DEFAULT_STALE_AFTER_H
+from .records import NIGHTLY, parse_time, utc_text
 from .registry import OTHER_GROUP, Registry
 from .store import Store, night_of
 
@@ -50,15 +57,23 @@ def pill(status: str) -> str:
 
 
 # ----------------------------------------------------------------------------- data model
+def page_name(column: str, routine: str = NIGHTLY) -> str:
+    """The file of a column's family page: <column>.html, <column>.<routine>.html for another routine."""
+    return "{}.html".format(column) if routine == NIGHTLY else "{}.{}.html".format(column, routine)
+
+
 class Column:
     www = None
-    """Latest (and previous) run of one machine + compiler configuration."""
+    """Latest (and previous) nightly run of one machine + compiler configuration; for another routine, each test's
+    newest result in that routine's runs (a periodic run need not run every test: a few tests sent by hand)."""
 
-    def __init__(self, store: Store, column_id: str, now: dt.datetime, tz: Optional[dt.tzinfo], stale_hours: float):
-        runs = store.latest_runs(column_id, 2)
+    def __init__(self, store: Store, column_id: str, now: dt.datetime, tz: Optional[dt.tzinfo], stale_hours: float,
+                 routine: str = NIGHTLY, window_days: int = 60):
+        self.routine = routine
+        runs = store.latest_runs(column_id, 2, routine)
         self.id = column_id
         self.run = runs[0]
-        self.previous = runs[1] if len(runs) > 1 else None
+        self.previous = runs[1] if len(runs) > 1 and routine == NIGHTLY else None
         self.machine = self.run["machine"]
         self.label = self.run["compiler"] or self.run["config"].upper()
         # legacy imports only know when the results reached the server, not when the run ended
@@ -67,12 +82,28 @@ class Column:
         self.tz = tz
         self.finished = _local(self.run["finished"], tz)
         age = now - parse_time(self.run["finished"])
+        self.stale_hours = stale_hours
         self.stale = age > dt.timedelta(hours=stale_hours)
         self.age_days = max(0, age.days)
-        self.results = {(r["family"], r["test"]): r for r in store.results(self.run["run_id"])}
-        self.previous_results = ({(r["family"], r["test"]): r for r in store.results(self.previous["run_id"])}
-                                 if self.previous else {})
-        self.last_pass = store.last_passes(column_id)
+        if routine == NIGHTLY:
+            self.results = {(r["family"], r["test"]): r for r in store.results(self.run["run_id"])}
+            self.previous_results = ({(r["family"], r["test"]): r for r in store.results(self.previous["run_id"])}
+                                     if self.previous else {})
+        else:
+            # each test's newest result, from the runs up to window_days before the newest (a test no longer in the
+            # routine drops out)
+            since = utc_text(parse_time(self.run["finished"]) - dt.timedelta(days=window_days))
+            self.results = store.latest_results(column_id, routine, since)
+            self.previous_results = {}
+        self.last_pass = store.last_passes(column_id, routine)
+
+    @property
+    def page(self) -> str:
+        return page_name(self.id, self.routine)
+
+    def row_run(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """The run a result row comes from: the column's run, or (another routine) the test's own newest run."""
+        return row.get("run") or self.run
 
     def family_rows(self, family: str) -> List[Dict[str, Any]]:
         rows = [r for (f, _), r in self.results.items() if f == family]
@@ -89,7 +120,8 @@ class Waiting:
     run = None
     stale = False
 
-    def __init__(self, declared: Dict[str, str]):
+    def __init__(self, declared: Dict[str, str], routine: str = NIGHTLY):
+        self.routine = routine
         self.id = declared["column"]
         self.machine = declared["machine"]
         self.label = declared["compiler"]
@@ -189,9 +221,81 @@ def _column_header(col: Column, now_local: dt.datetime) -> str:
 
 
 # ----------------------------------------------------------------------------- pages
+def _grid(registry: Registry, all_columns: List[Any], shown: List[str], now_local: dt.datetime, label: str,
+          skip_group: str = "") -> List[str]:
+    """The table of families (rows) by columns; all_columns may include Waiting placeholders. skip_group: a group whose
+    title row is left out (the routine section's heading names it)."""
+    columns = [c for c in all_columns if c.run is not None]
+    out = []
+    width = 320 + 240 * len(all_columns)
+    out.append('<section class="card scroll"><div role="table" aria-label="{}" '
+               'style="min-width:{}px">'.format(esc(label), width))
+    out.append('<div class="hrow" role="row"><div class="hcell first" role="columnheader">Test family</div>{}</div>'.format(
+        "".join(_column_header(c, now_local) for c in all_columns)))
+    for group in registry.groups:
+        families = [f for f in shown if registry.describe(f)["group"] == group["id"]]
+        if not families:
+            continue
+        if group["id"] != skip_group:
+            out.append('<div class="grow" role="row"><span class="glabel" role="rowheader">{}</span>'
+                       '<span class="gsrc mono">{}</span></div>'.format(esc(group["title"]), esc(group["source"])))
+        for fid in families:
+            fam = registry.describe(fid)
+            present = [c for c in columns if c.family_rows(fid)]
+            tests = max(len(c.family_rows(fid)) for c in present)
+            meta = "{} test{}".format(tests, "" if tests == 1 else "s") + (" · " + fam["runner"] if fam["runner"] else "")
+            first = present[0].page
+            cells = []
+            for col in all_columns:
+                rows = col.family_rows(fid)
+                if col.run is None:
+                    cells.append('<div class="cell" role="cell"><span class="na">— no results yet</span></div>')
+                    continue
+                if not rows:
+                    cells.append('<div class="cell" role="cell"><span class="na">— not run here</span></div>')
+                    continue
+                p, s, x, _ = tally(rows)
+                cells.append('<div class="cell" role="cell"><a class="cellbtn" href="family/{f}/{c}" '
+                             'aria-label="{aria}">{tally}</a></div>'.format(
+                                 f=esc(fid), c=esc(col.page), tally=tally_html(p, s, x),
+                                 aria=esc("{} on {} {}: {}".format(fam["title"], col.machine, col.label,
+                                                                  counts_text(p, s, x)))))
+            out.append('<div class="row" role="row"><div class="cell first" role="rowheader"><a class="fambtn" '
+                       'href="family/{f}/{c}"><span class="famname">{t}</span><span class="fammeta">{m}</span></a></div>{cells}</div>'
+                       .format(f=esc(fid), c=esc(first), t=esc(fam["title"]), m=esc(meta), cells="".join(cells)))
+    out.append("</div></section>")
+    return out
+
+
+def _routine_section(registry: Registry, routine: str, all_columns: List[Any], shown: List[str],
+                     now_local: dt.datetime) -> str:
+    """The results of a routine other than the nightly, below the nightly table: the families.json group named
+    after the routine gives its heading (long: "Long validation runs (periodic)")."""
+    group = next((g for g in registry.groups if g["id"] == routine), None)
+    title = group["title"] if group else "Routine {}".format(routine)
+    columns = [c for c in all_columns if c.run is not None]
+    stale = sorted({"{:g} h".format(c.stale_hours) for c in columns})
+    lead = ("Routine <span class=\"mono\">{}</span>{}: each test's newest result in this routine's runs, with the "
+            "date and commit of that run; a column whose newest run is older than {} is flagged.").format(
+                esc(routine), " · <span class=\"mono\">{}</span>".format(esc(group["source"])) if group and group["source"]
+                else "", esc(" or ".join(stale) or "{:g} h".format(DEFAULT_STALE_AFTER_H)))
+    out = ['<section class="rsec" aria-label="{}"><div class="rhead"><h2>{}</h2><p class="lead">{}</p></div>'.format(
+        esc(title), esc(title), lead)]
+    if columns and shown:
+        out += _grid(registry, all_columns, shown, now_local, title, skip_group=routine)
+    else:
+        out.append('<div class="card notcfg">No results yet from {}.</div>'.format(
+            esc(", ".join("{} · {}".format(c.machine, c.label) for c in all_columns) or "any machine")))
+    out.append("</section>")
+    return "\n".join(out)
+
+
 def _index(registry: Registry, columns: List[Column], shown: List[str], unseen: List[str],
-           now: dt.datetime, now_local: dt.datetime, stale_hours: float, hidden: List[str]) -> str:
-    """columns may include Waiting placeholders; statistics and changes use the columns that have a run."""
+           now: dt.datetime, now_local: dt.datetime, stale_hours: float, hidden: List[str],
+           sections: Optional[List[str]] = None) -> str:
+    """columns may include Waiting placeholders; statistics and changes use the columns that have a run.
+    sections: the HTML of each other routine's results, shown below the nightly table."""
+    sections = sections or []
     waiting = [c for c in columns if c.run is None]
     all_columns, columns = columns, [c for c in columns if c.run is not None]
     new_failures, fixed = [], []
@@ -249,42 +353,8 @@ def _index(registry: Registry, columns: List[Column], shown: List[str], unseen: 
                'number of tests (the cases of a suite count one by one); a faded number is 0</span>'
                '<span class="sub">Click a family or a cell to see its tests.</span></div>')
 
-    width = 320 + 240 * len(all_columns)
-    out.append('<section class="card scroll"><div role="table" aria-label="Test families by machine and compiler" '
-               'style="min-width:{}px">'.format(width))
-    out.append('<div class="hrow" role="row"><div class="hcell first" role="columnheader">Test family</div>{}</div>'.format(
-        "".join(_column_header(c, now_local) for c in all_columns)))
-    for group in registry.groups:
-        families = [f for f in shown if registry.describe(f)["group"] == group["id"]]
-        if not families:
-            continue
-        out.append('<div class="grow" role="row"><span class="glabel" role="rowheader">{}</span>'
-                   '<span class="gsrc mono">{}</span></div>'.format(esc(group["title"]), esc(group["source"])))
-        for fid in families:
-            fam = registry.describe(fid)
-            present = [c for c in columns if c.family_rows(fid)]
-            tests = max(len(c.family_rows(fid)) for c in present)
-            meta = "{} test{}".format(tests, "" if tests == 1 else "s") + (" · " + fam["runner"] if fam["runner"] else "")
-            first = present[0].id
-            cells = []
-            for col in all_columns:
-                rows = col.family_rows(fid)
-                if col.run is None:
-                    cells.append('<div class="cell" role="cell"><span class="na">— no results yet</span></div>')
-                    continue
-                if not rows:
-                    cells.append('<div class="cell" role="cell"><span class="na">— not run here</span></div>')
-                    continue
-                p, s, x, _ = tally(rows)
-                cells.append('<div class="cell" role="cell"><a class="cellbtn" href="family/{f}/{c}.html" '
-                             'aria-label="{aria}">{tally}</a></div>'.format(
-                                 f=esc(fid), c=esc(col.id), tally=tally_html(p, s, x),
-                                 aria=esc("{} on {} {}: {}".format(fam["title"], col.machine, col.label,
-                                                                  counts_text(p, s, x)))))
-            out.append('<div class="row" role="row"><div class="cell first" role="rowheader"><a class="fambtn" '
-                       'href="family/{f}/{c}.html"><span class="famname">{t}</span><span class="fammeta">{m}</span></a></div>{cells}</div>'
-                       .format(f=esc(fid), c=esc(first), t=esc(fam["title"]), m=esc(meta), cells="".join(cells)))
-    out.append("</div></section>")
+    out += _grid(registry, all_columns, shown, now_local, "Test families by machine and compiler")
+    out += sections
     if unseen:
         out.append('<p class="sub">No results yet for: {}.</p>'.format(
             esc(", ".join(registry.describe(f)["title"] for f in unseen))))
@@ -312,16 +382,16 @@ def _family_page(registry: Registry, fid: str, col: Column, columns: List[Column
             summary = '<span class="tab-sum">{}</span>'.format(tally_html(p, s, x))
         else:
             summary = '<span class="counts na-text">not run here</span>'
-        tabs.append('<a class="tab" href="{c}.html"{cur}><span class="tab-name">{m}</span><span class="tab-cfg">{l}</span>{s}</a>'
-                    .format(c=esc(other.id), cur=current, m=esc(other.machine), l=esc(other.label), s=summary))
-    run = col.run
+        tabs.append('<a class="tab" href="{c}"{cur}><span class="tab-name">{m}</span><span class="tab-cfg">{l}</span>{s}</a>'
+                    .format(c=esc(other.page), cur=current, m=esc(other.machine), l=esc(other.label), s=summary))
+    newest = col.run
     warn = ('<span class="warn">{}No upload for {} day{}</span>'.format(ICON["WARN"], col.age_days, "" if col.age_days == 1 else "s")
             if col.stale else "")
     out.append('<div><nav class="tabs" aria-label="Machine and compiler">{}</nav>'
                '<div class="card runline"><span><strong>{}</strong> · {}</span><span>{} {}</span>'
                '<span>Commit {}</span>{}{}</div></div>'.format(
                    "".join(tabs), esc(col.machine), esc(col_label(col)), col.finished_verb, esc(_when(col.finished)),
-                   commit_html(run["commit_sha"], bool(run["commit_inferred"])), warn, _night_link(col, "../../")))
+                   commit_html(newest["commit_sha"], bool(newest["commit_inferred"])), warn, _night_link(col, "../../")))
     if not rows:
         out.append('<div class="card notcfg">This family has no results in the latest run of <strong>{} · {}</strong>.</div>'
                    .format(esc(col.machine), esc(col.label)))
@@ -334,13 +404,18 @@ def _family_page(registry: Registry, fid: str, col: Column, columns: List[Column
             key, "true" if key == "all" else "false", label, n)
         for key, label, n in (("all", "All", len(rows)), ("FAILED", "Failed", counts["FAILED"]),
                               ("SKIPPED", "Skipped", counts["SKIPPED"]), ("PASS", "Passed", counts["PASS"]))) + "</nav>")
-    out.append('<section class="card scroll"><div role="table" aria-label="Tests" style="min-width:820px">'
+    # a routine other than the nightly: each test's result comes from its own newest run, shown in "Last run"
+    periodic = col.routine != NIGHTLY
+    out.append('<section class="card scroll"><div role="table" aria-label="Tests" style="min-width:{}px">'
                '<div class="thead" role="row"><div class="c-name" role="columnheader">Test name</div>'
-               '<div class="c-status" role="columnheader">Current status</div>'
+               '<div class="c-status" role="columnheader">Current status</div>{}'
                '<div class="c-date" role="columnheader">Last date passed</div>'
-               '<div class="c-commit" role="columnheader">Git commit when last passed</div></div>')
-    latest_day = col.finished.date()
+               '<div class="c-commit" role="columnheader">Git commit when last passed</div></div>'.format(
+                   1000 if periodic else 820,
+                   '<div class="c-date" role="columnheader">Last run and its commit</div>' if periodic else ""))
     for row in rows:
+        run = col.row_run(row)
+        latest_day = _local(run["finished"], col.tz).date()
         sub = ""
         n = row["cases_total"]
         if n:
@@ -357,6 +432,10 @@ def _family_page(registry: Registry, fid: str, col: Column, columns: List[Column
                 links.append('<a href="../../{}/{}">log</a>'.format(esc(run["path"]), esc(log_href(col.www, run["path"], row["log"]))))
             if links:
                 detail += '<span class="links">{}</span>'.format("".join(links))
+        last_run = ""
+        if periodic:
+            last_run = '<div class="c-date" role="cell"><span>{}</span><span class="sub">{}</span></div>'.format(
+                esc(_day(_local(run["finished"], col.tz))), commit_html(run["commit_sha"], bool(run["commit_inferred"])))
         last = col.last_pass.get((row["family"], row["test"]))
         if last:
             when = _local(last["finished"], col.tz)
@@ -372,10 +451,11 @@ def _family_page(registry: Registry, fid: str, col: Column, columns: List[Column
             commit = '<span class="sub">—</span>'
         out.append('<div class="trow{fail}" role="row" data-status="{st}"><div class="c-name" role="rowheader">'
                    '<span class="mono tname">{name}</span>{sub}</div><div class="c-status" role="cell">{pill}{detail}</div>'
-                   '<div class="c-date" role="cell">{date}</div><div class="c-commit" role="cell">{commit}</div></div>'.format(
+                   '{last_run}<div class="c-date" role="cell">{date}</div><div class="c-commit" role="cell">{commit}</div>'
+                   '</div>'.format(
                        fail=" trow-fail" if row["status"] == "FAILED" else "", st=esc(row["status"]), name=esc(row["test"]),
                        sub='<span class="sub">{}</span>'.format(esc(sub)) if sub else "", pill=pill(row["status"]),
-                       detail=detail, date=date_html, commit=commit))
+                       detail=detail, last_run=last_run, date=date_html, commit=commit))
     out.append('<div class="empty" data-empty hidden>No tests with this status.</div></div></section></div>')
     return "\n".join(out)
 
@@ -452,10 +532,12 @@ def write_run_index(directory: Path) -> Path:
         return sum(1 for r in rows if r["status"] == status and (not source or r.get("source") == source))
 
     sha = run.get("commit", "")
+    routine = run.get("routine") or NIGHTLY
+    when = "Night of" if routine == NIGHTLY else "Routine {}, started on".format(routine)
     head = ['<div class="page tight">', _nav_bar(_read_nav(directory)),
-            '<header class="fhead"><p class="eyebrow">Night of {} · {} · {}</p><h1>{}-{}</h1>'
+            '<header class="fhead"><p class="eyebrow">{} {} · {} · {}</p><h1>{}-{}</h1>'
             '<p class="src">Commit {} · started {} · finished {} · {} pass, {} failed, {} skipped{}</p></header>'.format(
-                esc(night_of(run)), esc(run["machine"]), esc(run.get("compiler", "")),
+                esc(when), esc(night_of(run)), esc(run["machine"]), esc(run.get("compiler", "")),
                 esc(run["machine"]), esc(run["config"]),
                 commit_html(sha, bool(run.get("commit_inferred"))) if sha else "unknown",
                 esc(run.get("started", "")), esc(run.get("finished", "")), count("PASS"), count("FAILED"), count("SKIPPED"),
@@ -493,7 +575,9 @@ def write_run_index(directory: Path) -> Path:
                 link(r.get("log", ""), "log")))
         head.append("</table>")
     head.append("</section></div>")
-    title = "{}-{} night of {} · AMPS nightly tests".format(run["machine"], run["config"], night_of(run))
+    title = "{}-{} {} {} · AMPS nightly tests".format(run["machine"], run["config"],
+                                                     "night of" if routine == NIGHTLY else routine + " run of",
+                                                     night_of(run))
     (directory / "index.html").write_text(_page(title, "\n".join(head), 5, _when(dt.datetime.now().astimezone())))
     return directory / "index.html"
 
@@ -504,10 +588,12 @@ def col_label(col: Column) -> str:
 
 # ----------------------------------------------------------------------------- archive navigation
 def _night_label(run: Dict[str, Any]) -> str:
-    """Night of a stored run as its archive folder names it (archive/YYYY/MM/DD/<column>[.N])."""
+    """Night of a stored run as its archive folder names it (archive/YYYY/MM/DD/<column>[-<routine>][.N])."""
     parts = Path(run["path"] or "").parts
+    routine = run.get("routine") or NIGHTLY
+    folder = run["column_id"] if routine == NIGHTLY else "{}-{}".format(run["column_id"], routine)
     if len(parts) == 5 and parts[0] == "archive" and all(p.isdigit() for p in parts[1:4]):
-        extra = parts[4][len(run["column_id"]):]
+        extra = parts[4][len(folder):] if parts[4].startswith(folder) else ""
         return "-".join(parts[1:4]) + (" (run {})".format(extra[1:]) if extra.startswith(".") else "")
     return night_of(run)
 
@@ -525,15 +611,15 @@ def _archived(www: Path, run: Dict[str, Any]) -> bool:
 def refresh_night_navigation(store: Store, www: Path) -> int:
     """Write nav.json and the night page of every archived night whose previous or next night changed.
 
-    Neighbours are the archived runs of the same column, ordered by finish time. Usually only the newest
-    night and the one before it change; the first refresh after an upgrade writes every night once.
-    Returns the number of night pages rewritten.
+    Neighbours are the archived runs of the same column and routine (a long run's are the column's other long
+    runs), ordered by finish time. Usually only the newest night and the one before it change; the first refresh
+    after an upgrade writes every night once. Returns the number of night pages rewritten.
     """
     www = Path(www)
-    by_column: Dict[str, List[Dict[str, Any]]] = {}
+    by_column: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
     for run in store.all_runs():
         if _archived(www, run):
-            by_column.setdefault(run["column_id"], []).append(run)
+            by_column.setdefault((run["column_id"], run.get("routine") or NIGHTLY), []).append(run)
     written = 0
     for runs in by_column.values():
         for i, run in enumerate(runs):
@@ -565,9 +651,9 @@ def write_archive_index(store: Store, www: Path, tz: Optional[dt.tzinfo], genera
     """www/archive/index.html: every stored night of every column, newest first, with its counts."""
     www = Path(www)
     counts = store.status_counts()
-    grouped: Dict[str, List[Dict[str, Any]]] = {}
-    for run in store.all_runs():
-        grouped.setdefault(run["column_id"], []).append(run)
+    grouped: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for run in store.all_runs():                       # one table per column and routine
+        grouped.setdefault((run["column_id"], run.get("routine") or NIGHTLY), []).append(run)
     # the column with the most recent run first: the active ones above the retired ones
     columns = dict(sorted(grouped.items(), key=lambda item: item[1][-1]["finished"], reverse=True))
     total = sum(len(runs) for runs in columns.values())
@@ -577,13 +663,16 @@ def write_archive_index(store: Store, www: Path, tz: Optional[dt.tzinfo], genera
            '<p class="src">{:,} stored run{} in {} column{}, newest first. The counts are result rows, as on each '
            'night\'s page. Nights imported from the legacy nightly have results but no logs.</p></header>'
            .format(total, "" if total == 1 else "s", len(columns), "" if len(columns) == 1 else "s")]
-    for column_id, runs in columns.items():
+    for (column_id, routine), runs in columns.items():
         newest = runs[-1]
         label = (newest["compiler"] or newest["config"].upper()) + (" · " + newest["toolchain"] if newest["toolchain"] else "")
+        if routine != NIGHTLY:
+            label += " · routine " + routine
         out.append('<section class="card night" id="{}"><h2>{} · {} <span class="sub">{} run{}</span></h2>'
                    '<table class="tbl"><tr><th>Night</th><th>Finished</th><th>Commit</th><th>Failed</th>'
                    '<th>Skipped</th><th>Passed</th><th>Logs</th><th>Note</th></tr>'.format(
-                       esc(column_id), esc(newest["machine"]), esc(label), len(runs), "" if len(runs) == 1 else "s"))
+                       esc(column_id if routine == NIGHTLY else "{}-{}".format(column_id, routine)),
+                       esc(newest["machine"]), esc(label), len(runs), "" if len(runs) == 1 else "s"))
         for run in reversed(runs):
             night = esc(_night_label(run))
             if _archived(www, run) and (www / run["path"] / "index.html").is_file():
@@ -613,7 +702,8 @@ def write_archive_index(store: Store, www: Path, tz: Optional[dt.tzinfo], genera
 # ----------------------------------------------------------------------------- build
 def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime] = None,
           tz: Optional[dt.tzinfo] = None, window_days: int = 60, stale_hours: float = 36,
-          declared: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+          declared: Optional[List[Dict[str, str]]] = None,
+          routines: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
     """Regenerate index.html, family pages, assets and archive/index.html under www, and the night pages
     whose previous/next night changed (refresh_night_navigation); other archived files are left untouched.
 
@@ -621,6 +711,9 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
     each is shown, with "No results yet" until its first run. Stored columns that are not declared are
     hidden (their history stays in the store). None: show every column with a run in the last
     window_days days.
+    routines: for each routine other than the nightly, its columns (machines.declared_routines: the declared columns
+    of the machines that enable it, with its stale_after_h). None: every column with a run of a routine in the last
+    window_days days, flagged after DEFAULT_STALE_AFTER_H.
     """
     www = Path(www)
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
@@ -644,7 +737,27 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
     present = set(f for c in columns for f in c.families())
     order = [f["id"] for f in registry.families]
     shown = [f for f in order if f in present] + sorted(present - set(order))
+
+    # the other routines (long): their own columns, below the nightly table
+    if routines is None:
+        routines = {name: [{"column": c["column_id"], "stale_after_h": DEFAULT_STALE_AFTER_H}
+                           for c in store.columns(name) if parse_time(c["last_finished"]) >= cutoff]
+                    for name in store.routines()}
+    routine_columns: Dict[str, List[Any]] = {}
+    routine_shown: Dict[str, List[str]] = {}
+    for name, wanted in sorted(routines.items()):
+        have = {c["column_id"] for c in store.columns(name)}
+        cols = [Column(store, d["column"], now, tz, d.get("stale_after_h", DEFAULT_STALE_AFTER_H), name, window_days)
+                if d["column"] in have else Waiting(d, name) for d in wanted]
+        for col in cols:
+            col.www = www
+        found = set(f for c in cols if c.run is not None for f in c.families())
+        routine_columns[name] = cols
+        routine_shown[name] = [f for f in order if f in found] + sorted(found - set(order))
+        present |= found
     unseen = [f for f in order if f not in present and registry.describe(f)["group"] != OTHER_GROUP]
+    sections = [_routine_section(registry, name, cols, routine_shown[name], now_local)
+                for name, cols in routine_columns.items()]
     generated = _when(now_local)
     nights_updated = refresh_night_navigation(store, www)
     write_archive_index(store, www, tz, generated)
@@ -656,12 +769,13 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
     shutil.copytree(str(ASSETS), str(build_dir / "assets"))
     pages = 0
     if columns:
-        body = _index(registry, all_columns, shown, unseen, now, now_local, stale_hours, hidden)
+        body = _index(registry, all_columns, shown, unseen, now, now_local, stale_hours, hidden, sections)
     else:
         lead = ("No results yet from: {}.".format(", ".join("{} · {}".format(c.machine, c.label) for c in all_columns))
                 if all_columns else "No runs finished in the last {} days.".format(window_days))
         body = ('<div class="page"><header class="top"><div><p class="eyebrow">AMPS · SWMFsoftware/AMPS</p>'
-                '<h1>Nightly test results</h1><p class="lead">{}</p></div></header></div>'.format(esc(lead)))
+                '<h1>Nightly test results</h1><p class="lead">{}</p></div></header>{}</div>'.format(
+                    esc(lead), "\n".join(sections)))
     (build_dir / "index.html").write_text(_page("AMPS nightly test results", body, 0, generated))
     for fid in shown:
         family_dir = build_dir / "family" / fid
@@ -671,6 +785,15 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
             (family_dir / "{}.html".format(col.id)).write_text(
                 _page(title, _family_page(registry, fid, col, columns), 2, generated))
             pages += 1
+    for name, cols in routine_columns.items():
+        with_runs = [c for c in cols if c.run is not None]
+        for fid in routine_shown[name]:
+            family_dir = build_dir / "family" / fid
+            family_dir.mkdir(exist_ok=True)
+            for col in with_runs:
+                title = "{} · {} {} · AMPS {} tests".format(registry.describe(fid)["title"], col.machine, col.label, name)
+                (family_dir / col.page).write_text(_page(title, _family_page(registry, fid, col, with_runs), 2, generated))
+                pages += 1
 
     www.mkdir(parents=True, exist_ok=True)
     for name in ("assets", "family"):
@@ -683,4 +806,7 @@ def build(store: Store, registry: Registry, www: Path, now: Optional[dt.datetime
     os.replace(str(build_dir / "index.html"), str(www / "index.html"))
     shutil.rmtree(str(build_dir))
     return {"columns": [c.id for c in columns], "waiting": [c.id for c in all_columns if c.run is None],
-            "hidden": hidden, "families": shown, "family_pages": pages, "night_pages_updated": nights_updated}
+            "hidden": hidden, "families": shown, "family_pages": pages, "night_pages_updated": nights_updated,
+            "routines": {name: {"columns": [c.id for c in cols if c.run is not None],
+                                "waiting": [c.id for c in cols if c.run is None], "families": routine_shown[name]}
+                         for name, cols in routine_columns.items()}}

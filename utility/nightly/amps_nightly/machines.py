@@ -5,13 +5,20 @@ configuration is one column of the report), where to work and where to upload th
 Adding a machine is adding a file; "enabled": false pauses it and hides its columns on the report
 (its history stays in the results store); deleting the file removes it.
 Keys starting with "_" are comments and are ignored.
+
+"routines" enables routines other than the nightly on the machine (each one is runners.<routine>.json):
+    "routines": {"long": {"enabled": true, "start": "Sat 10:00", "time_limit_h": 34, "lanes": 1, ...}}
+While routine <routine> runs, its values replace the machine's (start, night_limit_h by time_limit_h, lanes,
+compile_lanes) or are merged into them (timeouts_s, make_vars). A routine the file does not enable does not run
+on the machine.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,13 +33,31 @@ _TIME = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 _MACHINE_KEYS = {"schema_version", "machine", "enabled", "description", "hostnames", "table_host", "workdir",
                  "upload", "start", "core_profile", "capabilities", "lanes", "timeouts_s", "configs",
                  "python", "search_path", "mpiexec", "vars", "make_vars", "cores", "memory_gb", "max_parallel",
-                 "night_limit_h", "keep_workspaces", "server_root", "min_free_gb", "compile_lanes", "compile_jobs"}
+                 "night_limit_h", "keep_workspaces", "server_root", "min_free_gb", "compile_lanes", "compile_jobs",
+                 "routines"}
 KEEP_WORKSPACES = ("failures", "always", "never")
 _CONFIG_KEYS = {"config", "enabled", "compiler", "toolchain", "setup", "config_pl", "after_install", "sources",
                 "compile_jobs"}
 # The make variable of MakefileTest/Table that sets the parallel jobs (make -j) of a test's compile stage. The nightly
 # sets it from compile_jobs (see Machine.compile_jobs_for); make_vars may not set it.
 COMPILE_JOBS_VAR = "TESTCOMPILEJOBS"
+NIGHTLY = "nightly"
+_ROUTINE_NAME = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
+_ROUTINE_KEYS = {"enabled", "start", "time_limit_h", "lanes", "compile_lanes", "timeouts_s", "make_vars", "max_ranks",
+                 "stale_after_h"}
+DEFAULT_STALE_AFTER_H = 192          # the report flags a routine's results older than this (nightly columns: 36 h)
+DAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")       # cron's day-of-week numbers 0-6
+_START = re.compile(r"^(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat) )?([01]?[0-9]|2[0-3]):([0-5][0-9])$")
+
+
+def parse_start(start: str) -> Tuple[Optional[int], int, int]:
+    """(cron day of week or None for every day, hour, minute) of "HH:MM" or "<Day> HH:MM" ("Sat 10:00")."""
+    match = _START.match(start.strip())
+    if not match:
+        raise ValueError("start {!r} must be HH:MM or <day> HH:MM, e.g. 'Sat 10:00' (days: {})".format(
+            start, ", ".join(DAYS)))
+    day = DAYS.index(match.group(1)) if match.group(1) else None
+    return day, int(match.group(2)), int(match.group(3))
 
 
 class MachineError(ValueError):
@@ -65,6 +90,21 @@ class Config:
 
 
 @dataclass
+class RoutineSettings:
+    """A routine other than the nightly on one machine (machine file "routines")."""
+    name: str
+    start: str                                  # "<Day> HH:MM" (weekly) or "HH:MM" (daily), local time
+    enabled: bool = True
+    time_limit_h: float = 0                     # replaces night_limit_h; 0 = the machine's
+    lanes: int = 0                              # replaces lanes; 0 = the machine's
+    compile_lanes: int = 0                      # replaces compile_lanes; 0 = the machine's
+    timeouts_s: Dict[str, int] = field(default_factory=dict)    # merged into the machine's timeouts_s
+    make_vars: Dict[str, str] = field(default_factory=dict)     # merged into the machine's make_vars
+    max_ranks: int = 0                          # most MPI ranks of a test (Ranks= of Tier=long); 0 = cores
+    stale_after_h: float = DEFAULT_STALE_AFTER_H   # the report flags results older than this
+
+
+@dataclass
 class Machine:
     machine: str
     path: Path
@@ -94,6 +134,43 @@ class Machine:
     min_free_gb: float = 5            # no runner or Makefile.test test starts with less free space in workdir
     compile_lanes: int = 1            # Makefile.test tests compiled at once, each in its own copy of the workspace
     compile_jobs: int = 0             # make -j of each Makefile.test compile; 0 = cores / (compile_lanes x max_parallel)
+    routines: Dict[str, RoutineSettings] = None   # routines other than the nightly ("routines")
+    routine: str = NIGHTLY            # the routine this Machine's values are for (for_routine)
+
+    def runs_routine(self, name: str) -> bool:
+        """The machine file enables this routine (the nightly always)."""
+        settings = (self.routines or {}).get(name)
+        return name == NIGHTLY or bool(settings and settings.enabled)
+
+    def enabled_routines(self) -> List[str]:
+        """The routines other than the nightly that run here, by name."""
+        return sorted(name for name, s in (self.routines or {}).items() if s.enabled)
+
+    def max_ranks(self, name: str) -> int:
+        """The most MPI ranks a test of routine `name` may use here: its max_ranks, else the machine's cores."""
+        settings = (self.routines or {}).get(name)
+        return settings.max_ranks if settings and settings.max_ranks else self.cores
+
+    def stale_after_h(self, name: str) -> float:
+        settings = (self.routines or {}).get(name)
+        return settings.stale_after_h if settings else DEFAULT_STALE_AFTER_H
+
+    def for_routine(self, name: str) -> "Machine":
+        """This machine as routine `name` sees it: the routine's values in place of the machine's."""
+        if name == NIGHTLY:
+            return self
+        settings = (self.routines or {}).get(name)
+        if settings is None or not settings.enabled:
+            raise MachineError("{}: routine {} is not enabled (\"routines\" of the machine file)".format(
+                self.path.name, name))
+        timeouts = dict(self.timeouts_s)
+        timeouts.update(settings.timeouts_s)
+        make_vars = dict(self.make_vars or {})
+        make_vars.update(settings.make_vars)
+        return dataclasses.replace(
+            self, routine=name, start=settings.start, night_limit_h=settings.time_limit_h or self.night_limit_h,
+            lanes=settings.lanes or self.lanes, compile_lanes=settings.compile_lanes or self.compile_lanes,
+            timeouts_s=timeouts, make_vars=make_vars)
 
     def active_configs(self) -> List[Config]:
         return [c for c in self.configs if c.enabled] if self.enabled else []
@@ -140,9 +217,9 @@ def _bool(raw: Dict[str, Any], key: str, where: str, default: bool) -> bool:
     return value
 
 
-def _hours(value: Any, where: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= 48:
-        raise MachineError("{}: night_limit_h must be a number of hours between 0 and 48".format(where))
+def _hours(value: Any, where: str, key: str = "night_limit_h", limit: float = 48) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= limit:
+        raise MachineError("{}: {} must be a number of hours between 0 and {:g}".format(where, key, limit))
     return float(value)
 
 
@@ -219,6 +296,7 @@ def parse_machine(raw: Any, path: Path) -> Machine:
     if COMPILE_JOBS_VAR in make_vars:
         raise MachineError("{}: make_vars may not set {}: compile_jobs (of the machine or of a configuration) "
                            "sets it".format(where, COMPILE_JOBS_VAR))
+    routines = _routines(raw, where)
     return Machine(
         machine=name, path=path, enabled=_bool(raw, "enabled", where, True),
         description=_str(raw, "description", where, ""),
@@ -239,7 +317,52 @@ def parse_machine(raw: Any, path: Path) -> Machine:
         keep_workspaces=_choice(raw, "keep_workspaces", KEEP_WORKSPACES, where),
         server_root=_str(raw, "server_root", where, ""), min_free_gb=_free(raw, where),
         compile_lanes=_positive(raw.get("compile_lanes", 1), "compile_lanes", where),
-        compile_jobs=_positive(raw["compile_jobs"], "compile_jobs", where) if "compile_jobs" in raw else 0)
+        compile_jobs=_positive(raw["compile_jobs"], "compile_jobs", where) if "compile_jobs" in raw else 0,
+        routines=routines)
+
+
+def _routines(raw: Dict[str, Any], where: str) -> Dict[str, RoutineSettings]:
+    """The "routines" object: routine name -> its settings on this machine."""
+    given = raw.get("routines", {})
+    if not isinstance(given, dict):
+        raise MachineError("{}: routines must map routine names to objects".format(where))
+    routines: Dict[str, RoutineSettings] = {}
+    for name, item in given.items():
+        if name.startswith("_"):
+            continue
+        at = "{} routines.{}".format(where, name)
+        if name == NIGHTLY:
+            raise MachineError("{}: the nightly routine is set by the machine's own keys (start, night_limit_h, "
+                               "lanes, timeouts_s, ...), not in routines".format(at))
+        if not _ROUTINE_NAME.match(name):
+            raise MachineError("{}: a routine name must be lower case letters, digits and - (its file is "
+                               "runners.<name>.json)".format(at))
+        if not isinstance(item, dict):
+            raise MachineError(at + ": must be an object")
+        _keys(item, _ROUTINE_KEYS, at)
+        start = _str(item, "start", at)
+        try:
+            parse_start(start)
+        except ValueError as error:
+            raise MachineError("{}: {}".format(at, error))
+        timeouts = item.get("timeouts_s", {})
+        if not isinstance(timeouts, dict) or set(timeouts) - set(STAGES):
+            raise MachineError("{}: timeouts_s may only set {}".format(at, ", ".join(STAGES)))
+        make_vars = _mapping(item, "make_vars", at)
+        if COMPILE_JOBS_VAR in make_vars:
+            raise MachineError("{}: make_vars may not set {}: compile_jobs of the machine sets it".format(
+                at, COMPILE_JOBS_VAR))
+        routines[name] = RoutineSettings(
+            name=name, start=start, enabled=_bool(item, "enabled", at, True),
+            time_limit_h=_hours(item["time_limit_h"], at, "time_limit_h", 168) if "time_limit_h" in item else 0,
+            lanes=_positive(item["lanes"], "lanes", at) if "lanes" in item else 0,
+            compile_lanes=_positive(item["compile_lanes"], "compile_lanes", at) if "compile_lanes" in item else 0,
+            timeouts_s={stage: _positive(seconds, "timeouts_s." + stage, at) for stage, seconds in timeouts.items()},
+            make_vars=make_vars,
+            max_ranks=_positive(item["max_ranks"], "max_ranks", at) if "max_ranks" in item else 0,
+            stale_after_h=_hours(item["stale_after_h"], at, "stale_after_h", 24 * 366)
+            if "stale_after_h" in item else DEFAULT_STALE_AFTER_H)
+    return routines
 
 
 def _free(raw: Dict[str, Any], where: str) -> float:
@@ -289,3 +412,13 @@ def declared_columns(machines: List[Machine]) -> List[Dict[str, str]]:
     """Columns the report shows: every enabled configuration of every enabled machine, in file order."""
     return [{"column": c.column, "machine": m.machine, "config": c.config, "compiler": c.compiler,
              "toolchain": c.toolchain} for m in machines for c in m.active_configs()]
+
+
+def declared_routines(machines: List[Machine]) -> Dict[str, List[Dict[str, Any]]]:
+    """The report's columns of each routine other than the nightly: the declared columns of the machines that enable
+    it, each with the routine's stale_after_h there."""
+    names = sorted({name for m in machines if m.enabled for name in m.enabled_routines()})
+    return {name: [{"column": c.column, "machine": m.machine, "config": c.config, "compiler": c.compiler,
+                    "toolchain": c.toolchain, "stale_after_h": m.stale_after_h(name)}
+                   for m in machines if m.runs_routine(name) for c in m.active_configs()]
+            for name in names}

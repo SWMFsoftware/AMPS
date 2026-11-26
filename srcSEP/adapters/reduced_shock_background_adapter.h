@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <string>
 #include "../util/sep_common_header_path.h"
@@ -48,10 +49,15 @@ struct AmbientSample {
   double epochS=0;
   std::uint64_t generation=0;
   std::string eventIdentity;
-  // Material geometry is qualified for the core Parker exterior only. PFSS
-  // branches remain queryable, but do not inherit an unproved induction or
-  // mass-continuity contract from this application adapter.
+  // Material geometry is qualified for the core Parker exterior. An open PFSS
+  // tube is qualified only when the event selects the v1.3 isothermal
+  // flux-tube closure (steady corotating field-aligned wind, continuity per
+  // unit flux, isothermal Bernoulli); otherwise PFSS branches remain
+  // queryable but do not inherit an unproved induction/continuity contract.
+  // Closed PFSS tubes are never material states.
   bool parkerExterior=false;
+  bool coronalOpen=false;
+  bool materialQualified=false;
   bool derivativesValid = false;
 };
 
@@ -88,6 +94,9 @@ class IntervalView {
   Core::Result<AmbientSample> PrimitiveAt(const Position&,double epochS) const;
   Core::Status RequirePhysicalDownstream() const;
   Core::Result<SurfaceSphere> SphereAt(double epochS) const;
+  // Conservative bound on the core plasma speed [m/s] over the whole support
+  // (AmbientModel::SpeedBoundMPerS); used only to exclude geometry.
+  double SpeedBoundMPerS() const;
   Core::Result<Position> LeadingPointOnRay(const Position&,double epochS) const;
   Core::Result<FrontSample> FrontAt(const Position&,double epochS) const;
   // Stage-11 neutral export from this exact captured core owner. These APIs
@@ -189,6 +198,12 @@ const std::string& EventPath();
 const std::string& EventIdentity();
 std::shared_ptr<const CoronaSwcme::ShockFront::Epoch> FrontEpoch();
 FrontSummary CurrentFrontSummary();
+// True when the bound event selects the closed heliocentric-sphere geometry
+// (schema v1.3) rather than the finite SSE cap. False when no event is bound.
+bool HeliocentricSphereFront();
+// Write the active fitted apex at a completed physical epoch. Analytical
+// configuration and cached-cadence metadata remain immutable.
+Core::Status ReportFittedFront(double epochS,std::ostream* writer);
 
 } } // namespace SEP::ReducedShock
 

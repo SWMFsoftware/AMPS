@@ -339,6 +339,15 @@ namespace SEP {
       const int _InjectBegginingFL=1;
       const int _InjectInputFileAMPS=2;
 
+      // Opt-in proposal for the _tenishev2005aiaa DSA momentum sampler.
+      // false (default): exact inverse-CDF draw of dN/dp ~ p^(2-q), weight 1.
+      // true: log-uniform draw in p between the source bounds with the exact
+      // importance weight target/proposal (SEP::Injection::
+      // ImportanceWeightForLogUniformProposal), so the represented physical
+      // number spectrum is unchanged in expectation.  Set by
+      // --shock-energy-sampling log-uniform.
+      extern bool LogUniformMomentumSampling;
+
       extern int InjectionMomentumModel;
       const int _tenishev2005aiaa=0;
       const int _sokolov2004aj=1;

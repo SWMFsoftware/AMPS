@@ -236,6 +236,22 @@ converted with `python3 tools/convert_amps_input.py event old.event -o
 new.event`.  Runnable examples and the accepted application spelling are under
 `srcSEP3D/examples/shock-front/`.
 
+Schema `shock-front-ambient-v1.2` adds `history.model = fitted-quadratic`
+to the existing `fixed-sse-pfss-parker-drag-v1` profile. It uses the fitted
+HCI axis, fixed half-width, initial apex radius and speed, and
+`history.apex_acceleration_m_s2`. The initial fit and dated ambient share
+the UTC reference and start at zero elapsed seconds. `history.fit_end_s`
+is the last admissible fit epoch. The matching drag branch starts with
+the radius and speed calculated there, above
+`history.minimum_handoff_radius_m`, and remains valid for
+`history.drag_horizon_s`. A run that exceeds the fit plus drag coverage
+is rejected. This schema derives both handoff radius and speed and omits
+`history.final_pulse_speed_m_s`, `history.acceleration_duration_s` and
+`handoff.apex_radius_m`. The SHA-256 provenance of the fit receipt is
+recorded in `history.prepared_event_sha256` and included in the event
+fingerprint. The native regression evaluates this provider on the same
+physical clock used for particle transport.
+
 The input groups are deliberately explicit:
 
 - `run.*` owns the UTC reference, elapsed-SI support, HCI frame, background
@@ -435,3 +451,78 @@ speed/RH data. Rear-sphere roots never acquire physical shock support through
 this API. This is an integration interface to the existing model, not a new
 shock equation or downstream volume capability. The srcSEP SINT10–13 and
 SINT13N gates exercise its finite support, tangency and material-time mapping.
+
+## Schema v1.3: heliocentric sphere over a PFSS/Parker ambient with an open-tube wind
+
+`schema = shock-front-ambient-v1.3`, `profile = heliocentric-sphere-pfss-parker-pchip-v1`.
+It is used by the 2013-04-11 real-event test (`srcSEP/test/event_2013_04_11`),
+whose README gives the derivations and the references.
+
+**Front.** A closed Sun-centred sphere, `geometry.model = heliocentric-sphere`.
+Its radius `R(t)` is the monotone PCHIP through `history.knot_times_s` and
+`history.knot_radii_m` (`history.model = data-driven-pchip`, the SWCME
+`data_driven` slopes). The normal is radial and `V_n = dR/dt`. The mesh is the
+closed triangular sphere (`2 N_az (N_pol-1)` faces). No extrapolation is done:
+the knots must start at `run.start_s` and reach `run.end_s`.
+
+**Ambient.** WSO-convention PFSS harmonics below `ambient.source_surface_radius_m`
+and the Parker continuation above it. The model has three additions:
+
+1. **Wind.** `ambient.wind_speed_at_reference_m_s` selects the isothermal
+   Parker (1958) transonic wind. Its sound speed `c_w` is the unique root of
+   `U(r_ref; c_w) = U_ref`. The wind sets only `U` and `rho`; species
+   temperatures, pressure and every Rankine–Hugoniot speed keep the declared
+   `plasma.*` values.
+2. **Magnetic calibration.** `ambient.magnetic_calibration_*` applies one
+   magnetogram factor, so that `|B|` at a declared point and epoch equals a
+   declared value. B is linear in the coefficients; topology, `U` and `rho`
+   do not change.
+3. **Open tubes.** `ambient.open_wind_density_model = isothermal-flux-tube` is
+   the only value v1.3 accepts. In every open PFSS tube the plasma flows along
+   B in the frame that corotates with the Sun:
+   `U = Omega x r + s u b`, where `s` is the sector of the tube's foot.
+   - *Induction.* The potential field is static in that frame, so the rigidly
+     rotating field solves ideal induction exactly:
+     `curl((Omega x r) x B) = -(Omega x r).grad B + Omega x B`.
+   - *Continuity.* `rho u / |B| = K = Fm / (Rss^2 |B_r,ss|)`, the mass flux per
+     unit magnetic flux at the tube's source-surface foot.
+   - *Field-aligned momentum.* `u` is the subsonic root of
+     `y - ln y = 4 ln(Rss/r_c) - 3 + 2 ln(|B_r,ss|/|B|) + 4 r_c/r`, with
+     `y = u^2/c_w^2`. This is the isothermal Bernoulli integral along a tube of
+     area `Phi/|B|` (Kopp & Holzer 1976). It reduces to Parker's relation where
+     `|B| = |B_r,ss|(Rss/r)^2`.
+   - `B`, `U` and `rho` are continuous with the exterior at `Rss`.
+   - The centrifugal term is left out, as in the exterior wind. It is at most
+     `Omega^2 Rss^3 / (2 GM)`, about 2e-4 of the gravitational potential.
+   - Rejected, never clamped: a point with no subsonic root, `r_c <= Rss`, and
+     the combination with `spherical-radial-mass-flux`.
+
+**Evaluation.**
+- The v1.3 ambient evaluates the magnetogram with
+  `PfssHarmonics::EvaluateFieldCartesian`, which uses recurrences and agrees
+  with `EvaluateCartesian` to about 3e-15.
+- It finds an open tube's foot by integrating `dx/dr = B/B_r` in uniform radius
+  steps of at most `ambient.trace_step_m`. This is valid while `B_r` keeps its
+  sign and `|B_r| >= 0.2|B|`. Any other point uses the general arc-length
+  `Trace`.
+- `AmbientModel::SpeedBoundMPerS()` is a conservative bound on `|U|`. srcSEP
+  uses it only to exclude line segments that cannot reach the front.
+- Earlier profiles keep their historical evaluator bits.
+
+**Material qualification.** srcSEP maps v1.3 events to the material profile
+`reduced-pfss-open-parker-v1`
+(`SEP::Background::Material::Profile::ReducedPfssOpenParkerV1`). It admits the
+Parker exterior and `CoronalOpen`. Closed tubes, the sheath, ejecta and any
+downstream volume remain unqualified.
+
+**Tests.** `make shock-front-test` runs `test_shock_front_sphere`, HSP00–HSP12:
+- HSP01–HSP05: PCHIP against SWCME `data_driven`, analytic derivatives,
+  admission, exact sphere mesh and front membership.
+- HSP06–HSP08: wind fit and decoupling, linear calibration, legacy closures.
+- HSP09: along one traced open tube, `u' || B`, `rho u/|B|` and the Bernoulli
+  constant are constant to about 2e-14, the flow is subsonic, and B/U/rho are
+  continuous at `Rss` to about 1e-8.
+- HSP10: the rejection cases.
+- HSP11: recurrence against per-term PFSS evaluation.
+- HSP12: the radius-parametrized foot against the general trace (`K` agrees to
+  6.5e-9 with 2e7 m steps).

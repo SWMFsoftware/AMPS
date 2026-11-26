@@ -70,6 +70,29 @@ test_Beta_compile:
 """
 
 
+# a tree with a nightly test (which the long routine must not run) and a Tier=long test of Makefile.test.long
+LONG_MAKEFILE_TEST = """test_manifest:
+\t@echo "Alpha|pic-field-solver|||amps"
+test_Alpha_compile:
+\t@echo "the nightly test must not run in the long routine"; exit 1
+"""
+LONG_MAKEFILE_TEST_LONG = """TESTMPILAUNCH?=mpirun -np
+TESTZeta-longRANKS=4
+test_long_manifest:
+\t@echo "Zeta-long|sep-long|||amps"
+test_Zeta-long_compile:
+\t@echo "test_Zeta-long_compile..." > test_Zeta-long.diff
+\t@echo "test_Zeta-long_compile... done" >> test_Zeta-long.diff
+test_Zeta-long_rundir:
+\t@echo "test_Zeta-long_rundir... done" >> test_Zeta-long.diff
+test_Zeta-long_run:
+\t@echo "launch: $(TESTMPILAUNCH) $(TESTZeta-longRANKS) ./amps, run limit $(RUNLIMIT)"
+\t@echo "test_Zeta-long_run... done" >> test_Zeta-long.diff
+test_Zeta-long_check:
+\t@: > test_Zeta-long.diff
+"""
+
+
 def git(*args, cwd):
     subprocess.run(["git"] + list(args), cwd=str(cwd), check=True, env=GIT_ENV, stdout=subprocess.DEVNULL,
                    stderr=subprocess.DEVNULL)
@@ -360,6 +383,57 @@ class Night_(unittest.TestCase):
             index = (night / "index.html").read_text()
             self.assertIn("Runners", index)
             self.assertIn('href="logs/good/tests/t2.log"', index)
+
+
+@unittest.skipUnless(subprocess.run(["which", "make"], stdout=subprocess.DEVNULL).returncode == 0, "needs make")
+class LongRoutine(unittest.TestCase):
+    """amps-nightly run --routine long: runners.long.json with the machine's "routines" values, its own night folder,
+    run id and record, and it leaves the nightly's workspaces alone."""
+
+    def test_long_night(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            amps = repository(tmp / "src" / "AMPS", {
+                "Makefile": "include Makefile.test\ninclude Makefile.test.long\n", "Makefile.test": LONG_MAKEFILE_TEST,
+                "Makefile.test.long": LONG_MAKEFILE_TEST_LONG, "Config.pl": "#!/bin/sh\necho configured > .configured\n"})
+            routine = Routine({"schema_version": 1, "checkout": {"repository": amps, "branch": "master"},
+                               "runners": [{"id": "legacy-long", "kind": "makefile", "time_limit_min": 60,
+                                            "manifest_target": "test_long_manifest"}]}, "long")
+            machine = parse_machine({
+                "schema_version": 1, "machine": "box", "workdir": str(tmp / "work"), "upload": str(tmp / "incoming"),
+                "python": sys.executable, "lanes": 4, "cores": 2, "make_vars": {"RUNLIMIT": "nightly"},
+                "configs": [{"config": "gnu", "config_pl": ["-install"]}],
+                "routines": {"long": {"start": "Sat 10:00", "lanes": 1, "make_vars": {"TESTMPILAUNCH": "launcher -n",
+                                                                                       "RUNLIMIT": "long"}}}},
+                Path("box.json"))
+            work = tmp / "work"
+            for kept in (work / "GNU" / "legacy", work / "nights" / "20261127-2000"):     # the nightly's
+                kept.mkdir(parents=True)
+            (work / "GNU" / "legacy" / ".amps-nightly").write_text("the nightly's failed workspace\n")
+            (work / "nights" / "20261121-1000-long").mkdir()                              # the last long run's
+            lines = []
+            rundir, = Night(machine.for_routine("long"), routine, Registry.load(), machine.configs,
+                            echo=lines.append).run()
+            run, rows = read_run_dir(rundir)
+            self.assertTrue(rundir.parent.parent.name.endswith("-long"))
+            self.assertEqual(run["routine"], "long")
+            self.assertTrue(run["run_id"].endswith("-box-gnu-long"))
+            self.assertEqual([(r["test"], r["family"], r["status"]) for r in rows], [("Zeta-long", "sep-long", "PASS")])
+            log = (rundir / "logs" / "legacy-long" / "tests" / "Zeta-long.log").read_text()
+            self.assertIn("launch: launcher -n 4 ./amps, run limit long", log)           # the routine's make_vars
+            self.assertTrue((work / "GNU" / "legacy" / ".amps-nightly").is_file())
+            self.assertTrue((work / "nights" / "20261127-2000").is_dir())
+            self.assertFalse((work / "nights" / "20261121-1000-long").exists())
+            self.assertIn("(routine long, runners.long.json)", lines[0])
+
+            transfer.pack(rundir, work / "outbox")
+            transfer.send(transfer.unsent(work / "outbox")[0], str(tmp / "incoming"))
+            with Store(tmp / "results.db") as st:
+                accepted, rejected = ingest(tmp, tmp / "www", st)
+                self.assertEqual((accepted, rejected), ([run["run_id"]], []))
+                self.assertEqual(st.latest_runs("box-gnu", 1, "long")[0]["routine"], "long")
+                self.assertEqual(st.latest_runs("box-gnu", 1), [])                       # no nightly run
+            self.assertEqual(len(list((tmp / "www" / "archive").glob("*/*/*/box-gnu-long"))), 1)
 
 
 class Transfer(unittest.TestCase):

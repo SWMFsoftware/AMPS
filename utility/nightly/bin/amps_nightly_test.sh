@@ -35,12 +35,30 @@
 #   BRANCH=master                      the AMPS branch that is downloaded and tested
 #   UPDATE_SITE=no                     yes on the results server (passion)
 #   PYTHON=python3                     the Python (3.8 or newer) that runs amps-nightly
-#   rarely needed: REPOSITORY, SWMF_DATA_REPOSITORY, SWMF_DATA_BRANCH, KEEP_LOG_DAYS (defaults below)
+#   rarely needed: REPOSITORY, SWMF_DATA_REPOSITORY, SWMF_DATA_BRANCH, KEEP_LOG_DAYS, LOCK_WAIT_H (defaults below)
 # Arguments are passed on to nightly_run.sh, e.g. 'amps_nightly_test.sh --only moon --no-upload' for a trial.
 # Log of each night: $AMPSTEST/logs/nightly-YYYYMMDD-HHMM.log, kept KEEP_LOG_DAYS days.
+#
+# Routines: '--routine <name>' (cron passes '--routine long' on the crontab line of the long routine) runs that
+# routine (runners.<name>.json) instead of the nightly; it goes on to nightly_run.sh like every argument. Only one
+# routine runs at a time on a machine: they share the lock. The nightly gives up when the lock is taken, as before;
+# another routine waits for it up to LOCK_WAIT_H hours (default 6), then gives up. Its log is
+# $AMPSTEST/logs/<name>-YYYYMMDD-HHMM.log.
 
 here=$(cd "$(dirname "$0")" && pwd)
 self="$here/$(basename "$0")"
+routine=nightly
+previous=""
+for arg in "$@"; do
+    case $previous in --routine) routine=$arg ;; esac
+    case $arg in --routine=*) routine=${arg#--routine=} ;; esac
+    previous=$arg
+done
+case $routine in
+    ""|*[!a-z0-9-]*|[!a-z]*)
+        echo "amps_nightly_test.sh: --routine '$routine' must be a routine name (lower case letters, digits and -)" >&2
+        exit 2 ;;
+esac
 conf=${AMPS_NIGHTLY_CONF:-$here/amps_nightly_test.conf}
 if [ ! -r "$conf" ]; then
     echo "amps_nightly_test.sh: settings file $conf not found; run 'amps-nightly install'" >&2
@@ -59,33 +77,59 @@ REPOSITORY=${REPOSITORY:-git@github.com:SWMFsoftware/AMPS.git}
 SWMF_DATA_REPOSITORY=${SWMF_DATA_REPOSITORY:-git@github.com:SWMFsoftware/SWMF_data.git}
 SWMF_DATA_BRANCH=${SWMF_DATA_BRANCH:-master}
 KEEP_LOG_DAYS=${KEEP_LOG_DAYS:-60}
+LOCK_WAIT_H=${LOCK_WAIT_H:-6}
 PATH=/usr/local/bin:/usr/bin:/bin:$PATH          # cron's PATH is only /usr/bin:/bin
 AMPS_NIGHTLY_PYTHON=$PYTHON                     # used by nightly_run.sh, nightly_pack.sh, nightly_update.sh
 export PATH AMPS_NIGHTLY_PYTHON
 
 mkdir -p "$AMPSTEST/logs" "$TESTDIR" || exit 2
-log="$AMPSTEST/logs/nightly-$(date +%Y%m%d-%H%M).log"
+log="$AMPSTEST/logs/$routine-$(date +%Y%m%d-%H%M).log"
 exec >>"$log" 2>&1
 
 say() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 notes=""
 warn() { say "WARNING: $*"; notes="${notes:+$notes; }WARNING: $*"; }
 
-# 1. the lock: flock on descriptor 9, held until this script and the orchestrator have finished
+# 1. the lock: flock on descriptor 9, held until this script and the orchestrator have finished. Every routine
+#    takes the same lock, so two never run at once; a routine other than the nightly waits for it (LOCK_WAIT_H)
 exec 9>>"$AMPSTEST/nightly.lock"
-"$PYTHON" -c 'import fcntl, sys
+if [ "$routine" = nightly ]; then wait_h=0; else wait_h=$LOCK_WAIT_H; fi
+"$PYTHON" -c 'import fcntl, signal, sys, time
+def give_up(*_):
+    raise TimeoutError
 try:
     fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    sys.exit(0)
 except BlockingIOError:
-    sys.exit(75)'
+    pass
+wait = float(sys.argv[1]) * 3600
+if wait <= 0:
+    sys.exit(75)
+print("{} the lock {} is taken (another routine is running); waiting for it up to {} h".format(
+    time.strftime("%Y-%m-%d %H:%M:%S"), sys.argv[2], sys.argv[1]), flush=True)
+signal.signal(signal.SIGALRM, give_up)
+signal.setitimer(signal.ITIMER_REAL, wait)
+try:
+    fcntl.flock(9, fcntl.LOCK_EX)
+except TimeoutError:
+    sys.exit(75)
+signal.setitimer(signal.ITIMER_REAL, 0)' "$wait_h" "$AMPSTEST/nightly.lock"
 case $? in
     0) ;;
-    75) say "another night is still running on this machine (lock $AMPSTEST/nightly.lock); nothing done"
+    75) if [ "$routine" = nightly ]; then
+            say "another night is still running on this machine (lock $AMPSTEST/nightly.lock); nothing done"
+        else
+            say "the lock $AMPSTEST/nightly.lock was still taken after $LOCK_WAIT_H h (another routine is running); routine $routine not run"
+        fi
         exit 0 ;;
     *)  say "ERROR: cannot take the lock $AMPSTEST/nightly.lock with $PYTHON"
         exit 2 ;;
 esac
-say "AMPS nightly test on $(hostname); settings $conf; script $self"
+if [ "$routine" = nightly ]; then
+    say "AMPS nightly test on $(hostname); settings $conf; script $self"
+else
+    say "AMPS nightly test, routine $routine, on $(hostname); settings $conf; script $self"
+fi
 
 # 2. download AMPS
 tool=$TESTDIR
@@ -164,6 +208,6 @@ if [ "$UPDATE_SITE" = yes ]; then
 else
     say "step 3/3 (nightly_update.sh) runs on the results server, not here (UPDATE_SITE=$UPDATE_SITE)"
 fi
-find "$AMPSTEST/logs" -name 'nightly-*.log' -mtime +"$KEEP_LOG_DAYS" -exec rm -f {} + 2>/dev/null
+find "$AMPSTEST/logs" \( -name 'nightly-*.log' -o -name "$routine-*.log" \) -mtime +"$KEEP_LOG_DAYS" -exec rm -f {} + 2>/dev/null
 say "finished: nightly_run.sh $run_status, nightly_pack.sh $pack_status, nightly_update.sh $update_status"
 [ "$run_status" -eq 0 ] && [ "$pack_status" -eq 0 ] && [ "$update_status" -eq 0 ]

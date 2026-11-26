@@ -736,6 +736,10 @@ int main(int argc,char **argv) {
   runConfiguration.injection.injectionEfficiency=
       swcmeSummary.source_injection_efficiency;
   runConfiguration.reducedParticles=cli_options.reducedParticles;
+  if(!runConfiguration.reducedParticles.enabled&&SEP::Initialization::HasActive()&&
+      (SEP::Initialization::Active().reducedReleaseDistanceM>0||
+       SEP::Initialization::Active().reducedReleaseShockRadiusFraction>0))
+    exit(__LINE__,__FILE__,"source.shock release distances are used only by the reduced net source (--reduced-shock-particles on)");
   if(runConfiguration.reducedParticles.enabled) {
     if(!SEP::Initialization::HasActive())exit(__LINE__,__FILE__,
         "reduced particle transport requires an explicit initialization deck");
@@ -744,10 +748,19 @@ int main(int argc,char **argv) {
     source.minimumEnergyJ=input.sourceMinimumEnergyJ;
     source.maximumEnergyJ=input.sourceMaximumEnergyJ;
     source.releaseFraction=input.sourceNetFraction;
+    // L_ref has one authority: the deck or the command line, never both.
+    if(input.reducedReleaseDistanceM>0||input.reducedReleaseShockRadiusFraction>0) {
+      if(cli_options.reducedParticles.releaseDistanceM>0)exit(__LINE__,__FILE__,
+          "the release distance is given both in source: shock and by --shock-release-distance-m");
+      source.releaseDistanceM=input.reducedReleaseDistanceM;
+      source.releaseDistanceShockRadiusFraction=input.reducedReleaseShockRadiusFraction;
+    }
     // Preserve the maintained defaults < input < CLI precedence for the
     // computational proposal count. Physical rate remains independent of N.
     source.samplesPerStep=runConfiguration.injection.macroparticlesPerEvent;
     source.campaignSeed=SEP::Transport::PICAdapter::CampaignRandomSeed;
+    source.logUniformMomentumSampling=cli_options.shockEnergySamplingProvided&&
+        cli_options.shockLogUniformEnergySampling;
     const auto ready=SEP::ReducedParticles::Validate(source);
     if(!ready.ok())exit(__LINE__,__FILE__,ready.message.c_str());
   }

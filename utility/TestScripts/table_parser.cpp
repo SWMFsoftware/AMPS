@@ -181,6 +181,17 @@ string test_check_app="\t@echo \"test_<APP>_check...\" >> test_<APP>$(TEST<APP>-
     "\t@ls -l test_<APP>$(TEST<APP>-REF).diff\n" 
     "\t@echo Test test_<APP> has finished: `date`\n\n"; 
 
+//Long tier (Tier=long blocks, written to Makefile.test.long): the default run stage launches the
+//block's fixed rank count Ranks= through $(TESTMPILAUNCH), and the default check stage also fails
+//when the run used another rank count, because a reference holds for one rank count only.
+string test_run_long_app="\t@echo \"test_<APP>_run...\" >> test_<APP>$(TEST<APP>-REF).diff\n" 
+    "\t@echo Test test_<APP> has started: `date`\n" 
+    "\tcd $(TEST<APP>DIR); $(TESTMPILAUNCH) $(TEST<APP>RANKS) ./amps\n" 
+    "\t@echo \"test_<APP>_run... done\" >> test_<APP>$(TEST<APP>-REF).diff\n"; 
+
+string test_check_long_ranks="\t@N=`ls -d $(TEST<APP>DIR)/PT/thread* 2>/dev/null |wc -l |tr -d ' '`; \\\n" 
+    "\t[ \"$$N\" = \"$(TEST<APP>RANKS)\" ] || echo \"test_<APP>: the run used $$N MPI ranks, the block declares Ranks=$(TEST<APP>RANKS)\" >> test_<APP>$(TEST<APP>-REF).diff\n"; 
+
 
 
 const int _type_amps=0;
@@ -192,6 +203,8 @@ public:
   string PathName,Name,Compile,Rundir,Run,Check,Keys;
   string Ref,CustomRefSolutionPath,Outs,ExeptionCode;
   string Family; //test family shown on the nightly report page (utility/nightly/families.json)
+  string Tier;   //"nightly" (default: Makefile.test) or "long" (Makefile.test.long, run periodically)
+  int Ranks;     //Tier=long: the fixed number of MPI ranks of the test (its references are for that count)
   int type;
 
 
@@ -199,6 +212,7 @@ public:
     Time=0.0; 
     Ref="",type=_type_amps;
     Family="";
+    Tier="nightly",Ranks=0;
 
     PathName="",Name="",Compile="",Rundir="",Run="",Check="",Keys="";
     CustomRefSolutionPath="",Outs="",ExeptionCode="";
@@ -209,6 +223,7 @@ public:
 
 list<cTest> TestsSWMF;
 list<cTest> TestsAMPS; 
+list<cTest> TestsLong; //Tier=long blocks of both types, in Table order
 
 void ParseTable() { 
   //read Table 
@@ -244,7 +259,20 @@ void ParseTable() {
       if (line=="<#") {
         //test data is compeleted
         if (status==_test) { 
-          if (test.type==_type_amps) {
+          if ((test.Tier=="long")&&(test.Ranks<=0)) {
+            cout << "Error: test " << test.Name << " has Tier=long but no positive Ranks= (line " << line_cnt << ")" << endl;
+            exit(1);
+          }
+
+          if ((test.Tier!="long")&&(test.Ranks>0)) {
+            cout << "Error: test " << test.Name << " sets Ranks= without Tier=long (line " << line_cnt << ")" << endl;
+            exit(1);
+          }
+
+          if (test.Tier=="long") {
+            TestsLong.push_back(test);
+          }
+          else if (test.type==_type_amps) {
             TestsAMPS.push_back(test);  
           }
           else {
@@ -355,6 +383,32 @@ void ParseTable() {
             test.Family=line;
           }
 
+          //================================= Tier ====================
+          //nightly (default): Makefile.test; long: Makefile.test.long, which the nightly never runs
+          else if (keyword=="Tier") {
+            trim(line);
+
+            if ((line!="nightly")&&(line!="long")) {
+              cout << "Error: Tier=" << line << " is not nightly or long (line " << line_cnt << ")" << endl;
+              exit(1);
+            }
+
+            test.Tier=line;
+          }
+
+          //================================= Ranks ===================
+          //the fixed MPI rank count of a Tier=long test
+          else if (keyword=="Ranks") {
+            trim(line);
+
+            if ((line.empty())||(line.find_first_not_of("0123456789")!=std::string::npos)||(std::stoi(line)<=0)) {
+              cout << "Error: Ranks=" << line << " is not a positive integer (line " << line_cnt << ")" << endl;
+              exit(1);
+            }
+
+            test.Ranks=std::stoi(line);
+          }
+
           //================================= Time ====================
           else if (keyword=="Time") {
             test.Time=std::stod (line,&sz); 
@@ -442,6 +496,7 @@ const int _split_time_not=1;
 
 void PrintMakefile(list<cTest>::iterator  Test, ofstream& fTestLine) {
   string res,t; 
+  bool long_tier=(Test->Tier=="long");
 
   //test_<APP>:
   res="\ntest_" + Test->Name + ":\n"; 
@@ -480,7 +535,7 @@ void PrintMakefile(list<cTest>::iterator  Test, ofstream& fTestLine) {
   res+="\ntest_" + Test->Name + "_run:\n"; 
 
   if (Test->Run=="") {
-    t=test_run_app;
+    t=(long_tier==true) ? test_run_long_app : test_run_app;
     FindAndReplaceAll(t,"<APP>",Test->Name);
     res+=t;
   }
@@ -493,6 +548,12 @@ void PrintMakefile(list<cTest>::iterator  Test, ofstream& fTestLine) {
 
   if (Test->Check=="") {
     t=test_check_app;
+
+    if (long_tier==true) {
+      //verify the rank count before the listing and the final message of the default check
+      FindAndReplaceFirst(t,"\t@ls -l test_<APP>",test_check_long_ranks+"\t@ls -l test_<APP>");
+    }
+
     FindAndReplaceAll(t,"<APP>",Test->Name);
     res+=t;
   }
@@ -692,6 +753,60 @@ int main(int argc, char** argv) {
   for (it=TestsAMPS.begin();it!=TestsAMPS.end();it++) PrintMakefile(it,fMakefile);
 
   fMakefile.close();
+
+  //=============== Makefile.test.long: the Tier=long tests =================================
+  //Makefile.def.amps includes it after Makefile.test, so the stage targets of a long test run from the
+  //AMPS root with the usual variables (SCRIPTDIR, TESTCOMPILEJOBS, HOSTNAME). Nothing in Makefile.test
+  //(test_all, test_run, test_manifest) names a long test, so the nightly can never start one; the long
+  //routine of utility/nightly (runners.long.json) takes its list from 'make -s test_long_manifest'.
+  ofstream fLong("Makefile.test.long");
+
+  fLong << "# Makefile for the AMPS long (periodic) tests: the MakefileTest/Table blocks with Tier=long.\n";
+  fLong << "# Generated by utility/TestScripts/table_parser.cpp and included by Makefile.def.amps; do not edit.\n";
+  fLong << "# The nightly never runs these tests (they are not in Makefile.test); the long routine of utility/nightly does.\n";
+  fLong << "# By hand: make test_<NAME> [TESTMPILAUNCH='mpiexec -n']\n\n";
+  fLong << "# MPI launcher of the long tests; each test appends its fixed rank count TEST<NAME>RANKS (Ranks= of its block)\n";
+  fLong << "TESTMPILAUNCH?=mpirun -np\n\n";
+
+  for (it=TestsLong.begin();it!=TestsLong.end();it++) {
+    t=makefile_header_app_base;
+
+    FindAndReplaceAll(t,"<APP>",it->Name);
+    FindAndReplaceAll(t,"<APPFAMILY>",it->Family);
+    FindAndReplaceAll(t,"<APPKEYS>",it->Keys);
+    FindAndReplaceAll(t,"<APPCUSTOMREFSOLUTIONPATHS>",it->CustomRefSolutionPath);
+    FindAndReplaceAll(t,"<APPOUTS>",(it->Outs=="") ? "test_"+it->Name : it->Outs);
+    FindAndReplaceAll(t,"<APPREF>",it->Ref);
+    FindAndReplaceAll(t,"<APPEXEPTIONCODE>",it->ExeptionCode);
+
+    fLong << t << "TEST" << it->Name << "RANKS=" << it->Ranks << "\n" << endl;
+  }
+
+  //each aggregate target has a recipe even without long tests, so make prints nothing else
+  fLong << "\ntest_long_help:\n\t@echo \"    test_long_all\t\t(run all long tests, each on its own Ranks= with $(TESTMPILAUNCH))\"\n";
+
+  for (it=TestsLong.begin();it!=TestsLong.end();it++) {
+    fLong << "\t@echo \"    test_" << it->Name << "\t\t(Ranks=" << it->Ranks << ")\"\n";
+  }
+
+  //one line per long test selected for this host, in the format of test_manifest:
+  //name|family|reference index|exception code|type
+  fLong << "\ntest_long_manifest:\n\t@:\n";
+
+  for (it=TestsLong.begin();it!=TestsLong.end();it++) {
+    fLong << "\t@echo \"" + it->Name + "|$(TEST" + it->Name + "FAMILY)|$(TEST" + it->Name + "-REF)|$(TEST" + it->Name + "-EXEPTIONCODE)|" + ((it->type==_type_amps) ? "amps" : "swmf") + "\"\n";
+  }
+
+  //unlike test_all, remove only the long tests' own result files
+  fLong << "\ntest_long_all:\n\t@:\n";
+
+  for (it=TestsLong.begin();it!=TestsLong.end();it++) {
+    fLong << "ifneq ($(TEST" + it->Name + "-EXEPTIONCODE),SKIP)\n\t-@rm -f test_" + it->Name + "$(TEST" + it->Name + "-REF).diff\n\t-@($(MAKE) test_" + it->Name + ")\nendif\n";
+  }
+
+  for (it=TestsLong.begin();it!=TestsLong.end();it++) PrintMakefile(it,fLong);
+
+  fLong.close();
 
   return 0;
 }

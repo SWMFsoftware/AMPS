@@ -363,6 +363,18 @@ Transport::Status Apply(const std::string& section, const std::string& key,
     return real(&c->parkerLengthM);
   } else if (field == "mesh.field_line.point_count") {
     return count(&c->parkerPointCount);
+  } else if (field == "mesh.field_line.first_segment_length_m") {
+    return real(&c->parkerFirstSegmentLengthM);
+  } else if (field == "mesh.field_line.anchor_x_m") {
+    return real(&c->parkerAnchorM.x);
+  } else if (field == "mesh.field_line.anchor_y_m") {
+    return real(&c->parkerAnchorM.y);
+  } else if (field == "mesh.field_line.anchor_z_m") {
+    return real(&c->parkerAnchorM.z);
+  } else if (field == "source.shock.release_distance_m") {
+    return real(&c->reducedReleaseDistanceM);
+  } else if (field == "source.shock.release_distance_shock_radius_fraction") {
+    return real(&c->reducedReleaseShockRadiusFraction);
   } else if (field == "mesh.domain.inner_radius_m") {
     return real(&c->innerRadiusM);
   } else if (field == "mesh.domain.outer_radius_m") {
@@ -548,6 +560,11 @@ Transport::Status ValidateParkerLine(const Configuration& c) {
   // exactly its physical geometry rather than manufacturing those unrelated
   // fields to satisfy the complete runtime parser's gate. This one validator
   // is also called by Validate, so the two public entry paths cannot drift.
+  if(c.parkerAnchorSpecified) {
+    const Vec3 anchor=Subtract(c.parkerAnchorM,c.parkerOriginM);
+    if(!Finite(c.parkerAnchorM)||!(Norm(anchor)>c.innerRadiusM))
+      return Error("mesh.field_line.anchor_{x,y,z}_m must be finite and outside mesh.domain.inner_radius_m");
+  }
   if(!Finite(c.parkerOriginM)||!Finite(c.parkerInitialPointM)||
       !std::isfinite(c.parkerLengthM)||!std::isfinite(c.solarWindSpeedMPerS)||
       !std::isfinite(c.solarRotationRateRadPerS)||!std::isfinite(c.innerRadiusM))
@@ -556,6 +573,13 @@ Transport::Status ValidateParkerLine(const Configuration& c) {
       c.parkerLengthM<=0||c.solarWindSpeedMPerS<=0||
       c.solarRotationRateRadPerS<0||c.innerRadiusM<=0)
     return Error("Parker geometry point count, length, wind, rotation or source radius is outside its supported range");
+  // Geometric spacing needs a growth ratio q>1: the first arc must be shorter
+  // than the uniform arc. Equality is the uniform mesh and is spelled by
+  // omitting the key, so it is not accepted as a second spelling.
+  if(!std::isfinite(c.parkerFirstSegmentLengthM)||c.parkerFirstSegmentLengthM<0||
+      (c.parkerFirstSegmentLengthM>0&&!(c.parkerFirstSegmentLengthM<
+          c.parkerLengthM/static_cast<double>(c.parkerPointCount-1))))
+    return Error("mesh.field_line.first_segment_length_m must be positive and shorter than length_m/(point_count-1)");
   const Vec3 relative=Subtract(c.parkerInitialPointM,c.parkerOriginM);
   const double sourceRadius=Norm(relative);
   if(!Finite(relative)||!std::isfinite(sourceRadius)||sourceRadius<=0)
@@ -836,7 +860,18 @@ static Transport::Status ParseDocument(const AMPS::Input::Document& document,
     if ((rule.support & Layout::kSrcSep) == 0) continue;
     const std::string block = rule.block;
     const std::string qualified = block + "." + rule.key;
-    if (block == "observer.*" || qualified == "run.maximum_time_steps") continue;
+    // Optional keys; anchor mode replaces initial_{x,y,z}_m (checked below).
+    if (block == "observer.*" || qualified == "run.maximum_time_steps" ||
+        qualified == "mesh.field_line.first_segment_length_m" ||
+        qualified == "mesh.field_line.anchor_x_m" ||
+        qualified == "mesh.field_line.anchor_y_m" ||
+        qualified == "mesh.field_line.anchor_z_m" ||
+        qualified == "source.shock.release_distance_m" ||
+        qualified == "source.shock.release_distance_shock_radius_fraction") continue;
+    if (assigned.count("mesh.field_line.anchor_x_m") &&
+        (qualified == "mesh.field_line.initial_x_m" ||
+         qualified == "mesh.field_line.initial_y_m" ||
+         qualified == "mesh.field_line.initial_z_m")) continue;
     if (assigned.count(qualified) == 0)
       return Error("missing required key '" + qualified + "'");
   }
@@ -945,6 +980,44 @@ static Transport::Status ParseDocument(const AMPS::Input::Document& document,
     candidate.solarRotationRateRadPerS = swcme::constants::SOLAR_ROTATION_RAD_S;
   }
 
+  // ---- Field-line anchor (reduced material line) ----------------------------
+  // One authority for the line's base: either the explicit inner-sphere point
+  // or an anchor whose field line srcSEP traces sunward at run time.
+  {
+    const char* anchorKeys[] = {"mesh.field_line.anchor_x_m",
+        "mesh.field_line.anchor_y_m", "mesh.field_line.anchor_z_m"};
+    const char* initialKeys[] = {"mesh.field_line.initial_x_m",
+        "mesh.field_line.initial_y_m", "mesh.field_line.initial_z_m"};
+    int anchors = 0, initials = 0;
+    for (const char* key : anchorKeys) anchors += assigned.count(key) ? 1 : 0;
+    for (const char* key : initialKeys) initials += assigned.count(key) ? 1 : 0;
+    if (anchors != 0 && anchors != 3)
+      return Error("mesh.field_line.anchor_x_m, anchor_y_m and anchor_z_m must be given together");
+    if (anchors == 3 && initials != 0)
+      return Error("mesh.field_line.anchor_{x,y,z}_m replaces initial_{x,y,z}_m; give one of them");
+    if (anchors == 3) {
+      candidate.parkerAnchorSpecified = true;
+      // Seed of the analytic mesh-refinement tube only (never the line).
+      const Vec3 relative = Subtract(candidate.parkerAnchorM, candidate.parkerOriginM);
+      const double radius = Norm(relative);
+      if (Finite(relative) && radius > 0.0)
+        candidate.parkerInitialPointM = Add(candidate.parkerOriginM,
+            Scale(candidate.innerRadiusM / radius, relative));
+    }
+    if (assigned.count("source.shock.release_distance_m") &&
+        !(std::isfinite(candidate.reducedReleaseDistanceM) &&
+          candidate.reducedReleaseDistanceM > 0.0))
+      return Error("source.shock.release_distance_m must be a finite positive length [m]");
+    if (assigned.count("source.shock.release_distance_shock_radius_fraction") &&
+        !(std::isfinite(candidate.reducedReleaseShockRadiusFraction) &&
+          candidate.reducedReleaseShockRadiusFraction > 0.0 &&
+          candidate.reducedReleaseShockRadiusFraction <= 10.0))
+      return Error("source.shock.release_distance_shock_radius_fraction must lie in (0,10]");
+    if (assigned.count("source.shock.release_distance_m") &&
+        assigned.count("source.shock.release_distance_shock_radius_fraction"))
+      return Error("give source.shock.release_distance_m or release_distance_shock_radius_fraction, not both");
+  }
+
   const Transport::Status valid = Validate(candidate);
   if (!valid.ok()) return valid;
   *result = candidate;
@@ -1033,7 +1106,21 @@ std::string Fingerprint(const Configuration& c) {
       << c.parkerOriginM.y << ',' << c.parkerOriginM.z << ";initial="
       << c.parkerInitialPointM.x << ',' << c.parkerInitialPointM.y << ','
       << c.parkerInitialPointM.z << ";length=" << c.parkerLengthM
-      << ";points=" << c.parkerPointCount << ";wind=" << c.solarWindSpeedMPerS
+      << ";points=" << c.parkerPointCount
+      << (c.parkerFirstSegmentLengthM > 0 ? ";first_segment=" +
+          [&]{std::ostringstream o;o<<std::setprecision(17)<<c.parkerFirstSegmentLengthM;return o.str();}() :
+          std::string())
+      << (c.parkerAnchorSpecified ? ";anchor=" +
+          [&]{std::ostringstream o;o<<std::setprecision(17)<<c.parkerAnchorM.x<<','
+              <<c.parkerAnchorM.y<<','<<c.parkerAnchorM.z;return o.str();}() :
+          std::string())
+      << (c.reducedReleaseDistanceM > 0 ? ";release_distance=" +
+          [&]{std::ostringstream o;o<<std::setprecision(17)<<c.reducedReleaseDistanceM;return o.str();}() :
+          std::string())
+      << (c.reducedReleaseShockRadiusFraction > 0 ? ";release_shock_radius_fraction=" +
+          [&]{std::ostringstream o;o<<std::setprecision(17)<<c.reducedReleaseShockRadiusFraction;return o.str();}() :
+          std::string())
+      << ";wind=" << c.solarWindSpeedMPerS
       << ";omega=" << c.solarRotationRateRadPerS << ";inner=" << c.innerRadiusM
       << ";outer=" << c.outerRadiusM << ";global=" << c.globalCellSizeM
       << ";minimum=" << c.minimumCellSizeM << ";level=" << c.maximumMeshLevel

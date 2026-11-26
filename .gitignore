@@ -17,6 +17,7 @@ table_parser
 .last_input_info
 Makefile.local
 Makefile.test
+Makefile.test.long
 Makefile.conf
 Makefile.def
 Makefile.RULES

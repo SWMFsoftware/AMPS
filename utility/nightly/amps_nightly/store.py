@@ -7,7 +7,11 @@ Server layout (root: the server_root of the server's machine file, /data/vtenish
     <root>/rejected/<name>-<time>/           uploads that failed validation, with REJECTED.txt
     <root>/results.db                        every run and every test result, kept forever
     <www>/archive/YYYY/MM/DD/<column>/        accepted runs: results, logs and the night summary index.html
+                                              (a run of a routine other than the nightly: <column>-<routine>/)
     <www>/index.html, <www>/family/...        report pages (see report.py)
+
+Every run belongs to a routine: "nightly" (runners.json), or another (runners.<routine>.json, e.g. "long").
+A results.db made before routines existed gets the column, and its runs are all nightly.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .records import DONE_FILE, RecordError, parse_time, read_run_dir
+from .records import DONE_FILE, NIGHTLY, RecordError, parse_time, read_run_dir
 from .transfer import SUFFIX, TransferError, unpack
 
 _SCHEMA = """
@@ -39,7 +43,8 @@ CREATE TABLE IF NOT EXISTS runs (
     producer        TEXT NOT NULL DEFAULT '',
     notes           TEXT NOT NULL DEFAULT '',
     path            TEXT NOT NULL DEFAULT '',
-    ingested        TEXT NOT NULL
+    ingested        TEXT NOT NULL,
+    routine         TEXT NOT NULL DEFAULT 'nightly'
 );
 CREATE TABLE IF NOT EXISTS results (
     run_id       TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -67,7 +72,12 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript(_SCHEMA)
-        self.db.execute("PRAGMA user_version = 1")
+        if "routine" not in {row[1] for row in self.db.execute("PRAGMA table_info(runs)")}:
+            # a store from before the routines: every run in it is a nightly run
+            with self.db:
+                self.db.execute("ALTER TABLE runs ADD COLUMN routine TEXT NOT NULL DEFAULT 'nightly'")
+        self.db.execute("CREATE INDEX IF NOT EXISTS runs_by_routine ON runs (column_id, routine, finished)")
+        self.db.execute("PRAGMA user_version = 2")
 
     def close(self) -> None:
         self.db.close()
@@ -91,11 +101,11 @@ class Store:
         with self.db:
             self.db.execute(
                 "INSERT INTO runs (run_id, column_id, machine, config, compiler, toolchain, branch, commit_sha,"
-                " commit_inferred, started, finished, complete, producer, notes, path, ingested)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " commit_inferred, started, finished, complete, producer, notes, path, ingested, routine)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (run["run_id"], run["column"], run["machine"], run["config"], run["compiler"], run["toolchain"],
                  run["branch"], run["commit"], int(run["commit_inferred"]), run["started"], run["finished"],
-                 int(run["complete"]), run["producer"], run["notes"], path, ingested))
+                 int(run["complete"]), run["producer"], run["notes"], path, ingested, run.get("routine", NIGHTLY)))
             self.db.executemany(
                 "INSERT INTO results (run_id, family, test, status, stage, reason, source, duration_s,"
                 " cases_total, cases_failed, log) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -103,17 +113,40 @@ class Store:
                   r["duration_s"], r["cases_total"], r["cases_failed"], r["log"]) for r in results])
 
     # ------------------------------------------------------------------ reads
-    def columns(self) -> List[Dict[str, Any]]:
-        """One row per column with its newest run time."""
+    def columns(self, routine: str = NIGHTLY) -> List[Dict[str, Any]]:
+        """One row per column with a run of this routine, with its newest run time."""
         rows = self.db.execute(
             "SELECT column_id, machine, config, MAX(finished) AS last_finished, COUNT(*) AS runs"
-            " FROM runs GROUP BY column_id ORDER BY machine, config").fetchall()
+            " FROM runs WHERE routine = ? GROUP BY column_id ORDER BY machine, config", (routine,)).fetchall()
         return [dict(r) for r in rows]
 
-    def latest_runs(self, column: str, count: int = 2) -> List[Dict[str, Any]]:
-        rows = self.db.execute("SELECT * FROM runs WHERE column_id = ? ORDER BY finished DESC LIMIT ?",
-                               (column, count)).fetchall()
+    def routines(self) -> List[str]:
+        """The routines other than the nightly that have runs, by name."""
+        return [r[0] for r in self.db.execute(
+            "SELECT DISTINCT routine FROM runs WHERE routine != ? ORDER BY routine", (NIGHTLY,))]
+
+    def latest_runs(self, column: str, count: int = 2, routine: str = NIGHTLY) -> List[Dict[str, Any]]:
+        rows = self.db.execute("SELECT * FROM runs WHERE column_id = ? AND routine = ? ORDER BY finished DESC LIMIT ?",
+                               (column, routine, count)).fetchall()
         return [dict(r) for r in rows]
+
+    def latest_results(self, column: str, routine: str, since: str = "") -> Dict[Tuple[str, str], Dict[str, Any]]:
+        """(family, test) -> its newest result in this column among the runs of `routine` that finished at `since`
+        (UTC text) or later, with that run under "run": run_id, finished, commit_sha, commit_inferred, path.
+
+        A periodic routine need not run every test each time (a run of a few tests sent by hand), so its report
+        shows each test's own newest result."""
+        rows = self.db.execute(
+            "SELECT r.*, u.finished, u.commit_sha, u.commit_inferred, u.path FROM results r"
+            " JOIN runs u ON u.run_id = r.run_id WHERE u.column_id = ? AND u.routine = ? AND u.finished >= ?"
+            " ORDER BY u.finished", (column, routine, since)).fetchall()
+        latest: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for row in rows:
+            row = dict(row)
+            row["run"] = {k: row.pop(k) for k in ("finished", "commit_sha", "commit_inferred", "path")}
+            row["run"]["run_id"] = row["run_id"]
+            latest[(row["family"], row["test"])] = row
+        return latest
 
     def results(self, run_id: str) -> List[Dict[str, Any]]:
         rows = self.db.execute("SELECT * FROM results WHERE run_id = ? ORDER BY family, test", (run_id,)).fetchall()
@@ -131,12 +164,13 @@ class Store:
             counts.setdefault(r["run_id"], {})[r["status"]] = r["n"]
         return counts
 
-    def last_passes(self, column: str) -> Dict[Tuple[str, str], Dict[str, Any]]:
-        """(family, test) -> newest PASS in this column: run_id, finished, commit_sha, commit_inferred."""
+    def last_passes(self, column: str, routine: str = NIGHTLY) -> Dict[Tuple[str, str], Dict[str, Any]]:
+        """(family, test) -> newest PASS in this column and routine: run_id, finished, commit_sha, commit_inferred."""
         rows = self.db.execute(
             "SELECT r.family, r.test, u.run_id, u.finished, u.commit_sha, u.commit_inferred"
             " FROM results r JOIN runs u ON u.run_id = r.run_id"
-            " WHERE u.column_id = ? AND r.status = 'PASS' ORDER BY u.finished", (column,)).fetchall()
+            " WHERE u.column_id = ? AND u.routine = ? AND r.status = 'PASS' ORDER BY u.finished",
+            (column, routine)).fetchall()
         return {(r["family"], r["test"]): dict(r) for r in rows}
 
 
@@ -150,11 +184,14 @@ def night_of(run: Dict[str, Any]) -> str:
 
 def archive_path(www: Path, run: Dict[str, Any]) -> Path:
     """archive/YYYY/MM/DD/<column>, like the legacy AMPS_TEST_RESULTS/YYYY/MM/DD/<folder>; a second run of
-    the same column on the same night gets <column>.2, and so on."""
+    the same column on the same night gets <column>.2, and so on. A run of another routine than the nightly
+    goes to <column>-<routine> (archive/2026/11/28/passion-gnu-long)."""
     base = Path("archive") / night_of(run).replace("-", "/")
-    relative, number = base / run["column"], 2
+    routine = run.get("routine") or NIGHTLY
+    folder = run["column"] if routine == NIGHTLY else "{}-{}".format(run["column"], routine)
+    relative, number = base / folder, 2
     while (Path(www) / relative).exists():
-        relative, number = base / "{}.{}".format(run["column"], number), number + 1
+        relative, number = base / "{}.{}".format(folder, number), number + 1
     return relative
 
 

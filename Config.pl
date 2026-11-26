@@ -58,7 +58,7 @@ if (! -e "Makefile.local") {
   `touch Makefile.local`;
 }
 
-# build AMPS' Makefile.test
+# build AMPS' Makefile.test and Makefile.test.long (MakefileTest/Table blocks with Tier=long)
 foreach (@Arguments) { 
     if(/^-install/) {
       `g++ -std=c++14 utility/TestScripts/table_parser.cpp -o table_parser`;      

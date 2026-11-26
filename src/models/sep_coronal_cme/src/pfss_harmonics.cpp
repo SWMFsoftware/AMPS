@@ -98,6 +98,17 @@ Core::Result<PfssHarmonics> PfssHarmonics::Create(double rs,double rb,
   }
   PfssHarmonics result; result.solarRadiusM_=rs; result.sourceSurfaceRadiusM_=rb;
   result.coefficients_=std::move(selected);
+  for (const auto& c:result.coefficients_) {
+    result.maximumDegree_=std::max(result.maximumDegree_,c.degree);
+    result.coefficientNorm_.push_back(std::sqrt((2.0*c.degree+1.0)/(4.0*Constants::kPi)*
+        (c.order==0 ? 1.0 : 2.0)*FactorialRatio(c.degree-c.order,c.degree+c.order)));
+  }
+  result.degreeA_.assign(result.maximumDegree_+1,0.0);
+  result.degreeRbPower_.assign(result.maximumDegree_+1,0.0);
+  for (int l=1;l<=result.maximumDegree_;++l) {
+    result.degreeA_[l]=-1.0/(l*std::pow(rs,l-1)+(l+1.0)*std::pow(rb,2*l+1)*std::pow(rs,-l-2));
+    result.degreeRbPower_[l]=std::pow(rb,2*l+1);
+  }
   return Core::Result<PfssHarmonics>::Success(std::move(result));
 }
 
@@ -157,6 +168,59 @@ Core::Result<Vec3> PfssHarmonics::EvaluateCartesian(Vec3 x) const {
   if (!field.ok()) return Core::Result<Vec3>::Failure(field.status.code,field.status.message);
   return Core::Result<Vec3>::Success(SphericalToCartesian(safeTheta,phi,
       field.value.brT,field.value.bThetaT,field.value.bPhiT));
+}
+
+Core::Result<Vec3> PfssHarmonics::EvaluateFieldCartesian(Vec3 x) const {
+  constexpr int kMaximum=32;
+  if (maximumDegree_>kMaximum) return EvaluateCartesian(x);
+  const double r=Norm(x);
+  if (!(r>0.0)) return Core::Result<Vec3>::Failure(Core::StatusCode::OutOfDomain,
+      "PFSS Cartesian query cannot be at the origin");
+  const double theta=std::acos(std::max(-1.0,std::min(1.0,x.z/r)));
+  const double phi=std::atan2(x.y,x.x);
+  const double safeTheta=std::max(1.0e-9,std::min(Constants::kPi-1.0e-9,theta));
+  if (!(Finite(r)&&Finite(phi)&&r>=solarRadiusM_&&r<=sourceSurfaceRadiusM_))
+    return Core::Result<Vec3>::Failure(Core::StatusCode::OutOfDomain,
+        "PFSS query is outside its spherical shell");
+  const double ct=std::cos(safeTheta),st=std::sin(safeTheta);
+  if (std::abs(st)<1.0e-10) return Core::Result<Vec3>::Failure(Core::StatusCode::OutOfDomain,
+      "spherical PFSS components are singular at a coordinate pole");
+  const int L=maximumDegree_;
+  double cm[kMaximum+1],sm[kMaximum+1];
+  cm[0]=1.0;sm[0]=0.0;
+  const double cp=std::cos(phi),sp=std::sin(phi);
+  for (int m=1;m<=L;++m){cm[m]=cm[m-1]*cp-sm[m-1]*sp;sm[m]=sm[m-1]*cp+cm[m-1]*sp;}
+  // Unnormalized Condon-Shortley P_l^m(cos theta): the recurrence of
+  // AssociatedLegendre, evaluated once for every (l,m).
+  double p[kMaximum+1][kMaximum+1];
+  const double root=std::sqrt(std::max(0.0,1.0-ct*ct));
+  double pmm=1.0,factor=1.0;
+  for (int m=0;m<=L;++m) {
+    if (m>0){pmm*=-factor*root;factor+=2.0;}
+    p[m][m]=pmm;
+    if (m<L) p[m+1][m]=ct*(2*m+1)*pmm;
+    for (int n=m+2;n<=L;++n) p[n][m]=((2*n-1)*ct*p[n-1][m]-(n+m-1)*p[n-2][m])/(n-m);
+  }
+  double rl[kMaximum+2],rinv[kMaximum+4];
+  rl[0]=1.0;for (int l=1;l<=L+1;++l) rl[l]=rl[l-1]*r;
+  rinv[0]=1.0;const double inverse=1.0/r;for (int l=1;l<=L+3;++l) rinv[l]=rinv[l-1]*inverse;
+  const double safeSin=std::abs(st)>1.0e-12 ? st : (st>=0.0 ? 1.0e-12 : -1.0e-12);
+  double br=0.0,bt=0.0,bp=0.0;
+  for (std::size_t i=0;i<coefficients_.size();++i) {
+    const auto& c=coefficients_[i];
+    const int l=c.degree,m=c.order;
+    const double a=degreeA_[l],rbPower=degreeRbPower_[l];
+    const double f=a*(rl[l]-rbPower*rinv[l+1]);
+    const double fp=a*(l*rl[l-1]+(l+1.0)*rbPower*rinv[l+2]);
+    const double norm=coefficientNorm_[i];
+    const double pl=p[l][m],previous=l>m ? p[l-1][m] : 0.0;
+    const double pTheta=(l*ct*pl-(l+m)*previous)/safeSin;
+    const double radial=-fp*norm*pl,polar=-f/r*norm*pTheta,azimuthal=-f/(r*st)*norm*pl*m;
+    br+=radial*(c.cosineT*cm[m]+c.sineT*sm[m]);
+    bt+=polar*(c.cosineT*cm[m]+c.sineT*sm[m]);
+    bp+=azimuthal*(c.sineT*cm[m]-c.cosineT*sm[m]);
+  }
+  return Core::Result<Vec3>::Success(SphericalToCartesian(safeTheta,phi,br,bt,bp));
 }
 
 Core::Result<FieldLineTopology> PfssHarmonics::Classify(Vec3 start,double step,int maximum) const {

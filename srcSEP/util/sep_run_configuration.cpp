@@ -277,6 +277,17 @@ Transport::Status Deserialize(const std::string& text,FrozenConfiguration* resul
         >>r.maximumEnergyJ>>r.releaseFraction>>r.samplesPerStep>>r.campaignSeed
         >>r.boundaryToleranceM>>r.verificationMonoenergeticEnergyJ)||tag!="REDUCED_PARTICLES_1")
       return Error("reduced particle source checkpoint contract is missing or truncated");
+    // Optional trailing tokens of the same record (Canonical appends them
+    // only when active, so earlier checkpoints stay byte-identical).
+    std::string rest;std::getline(in,rest);std::istringstream extra(rest);
+    for(std::string token;extra>>token;) {
+      if(token=="log-uniform-momentum")r.logUniformMomentumSampling=true;
+      else if(token=="boundary-root-table")r.boundaryRootTable=true;
+      else if(token=="release-shock-radius-fraction") {
+        if(!(extra>>r.releaseDistanceShockRadiusFraction))
+          return Error("reduced particle source checkpoint has a truncated release fraction");
+      } else return Error("reduced particle source checkpoint has an unknown token '"+token+"'");
+    }
     r.returnPolicy=static_cast<ReducedParticles::ReturnPolicy>(returnPolicy);
     r.normalization=static_cast<ReducedParticles::Normalization>(normalization);
   }

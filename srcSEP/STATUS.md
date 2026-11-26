@@ -1,6 +1,6 @@
 # srcSEP development status
 
-Last updated: **2026-11-24**. This file tracks the active implementation of
+Last updated: **2026-11-25**. This file tracks the active implementation of
 both DOCX plans and their corrective proposal. **The full development and
 validation program is not complete.** A passing software or isolated-physics
 test does not qualify an unimplemented production path.
@@ -13,6 +13,34 @@ primary requirement inventory is
 the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
+
+## Real-event SEP tests, 2013-04-11 event, 2026-11-25
+
+The user judged the first implementation incorrect: three
+`SEP--CME-shock-transport--*` Table blocks that drove the movers with the
+manufactured 2020 CME fit and a synthetic ambient, and the
+`test/observed_cme_transport` admission case that left the observational
+comparison SKIPPED. Both were removed, with their scripts, documentation and
+reference directories.
+
+The replacement is [event_2013_04_11](test/event_2013_04_11/README.md):
+observed shock heights (Lario et al. 2014) and Wind shock in a heliocentric
+PCHIP sphere of the reduced core (schema v1.3), OMNI ambient, WSO CR2135
+PFSS with a 2.5 Rs source surface and open-tube transport below it, the
+Liu et al. (2025) lambda for all movers, release at 1.3 R_sh, a
+20 keV - 200 MeV source. Python only prepares the checked-in inputs.
+
+- Nightly tier, in the Table: `SEP--event-2013-04-11--{Parker,FTE-Dmumu,FTE-MFP}`,
+  the first hour on a coarse grid with inner regression observers, DiffNum
+  against np8 references in `output/test_SEP3D/`. All three pass with their
+  references (passion, GNU, 8 ranks); repeated runs are byte-identical, and a
+  0.5% change of one value fails the check.
+- Long tier (full 41.4 h event, observation score reported):
+  `SEP--event-2013-04-11-long--{Parker,FTE-Dmumu,FTE-MFP}`, `Tier=long`,
+  `Ranks=32`, in `Makefile.test.long` (generic mechanism: `table_parser`,
+  `Makefile.def.amps`, the long routine of `utility/nightly`). No full run
+  and no long reference yet; the long numerics wait for the convergence study
+  and a scaling measurement.
 
 ## Legacy CME shock evolution regression, 2026-11-24
 

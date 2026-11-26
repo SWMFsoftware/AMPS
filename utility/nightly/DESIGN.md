@@ -30,6 +30,9 @@ Started 2026-11-13. Replaces the per-machine csh/perl scripts in `utility/TestSc
 
 - **Column** — one machine + compiler configuration, id `<machine>-<config>` (`passion-gnu`).
 - **Run** — the results of one column for one night. Each run records the commit it tested.
+- **Routine** — what a run runs: `nightly` (`runners.json`, every night) or another routine, such as `long`
+  (`runners.long.json`, the long tests, run periodically on the machines whose file enables it). Each run
+  records its routine.
 - **Test** — the smallest item with a status: a `Makefile.test` test, a `src/test` suite
   (with its case counts), or an application test.
 - **Family** — a named group of tests, defined in `families.json`; families are grouped by source
@@ -59,7 +62,8 @@ Started 2026-11-13. Replaces the per-machine csh/perl scripts in `utility/TestSc
 | field | meaning |
 |---|---|
 | `schema_version` | 1 |
-| `run_id` | unique id, `YYYYMMDDTHHMMZ-<machine>-<config>` |
+| `run_id` | unique id, `YYYYMMDDTHHMMZ-<machine>-<config>`, with `-<routine>` for a routine other than the nightly (`...-passion-gnu-long`) |
+| `routine` | `nightly` (the default: records without it are nightly runs) or another routine, e.g. `long` |
 | `machine`, `config` | column; `[A-Za-z0-9][A-Za-z0-9._+-]*` |
 | `compiler`, `toolchain` | display text, e.g. `GNU`, `GCC 13.2 · OpenMPI 4.1` |
 | `branch`, `commit` | tested branch and full SHA |
@@ -83,6 +87,11 @@ is never half-ingested.
 
 - Legacy tests: each Table block has `Family=<id>` right after `Name=`. `amps-nightly check-table`
   verifies that every block has exactly one registered legacy family (run it after editing the Table).
+- Long tests: a block with `Tier=long` and `Ranks=<N>` goes to `Makefile.test.long` and its
+  `test_long_manifest` (same five fields), never to `Makefile.test`; its family belongs to the group `long`
+  ("Long validation runs (periodic)"). `check` reports an unknown `Tier`, `Tier=long` without a positive
+  `Ranks`, `Ranks` on a nightly block, a family of the wrong group for the tier, and a long test whose name
+  starts with the name of a nightly test.
 - `table_parser.cpp` writes `TEST<name>FAMILY=<id>` into `Makefile.test` and a `test_manifest` target:
   `make -s test_manifest` prints `name|family|ref|exception-code|type` for every test selected for this
   host and compiler. The runner uses it instead of re-implementing the `@@(machines)` and `{compiler}` rules.
@@ -107,9 +116,11 @@ The aim is that adding or removing a machine or a test touches one file, and `am
 | `capabilities` | what the machine offers (`spice`, `swmf-data`, `gpu`, …); sources that `require` a missing one are reported as skipped |
 | `lanes`, `timeouts_s` | parallel test lanes; per-stage time limits (`compile`, `rundir`, `run`, `check`) |
 | `compile_lanes`, `compile_jobs` | Makefile.test tests compiled at once (each in its own copy of the workspace), and `make -j` of each compile (`TESTCOMPILEJOBS`; default `cores / (compile_lanes x max_parallel)`; a `configs[]` entry may set its own `compile_jobs`) |
-| `configs[]` | one entry per compiler configuration = one report column `<machine>-<config>`: `compiler`, `toolchain` (display), `setup` (module loads), `config_pl` (Config.pl calls), `after_install`, optional `sources` (only these sources), `enabled` |
+| `configs[]` | one entry per compiler configuration = one report column `<machine>-<config>`: `compiler`, `toolchain` (display), `setup` (module loads), `config_pl` (Config.pl calls), `after_install`, optional `sources` (only these sources, of any routine), `enabled` |
+| `routines` | the routines other than the nightly that run on the machine: `{"long": {"enabled", "start" ("Sat 10:00" or "HH:MM"), "time_limit_h", "lanes", "compile_lanes", "timeouts_s", "make_vars", "max_ranks", "stale_after_h"}}`. While the routine runs, its values replace the machine's (`time_limit_h` for `night_limit_h`) or are merged into them (`timeouts_s`, `make_vars`); `max_ranks` (default `cores`) bounds the `Ranks=` of its tests, `stale_after_h` (default 192) the age of its results on the report. A routine the file does not enable does not run there |
 
-**Routine file** `routine.json` (`amps_nightly/routine.py`):
+**Routine file** `routine.json` (`amps_nightly/routine.py`; now `runners.json`, ORCHESTRATOR.md section 2, and one
+`runners.<routine>.json` per other routine, e.g. `runners.long.json`, with the same schema):
 
 - `sources[]` — what the runner executes, each through one adapter (`kind`):
   `makefile` (the Table tests: `make -s test_manifest` of the configured tree),
@@ -144,7 +155,13 @@ whose `table_host` appears in no Table selector.
   (the local date the night started; same layout as the legacy `AMPS_TEST_RESULTS`), writes its `index.html`
   and inserts it into `results.db`. Invalid or duplicate uploads go to `rejected/` with `REJECTED.txt`.
 - `amps-nightly report` rebuilds the pages from the store:
-  - the columns declared by the machine files (above); a column whose newest run is older than 36 h is flagged;
+  - the columns declared by the machine files (above), each with its newest **nightly** run (a newer run of
+    another routine does not replace it); a column whose newest run is older than 36 h is flagged;
+  - below them, one section per other routine (long: "Long validation runs (periodic)") with the columns of
+    the machines that enable it: each test's newest result in that routine's runs (of the 60 days before the
+    newest), the date and commit of that run, and its last pass; a column is flagged when its newest run of
+    the routine is older than the routine's `stale_after_h` (192 h). Its family pages are
+    `family/<family>/<column>.<routine>.html`, its archive folders `archive/YYYY/MM/DD/<column>-<routine>/`;
   - "Changes since the previous run" per column: PASS → FAILED (new failure) and FAILED → PASS (fixed);
   - for each test: current status, failing stage and one-line reason, the date of the newest
     passing run in that column and that run's commit;

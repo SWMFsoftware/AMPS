@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 
 namespace SEP {namespace ReducedShock {namespace Native {
 namespace FL=PIC::FieldLine;
@@ -36,6 +37,9 @@ Core::Result<std::shared_ptr<const LineView>> PrepareLineView(
   candidate->material=material.value;
   const auto connected=ConnectLine(interval.value,points,epoch,Controls(0,candidate->arc[1]).positionToleranceM);
   if(!connected.ok())return Return::Failure(connected.status.code,connected.status.message);
+  const auto sphere=interval.value.SphereAt(epoch);
+  if(!sphere.ok())return Return::Failure(sphere.status.code,sphere.status.message);
+  candidate->radialBounds=BuildRadialBounds(points,sphere.value.centerM);
   candidate->departureConnections=connected.value;return Return::Success(std::move(candidate));
 }
 Core::Status Agree(const Core::Status& local) {
@@ -74,8 +78,8 @@ Core::Status Put(std::vector<char>& data,const PIC::Datum::cDatumStored& datum,
   std::memcpy(data.data()+datum.offset,values,length*sizeof(double));return Core::Status::Success();
 }
 Core::Status PutState(std::vector<char>& data,const AmbientSample& sample,bool previous) {
-  if(!sample.parkerExterior)return Core::Status::Failure(Core::StatusCode::UnsupportedCapability,
-      "material native geometry is qualified only in the core Parker exterior; PFSS evolution requires its own induction contract");
+  if(!sample.materialQualified)return Core::Status::Failure(Core::StatusCode::UnsupportedCapability,
+      "material native geometry is qualified only in the core Parker exterior and, with the v1.3 isothermal flux-tube closure, open PFSS tubes");
   auto& b=previous?FL::DatumAtVertexPrevious::DatumAtVertexMagneticField:FL::DatumAtVertexMagneticField;
   auto& u=previous?FL::DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity:FL::DatumAtVertexPlasmaVelocity;
   auto& n=previous?FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity:FL::DatumAtVertexPlasmaDensity;
@@ -109,10 +113,29 @@ Core::Status BuildInitialLine(std::list<SEP::cFieldLine>* output) {
   const double epoch=Background::SimulationTimeSeconds();std::string error;
   if(!Prepare(epoch,&error))return Error(error);
   const auto view=CaptureInterval(epoch,epoch,EventIdentity());if(!view.ok())return view.status;
-  const Position initial{{configuration.parkerInitialPointM.x,configuration.parkerInitialPointM.y,configuration.parkerInitialPointM.z}};
+  Position initial{{configuration.parkerInitialPointM.x,configuration.parkerInitialPointM.y,configuration.parkerInitialPointM.z}};
   const double length=configuration.parkerLengthM/(configuration.parkerPointCount-1);
+  if(configuration.parkerAnchorSpecified) {
+    // The line is the core field line through the anchor at this epoch,
+    // started where that line meets the inner sphere.
+    const Position anchor{{configuration.parkerAnchorM.x,configuration.parkerAnchorM.y,configuration.parkerAnchorM.z}};
+    // Each leg is traced to 1 m absolute accuracy (a 1 m base offset moves
+    // the line at 1 AU by ~(r/r_base) m << any physical scale); the base is
+    // placed on the inner sphere to the line's own coordinate tolerance.
+    const GeometryControls trace{1.0,1.0,1e9,10000000};
+    const auto base=TraceSunwardToRadius(view.value,anchor,configuration.innerRadiusM,epoch,trace,
+        Controls(0,length).positionToleranceM);
+    if(!base.ok())return Error("anchor field-line trace: "+base.status.message);
+    initial=base.value;
+    if(PIC::ThisThread==0) {
+      std::ostringstream line;line<<std::setprecision(17)<<"REDUCED_ANCHOR anchor_m="<<anchor[0]<<','<<anchor[1]<<','<<anchor[2]
+          <<" base_m="<<initial[0]<<','<<initial[1]<<','<<initial[2]<<" base_radius_m="<<FL::Geometry::Norm(initial)<<'\n';
+      std::cout<<line.str()<<std::flush;
+    }
+  }
   const auto points=ReducedShock::BuildInitialLine(view.value,initial,configuration.parkerLengthM,
-      configuration.parkerPointCount,epoch,Controls(0,length));
+      configuration.parkerPointCount,epoch,Controls(0,length),
+      configuration.parkerFirstSegmentLengthM);
   if(!points.ok())return points.status;
   std::list<SEP::cFieldLine> staged;
   for(const auto& x:points.value) {
@@ -271,7 +294,8 @@ Core::Result<std::vector<Connection>> ConnectionsAt(double epoch) {
   if(epoch==lineView->interval.DepartureS())return Return::Success(lineView->departureConnections);
   return ConnectMaterialLine(lineView->interval,lineView->vertices,epoch,
       Controls(0,lineView->arc[1]).positionToleranceM,
-      Controls(lineView->interval.ArrivalS()-lineView->interval.DepartureS(),lineView->arc[1]));
+      Controls(lineView->interval.ArrivalS()-lineView->interval.DepartureS(),lineView->arc[1]),
+      &lineView->radialBounds);
 }
 Core::Result<std::shared_ptr<const MaterialView>> CaptureMaterialView() {
   using R=Core::Result<std::shared_ptr<const MaterialView>>;
@@ -355,6 +379,13 @@ Core::Status Advance(double departure,double arrival) {
       const auto complete=material.value->RequireStep(departure,arrival,
           PIC::ParticleWeightTimeStep::GlobalTimeStep[0],Background::Material::Region::ParkerExterior);
       if(!complete.ok())throw std::runtime_error(complete.message);
+      // A line rooted below the source surface also needs the open-corona
+      // admission; each vertex/RK query is still checked individually.
+      if(material.value->Identity().profile==Background::Material::Profile::ReducedPfssOpenParkerV1) {
+        const auto open=material.value->RequireStep(departure,arrival,
+            PIC::ParticleWeightTimeStep::GlobalTimeStep[0],Background::Material::Region::CoronalOpen);
+        if(!open.ok())throw std::runtime_error(open.message);
+      }
       FL::Geometry::Context context;context.departureS=departure;context.arrivalS=arrival;
       context.minimumRadiusM=Initialization::Active().innerRadiusM;context.maximumRadiusM=Initialization::Active().outerRadiusM;
       context.toleranceM=controls.positionToleranceM;context.maximumInsertions=100000;context.expectedGeneration=line.GeometryGeneration;
@@ -462,6 +493,10 @@ Core::Status Advance(double departure,double arrival) {
     std::cout<<"REDUCED_MATERIAL_LOSS rank="<<PIC::ThisThread<<" species="<<loss.species<<" macros="<<loss.macros<<" represented="<<loss.represented<<" plasma_frame_kinetic_j="<<loss.kineticJ<<'\n';
   if(PIC::ThisThread==0)std::cout<<"REDUCED_GEOMETRY epoch_s="<<arrival<<" generation="<<FL::FieldLinesAll[0].GeometryGeneration
       <<" inserted="<<positions.insertedPositions.size()<<" removed="<<positions.removedBack<<" segments="<<FL::FieldLinesAll[0].GetTotalSegmentNumber()<<std::endl;
+  // All ranks use the same trajectory query. Only root writes the resulting
+  // receipt, after material geometry and connectivity have been committed.
+  const auto trajectoryStatus=ReportFittedFront(arrival,PIC::ThisThread==0?&std::cout:nullptr);
+  if(!trajectoryStatus.ok())return trajectoryStatus;
   return Core::Status::Success();
 }
 }}}

@@ -85,6 +85,19 @@ unchanged.
 | `logs` | globs of the runner's own log files to archive (see §6); the full console output is always archived |
 | `requires`, `requires_vars` | machine capabilities and machine `vars` the runner needs; if one is missing the runner's tests are reported as SKIPPED with that reason |
 | `resources`, `locks`, `after` | used only by the concurrent scheduler of phase 2 (see §7); ignored in phase 1 |
+| `manifest_target` | `kind: makefile` only: the make target that lists its tests, `test_manifest` (default: the nightly tier of Makefile.test) or `test_long_manifest` (the `Tier=long` blocks of Makefile.test.long) |
+
+**Routines.** `runners.json` is the routine `nightly`. Another routine `<name>` is the file
+`runners.<name>.json` next to it, with the same schema, run by `amps-nightly run --routine <name>` (also
+`plan --routine`; `check` validates every routine file; runner ids must differ between routine files, since a
+runner's workspace is `<workdir>/<COMPILER>/<runner>`). A machine runs a routine other than the nightly only when
+its machine file enables it in `routines`, whose values (start, `time_limit_h`, lanes, compile lanes, stage time
+limits, `make_vars`) replace or extend the machine's while that routine runs. `runners.long.json` has one
+runner, `legacy-long`: the built-in makefile runner with `"manifest_target": "test_long_manifest"`; a long
+Makefile.test test runs on its block's `Ranks=` through `$(TESTMPILAUNCH) $(TEST<name>RANKS)` (README,
+"Long tests"). A run of another routine works in `{workdir}/nights/<YYYYMMDD-HHMM>-<routine>/`, its run id ends in
+`-<routine>`, its `run.json` has `"routine": "<routine>"`, and when it starts it removes only its own runners'
+workspaces and its own earlier nights (the nightly removes all, as before).
 
 **Placeholders** in `prepare`, `command`, `env`, `results.file` and `logs`:
 
@@ -201,7 +214,10 @@ suite: `CORE-CHEMICAL-DATABASE-001`, whose `shared-protocol/result.json` checks 
 
 ### 5.1 Common procedure
 
-1. Take a lock (`flock {workdir}/lock`); if last night's run is still going, log it and exit.
+1. Take a lock (`flock {workdir}/lock`); if last night's run is still going, log it and exit. The `~/bin`
+   script holds a lock of its own around the whole night (`$AMPSTEST/nightly.lock`), taken by every routine,
+   so two routines never run at once on a machine: the nightly gives up when it is taken, another routine
+   waits for it up to `LOCK_WAIT_H` hours (default 6), then gives up.
 2. Resolve the plan (`amps-nightly plan`). Runners that are switched off or lack a capability or `var`
    produce their SKIPPED rows without running.
 3. For each runner, in file order:
@@ -257,7 +273,9 @@ memory of the marker processes sampled every 30 s.
 
 ### 5.2 The Makefile.test runner (built in)
 
-The test list comes from `make -s test_manifest`. For each test, the stages
+The test list comes from `make -s test_manifest` (the runner's `manifest_target`: `test_long_manifest` for the
+long routine's `legacy-long`; the stage targets of a long test also work from the AMPS root, since
+Makefile.def.amps includes Makefile.test.long). For each test, the stages
 `make test_<X>_compile`, `_rundir`, `_run` and `_check` are run, each with the machine's time limit for
 that stage. The output goes to one log per test: `logs/legacy/tests/<X>.log`. That replaces the 96 MB
 single `test_amps.log`, which is mostly about 12,000 compiler command lines.
@@ -320,7 +338,7 @@ column and night:
 ```
 
 - **Folder date:** the local date on which the night started. A second run of the same column on the
-  same night goes to `<column>.2`. This replaces the current `www/runs/YYYY/MM/DD/<run-id>/`; the 628
+  same night goes to `<column>.2`. A run of another routine goes to `<column>-<routine>` (`passion-gnu-long`). This replaces the current `www/runs/YYYY/MM/DD/<run-id>/`; the 628
   imported nights are moved, and their database paths updated.
 - **What is archived:**
   - each runner's console output;
@@ -353,7 +371,8 @@ column and night:
     finish time, commit, failed/skipped/passed result rows and whether its logs are plain, compressed
     or absent. Columns appear in order of their latest run, so the active ones come first.
   - **Previous and next night:** each night page links to the previous and next night of its column,
-    ordered by finish time.
+    ordered by finish time; a run of another routine to the previous and next run of that routine, and the
+    "All nights" page lists each routine of a column in its own table.
     - The links are kept in the night folder's `nav.json`, so every writer of the page (ingest, prune,
       relocate) keeps them.
     - `amps-nightly report` rewrites `nav.json` and the page only for nights whose neighbours changed.

@@ -2,6 +2,8 @@
 #include "reduced_shock_geometry.h"
 #include "util/sep_run_configuration.h"
 #include "util/sep_source_lifecycle.h"
+#include "util/sep_common_header_path.h"
+#include SRCSEP_SEP_COMMON_HEADER(sep_injection_spectrum.h)
 #include <sep_coronal_cme/particle_source.h>
 #include <sep_coronal_cme/constants.h>
 #include <algorithm>
@@ -158,18 +160,37 @@ T::Status Inject(const T::Birth::DriverWindow& window) {
       T::Birth::Record birth;status=T::Birth::UniformBirth(window,phase,&birth);
       if(!status.ok())throw std::runtime_error(status.message);
       const double epoch=window.endEpochS-birth.firstMoveDurationS;
-      std::vector<ReducedShock::Position> points;
       const auto controls=ReducedShock::Native::Controls(window.durationS,mesh.arc[1]);
-      for(const auto& point:mesh.vertices) {
-        const auto moved=ReducedShock::MoveVertex(mesh.interval,point,window.startEpochS,epoch,controls);
+      // Advect only the vertices whose segments can meet the shock sphere or
+      // the release sphere R+L_ref at this birth epoch (core speed bound x
+      // elapsed time); the other segments are proved disjoint from both, so
+      // the roots and release points equal those of the whole moved line.
+      const auto sphere=mesh.interval.SphereAt(epoch);
+      if(!sphere.ok())throw std::runtime_error(sphere.status.message);
+      const double reach=mesh.interval.SpeedBoundMPerS()*std::abs(epoch-window.startEpochS)+
+          2*controls.positionToleranceM;
+      const double releaseDistance=ReducedParticles::ReleaseDistanceM(config,sphere.value.radiusM);
+      const auto range=mesh.radialBounds.center==sphere.value.centerM&&
+          mesh.radialBounds.prefixMaximumHigh.size()+1==mesh.vertices.size()?
+          ReducedShock::CandidateVertices(mesh.radialBounds,sphere.value.radiusM,sphere.value.radiusM+releaseDistance,reach):
+          ReducedShock::CandidateVertices(mesh.vertices,sphere.value.centerM,
+              sphere.value.radiusM,sphere.value.radiusM+releaseDistance,reach);
+      if(range.count==0)continue;
+      // Whole-line indexing; entries outside the range are never read.
+      std::vector<ReducedShock::Position> points(mesh.vertices.size());
+      std::vector<ReducedShock::Position> moving;moving.reserve(range.count);
+      for(std::size_t i=range.first;i<range.first+range.count;++i) {
+        const auto moved=ReducedShock::MoveVertex(mesh.interval,mesh.vertices[i],window.startEpochS,epoch,controls);
         if(!moved.ok())throw std::runtime_error(moved.status.message);
-        points.push_back(moved.value);
+        points[i]=moved.value;moving.push_back(moved.value);
       }
-      const auto roots=ReducedShock::ConnectLine(mesh.interval,points,epoch,controls.positionToleranceM);
+      const auto roots=ReducedShock::ConnectLine(mesh.interval,moving,epoch,controls.positionToleranceM,
+          range.first,mesh.vertices.size());
       if(!roots.ok())throw std::runtime_error(roots.status.message);
       if(std::count_if(roots.value.begin(),roots.value.end(),[](const ReducedShock::Connection& c){return c.front.acceptedShock;})>1)
         throw std::runtime_error("multiple simultaneous shock barriers require a joint first-passage operator; source allocation is rejected before any live mutation");
-      const auto releases=ReferenceIntersections(mesh.interval,points,epoch,config.releaseDistanceM,controls.positionToleranceM);
+      const auto releases=ReferenceIntersections(mesh.interval,moving,epoch,releaseDistance,controls.positionToleranceM,
+          range.first,mesh.vertices.size());
       if(!releases.ok())throw std::runtime_error(releases.status.message);
       for(std::size_t root=0;root<roots.value.size();++root) {
         const auto& connection=roots.value[root];if(!connection.front.acceptedShock)continue;
@@ -201,9 +222,27 @@ T::Status Inject(const T::Birth::DriverWindow& window) {
         auto spectral=SourceLifecycle::Random(event,macro,UINT64_C(0x525350));
         auto angular=SourceLifecycle::Random(event,macro,UINT64_C(0x52534d55));
         const double mono=config.verificationMonoenergeticEnergyJ;
-        const double p=mono>0?std::sqrt(mono*(mono+2*rest))/SpeedOfLight:
-            spectrum.value.InverseCdf(spectral.UniformOpen01());
-        Measure proposal;proposal.number=rate.value*window.durationS/config.samplesPerStep;
+        double p=0,weight=1;
+        if(mono>0)p=std::sqrt(mono*(mono+2*rest))/SpeedOfLight;
+        else if(config.logUniformMomentumSampling) {
+          // Log-uniform proposal g(p)=1/(p L), L=ln(pmax/pmin), with the exact
+          // weight f/g of the SAME core DSA law dN/dp ~ p^NumberExponent. It is
+          // evaluated in x=p/pmin by the shared helper used for the SWCME
+          // source: SI p^(2-q) overflows binary64 for weak shocks (q~18 at
+          // s=1.2). u is open, so only an exp() ulp can reach the endpoint.
+          SEP::Injection::Spectrum scaled;
+          scaled.measure=SEP::Injection::Measure::Momentum;
+          scaled.minimum=1.0;scaled.maximum=pmax/pmin;
+          scaled.powerIndex=-spectrum.value.NumberExponent();
+          const double span=std::log(scaled.maximum);
+          double x=std::exp(spectral.UniformOpen01()*span);
+          if(x>scaled.maximum)x=scaled.maximum;
+          const auto w=SEP::Injection::ImportanceWeightForLogUniformProposal(scaled,x);
+          if(!w.status.ok()||!std::isfinite(w.value)||!(w.value>0))
+            throw std::runtime_error("log-uniform DSA importance weight is not finite positive");
+          p=pmin*x;weight=w.value;
+        } else p=spectrum.value.InverseCdf(spectral.UniformOpen01());
+        Measure proposal;proposal.number=weight*rate.value*window.durationS/config.samplesPerStep;
         proposal.birthJ=proposal.eventJ=proposal.number*Energy(p,mass);
         if(!std::isfinite(proposal.number)||proposal.number<=0||!std::isfinite(proposal.birthJ)||proposal.birthJ<=0)
           throw std::runtime_error("candidate source number/energy overflows finite SI storage");
@@ -251,7 +290,7 @@ T::Status Inject(const T::Birth::DriverWindow& window) {
         Candidate candidate;candidate.id=SourceLifecycle::ParticleIdentity(event,macro);
         candidate.coordinate=selected->segment+selected->fraction;candidate.speed=speed.value;candidate.mu=mu.value;
         candidate.momentum=p;candidate.magneticT=bmag;
-        candidate.number=rate.value*window.durationS/config.samplesPerStep;candidate.energyJ=Energy(p,mass);candidate.birth=birth;
+        candidate.number=weight*rate.value*window.durationS/config.samplesPerStep;candidate.energyJ=Energy(p,mass);candidate.birth=birth;
         if(!std::isfinite(candidate.number)||candidate.number<=0||!std::isfinite(candidate.energyJ)||candidate.energyJ<=0)
           throw std::runtime_error("source weight/energy is not finite positive SI data");
         candidates.push_back(candidate);
@@ -317,7 +356,9 @@ T::Status Inject(const T::Birth::DriverWindow& window) {
     std::cout<<std::setprecision(17)<<"REDUCED_SOURCE event="<<event.index
         <<" candidate="<<stagedProposed.number<<" no_focused_escape="<<stagedExcluded.number
         <<" committed="<<stagedProposed.number-stagedExcluded.number
-        <<" reference_distance_m="<<config.releaseDistanceM<<" spectrum="
+        <<" reference_distance_m="<<config.releaseDistanceM
+        <<(config.releaseDistanceShockRadiusFraction>0?" reference_shock_radius_fraction="+
+            std::to_string(config.releaseDistanceShockRadiusFraction):std::string())<<" spectrum="
         <<(config.verificationMonoenergeticEnergyJ>0?"manufactured-monoenergetic-verification":"core-local-compression-dsa")<<std::endl;
   }
   SourceLifecycle::CommitNativeRestore(&stagedScheduler);return T::Status::Ok();

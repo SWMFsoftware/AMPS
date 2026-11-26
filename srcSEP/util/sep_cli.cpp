@@ -289,8 +289,19 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "  --shock-source-normalization <net-upstream-escape|gross-emission>\n"
       << "                               Default net-upstream-escape; gross is unimplemented.\n"
       << "  --shock-boundary-tolerance-m <m> Numerical surface-linearization tolerance.\n"
+      << "  --shock-boundary-root-table on|off Verified piecewise-linear shock-root table per step\n"
+      << "                              (default off: exact root per query).\n"
       << "  --reduced-source-verification-energy-j <J> Explicit manufactured monoenergy\n"
       << "                               source; zero (default) selects core DSA.\n"
+      << "  --shock-maximum-compression-ratio <s|none>\n"
+      << "                               Cap of the DSA field-line source compression\n"
+      << "                               before q=3s/(s-1). Default (option absent): 3.\n"
+      << "                               none uses the Rankine-Hugoniot s as solved.\n"
+      << "  --shock-energy-sampling <physical|log-uniform>\n"
+      << "                               DSA source momentum proposal. physical\n"
+      << "                               (default) draws dN/dp exactly; log-uniform\n"
+      << "                               draws ln p uniformly with exact importance\n"
+      << "                               weights (same physical spectrum).\n"
       << "  --initialization-only       Complete AMPS/model initialization, write the\n"
       << "                               configured mesh and field-line Tecplot files,\n"
       << "                               then finalize MPI before the first time step.\n"
@@ -374,10 +385,20 @@ void PrintHelp(const char* program_name, std::ostream& out) {
       << "                               physics: parallel_diffusion block).\n"
       << "  --pitch-angle-diffusion-provider <name>\n"
       << "                               Dmumu provider: configured, constant,\n"
-      << "                               jokipii-1966, or florinskiy.\n"
+      << "                               jokipii-1966, florinskiy, or\n"
+      << "                               isotropic-from-mfp (D=v(1-mu^2)/(2 lambda)\n"
+      << "                               from the mean-free-path provider).\n"
       << "  --mean-free-path-provider <name>\n"
       << "                               lambda provider: qlt, qlt1, tenishev-2005,\n"
-      << "                               chen-2024, or from-spatial.\n"
+      << "                               chen-2024, from-spatial, or\n"
+      << "                               radial-rigidity-power-law.\n"
+      << "  --mfp-reference-m <m> --mfp-reference-radius-m <m>\n"
+      << "  --mfp-reference-rigidity-v <V>\n"
+      << "  --mfp-radial-exponent <a> --mfp-rigidity-exponent <b>\n"
+      << "                               radial-rigidity-power-law parameters:\n"
+      << "                               lambda=lambda_ref (r/r_ref)^a (R/R_ref)^b,\n"
+      << "                               R=pc/|q|. All five are required when the\n"
+      << "                               provider is selected; there are no defaults.\n"
       << "  --invalid-coefficient-policy <fail|ballistic>\n"
       << "                               Reject invalid coefficients, or use the exact\n"
       << "                               lambda=+infinity zero-event-rate limit.\n"
@@ -587,6 +608,11 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
     // and case-insensitive enums share the historical last-occurrence policy;
     // unsupported physical choices are recognized here and rejected by the
     // native preflight, before any particle or source history is allocated.
+    if(option_name=="--shock-boundary-root-table") {
+      if(!ParseBooleanOption(argc,argv,i,option_name,value_from_equals,
+          "verified shock-root table",options.reducedParticles.boundaryRootTable,err))return false;
+      continue;
+    }
     if(option_name=="--reduced-shock-particles") {
       if(!ParseBooleanOption(argc,argv,i,option_name,value_from_equals,
           "reduced-shock particle consumer",options.reducedParticles.enabled,err))return false;
@@ -599,6 +625,44 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
           options.reducedParticles.verificationMonoenergeticEnergyJ;
       if(!ParseDoubleOption(argc,argv,i,option_name,value_from_equals,
           option_name.c_str(),option_name!="--shock-boundary-tolerance-m",value,err))return false;
+      continue;
+    }
+    // DSA field-line shock source controls (field_line.cpp).  "none" removes
+    // the compression cap (+infinity); a number must be finite and > 1 because
+    // q = 3 s / (s - 1) is undefined at s = 1 and s < 1 is not a compressive
+    // shock.  The sampling switch changes only the Monte-Carlo proposal; the
+    // weight correction keeps the physical spectrum unchanged in expectation.
+    if(option_name=="--shock-maximum-compression-ratio") {
+      std::string value;
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,value,err))return false;
+      const std::string lowered=ToLower(value);
+      if(lowered=="none") {
+        options.shockMaximumCompressionRatio=std::numeric_limits<double>::infinity();
+      } else {
+        char* end=NULL;
+        const double parsed=std::strtod(value.c_str(),&end);
+        if(end==value.c_str()||*end!='\0'||!std::isfinite(parsed)||!(parsed>1.0)) {
+          err << "ERROR: --shock-maximum-compression-ratio requires a finite "
+                 "value > 1 or 'none'; got '" << value << "'.\n";
+          return false;
+        }
+        options.shockMaximumCompressionRatio=parsed;
+      }
+      options.shockMaximumCompressionRatioProvided=true;
+      continue;
+    }
+    if(option_name=="--shock-energy-sampling") {
+      std::string value;
+      if(!GetOptionValue(argc,argv,i,option_name,value_from_equals,value,err))return false;
+      const std::string lowered=ToLower(value);
+      if(lowered=="physical") options.shockLogUniformEnergySampling=false;
+      else if(lowered=="log-uniform") options.shockLogUniformEnergySampling=true;
+      else {
+        err << "ERROR: --shock-energy-sampling accepts physical or log-uniform; "
+               "got '" << value << "'.\n";
+        return false;
+      }
+      options.shockEnergySamplingProvided=true;
       continue;
     }
     if(option_name=="--shock-return-policy"||option_name=="--shock-source-normalization") {
@@ -1019,6 +1083,11 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
         option_name == "--coefficient-k-max-radial-exponent" ||
         option_name == "--coefficient-quadrature-absolute" ||
         option_name == "--coefficient-quadrature-relative" ||
+        option_name == "--mfp-reference-m" ||
+        option_name == "--mfp-reference-radius-m" ||
+        option_name == "--mfp-reference-rigidity-v" ||
+        option_name == "--mfp-radial-exponent" ||
+        option_name == "--mfp-rigidity-exponent" ||
         option_name == "--transport-geometry-fraction" ||
         option_name == "--transport-deterministic-tolerance" ||
         option_name == "--transport-stochastic-mu-rms" ||
@@ -1059,6 +1128,25 @@ bool ParseCommandLine(int argc, char** argv, Options& options,
       }
       else if (option_name == "--coefficient-quadrature-relative")
         destination = &options.coefficients.spatialQuadrature.relativeTolerance;
+      // Radial-rigidity power-law lambda_parallel (provider
+      // radial-rigidity-power-law).  The reference scales are SI [m], [m]
+      // and [V]; positivity is enforced by the registry when the provider is
+      // selected.  Exponents are dimensionless and may be negative.
+      else if (option_name == "--mfp-reference-m")
+        destination =
+            &options.coefficients.radialRigidityPowerLaw.referenceMeanFreePathM;
+      else if (option_name == "--mfp-reference-radius-m")
+        destination =
+            &options.coefficients.radialRigidityPowerLaw.referenceRadiusM;
+      else if (option_name == "--mfp-reference-rigidity-v")
+        destination =
+            &options.coefficients.radialRigidityPowerLaw.referenceRigidityV;
+      else if (option_name == "--mfp-radial-exponent")
+        destination =
+            &options.coefficients.radialRigidityPowerLaw.radialExponent;
+      else if (option_name == "--mfp-rigidity-exponent")
+        destination =
+            &options.coefficients.radialRigidityPowerLaw.rigidityExponent;
       else if (option_name == "--transport-geometry-fraction")
         destination = &options.numericalTolerances.geometryFraction;
       else if (option_name == "--transport-deterministic-tolerance")
@@ -1575,6 +1663,16 @@ void ApplyTurbulenceOptions(const Options& options) {
   SEP::FieldLine::InjectionParameters::nParticlesPerIteration =
       options.injectionParticlesPerIteration;
 
+  // DSA shock-source controls are written only when given on the command
+  // line, so the historical globals (cap s=3, physical inverse-CDF sampling)
+  // remain the behavior of every run that does not request a change.
+  if (options.shockMaximumCompressionRatioProvided)
+    SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio =
+        options.shockMaximumCompressionRatio;
+  if (options.shockEnergySamplingProvided)
+    SEP::FieldLine::InjectionParameters::LogUniformMomentumSampling =
+        options.shockLogUniformEnergySampling;
+
   // Runtime selection goes through the production registry; the CLI never
   // writes a raw mover function pointer.
   SEP::Mover::SelectProductionMover(options.particleMover);
@@ -1633,6 +1731,11 @@ void ApplyTurbulenceOptions(const Options& options) {
       break;
     case Transport::Coefficient::PitchAngleKind::Configured:
       // Post-compile input owns the compatibility callback in this mode.
+      break;
+    case Transport::Coefficient::PitchAngleKind::IsotropicFromMeanFreePath:
+      // No legacy callback represents this closure.  The production movers
+      // read it through the source-bound provider adapter only; the
+      // compatibility callback is left untouched rather than relabeled.
       break;
   }
 
@@ -1728,7 +1831,25 @@ void PrintTurbulenceOptions(const Options& options, std::ostream& out) {
       << options.coefficients.spectrum.kMaxAtReferencePerM << "\n"
       << "  quadrature abs/rel tolerance:  "
       << options.coefficients.spatialQuadrature.absoluteToleranceM2PerS
-      << " / " << options.coefficients.spatialQuadrature.relativeTolerance << "\n"
+      << " / " << options.coefficients.spatialQuadrature.relativeTolerance << "\n";
+  // Printed only when used, so the established startup summary of every
+  // other configuration remains byte-identical.
+  if (options.coefficients.meanFreePath ==
+      Transport::Coefficient::MeanFreePathKind::RadialRigidityPowerLaw) {
+    const auto& law = options.coefficients.radialRigidityPowerLaw;
+    out << "  lambda power law:              lambda_ref="
+        << law.referenceMeanFreePathM << " m, r_ref=" << law.referenceRadiusM
+        << " m, R_ref=" << law.referenceRigidityV << " V, a="
+        << law.radialExponent << ", b=" << law.rigidityExponent << "\n";
+  }
+  if (options.shockMaximumCompressionRatioProvided)
+    out << "  DSA source compression cap:    "
+        << options.shockMaximumCompressionRatio << "\n";
+  if (options.shockEnergySamplingProvided)
+    out << "  DSA source momentum sampling:  "
+        << (options.shockLogUniformEnergySampling ? "log-uniform" : "physical")
+        << "\n";
+  out
       << "  coefficient fingerprint:      "
       << Transport::Coefficient::ConfigurationFingerprint(
              options.coefficients) << "\n"

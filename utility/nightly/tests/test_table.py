@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from amps_nightly.registry import Registry
-from amps_nightly.table import DEFAULT_TABLE, check_table, read_table
+from amps_nightly.table import DEFAULT_TABLE, check_table, read_table, tier_tests
 
 REPO = Path(__file__).resolve().parents[3]
 SNIPPET = """header line Name=<APP> is documentation, not a block
@@ -50,6 +50,58 @@ Compile=
 """
 
 
+TIER_SNIPPET = """#>
+Name=Event
+Family=sep
+<#
+#>
+Name=Long-event--Parker
+Family=sep-long
+Tier=long
+Ranks=32
+Compile=
+>>>Tier=nightly is not a keyword inside a section
+<#
+#>
+Name=Weekly
+Family=sep-long
+Tier=weekly
+<#
+#>
+Name=NoRanks
+Family=sep-long
+Tier=long
+<#
+#>
+Name=ZeroRanks
+Family=sep-long
+Tier=long
+Ranks=0
+<#
+#>
+Name=NightlyRanks
+Family=sep
+Ranks=8
+<#
+#>
+Name=LongInNightlyFamily
+Family=sep
+Tier=long
+Ranks=4
+<#
+#>
+Name=NightlyInLongFamily
+Family=sep-long
+<#
+#>
+Name=Event--long
+Family=sep-long
+Tier=long
+Ranks=4
+<#
+"""
+
+
 class TableReader(unittest.TestCase):
     def test_snippet(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,6 +126,40 @@ class TableReader(unittest.TestCase):
         self.assertEqual(jobs, ["Table line 5 (Plain): '@($(MAKE) -j8 amps)' fixes the number of make jobs: use "
                                 "-j$(TESTCOMPILEJOBS) (the nightly sets it from compile_jobs of the machine file; "
                                 "8 otherwise)"])
+
+    def test_tier_and_ranks(self):
+        """Tier= and Ranks= are keywords of the block's keyword part; a block without Tier= is nightly."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "Table")
+            path.write_text(TIER_SNIPPET)
+            tests = {t.name: t for t in read_table(path)}
+        event, long_ = tests["Event"], tests["Long-event--Parker"]
+        self.assertEqual((event.tier, event.ranks, event.long), ("nightly", None, False))
+        self.assertEqual((long_.tier, long_.ranks, long_.long, long_.ranks_text), ("long", 32, True, "32"))
+        self.assertEqual((tests["Weekly"].tier, tests["ZeroRanks"].ranks, tests["NoRanks"].ranks), ("weekly", None, None))
+        self.assertEqual([t.name for t in tier_tests(list(tests.values()), "nightly")],
+                         ["Event", "NightlyRanks", "NightlyInLongFamily"])
+
+    def test_tier_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "Table")
+            path.write_text(TIER_SNIPPET)
+            tests = read_table(path)
+            problems = check_table(tests, Registry.load())
+        line = {t.name: t.line for t in tests}
+        self.assertEqual(problems, [p.format(**{k.replace("-", "_"): v for k, v in line.items()}) for p in [
+            "Table line {Weekly} (Weekly): Tier=weekly is not nightly or long",
+            "Table line {NoRanks} (NoRanks): Tier=long needs Ranks=<positive integer> (the MPI ranks of its run)",
+            "Table line {ZeroRanks} (ZeroRanks): Tier=long needs Ranks=<positive integer> (the MPI ranks of its run; "
+            "got Ranks=0)",
+            "Table line {NightlyRanks} (NightlyRanks): Ranks= is only for Tier=long blocks (a nightly test's ranks are "
+            "set by its run rule)",
+            "Table line {LongInNightlyFamily} (LongInNightlyFamily): Family=sep belongs to group legacy, not long (the "
+            "group of Tier=long tests)",
+            "Table line {NightlyInLongFamily} (NightlyInLongFamily): Family=sep-long belongs to group long, not legacy "
+            "(the group of nightly tests)",
+            "Table line {Event__long} (Event--long): the name of a Tier=long test must not start with the name of the "
+            "nightly test Event (its result files test_Event--long*.diff would be taken as Event's); rename it"]])
 
     def test_repository_table_has_registered_families(self):
         problems = check_table(read_table(DEFAULT_TABLE), Registry.load())
@@ -119,6 +205,26 @@ class TableParserManifest(unittest.TestCase):
             self.assertEqual(compile_lines(), ["(make -j8 amps)"])
             self.assertEqual(compile_lines("TESTCOMPILEJOBS=9"), ["(make -j9 amps)"])
             self.assertEqual(compile_lines(TESTCOMPILEJOBS="12"), ["(make -j12 amps)"])
+
+    def test_long_tier_goes_to_its_own_manifest(self):
+        """The contract with table_parser: a Tier=long block is in Makefile.test.long and its test_long_manifest
+        (same five fields), with TEST<name>RANKS; test_manifest never lists it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["g++", "-std=c++14", str(REPO / "utility/TestScripts/table_parser.cpp"), "-o", "table_parser"],
+                           cwd=tmp, check=True)
+            Path(tmp, "Table").write_text(SNIPPET + "#>\nName=Zeta-long\nFamily=sep-long\nTier=long\nRanks=4\n<#\n")
+            subprocess.run(["./table_parser", "2"], cwd=tmp, check=True, stdout=subprocess.DEVNULL,
+                           env=dict(os.environ, AMPS_TABLE_HOST="passion"))
+
+            def manifest(*files):
+                args = [a for f in files for a in ("-f", f)]
+                out = subprocess.run(["make", "-s"] + args + [files[-1].replace("Makefile.test", "test").replace(
+                    ".long", "_long") + "_manifest"], cwd=tmp, check=True, stdout=subprocess.PIPE,
+                    universal_newlines=True).stdout
+                return [line.split("|") for line in out.splitlines()]
+            self.assertEqual([f[0] for f in manifest("Makefile.test")], ["Alpha", "Beta"])
+            self.assertEqual(manifest("Makefile.test", "Makefile.test.long"), [["Zeta-long", "sep-long", "", "", "amps"]])
+            self.assertIn("TESTZeta-longRANKS=4", Path(tmp, "Makefile.test.long").read_text())
 
     def test_host_override(self):
         """AMPS_TABLE_HOST (the machine file's table_host) replaces the host name in the @@(...) selection."""

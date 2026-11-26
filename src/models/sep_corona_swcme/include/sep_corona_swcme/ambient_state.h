@@ -85,6 +85,18 @@ class AmbientModel final {
   const AmbientDefinition& Definition() const { return definition_; }
   const std::string& Identity() const { return definition_.physicsFingerprint; }
   double MassFluxPerSteradianKgPerS() const { return massFluxPerSr_; }
+  // Isothermal wind sound speed c_w^2 [m^2/s^2] and the applied magnetogram
+  // amplitude factor (exactly 1 unless magneticCalibration is selected).
+  double WindSoundSpeedSquaredM2PerS2() const { return soundSquared_; }
+  double CriticalRadiusM() const { return criticalRadiusM_; }
+  double MagneticCalibrationFactor() const { return magneticFactor_; }
+  // Upper bound [m/s] on |U| anywhere in the declared support: the wind speed
+  // is the transonic (increasing) Parker branch, so it is bounded by its
+  // largest tabulated node; the open-tube speed is bounded by it (kinematic
+  // branch) or by c_w (subsonic tube branch); corotation and the exterior's
+  // conserved azimuthal speed are bounded by Omega*Rss. A consumer may use it
+  // only to exclude geometry conservatively, never as a physical speed.
+  double SpeedBoundMPerS() const;
 
  private:
   friend class OpenTubeIsoPolyWind;
@@ -107,11 +119,24 @@ class AmbientModel final {
   std::vector<CoronalCME::IonSpecies> ions_;
   std::vector<double> logRadius_,logSpeed_,slope_,winding_;
   double massFluxPerSr_=0.0,soundSquared_=0.0,criticalRadiusM_=0.0;
+  double magneticFactor_=1.0;
+  void CacheAxialSourceFields();
 
   double WindSpeed(double radiusM) const;
   double IntegrateWinding(double beginM,double endM) const;
   double Winding(double radiusM) const;
   Core::Result<std::pair<CoronalCME::FieldLineTopology,CoronalCME::Vec3>> Trace(
+      CoronalCME::Vec3 positionM) const;
+  // Magnetogram field in the body frame. The v1.3 open-tube closure uses the
+  // recurrence evaluator (EvaluateFieldCartesian); every earlier profile keeps
+  // the historical EvaluateCartesian bits.
+  Core::Result<CoronalCME::Vec3> Field(CoronalCME::Vec3 bodyPositionM) const;
+  // v1.3 open-tube foot: the field line through the point, parametrized by
+  // radius (dx/dr = B/B_r, uniform RK4 steps of at most trace_step_m up to the
+  // source surface). Exact topology when B_r keeps its sign and |B_r| >= 0.2|B|
+  // at every stage (the line then rises monotonically to Rss, so it is open);
+  // otherwise the general arc-length Trace decides.
+  Core::Result<std::pair<CoronalCME::FieldLineTopology,CoronalCME::Vec3>> TraceOpenByRadius(
       CoronalCME::Vec3 positionM) const;
 };
 

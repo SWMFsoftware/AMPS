@@ -312,6 +312,7 @@ sub get_next_test{
   my $Refs='';
   my $ExeptionCodes='';
   my $TestType='AMPS';
+  my $Tier='nightly';
 
   #target block flag
   my $iTar='';
@@ -344,6 +345,9 @@ sub get_next_test{
         }
       }
       elsif ($line =~ m/^Family=/) {} #nightly-report family; used by table_parser.cpp and utility/nightly
+      #Tier=long blocks belong to Makefile.test.long (table_parser.cpp), never to this Makefile.test
+      elsif ($line =~ m/^Tier=\s*(\S*)/) {$Tier=$1;}
+      elsif ($line =~ m/^Ranks=/) {}
       elsif ($line =~ m/Time=([0-9]+)/) {$Time+=$1;}
       elsif ($line =~ m/Keys=(.*)/) {$Keys="$Keys$1,," if($1);}
       elsif ($line =~ m/CustomRefSolutionPaths=(.*)/) {$CustomRefSolutionPaths="$CustomRefSolutionPaths$1,," if($1);}
@@ -383,6 +387,9 @@ sub get_next_test{
 
   #remove processed lines
   splice(@_,0,$nRemove+1);
+
+  #a long-tier test is skipped like a block for another machine
+  $ErrorRead='1' if ($Tier eq 'long');
 
   unless ($ErrorRead) {
     my @Keys    = split(/,,/,$Keys)   if($Keys);   $Keys   ='';

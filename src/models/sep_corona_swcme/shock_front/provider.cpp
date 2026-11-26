@@ -203,6 +203,56 @@ Core::Result<GeometrySample> EvaluateSseRay(const SseKinematicState& state,
   return Return::Success(out);
 }
 
+Core::Result<GeometrySample> EvaluateHeliocentricSphereRay(double radius,
+    double speed,CoronalCME::Vec3 ray,std::uint64_t stableId) {
+  using Return=Core::Result<GeometrySample>;
+  const double rayNorm=CoronalCME::Norm(ray);
+  if(!std::isfinite(radius)||radius<=0||!std::isfinite(speed)||
+      !std::isfinite(rayNorm)||rayNorm<=0)return Return::Failure(
+          Core::StatusCode::InvalidConfiguration,
+          "heliocentric sphere requires a positive radius, finite speed and nonzero ray");
+  GeometrySample out;out.stableId=stableId;
+  out.outwardNormal=ray/rayNorm;
+  out.positionM=radius*out.outwardNormal;
+  out.normalSpeedMPerS=speed;
+  out.supportEdge=false;  // a closed surface has no support rim
+  return Return::Success(out);
+}
+
+Core::Result<TrajectoryState> EvaluatePchipApex(const std::vector<double>& x,
+    const std::vector<double>& y,const std::vector<double>& m,double t) {
+  using Return=Core::Result<TrajectoryState>;
+  if(x.size()<2||y.size()!=x.size()||m.size()!=x.size()||!std::isfinite(t))
+    return Return::Failure(Core::StatusCode::InvalidConfiguration,
+        "PCHIP front requires matching knot, radius and slope tables");
+  if(t<x.front()||t>x.back())return Return::Failure(Core::StatusCode::OutOfDomain,
+      "PCHIP front epoch lies outside its observed knots; no extrapolation");
+  TrajectoryState out;out.timeS=t;out.phase=Phase::CoronalHistory;
+  const auto upper=std::upper_bound(x.begin(),x.end(),t);
+  const std::size_t i=std::min(x.size()-2,static_cast<std::size_t>(
+      std::max<std::ptrdiff_t>(0,upper-x.begin()-1)));
+  const double h=x[i+1]-x[i],q=(t-x[i])/h,q2=q*q,q3=q2*q;
+  // Cubic Hermite basis on [x_i,x_{i+1}] with the shared monotone slopes.
+  out.apexRadiusM=(2*q3-3*q2+1)*y[i]+(q3-2*q2+q)*h*m[i]+(-2*q3+3*q2)*y[i+1]+
+      (q3-q2)*h*m[i+1];
+  out.apexSpeedMPerS=((6*q2-6*q)*y[i]+(-6*q2+6*q)*y[i+1])/h+
+      (3*q2-4*q+1)*m[i]+(3*q2-2*q)*m[i+1];
+  out.apexAccelerationMPerS2=((12*q-6)*(y[i]-y[i+1])/h+(6*q-4)*m[i]+
+      (6*q-2)*m[i+1])/h;
+  if(t==x[i])out.apexRadiusM=y[i],out.apexSpeedMPerS=m[i];
+  if(t==x[i+1])out.apexRadiusM=y[i+1],out.apexSpeedMPerS=m[i+1];
+  // Monotone PCHIP is nonnegative in speed for increasing data; only a
+  // roundoff-sized negative is admitted as zero, as in SWCME data_driven.
+  const double scale=std::max({1.0,std::abs(m[i]),std::abs(m[i+1])});
+  if(out.apexSpeedMPerS<0) {
+    if(-out.apexSpeedMPerS>128*std::numeric_limits<double>::epsilon()*scale)
+      return Return::Failure(Core::StatusCode::NumericalFailure,
+          "PCHIP front speed is negative");
+    out.apexSpeedMPerS=0;
+  }
+  return Return::Success(out);
+}
+
 Core::Result<TrajectoryState> EvaluateQuadraticDrag(double epoch,
     double handoffTime,double handoffRadius,double handoffSpeed,double wind,
     double gamma) {
@@ -295,6 +345,14 @@ Core::Result<std::shared_ptr<Provider>> Provider::Create(
 Core::Result<double> Provider::HandoffTimeS() const {
   using Return=Core::Result<double>;
   const auto& c=*configuration_;
+  // Observation time, rather than a root of an assumed launch history,
+  // owns the handoff in the fitted profile.
+  if(c.historyModel==HistoryModel::FittedQuadratic)
+    return Return::Success(c.fittedEndS);
+  // The data-driven front has no outer model; its "handoff" is the final
+  // observed knot, which lies at or after the end of declared coverage.
+  if(c.historyModel==HistoryModel::DataDrivenPchip)
+    return Return::Success(c.knotTimesS.back());
   const auto radius=[&](double t) {
     if(c.historyModel==HistoryModel::ConstantSpeed)
       return c.initialApexRadiusM+c.initialApexSpeedMPerS*t;
@@ -321,6 +379,13 @@ Core::Result<double> Provider::HandoffTimeS() const {
 
 Core::Result<HandoffReceipt> Provider::Handoff() const {
   using Return=Core::Result<HandoffReceipt>;
+  if(configuration_->historyModel==HistoryModel::DataDrivenPchip) {
+    // No matched continuation exists: report the final observed knot only.
+    HandoffReceipt receipt;receipt.timeS=configuration_->knotTimesS.back();
+    receipt.apexRadiusM=configuration_->knotRadiiM.back();
+    receipt.apexSpeedMPerS=configuration_->knotSlopesMPerS.back();
+    return Return::Success(receipt);
+  }
   const auto root=HandoffTimeS();if(!root.ok())return Return::Failure(
       root.status.code,root.status.message);
   const auto matched=Trajectory(root.value);if(!matched.ok())return Return::Failure(
@@ -360,17 +425,29 @@ Core::Result<HandoffReceipt> Provider::Handoff() const {
   return Return::Success(receipt);
 }
 
+TrajectoryState EvaluateFittedApex(double epochS,double radiusM,
+    double speedMPerS,double accelerationMPerS2) {
+  return {epochS,Phase::CoronalHistory,
+      radiusM+epochS*(speedMPerS+0.5*epochS*accelerationMPerS2),
+      speedMPerS+epochS*accelerationMPerS2,accelerationMPerS2};
+}
+
 Core::Result<TrajectoryState> Provider::Trajectory(double t) const {
   using Return=Core::Result<TrajectoryState>;
   const auto& c=*configuration_;
   if(!std::isfinite(t)||t<c.ambient.support.startS||t>c.ambient.support.endS)
     return Return::Failure(Core::StatusCode::OutOfDomain,
         "front epoch is outside declared event coverage");
+  if(c.historyModel==HistoryModel::DataDrivenPchip)
+    return EvaluatePchipApex(c.knotTimesS,c.knotRadiiM,c.knotSlopesMPerS,t);
   const auto handoff=HandoffTimeS();
   if(!handoff.ok())return Return::Failure(handoff.status.code,handoff.status.message);
   TrajectoryState out;out.timeS=t;
   if(t<=handoff.value) {
     out.phase=Phase::CoronalHistory;
+    if(c.historyModel==HistoryModel::FittedQuadratic)
+      return Return::Success(EvaluateFittedApex(t,c.initialApexRadiusM,
+          c.initialApexSpeedMPerS,c.fittedAccelerationMPerS2));
     if(c.historyModel==HistoryModel::ConstantSpeed) {
       out.apexRadiusM=c.initialApexRadiusM+c.initialApexSpeedMPerS*t;
       out.apexSpeedMPerS=c.initialApexSpeedMPerS;out.apexAccelerationMPerS2=0;
@@ -421,6 +498,9 @@ Core::Result<GeometrySample> Provider::EvaluateRay(CoronalCME::Vec3 ray,
   using Return=Core::Result<GeometrySample>;
   const auto state=Trajectory(epoch);
   if(!state.ok())return Return::Failure(state.status.code,state.status.message);
+  if(configuration_->geometryModel==GeometryModel::HeliocentricSphere)
+    return EvaluateHeliocentricSphereRay(state.value.apexRadiusM,
+        state.value.apexSpeedMPerS,ray,stableId);
   return EvaluateSseRay({state.value.apexRadiusM,state.value.apexSpeedMPerS,
       configuration_->direction,{},configuration_->halfWidthRad,0},ray,stableId);
 }
@@ -428,6 +508,11 @@ Core::Result<GeometrySample> Provider::EvaluateRay(CoronalCME::Vec3 ray,
 Core::Result<GeneratingSphere> Provider::Sphere(double epoch) const {
   const auto state=Trajectory(epoch);
   if(!state.ok())return Core::Result<GeneratingSphere>::Failure(state.status.code,state.status.message);
+  // The closed heliocentric front IS its generating sphere; every ray cosine
+  // about the chart pole is supported.
+  if(configuration_->geometryModel==GeometryModel::HeliocentricSphere)
+    return Core::Result<GeneratingSphere>::Success({{0,0,0},
+        state.value.apexRadiusM,configuration_->direction,-1.0});
   const double sine=std::sin(configuration_->halfWidthRad);
   const double center=state.value.apexRadiusM/(1+sine);
   return Core::Result<GeneratingSphere>::Success({center*configuration_->direction,
@@ -501,9 +586,17 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::EvaluateEpoch(
       handoff.status.code,handoff.status.message);
   candidate->handoff=handoff.value;
 
-  const double sine=std::sin(configuration_->halfWidthRad);
-  const double center=trajectory.value.apexRadiusM/(1+sine);
-  const double sphereRadius=center*sine;
+  // The closed heliocentric sphere is the generating sphere itself: centre
+  // zero, radius R, chart mu=n.d over the complete interval [-1,1], radial
+  // normal and uniform normal speed dR/dt. Its rings close at BOTH poles.
+  const bool closed=configuration_->geometryModel==GeometryModel::HeliocentricSphere;
+  const double sine=closed?1.0:std::sin(configuration_->halfWidthRad);
+  const double center=closed?0.0:trajectory.value.apexRadiusM/(1+sine);
+  const double sphereRadius=closed?trajectory.value.apexRadiusM:center*sine;
+  const auto normalSpeedAt=[&](double mu) {
+    return closed?trajectory.value.apexSpeedMPerS:
+        trajectory.value.apexSpeedMPerS*(mu+sine)/(1+sine);
+  };
   // The front is parameterized by the outward normal of its generating
   // sphere, not by heliocentric ray angle.  With mu=n.d the exact metric is
   //
@@ -515,25 +608,37 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::EvaluateEpoch(
   // exact support rim and the apex.  The mu=1 ring collapses analytically to
   // one vertex; storing it once prevents coincident pole vertices and closes
   // the artificial hole in the former quadrilateral output.
-  const double muMinimum=-sine;
+  const double muMinimum=closed?-1.0:-sine;
   const double dmu=(1-muMinimum)/configuration_->polarCells;
   const double dphi=2*kPi/configuration_->azimuthCells;
   const int nPolar=configuration_->polarCells;
   const int nAzimuth=configuration_->azimuthCells;
-  const std::size_t ringVertexCount=static_cast<std::size_t>(nPolar)*nAzimuth;
-  const std::size_t triangleCount=static_cast<std::size_t>(2*nPolar-1)*nAzimuth;
+  // A closed sphere replaces the collapsed mu=-1 ring by one south-pole
+  // vertex (index 0) and has one fewer quadrilateral band than the cap.
+  const std::size_t ringVertexCount=closed?
+      static_cast<std::size_t>(nPolar-1)*nAzimuth+1:
+      static_cast<std::size_t>(nPolar)*nAzimuth;
+  const std::size_t triangleCount=closed?
+      static_cast<std::size_t>(2*(nPolar-1))*nAzimuth:
+      static_cast<std::size_t>(2*nPolar-1)*nAzimuth;
   candidate->vertices.reserve(ringVertexCount+1);
   candidate->triangles.reserve(triangleCount);
   candidate->records.reserve(triangleCount);
 
-  for(int i=0;i<nPolar;++i)for(int j=0;j<nAzimuth;++j) {
+  if(closed) {
+    SurfaceVertex south;south.stableId=1;
+    south.positionM=-sphereRadius*configuration_->direction;
+    candidate->vertices.push_back(south);
+  }
+  for(int i=closed?1:0;i<nPolar;++i)for(int j=0;j<nAzimuth;++j) {
     const double mu=muMinimum+i*dmu;
     const double phi=j*dphi;
     SurfaceVertex vertex;
-    vertex.stableId=static_cast<std::uint64_t>(i)*nAzimuth+j+1;
+    vertex.stableId=closed?static_cast<std::uint64_t>(i-1)*nAzimuth+j+2:
+        static_cast<std::uint64_t>(i)*nAzimuth+j+1;
     vertex.positionM=center*configuration_->direction+
         sphereRadius*About(configuration_->direction,mu,phi);
-    vertex.supportEdge=i==0;
+    vertex.supportEdge=!closed&&i==0;
     candidate->vertices.push_back(vertex);
   }
   SurfaceVertex apexVertex;
@@ -616,8 +721,7 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::EvaluateEpoch(
     record.geometry.stableId=id;
     record.geometry.positionM=center*configuration_->direction+sphereRadius*normal;
     record.geometry.outwardNormal=normal;
-    record.geometry.normalSpeedMPerS=
-        trajectory.value.apexSpeedMPerS*(mu+sine)/(1+sine);
+    record.geometry.normalSpeedMPerS=normalSpeedAt(mu);
     record.geometry.areaM2=exactArea;
     // A face touching the finite-width rim is marked even though its
     // area-representative point lies strictly inside the supported cap.
@@ -628,14 +732,19 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::EvaluateEpoch(
 
   const auto vertexIndex=[&](int ring,int azimuth) {
     const int wrapped=(azimuth+nAzimuth)%nAzimuth;
-    return static_cast<std::uint32_t>(ring*nAzimuth+wrapped);
+    return closed?static_cast<std::uint32_t>((ring-1)*nAzimuth+wrapped+1):
+        static_cast<std::uint32_t>(ring*nAzimuth+wrapped);
   };
   const double cellArea=sphereRadius*sphereRadius*dmu*dphi;
   // Every non-apex (mu,phi) rectangle is divided on a deterministic
   // checkerboard diagonal.  Because dA is constant in this chart, each child
   // owns exactly half the curved cell area; the alternating diagonal reduces
   // a purely visual directional bias without changing the physical measure.
-  for(int i=0;i<nPolar-1;++i)for(int j=0;j<nAzimuth;++j) {
+  // South-pole fan of the closed sphere: one full chart cell per sector.
+  if(closed)for(int j=0;j<nAzimuth;++j)appendTriangle(
+      {0u,vertexIndex(1,j+1),vertexIndex(1,j)},
+      muMinimum+0.5*dmu,(j+0.5)*dphi,cellArea,false);
+  for(int i=closed?1:0;i<nPolar-1;++i)for(int j=0;j<nAzimuth;++j) {
     const double mu0=muMinimum+i*dmu,mu1=mu0+dmu;
     const double phi0=j*dphi,phi1=(j+1)*dphi;
     const auto a=vertexIndex(i,j),b=vertexIndex(i,j+1);
@@ -666,6 +775,7 @@ Core::Result<std::shared_ptr<const Epoch>> Provider::EvaluateEpoch(
       candidate->triangles.size()!=triangleCount||
       candidate->records.size()!=triangleCount)
     return Return::Failure(Core::StatusCode::NumericalFailure,
+        closed?"triangular heliocentric sphere contains a degenerate or incomplete element":
         "triangular SSE cap contains a degenerate or incomplete element");
 
   // Recompute the complete ledger from immutable face records.  This keeps

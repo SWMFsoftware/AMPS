@@ -1,0 +1,165 @@
+{
+  "schema": "srcsep-event-2013-04-11-settings-v1",
+  "event": "2013-04-11 SEP event (CME first in LASCO/C2 07:24 UT, AR 11719, N09E12)",
+  "decisions": {
+    "note": "Every physical choice below was made explicitly by the user (2026-11-24/25); see README.md, section 'Decisions'.",
+    "shock_kinematics": "heliocentric (Sun-centred) spherical front r_sh(t), data-driven monotone PCHIP through Lario et al. (2014) Table 2 heights above the L1 footpoint and the Wind in-situ shock (CfA database)",
+    "field_line_inner_radius_rs": 1.1,
+    "solar_wind": "isothermal Parker (1958) transonic wind with one sound speed fitted so U(L1) equals the OMNI speed; density from mass flux normalized to the OMNI electron density; below 2.5 Rs the same isothermal wind flows along each open PFSS tube (corotating-frame field-aligned flow, rho u/|B| constant, isothermal Bernoulli); ambient window 2013-04-11 00:55-06:55 UT",
+    "thermodynamic_closure": "measured L1 T_e, T_p, T_alpha (Wind/SWE h5, OMNI, Wind/SWE h1 quality-10 fits with W=sqrt(2kT/M)) constant with radius; they set pressure and every Rankine-Hugoniot/characteristic speed",
+    "compression_cap": "none (reduced core local Rankine-Hugoniot compression, no cap)",
+    "source_energy_mev": [
+      0.02,
+      200.0
+    ],
+    "source_energy_note": "User decision 2026-11-25 ('use ... 20 keV'): the lower bound was raised from 0.01 MeV because a 10 keV proton (1384 km/s) cannot outrun the 1459 km/s shock at t0 (README.md, section 3).",
+    "release_distance_shock_radius_fraction": 0.3,
+    "release_distance_note": "User decision 2026-11-25 ('use f = 0.3'): L_ref = f R_sh(t); see README.md, section 2.",
+    "source_sampling": "log-uniform importance sampling",
+    "lambda_parallel": "Liu et al. (2025) Eqs. 14-16: 0.3 AU (r/AU) (pc/1 GeV)^(1/3), shared by all movers",
+    "amplitude": "one global factor calibrated on the SOHO/ERNE HED 4 h window; everything else held out",
+    "nightly_gate": "DiffNum.pl against AMPS references only; the observation score is reported, not gating",
+    "observation_windows": "re-averaged on the model's output grid",
+    "erne_channels": "revised f50 bounds (University of Turku export description, section 7.2)",
+    "erne_quality": "PH1-PH2 all minutes; PH3-PH10 only minutes with status bit b12 (HED HIT 3x) clear, per note (2) of section 7.2",
+    "magnetic_field": "WSO radial-model PFSS coefficients (CR2135, independent of Rss), source surface at 2.5 Rs (WSO standard; the PFSS footpoint method of Lario et al. 2014), one amplitude calibrated to the OMNI |B| at L1 at t0",
+    "corotation_drift": "accepted (user, 2026-11-24): the material line corotates with the Sun while Earth does not; the Earth-to-line longitude offset is reported per comparison window",
+    "transport_path": "shared reduced shock-front core (src/models/sep_corona_swcme/shock_front, schema v1.3) through srcSEP --reduced-shock-event",
+    "source_surface_radius_rs": 2.5,
+    "field_line": "the core field line through Earth at t0, traced by srcSEP from Earth sunward to the 1.1 Rs base (open PFSS tube below 2.5 Rs, Parker spiral above)"
+  },
+  "clocks": {
+    "comparison_reference_utc": "2013-04-11T07:24:00Z",
+    "comparison_reference_note": "Liu et al. (2025) Figure 12 elapsed-hour origin (first LASCO/C2 appearance); the ERNE windows are centred 4, 12 and 36 h after it",
+    "ambient_window_utc": [
+      "2013-04-11T00:55:00Z",
+      "2013-04-11T06:55:00Z"
+    ],
+    "ambient_window_note": "half-open on the 1-min sample start; flare soft X-ray onset 06:55 UT (Lario et al. 2014 Section 2)",
+    "run_end_not_before_utc": "2013-04-13T00:50:00Z",
+    "run_end_note": "GOES-13 >10 MeV event end from the CCMC/OpSEP record; also covers the 36 h ERNE window"
+  },
+  "transport": {
+    "lambda_reference_au": 0.3,
+    "lambda_reference_radius_au": 1.0,
+    "lambda_reference_rigidity_v": 1000000000.0,
+    "lambda_radial_exponent": 1.0,
+    "lambda_rigidity_exponent": 0.3333333333333333
+  },
+  "source": {
+    "minimum_energy_mev": 0.02,
+    "maximum_energy_mev": 200.0,
+    "nominal_injection_efficiency": 0.001,
+    "nominal_injection_efficiency_note": "Placeholder scale only. The physical amplitude is the single global factor fitted to the ERNE 4 h calibration window; the effective efficiency (factor x nominal) is reported with the score.",
+    "release_distance_shock_radius_fraction": 0.3,
+    "release_distance_note": "User decision 2026-11-25. L_ref = f R_sh(t): particles are released where the field line crosses the Sun-centred sphere of radius (1+f) R_sh(t). f = 0.3 lies inside the published free-escape-boundary fractions (0.17 Wijsen et al. 2022 and 0.23 Afanasiev et al. 2025 near 1 au; 0.5 Afanasiev et al. 2015 at 2 Rs) and keeps the 1 au observers outside the release sphere until the end of the particle run (README.md, section 2)."
+  },
+  "windows": [
+    {
+      "id": "erne-04h",
+      "role": "calibration",
+      "hours_after_reference": 4,
+      "width_s": 7200
+    },
+    {
+      "id": "erne-12h",
+      "role": "holdout",
+      "hours_after_reference": 12,
+      "width_s": 7200
+    },
+    {
+      "id": "erne-36h",
+      "role": "holdout",
+      "hours_after_reference": 36,
+      "width_s": 7200
+    }
+  ],
+  "erne_revised_f50_channels_mev": [
+    [
+      14.0,
+      17.0
+    ],
+    [
+      17.0,
+      22.0
+    ],
+    [
+      21.0,
+      28.0
+    ],
+    [
+      26.0,
+      32.0
+    ],
+    [
+      32.0,
+      40.0
+    ],
+    [
+      40.0,
+      51.0
+    ],
+    [
+      51.0,
+      67.0
+    ],
+    [
+      64.0,
+      80.0
+    ],
+    [
+      80.0,
+      101.0
+    ],
+    [
+      101.0,
+      131.0
+    ]
+  ],
+  "liu_holdout": {
+    "elapsed_hours": [
+      12,
+      36
+    ],
+    "minimum_energy_mev": 1.0,
+    "minimum_energy_note": "XM03/OV01 scoring rule: ACE/EPAM below 1 MeV is ion-contaminated (Liu et al. 2025)"
+  },
+  "numerics": {
+    "time_step_s": 60.0,
+    "output_cadence_steps": 12,
+    "output_cadence_note": "fixed in srcSEP/sampling.cpp; recorded so the observation windows can be checked against it",
+    "samples_per_step": 200,
+    "macroparticle_weight": 1e+20,
+    "field_line_point_count": null,
+    "outer_radius_au": 2.0,
+    "note": "Numerical values are provisional until the convergence study in README.md is complete.",
+    "line_end_radius_au": 2.05,
+    "coverage_radius_au": 2.5,
+    "front_cache_cadence_s": 600.0,
+    "front_polar_cells": 12,
+    "front_azimuth_cells": 24,
+    "wind_table_points": 2049,
+    "pfss_trace_step_m": 20000000.0,
+    "pfss_trace_step_note": "radius step of the core's v1.3 open-tube foot trace; the mass flux per unit flux it gives agrees with the 1e6 m arc-length trace to <1e-8 (HSP12)",
+    "relative_segment_length": 0.02,
+    "relative_segment_length_note": "geometric line spacing with chord ~ eps*r everywhere (first chord eps*r_base, growth 1+eps): lambda_par and the focusing length both scale with r; PROVISIONAL until the convergence study",
+    "field_line_point_count_note": "derived by prepare_event.py from relative_segment_length and the line length",
+    "shock_boundary_root_table": true,
+    "shock_boundary_tolerance_m": 10000.0,
+    "shock_boundary_note": "--shock-boundary-root-table on and --shock-boundary-tolerance-m: the verified piecewise-linear shock-root table and its boundary tolerance (the 1 m default forces sub-0.1 s substeps during the early shock deceleration); PROVISIONAL until the convergence study"
+  },
+  "nightly": {
+    "note": "Nightly tier (user decisions 2026-11-25: short coarse nightly run of all three movers, the full event as a separate long test; inner observers added; 60 steps). event.nightly.in = event.in with only these values changed. The grid and the samples per step are PROVISIONAL until the convergence study.",
+    "relative_segment_length": 0.08,
+    "samples_per_step": 20,
+    "time_steps": 60,
+    "time_steps_note": "User decision 2026-11-25 ('60 step'). 60 steps of 60 s = the first hour: the shock goes from 2.52 to 7.4 Rs through its strong and weak phases, and the source particles fill the line out to about 1 AU (FTE-MFP run of the nightly deck, 2026-11-25)",
+    "inner_observer_radii_au": [
+      0.1,
+      0.3,
+      0.5
+    ],
+    "inner_observer_energy_bins": 40,
+    "inner_observer_note": "regression-only broadband observers (source band, logarithmic bins, 24 pitch-angle bins); outside the release sphere 1.3 R_sh, which is at 0.045 au after one hour; not compared with observations"
+  }
+}

@@ -17,6 +17,9 @@ struct MaterialView {
   std::vector<Position> vertices;
   std::vector<double> arc;
   std::vector<Connection> departureConnections;
+  // Radial extents of 'vertices' about the departure front's generating-sphere
+  // centre; derived data reused by every candidate query on this view.
+  RadialBounds radialBounds;
   std::uint64_t geometryGeneration=0;
 };
 Core::Result<std::shared_ptr<const MaterialView>> CaptureMaterialView();

@@ -1,0 +1,79 @@
+{
+  "schema": "srcsep-event-2013-04-11-raw-manifest-v1",
+  "note": "Raw archives are not stored in the source tree. Retrieve each file from its source into one directory at the listed relative path, then run 'prepare_event.py check --raw DIR'. Horizons responses embed their generation time, so a fresh download has a different SHA-256; compare the parsed records instead (prepare_event.py derive prints them into derived.json).",
+  "files": {
+    "omni/omni_hro_1min_20130401_v01.cdf": {
+      "sha256": "80c89fe6b93efa481cd7783aff05ec1f5ca817da9048ffd4d99d25cb9e8f7b66",
+      "source": "https://spdf.gsfc.nasa.gov/pub/data/omni/omni_cdaweb/hro_1min/2013/omni_hro_1min_20130401_v01.cdf"
+    },
+    "wind_swe/wi_h1_swe_20130411_v01.cdf": {
+      "sha256": "ddcf556150ccfe32c577d0d5347074c9f95a18f1c80ad4600e2fa0d8dae00a19",
+      "source": "https://spdf.gsfc.nasa.gov/pub/data/wind/swe/swe_h1/2013/wi_h1_swe_20130411_v01.cdf"
+    },
+    "wind_swe/wi_h5_swe_20130411_v01.cdf": {
+      "sha256": "86226d3e47952a6162dc5c8b21ddba783cd37b700111edc6fd4761fd2cc3cd87",
+      "source": "https://spdf.gsfc.nasa.gov/pub/data/wind/swe/swe_h5/2013/wi_h5_swe_20130411_v01.cdf"
+    },
+    "erne/soho_erne-hed_l2-1min_20130411_v01.cdf": {
+      "sha256": "08121f1fca3de51fbdb01e45f17176d9955de3d85bc512140b7c44f83f704350",
+      "source": "https://spdf.gsfc.nasa.gov/pub/data/soho/erne/hed_l2-1min/2013/soho_erne-hed_l2-1min_20130411_v01.cdf"
+    },
+    "erne/soho_erne-hed_l2-1min_20130412_v01.cdf": {
+      "sha256": "42134b3146b776e10f181d9deb093776f2e78a1c1971816e3c7ba53f1f98de15",
+      "source": "https://spdf.gsfc.nasa.gov/pub/data/soho/erne/hed_l2-1min/2013/soho_erne-hed_l2-1min_20130412_v01.cdf"
+    },
+    "erne/soho_erne-hed_l2-1min_20130413_v01.cdf": {
+      "sha256": "999f89f680496eab4a17f8ebd8f27f80b1347ef118672c1ee12cb757170bfa22",
+      "source": "https://spdf.gsfc.nasa.gov/pub/data/soho/erne/hed_l2-1min/2013/soho_erne-hed_l2-1min_20130413_v01.cdf"
+    },
+    "ccmc/goes-13.json": {
+      "sha256": "0a765c909685d28814605e21d5faa34f814527e82e651391480e8de146a4cf66",
+      "source": "CCMC SEP scoreboard 2020 campaign, event 20130411 (https://ccmc.gsfc.nasa.gov/assessment/topics/SEP/campaign2020/20130411.php), GOES-13 OpSEP measurement JSON"
+    },
+    "catalogs/wi_2013.html": {
+      "sha256": "93c1c462803fa420f20b171444f12bf4afafc6a4a2217aa8448b32cb3a66d50a",
+      "source": "https://lweb.cfa.harvard.edu/shocks/wi_data/wi_2013.html"
+    },
+    "catalogs/icmetable2.htm": {
+      "sha256": "f6f22e3b47805f86149f885424fc4ef095f5863d224a11a13972318e47abcb83",
+      "source": "https://izw1.caltech.edu/ACE/ASC/DATA/level3/icmetable2.htm"
+    },
+    "docs/lario2014_preprint.txt": {
+      "sha256": "033026441bd595eb10bb6b3b24c17fb406f24863c6985547bbbd177275daa2ae",
+      "source": "pdftotext of the Lario et al. (2014) ApJ 797:8 preprint (doi:10.1088/0004-637X/797/1/8); preprint PDF SHA-256 4b7bd4a9f37f6f1a93a5b5bc7f6fd1c52769c3aa869989f6c3994018ba2108ef"
+    },
+    "docs/export_data_description.txt": {
+      "sha256": "54be62299aa5da442d5b18eca427f2e456eecdfc5f88efdf75f6b33c05a253c6",
+      "source": "https://export.srl.utu.fi/export_data_description.txt (ERNE export data description, University of Turku)"
+    },
+    "horizons/vectors_soho.txt": {
+      "sha256": "1df490c7c8f8fbc1e99aef9cdfd0b0456334ab5a61f86e4f5567073d6e6e06fa",
+      "source": "JPL Horizons API: COMMAND=-21 VECTORS CENTER=500@10 2013-04-11 06:00..2013-04-14 00:00 step 1 h, VEC_TABLE=3, KM-S, ecliptic ICRF, UT"
+    },
+    "horizons/vectors_ace.txt": {
+      "sha256": "6ecc6d803b017677d0f01da2c7ccdc6a5849b59635618e7e51b50fa06b824ef6",
+      "source": "JPL Horizons API: COMMAND=-92, otherwise as vectors_soho.txt"
+    },
+    "horizons/vectors_earth.txt": {
+      "sha256": "dc6582bdff9614704ec26a8ea65fb8f497d3cd7c9c0578c12b99de360b314d9a",
+      "source": "JPL Horizons API: COMMAND=399, otherwise as vectors_soho.txt"
+    },
+    "horizons/wind_at_shock.txt": {
+      "sha256": "1436e408f278b65c9e0c48ed8223e468e8e1040ea010d3f5904cff7169b3d0fa",
+      "source": "JPL Horizons API: COMMAND=-8 VECTORS CENTER=500@10 TLIST='2013-04-13 22:13:22.5' (CAL, UT), VEC_TABLE=3"
+    },
+    "horizons/sun_from_earth_subobs.txt": {
+      "sha256": "50a26577122296f82020657c0cd0d9e8990f96529c0adf4d2094800b41c7e568",
+      "source": "JPL Horizons API: COMMAND=10 OBSERVER CENTER=500@399 QUANTITIES=14, 2013-04-11 00:00..2013-04-13 00:00 step 6 h, UT"
+    },
+    "wso/Harmonic.rad.CR2135.txt": {
+      "sha256": "ab216320758c28d8bf3ca614dc1bae178bba8cf7340c3a76949a743834b965e7",
+      "source": "http://wso.stanford.edu/Harmonic.rad/CR2135"
+    },
+    "wso/pfss.pdf": {
+      "sha256": "f54f86e3bc56bab8cb8f47029a4a9b63ad23c738503a4ff950db254cddfec3b3",
+      "source": "http://wso.stanford.edu/words/pfss.pdf",
+      "note": "X. Sun, Notes on PFSS Extrapolation (WSO): eq. 10 photospheric B_r, eq. 24 Schmidt normalization without Condon-Shortley phase"
+    }
+  }
+}

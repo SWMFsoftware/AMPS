@@ -40,8 +40,9 @@ Core::Result<double> NetProtonRate(const ReducedShock::FrontSample& front,
 }
 Core::Result<std::vector<ReleasePoint>> ReferenceIntersections(
     const ReducedShock::IntervalView& view,const std::vector<Position>& vertices,
-    double epoch,double distance,double tolerance) {
+    double epoch,double distance,double tolerance,std::size_t firstIndex,std::size_t lineVertexCount) {
   using R=Core::Result<std::vector<ReleasePoint>>;
+  const std::size_t total=lineVertexCount?lineVertexCount:vertices.size();
   if(vertices.size()<2||!std::isfinite(distance)||distance<=0||!std::isfinite(tolerance)||tolerance<=0)
     return R::Failure(Core::StatusCode::InvalidConfiguration,"reference surface requires a material line, positive L_ref and SI tolerance");
   const auto sphere=view.SphereAt(epoch);if(!sphere.ok())return R::Failure(sphere.status.code,sphere.status.message);
@@ -63,8 +64,8 @@ Core::Result<std::vector<ReleasePoint>> ReferenceIntersections(
     if(roots[1]<roots[0])std::swap(roots[0],roots[1]);
     for(int j=0;j<2;++j) {
       const double f=roots[j];
-      if(f<0||f>1||(j==1&&roots[0]==roots[1])||(f==1&&i+2<vertices.size()))continue;
-      ReleasePoint p;p.segment=i;p.fraction=f;
+      if(f<0||f>1||(j==1&&roots[0]==roots[1])||(f==1&&firstIndex+i+2<total))continue;
+      ReleasePoint p;p.segment=firstIndex+i;p.fraction=f;
       Position foot{};
       for(int d=0;d<3;++d){p.xM[d]=vertices[i][d]+f*v[d];p.normal[d]=(p.xM[d]-sphere.value.centerM[d])/radius;
         foot[d]=sphere.value.centerM[d]+sphere.value.radiusM*p.normal[d];}

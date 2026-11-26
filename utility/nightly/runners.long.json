@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "_doc": "The long routine: test runners run periodically (machine file \"routines\": {\"long\": {...}}; passion: Saturday 10:00) by 'amps-nightly run --routine long', in this order. Same schema as runners.json (ORCHESTRATOR.md section 2); runner ids must differ from those of runners.json.",
+  "checkout": {
+    "repository": "git@github.com:SWMFsoftware/AMPS.git",
+    "branch": "master",
+    "companions": [
+      {"path": "share", "repository": "git@github.com:SWMFsoftware/share.git"},
+      {"path": "util", "repository": "git@github.com:SWMFsoftware/util.git"},
+      {"path": "BATL", "repository": "git@github.com:SWMFsoftware/BATL.git"},
+      {"path": "SWMF_data", "link_var": "swmf_data"}
+    ]
+  },
+  "runners": [
+    {
+      "id": "sep-event-inputs-long",
+      "title": "srcSEP 2013-04-11 event inputs: prepare_event.py check",
+      "workspace": "plain",
+      "command": ["{python}", "-B", "srcSEP/test/event_2013_04_11/prepare_event.py", "check",
+                  "--raw", "{sep_validation_data}/event_2013_04_11"],
+      "env": {"PYTHONPATH": "{sep_python_path}"},
+      "time_limit_min": 10,
+      "note": "regenerates every checked-in input of the SEP--event-2013-04-11 tests (derived.json, observations.csv, event.event, event.in, event.nightly.in, event.args, the WSO asset, deck_summary.json) from the raw archives and byte-compares them, so a change of the preparation script, its settings or the archives is caught; the Table tests themselves only read the checked-in files. The same check as the nightly runner sep-event-inputs, run with the long tests.",
+      "results": {"reader": "exit-code"},
+      "families": "sep-long",
+      "requires_vars": ["sep_validation_data", "sep_python_path"]
+    },
+    {
+      "id": "legacy-long",
+      "kind": "makefile",
+      "manifest_target": "test_long_manifest",
+      "title": "MakefileTest/Table long tests (Tier=long, Makefile.test.long)",
+      "time_limit_min": 1920,
+      "note": "the test list is 'make -s test_long_manifest'; add a long test as a MakefileTest/Table block with Tier=long and Ranks=<N> (run through $(TESTMPILAUNCH) $(TEST<name>RANKS)); 1920 min = the routine's time_limit_h of 32 h on passion"
+    }
+  ],
+  "disabled": []
+}

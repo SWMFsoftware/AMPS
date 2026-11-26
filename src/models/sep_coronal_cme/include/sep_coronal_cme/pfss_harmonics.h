@@ -61,6 +61,13 @@ class PfssHarmonics {
   Core::Result<SphericalField> Evaluate(double radiusM, double thetaRad,
                                         double phiRad) const;
   Core::Result<Vec3> EvaluateCartesian(Vec3 positionM) const;
+  // The same Cartesian field as EvaluateCartesian (identical domain, pole
+  // clamp and coefficients), evaluated with one Legendre/trigonometric
+  // recurrence per query and multiplied radial powers instead of per-term
+  // pow/sin/cos and the unused second derivatives. Agrees with it to
+  // floating-point roundoff (~1e-14 relative), not bit for bit; callers that
+  // need the historical bits keep EvaluateCartesian.
+  Core::Result<Vec3> EvaluateFieldCartesian(Vec3 positionM) const;
   Core::Result<FieldLineTopology> Classify(Vec3 positionM, double stepM,
                                            int maximumSteps = 200000) const;
 
@@ -85,6 +92,10 @@ class PfssHarmonics {
  private:
   double solarRadiusM_ = 0.0, sourceSurfaceRadiusM_ = 0.0;
   std::vector<HarmonicCoefficient> coefficients_;
+  // Geometry-only tables of EvaluateFieldCartesian (independent of the
+  // amplitudes, so Scaled/HeatKernelFiltered copies keep them valid).
+  std::vector<double> coefficientNorm_, degreeA_, degreeRbPower_;
+  int maximumDegree_ = 0;
 };
 
 // Keeps both topology authorities explicit when R_i<R_b. This helper does not

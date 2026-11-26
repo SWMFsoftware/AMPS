@@ -21,13 +21,23 @@ enum class SourceMode { Prescribed, SelfConsistent, Swmf };
 // in ConfigurationFingerprint) are unchanged.
 enum class SpatialKind { FromPitchAngle, FromMeanFreePath,
                          ParallelDiffusionLibrary };
-enum class PitchAngleKind { Configured, Constant, Jokipii1966, Florinskiy };
+// IsotropicFromMeanFreePath evaluates the active mean-free-path provider and
+// converts it with the isotropic closure D_mumu = v (1 - mu^2) / (2 lambda),
+// dD_mumu/dmu = -v mu / lambda.  With this closure the from-dmumu quadrature
+// kappa = (v^2/8) Int (1-mu^2)^2 / D_mumu dmu is exactly v lambda / 3, so the
+// parker (from-mfp), fte-mfp and fte-dmumu movers share one lambda_parallel.
+// New enumerators are appended so existing ordinals (fingerprints) persist.
+enum class PitchAngleKind { Configured, Constant, Jokipii1966, Florinskiy,
+                            IsotropicFromMeanFreePath };
 enum class MeanFreePathKind {
   Qlt,
   Qlt1,
   Tenishev2005,
   Chen2024,
-  FromSpatial
+  FromSpatial,
+  // lambda = lambda_ref (r/r_ref)^a (R/R_ref)^b with rigidity R = pc/|q| [V];
+  // parameters in Configuration::radialRigidityPowerLaw (no defaults).
+  RadialRigidityPowerLaw
 };
 enum class InvalidPolicy { Fail, Ballistic };
 enum class TurbulenceAmplitudePolicy { Reject, LimitToMeanField };
@@ -67,6 +77,11 @@ struct Configuration {
   CoefficientPhysics::SpectrumParameters spectrum;
   CoefficientPhysics::FlorinskiyParameters florinskiy;
   CoefficientPhysics::SpatialQuadratureConfiguration spatialQuadrature;
+  // Used only when meanFreePath == RadialRigidityPowerLaw.  The default
+  // object is invalid by construction (all zero), so selecting that provider
+  // without stating lambda_ref, r_ref, R_ref and both exponents is rejected
+  // by ValidateConfiguration rather than running with hidden constants.
+  CoefficientPhysics::RadialRigidityPowerLawParameters radialRigidityPowerLaw;
 };
 
 const std::vector<Descriptor>& SpatialRegistry();

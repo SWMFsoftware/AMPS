@@ -1,6 +1,7 @@
 """Run-directory record format shared by every producer (runner, importers) and the server.
 
-A run directory holds the results of ONE column (machine + compiler configuration) for one night:
+A run directory holds the results of ONE column (machine + compiler configuration) for one night, or for one
+run of another routine (run.json "routine": "long"; absent in older records, which are all "nightly"):
 
     <run-id>/run.json        run metadata (machine, config, commit, times, completeness)
     <run-id>/results.jsonl   one JSON object per test
@@ -28,6 +29,8 @@ _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 _COMMIT = re.compile(r"^[0-9a-f]{7,40}$")
 _STAGE = re.compile(r"^[a-z][a-z-]{0,19}$")
+_ROUTINE = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
+NIGHTLY = "nightly"
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
@@ -60,8 +63,11 @@ def column_id(machine: str, config: str) -> str:
     return "{}-{}".format(machine, config)
 
 
-def make_run_id(machine: str, config: str, finished: dt.datetime) -> str:
-    return "{}-{}-{}".format(finished.astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%MZ"), machine, config)
+def make_run_id(machine: str, config: str, finished: dt.datetime, routine: str = NIGHTLY) -> str:
+    """YYYYMMDDTHHMMZ-<machine>-<config>, and -<routine> for a routine other than the nightly, so that a long run
+    and a nightly run of one column started in the same minute have different ids."""
+    run_id = "{}-{}-{}".format(finished.astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%MZ"), machine, config)
+    return run_id if routine == NIGHTLY else "{}-{}".format(run_id, routine)
 
 
 # ----------------------------------------------------------------------------- fields
@@ -108,6 +114,9 @@ def normalize_run(raw: Any) -> Dict[str, Any]:
     commit = raw.get("commit") or ""
     if commit and (not isinstance(commit, str) or not _COMMIT.match(commit)):
         raise RecordError("commit must be a 7-40 character lowercase hex SHA")
+    routine = raw.get("routine") or NIGHTLY
+    if not isinstance(routine, str) or not _ROUTINE.match(routine):
+        raise RecordError("routine must match {}: got {!r}".format(_ROUTINE.pattern, routine))
     run = {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
@@ -123,6 +132,7 @@ def normalize_run(raw: Any) -> Dict[str, Any]:
         "complete": raw["complete"],
         "producer": _text(raw, "producer", 60),
         "notes": _text(raw, "notes", 500),
+        "routine": routine,
     }
     night = raw.get("night") or ""
     if night:

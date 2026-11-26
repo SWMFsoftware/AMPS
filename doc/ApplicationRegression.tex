@@ -35,6 +35,13 @@ The maintained record is delimited by \code{#>} and \code{<#}.
 tools; not a measured duration or an enforced physical acceptance limit.\\
 \code{Type} & \code{amps} or \code{swmf}; distinguishes a standalone case
 from a custom framework-coupled campaign.\\
+\code{Tier} & \code{nightly} (default) or \code{long}. A long block is
+written to \path{Makefile.test.long} instead of \path{Makefile.test}, so the
+nightly never runs it; the periodic long routine of \path{utility/nightly}
+does.\\
+\code{Ranks} & Required for \code{Tier=long}, an error otherwise: the fixed
+MPI rank count of the test, \code{TEST<NAME>RANKS}. Its references are made
+for that count.\\
 \code{Keys} & Configuration options, frequently selecting SPICE, background
 data, OpenMP or vectorization. Machine-qualified alternatives are possible.\\
 \code{Outs} & Declared output basenames for the default comparison.
@@ -66,6 +73,28 @@ implementation references and differ in some behavior. Installation normally
 generates two execution blocks; changing the count regenerates the file.
 Do not edit only the generated Makefile and expect a change to survive the
 next generation. Keep the source declaration and effective recipe consistent.
+
+\section{The long tier}
+A block with \code{Tier=long} and \code{Ranks=N} describes a test too long
+for the nightly, typically a full validation run on many ranks. The generator
+writes it, with the same four phase targets, to \path{Makefile.test.long},
+which \path{Makefile.def.amps} includes after \path{Makefile.test}. Nothing in
+\path{Makefile.test} (\code{test_all}, \code{test_run},
+\code{test_manifest}) names it. \path{Makefile.test.long} provides
+\code{test_long_manifest} (the \code{test_manifest} format),
+\code{test_long_all} and \code{test_long_help}, and
+\code{TESTMPILAUNCH?=mpirun -np}. The default run phase of a long test
+launches \code{$(TESTMPILAUNCH) $(TEST<NAME>RANKS) ./amps}, and its default
+check also fails when the run used another rank count. Run one by hand from
+the AMPS root:
+\begin{lstlisting}
+make test_SEP--event-2013-04-11-long--FTE-MFP TESTMPILAUNCH='mpiexec -n'
+\end{lstlisting}
+The long routine of \path{utility/nightly} (\path{runners.long.json})
+selects the tests from \code{make -s test_long_manifest}. A long test's name
+must not begin with the name of a nightly test, because the runner collects
+\code{test_<name>*.diff}. Tests of any application can join the tier this way,
+and other test programs can join it as runners of \path{runners.long.json}.
 
 \section{Four phases and an individual invocation}
 An owner normally provides:

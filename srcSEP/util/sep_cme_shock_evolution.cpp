@@ -113,9 +113,11 @@ Front::SseKinematicState Trace(const Prepared& p, double timeS) {
   // the analytically matched outer drag law afterward. R and V are
   // continuous at the handoff while acceleration may change.
   const double fitTime = std::min<double>(timeS, p.handoffS);
+  const auto fitted = Front::EvaluateFittedApex(
+      fitTime, p.radiusM, p.speedMPerS, p.accelerationMPerS2);
   Front::SseKinematicState state{};
-  state.apexRadiusM = p.radiusM + fitTime * (p.speedMPerS + 0.5 * fitTime * p.accelerationMPerS2);
-  state.apexSpeedMPerS = p.speedMPerS + fitTime * p.accelerationMPerS2;
+  state.apexRadiusM = fitted.apexRadiusM;
+  state.apexSpeedMPerS = fitted.apexSpeedMPerS;
   state.direction = p.axis;
   state.halfWidthRad = p.widthRad;
   if (timeS > p.handoffS) {

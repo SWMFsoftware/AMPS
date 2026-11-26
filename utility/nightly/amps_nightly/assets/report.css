@@ -56,6 +56,9 @@ h2{margin:0;font-size:15px;font-weight:600}
 .chg-t{display:flex;flex-direction:column;gap:2px}
 .chg-t .mono{font-size:13px}
 .more{font-size:13px;color:var(--muted);align-self:center}
+.rsec{display:flex;flex-direction:column;gap:12px}
+.rhead{display:flex;flex-direction:column;gap:6px}
+.rhead h2{font-size:20px;font-weight:700}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;font-size:13px;color:var(--ink-2)}
 .legend>span{display:inline-flex;align-items:center;gap:8px}
 

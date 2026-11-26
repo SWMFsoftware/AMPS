@@ -74,7 +74,8 @@ SEP::Transport::Status SEP::QueryShockDiagnostic(double epochS,ShockDiagnostic* 
     if(!apex.ok())return Status::Error(StatusCode::UnsupportedConfiguration,apex.status.message);
     candidate.apexRadiusM=0;
     for(double x:apex.value)candidate.apexRadiusM=std::hypot(candidate.apexRadiusM,x);
-    candidate.modelName="reduced-SSE/Parker";
+    candidate.modelName=ReducedShock::HeliocentricSphereFront()?
+        "reduced-sphere/Parker":"reduced-SSE/Parker";
     if(!std::isfinite(candidate.apexRadiusM)||candidate.apexRadiusM<=0)
       return Status::Error(StatusCode::InvalidParticleState,"core output apex distance is nonfinite/nonpositive");
   }else if(ShockModelType==cShockModelType::Analytic1D) {

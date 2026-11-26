@@ -18,4 +18,6 @@ ExternalModules=models/exosphere
 INTERFACE=off
 
 include ${PTDIR}/Makefile.test
+# Tier=long tests of MakefileTest/Table (utility/TestScripts/table_parser.cpp); the nightly never runs them
+-include ${PTDIR}/Makefile.test.long
 

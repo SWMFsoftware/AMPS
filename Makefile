@@ -265,7 +265,7 @@ distclean:
 	./Config.pl -uninstall
 
 allclean: clean
-	rm -rf main ${WSD} *.input* amps table_parser Makefile.local Makefile.test \
+	rm -rf main ${WSD} *.input* amps table_parser Makefile.local Makefile.test Makefile.test.long \
 		.amps.conf .general.conf
 	rm -f output
 	rm -f AMPS.pdf

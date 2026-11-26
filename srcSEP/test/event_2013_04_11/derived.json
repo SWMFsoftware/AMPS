@@ -1,0 +1,644 @@
+{
+ "ambient": {
+  "B_magnitude": {
+   "catdesc": "Magnitude of avg. field vector (nT) (last currently-available OMNI B-field data Sep 03, 2024)",
+   "in_window": 360,
+   "max": 7.679999828338623,
+   "mean": 6.978105838584368,
+   "median": 7.039999961853027,
+   "min": 6.0,
+   "source": "OMNI_HRO_1MIN F",
+   "std": 0.3469955157856065,
+   "unit": "nT",
+   "valid": 359
+  },
+  "Bx_gse": {
+   "catdesc": "Bx (nT), GSE",
+   "in_window": 360,
+   "max": 3.859999895095825,
+   "mean": -2.2659331437999324,
+   "median": -2.549999952316284,
+   "min": -5.400000095367432,
+   "source": "OMNI_HRO_1MIN BX_GSE",
+   "std": 1.8949187735497142,
+   "unit": "nT",
+   "valid": 359
+  },
+  "By_gse": {
+   "catdesc": "By (nT), GSE",
+   "in_window": 360,
+   "max": 7.28000020980835,
+   "mean": 4.3352924849433325,
+   "median": 5.320000171661377,
+   "min": -2.2100000381469727,
+   "source": "OMNI_HRO_1MIN BY_GSE",
+   "std": 2.528307893822866,
+   "unit": "nT",
+   "valid": 359
+  },
+  "T_alpha": {
+   "in_window": 71,
+   "max": 631324.5998975761,
+   "mean": 606239.7142176646,
+   "median": 600938.4818716893,
+   "min": 586456.0608837282,
+   "source": "WI_H1_SWE Alpha_W_nonlin, fit_flag==10, T = M W^2 / (2 k)",
+   "std": 18697.125386875374,
+   "unit": "K",
+   "valid": 3
+  },
+  "T_e": {
+   "in_window": 1545,
+   "max": 207242.59375,
+   "mean": 186677.4602144013,
+   "median": 185997.625,
+   "min": 91881.015625,
+   "source": "WI_H5_SWE T_elec (total electron temperature)",
+   "std": 6503.997845173843,
+   "unit": "K",
+   "valid": 1545
+  },
+  "T_p": {
+   "catdesc": "Temperature (K)",
+   "in_window": 360,
+   "max": 112383.0,
+   "mean": 62502.057627118644,
+   "median": 59076.0,
+   "min": 37999.0,
+   "source": "OMNI_HRO_1MIN T",
+   "std": 14425.104021364546,
+   "unit": "K",
+   "valid": 295
+  },
+  "V_sw": {
+   "catdesc": "Flow Speed (km/s), GSE",
+   "in_window": 360,
+   "max": 413.29998779296875,
+   "mean": 377.9481478604403,
+   "median": 375.5,
+   "min": 363.20001220703125,
+   "source": "OMNI_HRO_1MIN flow_speed",
+   "std": 9.151871966646409,
+   "unit": "km/s",
+   "valid": 297
+  },
+  "alpha_to_proton": {
+   "fit_flag_counts": {
+    "0": 4,
+    "1": 5,
+    "2": 44,
+    "3": 88,
+    "5": 3,
+    "10": 71
+   },
+   "in_window": 71,
+   "max": 0.0726555084303176,
+   "mean": 0.054256389773287,
+   "median": 0.053133321609264456,
+   "min": 0.0422138846321238,
+   "source": "WI_H1_SWE Alpha_Na_nonlin/Proton_Np_nonlin, fit_flag==10",
+   "std": 0.006140571327465359,
+   "unit": "1",
+   "valid": 71
+  },
+  "deck": {
+   "alpha_temperature_K": 606239.7142176646,
+   "alpha_to_proton_ratio": 0.054256389773287,
+   "electron_density_1au_cm3": 6.237754438379548,
+   "electron_temperature_K": 186677.4602144013,
+   "magnetic_field_1au_nT": 6.978105838584368,
+   "proton_temperature_K": 62502.057627118644,
+   "radial_polarity": 1,
+   "wind_speed_km_s": 377.9481478604403
+  },
+  "n_p": {
+   "catdesc": "Proton density (n/cc) (last currently-available OMNI plasma data Sep 03, 2024)",
+   "in_window": 360,
+   "max": 7.130000114440918,
+   "mean": 5.627138047908693,
+   "median": 5.630000114440918,
+   "min": 4.190000057220459,
+   "source": "OMNI_HRO_1MIN proton_density",
+   "std": 0.6298352808440199,
+   "unit": "cm^-3",
+   "valid": 297
+  },
+  "omni_imf_source_ids": [
+   71
+  ],
+  "omni_pls_source_ids": [
+   71
+  ],
+  "polarity": {
+   "away_fraction": 0.7688022284122563,
+   "mean_radial_field_nT": 2.2659331437999324,
+   "radial_polarity": 1,
+   "rule": "parker.radial_polarity = sign(mean B_r), B_r = -Bx_GSE",
+   "toward_fraction": 0.0
+  },
+  "window_utc": [
+   "2013-04-11T00:55:00.000Z",
+   "2013-04-11T06:55:00.000Z"
+  ]
+ },
+ "erne_windows": [
+  {
+   "channels": [
+    {
+     "channel": "PH1",
+     "energy_high_mev": 17.0,
+     "energy_low_mev": 14.0,
+     "mean_intensity_per_cm2_s_sr_mev": 2.0594369703982056,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 1.592710359052682
+    },
+    {
+     "channel": "PH2",
+     "energy_high_mev": 22.0,
+     "energy_low_mev": 17.0,
+     "mean_intensity_per_cm2_s_sr_mev": 1.5970924348891282,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 1.1018000968426025
+    },
+    {
+     "channel": "PH3",
+     "energy_high_mev": 28.0,
+     "energy_low_mev": 21.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.8654583301395178,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.5158781368197715
+    },
+    {
+     "channel": "PH4",
+     "energy_high_mev": 32.0,
+     "energy_low_mev": 26.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.6035416753341755,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.31810949986634623
+    },
+    {
+     "channel": "PH5",
+     "energy_high_mev": 40.0,
+     "energy_low_mev": 32.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.4002916620423396,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.18804080640462806
+    },
+    {
+     "channel": "PH6",
+     "energy_high_mev": 51.0,
+     "energy_low_mev": 40.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.26458333246409893,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.10955360695473883
+    },
+    {
+     "channel": "PH7",
+     "energy_high_mev": 67.0,
+     "energy_low_mev": 51.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.1600291666885217,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.05437367098233074
+    },
+    {
+     "channel": "PH8",
+     "energy_high_mev": 80.0,
+     "energy_low_mev": 64.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.0358125000881652,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.007668587072297401
+    },
+    {
+     "channel": "PH9",
+     "energy_high_mev": 101.0,
+     "energy_low_mev": 80.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.005242916668066755,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.001116560991076983
+    },
+    {
+     "channel": "PH10",
+     "energy_high_mev": 131.0,
+     "energy_low_mev": 101.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.0006264166640903568,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 95
+     },
+     "sample_std": 0.0002445933522694478
+    }
+   ],
+   "id": "erne-04h",
+   "model_start_s": 10800.0,
+   "model_stop_s": 18000.0,
+   "requested_centre_utc": "2013-04-11T11:24:00.000Z",
+   "role": "calibration",
+   "start_utc": "2013-04-11T10:26:44.000Z",
+   "stop_utc": "2013-04-11T12:26:44.000Z"
+  },
+  {
+   "channels": [
+    {
+     "channel": "PH1",
+     "energy_high_mev": 17.0,
+     "energy_low_mev": 14.0,
+     "mean_intensity_per_cm2_s_sr_mev": 3.528250002861023,
+     "minutes_used": 120,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.1799937551142749
+    },
+    {
+     "channel": "PH2",
+     "energy_high_mev": 22.0,
+     "energy_low_mev": 17.0,
+     "mean_intensity_per_cm2_s_sr_mev": 2.2422499934832256,
+     "minutes_used": 120,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.12383551123159259
+    },
+    {
+     "channel": "PH3",
+     "energy_high_mev": 28.0,
+     "energy_low_mev": 21.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.9692083274324735,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.05951760178990231
+    },
+    {
+     "channel": "PH4",
+     "energy_high_mev": 32.0,
+     "energy_low_mev": 26.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.5692916711171468,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.030735165562468032
+    },
+    {
+     "channel": "PH5",
+     "energy_high_mev": 40.0,
+     "energy_low_mev": 32.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.3208333340783914,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.020712663018991405
+    },
+    {
+     "channel": "PH6",
+     "energy_high_mev": 51.0,
+     "energy_low_mev": 40.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.1816666660209497,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.011889590155295298
+    },
+    {
+     "channel": "PH7",
+     "energy_high_mev": 67.0,
+     "energy_low_mev": 51.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.09191666729748249,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.006613402580486637
+    },
+    {
+     "channel": "PH8",
+     "energy_high_mev": 80.0,
+     "energy_low_mev": 64.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.01805833331309259,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.0017095429125027317
+    },
+    {
+     "channel": "PH9",
+     "energy_high_mev": 101.0,
+     "energy_low_mev": 80.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.002497499959038881,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.00030476290797737567
+    },
+    {
+     "channel": "PH10",
+     "energy_high_mev": 131.0,
+     "energy_low_mev": 101.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.000290375000986387,
+     "minutes_used": 24,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 96
+     },
+     "sample_std": 0.00026364828545536476
+    }
+   ],
+   "id": "erne-12h",
+   "model_start_s": 39600.0,
+   "model_stop_s": 46800.0,
+   "requested_centre_utc": "2013-04-11T19:24:00.000Z",
+   "role": "holdout",
+   "start_utc": "2013-04-11T18:26:44.000Z",
+   "stop_utc": "2013-04-11T20:26:44.000Z"
+  },
+  {
+   "channels": [
+    {
+     "channel": "PH1",
+     "energy_high_mev": 17.0,
+     "energy_low_mev": 14.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.6145462208435315,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.021585363092009785
+    },
+    {
+     "channel": "PH2",
+     "energy_high_mev": 22.0,
+     "energy_low_mev": 17.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.36521848860908956,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.011755387529696692
+    },
+    {
+     "channel": "PH3",
+     "energy_high_mev": 28.0,
+     "energy_low_mev": 21.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.15911764720407853,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.005845723575759527
+    },
+    {
+     "channel": "PH4",
+     "energy_high_mev": 32.0,
+     "energy_low_mev": 26.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.09447647086462053,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.00407226466649953
+    },
+    {
+     "channel": "PH5",
+     "energy_high_mev": 40.0,
+     "energy_low_mev": 32.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.05376218506643752,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.002631748566697242
+    },
+    {
+     "channel": "PH6",
+     "energy_high_mev": 51.0,
+     "energy_low_mev": 40.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.03047899156808853,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.0017766791708644402
+    },
+    {
+     "channel": "PH7",
+     "energy_high_mev": 67.0,
+     "energy_low_mev": 51.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.015482352968274044,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.0009584280615502226
+    },
+    {
+     "channel": "PH8",
+     "energy_high_mev": 80.0,
+     "energy_low_mev": 64.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.002949411751890258,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.000372650363431908
+    },
+    {
+     "channel": "PH9",
+     "energy_high_mev": 101.0,
+     "energy_low_mev": 80.0,
+     "mean_intensity_per_cm2_s_sr_mev": 0.0004420420164711961,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 0.0001283200035548042
+    },
+    {
+     "channel": "PH10",
+     "energy_high_mev": 131.0,
+     "energy_low_mev": 101.0,
+     "mean_intensity_per_cm2_s_sr_mev": 7.981512610685127e-05,
+     "minutes_used": 119,
+     "rejected": {
+      "invalid": 0,
+      "status_b12": 0
+     },
+     "sample_std": 7.36516336171721e-05
+    }
+   ],
+   "id": "erne-36h",
+   "model_start_s": 126000.0,
+   "model_stop_s": 133200.0,
+   "requested_centre_utc": "2013-04-12T19:24:00.000Z",
+   "role": "holdout",
+   "start_utc": "2013-04-12T18:26:44.000Z",
+   "stop_utc": "2013-04-12T20:26:44.000Z"
+  }
+ ],
+ "generator": "srcSEP/test/event_2013_04_11/prepare_event.py derive",
+ "geometry": {
+  "ace_heliocentric_distance_hourly_change_m": 1780901.0558776855,
+  "ace_heliocentric_distance_m": {
+   "max": 148583441563.2002,
+   "mean": 148546242916.0748,
+   "min": 148508946137.50528,
+   "rule": "mean of hourly DE441 vectors over the run interval",
+   "samples": 43
+  },
+  "ace_heliocentric_distance_t0_m": 148509739484.42172,
+  "earth_carrington_longitude_deg": 85.37266962907407,
+  "earth_heliocentric_distance_m": {
+   "max": 150003698953.3562,
+   "mean": 149966978670.71176,
+   "min": 149930108514.29782,
+   "rule": "mean of hourly DE441 vectors over the run interval",
+   "samples": 43
+  },
+  "earth_heliographic_latitude_deg": -5.888659966666666,
+  "sin_colatitude": 0.9947231424277913,
+  "soho_heliocentric_distance_m": {
+   "max": 148731320378.6494,
+   "mean": 148695923870.19885,
+   "min": 148660394605.79388,
+   "rule": "mean of hourly DE441 vectors over the run interval",
+   "samples": 43
+  }
+ },
+ "goes13_gt10mev": {
+  "event_end_utc": "2013-04-13T00:50:00Z",
+  "event_start_utc": "2013-04-11T10:55:00Z",
+  "fluence_cm2": 63430463.44574436,
+  "fluence_definition": "4 pi Int J dt over the event interval (OpSEP calculate_fluence)",
+  "peak_pfu": 104.01,
+  "peak_utc": "2013-04-11T14:30:00Z",
+  "source": "CCMC SEP Scoreboard campaign record (ccmc/goes-13.json), OpSEP measurement",
+  "threshold_pfu": 10
+ },
+ "model_t0_note": "first shock knot (light-time corrected) rounded to the whole second; AMPS and reduced-front time zero",
+ "model_t0_utc": "2013-04-11T07:26:44.000Z",
+ "raw_manifest_sha256": "c36c6dea76735077cc7f5dfea802f73b26e1cf88b04221f1c7f329b4b16e7057",
+ "run_end_utc": "2013-04-13T00:50:44.000Z",
+ "schema": "srcsep-event-2013-04-11-derived-v1",
+ "settings_sha256": "4292987014a751b9566b1a3b9634dad6f90bcef43e77c31bae51b715b68a2ba9",
+ "shock_knots": [
+  {
+   "height_above_surface_rsun": 1.52,
+   "height_uncertainty_rsun": 0.63,
+   "light_time_subtracted_s": 495.8810040323396,
+   "listed_utc_light_time_added": "2013-04-11T07:35:00Z",
+   "model_time_s": 0,
+   "physical_minus_model_clock_s": 0.118996,
+   "physical_utc": "2013-04-11T07:26:44.118Z",
+   "radius_rsun": 2.52,
+   "source": "Lario et al. (2014) ApJ 797:8, Table 2, 0.25-0.70 MeV Electrons/SOHO/EPHIN",
+   "time_uncertainty_min": 2
+  },
+  {
+   "height_above_surface_rsun": 2.57,
+   "height_uncertainty_rsun": 0.9,
+   "light_time_subtracted_s": 495.8819479887741,
+   "listed_utc_light_time_added": "2013-04-11T07:45:00Z",
+   "model_time_s": 600,
+   "physical_minus_model_clock_s": 600.118052,
+   "physical_utc": "2013-04-11T07:36:44.118Z",
+   "radius_rsun": 3.57,
+   "source": "Lario et al. (2014) ApJ 797:8, Table 2, Near-relativistic Electrons/WIND/3DP",
+   "time_uncertainty_min": 5
+  },
+  {
+   "height_above_surface_rsun": 2.73,
+   "height_uncertainty_rsun": 0.65,
+   "light_time_subtracted_s": 495.882136780061,
+   "listed_utc_light_time_added": "2013-04-11T07:47:00Z",
+   "model_time_s": 720,
+   "physical_minus_model_clock_s": 720.117863,
+   "physical_utc": "2013-04-11T07:38:44.117Z",
+   "radius_rsun": 3.73,
+   "source": "Lario et al. (2014) ApJ 797:8, Table 2, 175-315 keV Electrons/ACE/EPAM/DE",
+   "time_uncertainty_min": 2
+  },
+  {
+   "height_above_surface_rsun": 3.68,
+   "height_uncertainty_rsun": 1.27,
+   "light_time_subtracted_s": 495.8831751321389,
+   "listed_utc_light_time_added": "2013-04-11T07:58:00Z",
+   "model_time_s": 1380,
+   "physical_minus_model_clock_s": 1380.116825,
+   "physical_utc": "2013-04-11T07:49:44.116Z",
+   "radius_rsun": 4.68,
+   "source": "Lario et al. (2014) ApJ 797:8, Table 2, Protons/SOHO/ERNE",
+   "time_uncertainty_min": 9
+  },
+  {
+   "model_time_s": 225999,
+   "physical_minus_model_clock_s": 225998.512,
+   "physical_utc": "2013-04-13T22:13:22.512Z",
+   "radius_rsun": 213.28679390145695,
+   "source": "CfA Interplanetary Shock Database, Wind 2013 list, FF shock DOY 103.925955; Richardson & Cane ICME list associates the 2013/04/13 22:54 disturbance with the 2013/04/11 07:24 CME",
+   "time_uncertainty_min": null,
+   "wind_heliocentric_distance_m": 148383622517.2436
+  }
+ ],
+ "total_iterations": 2484
+}

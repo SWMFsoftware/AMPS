@@ -1,11 +1,12 @@
 """amps-nightly command line.
 
-    amps-nightly install [--root DIR]            put amps_nightly_test.sh in ~/bin and its line in crontab
+    amps-nightly install [--root DIR]            put amps_nightly_test.sh in ~/bin and its lines in crontab
     amps-nightly uninstall                       take them out again
-    amps-nightly check                           Table, families.json, runners.json and machines/ agree
+    amps-nightly check                           Table, families.json, runners*.json and machines/ agree
     amps-nightly machines                        machine files, their columns and last uploads
     amps-nightly plan [--machine M] [--list]     what the runners run (and skip, and why) on a machine
     amps-nightly run [--dry-run] [--only R]      script 1: the nightly test procedure on this machine (runners.json)
+    amps-nightly run --routine long ...          the same for another routine (runners.long.json; also plan)
     amps-nightly pack [--no-send]                script 2: tar each finished run with its logs, send it to the server
     amps-nightly check-table                     every Table block has one registered Family=
     amps-nightly import-legacy-archive ...       server archive (AMPS_TEST_RESULTS) -> run directories
@@ -29,12 +30,12 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import install, legacy, report, store as store_mod, transfer
 from .checks import check_all
-from .machines import declared_columns, find_machine, load_machines
+from .machines import declared_columns, declared_routines, find_machine, load_machines, parse_start
 from .orchestrator import Night, NightError, describe
 from .plan import RUN, SKIP, duplicates, plan
 from .records import RecordError, parse_time
 from .registry import Registry, RegistryError
-from .runners import Routine, RoutineError
+from .runners import NIGHTLY, Routine, RoutineError, routine_names, routine_path
 from .table import check_table, read_table
 
 FALLBACK_ROOT = Path.home() / "AMPSTEST" / "nightly"
@@ -131,6 +132,13 @@ def cmd_machines(args: argparse.Namespace) -> int:
             print("    column {:<24} {}{}  last upload: {}{}".format(
                 c.column, c.compiler, " · " + c.toolchain if c.toolchain else "",
                 last.get(c.column, "never"), "" if c.enabled else "  [switched off]"))
+        for name in sorted(m.routines or {}):
+            r = m.routines[name]
+            print("    routine {}: starts {} · limit {:g} h · {} lane{} · {} compile lane{} · at most {} MPI ranks{}".format(
+                name, r.start, r.time_limit_h or m.night_limit_h, r.lanes or m.lanes,
+                "" if (r.lanes or m.lanes) == 1 else "s", r.compile_lanes or m.compile_lanes,
+                "" if (r.compile_lanes or m.compile_lanes) == 1 else "s", m.max_ranks(name),
+                "" if r.enabled else "  [switched off]"))
     for problem in problems:
         print("ERROR:", problem)
     if not machines and not problems:
@@ -153,6 +161,16 @@ def _machine(args: argparse.Namespace):
     return machine
 
 
+def _routine(args: argparse.Namespace, machine, doing: str):
+    """The routine of --routine and the machine as that routine sees it (None if the machine does not run it)."""
+    routine = Routine.load_routine(args.routine, args.runners)
+    if not machine.runs_routine(args.routine):
+        print("{} does not run routine {}: its machine file {} does not enable it in \"routines\"; nothing {}".format(
+            machine.machine, args.routine, machine.path, doing))
+        return routine, None
+    return routine, machine.for_routine(args.routine)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     machine = _machine(args)
     if machine is None:
@@ -168,10 +186,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             print("{} is switched off (\"enabled\": false) or has no enabled configuration; nothing to run".format(
                 machine.machine))
             return 0
-    routine, registry = Routine.load(args.runners), Registry.load(args.families)
+    routine, machine = _routine(args, machine, "to run")
+    if machine is None:
+        return 0
+    registry = Registry.load(args.families)
     unknown = [r for r in args.only if routine.source(r) is None]
     if unknown:
-        print("unknown runner(s): {}; known: {}".format(", ".join(unknown), ", ".join(s.id for s in routine.sources)))
+        print("unknown runner(s): {}; known{}: {}".format(
+            ", ".join(unknown), "" if routine.name == NIGHTLY else " in " + routine.label,
+            ", ".join(s.id for s in routine.sources)))
         return 1
     if args.dry_run:
         print("\n".join(describe(machine, routine, registry, configs, args.only)))
@@ -201,13 +224,15 @@ def cmd_pack(args: argparse.Namespace) -> int:
     if busy:
         print("a run is in progress (night {}); its results are packed after it finishes".format(busy))
     if abandoned:
-        try:
-            routine = Routine.load(args.runners)
-        except RoutineError:
-            routine = None
+        routines = []
+        for name in routine_names(args.runners):          # a run of any routine may have been cut short
+            try:
+                routines.append(Routine.load_routine(name, args.runners))
+            except RoutineError:
+                pass
 
         def family_of(runner: str) -> str:
-            source = routine.source(runner) if routine else None
+            source = next((r.source(runner) for r in routines if r.source(runner)), None)
             return source.family if source else ""
 
         for rundir in abandoned:
@@ -266,10 +291,19 @@ def cmd_install(args: argparse.Namespace) -> int:
     settings["BRANCH"] = args.branch or old.get("BRANCH") or "master"
     settings["UPDATE_SITE"] = args.update_site or old.get("UPDATE_SITE") or ("yes" if server else "no")
     settings["PYTHON"] = args.python or old.get("PYTHON") or "python3"
-    start = args.time or machine.start or "20:00"
+    # one crontab line per routine: the nightly every day at "start", each routine of "routines" at its own start
+    if args.routine != NIGHTLY and not machine.runs_routine(args.routine):
+        print("error: {} does not enable routine {} in \"routines\" of {}".format(
+            machine.machine, args.routine, machine.path))
+        return 1
+    start = (args.time if args.routine == NIGHTLY else None) or machine.start or "20:00"
+    routines = [(name, args.time if args.time and name == args.routine else machine.routines[name].start)
+                for name in machine.enabled_routines()]
     try:
+        if parse_start(start)[0] is not None:
+            raise ValueError("the nightly runs every day: its start is HH:MM, not {!r}".format(start))
         crontab = install.read_crontab()
-        plan = install.plan_install(bin_dir, settings, start, crontab)
+        plan = install.plan_install(bin_dir, settings, start, crontab, routines=routines)
     except (install.InstallError, ValueError, OSError) as error:
         print("error:", error)
         return 1
@@ -281,6 +315,10 @@ def cmd_install(args: argparse.Namespace) -> int:
         print("  note: SWMF_data ({}) does not exist yet; the first night clones it (about 4 GB)".format(data))
     print("  note: each night downloads AMPS {} from GitHub; utility/nightly must be on that branch".format(
         settings["BRANCH"]))
+    for name, _ in routines:
+        if not routine_path(name).is_file():
+            print("  note: routine {} has no {} in this checkout; its runs fail until the branch has it".format(
+                name, routine_path(name).name))
     if not plan.changes:
         print("nothing to change")
         return 0
@@ -293,6 +331,10 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
     print("installed: the nightly starts at {} every day; its log is {}/logs/nightly-<date>.log".format(
         start, settings["AMPSTEST"]))
+    for name, when in routines:
+        day = parse_start(when)[0]
+        print("installed: routine {} starts {} every {}; its log is {}/logs/{}-<date>.log".format(
+            name, when, "day" if day is None else "week", settings["AMPSTEST"], name))
     return 0
 
 
@@ -339,12 +381,22 @@ def cmd_plan(args: argparse.Namespace) -> int:
     if None in configs:
         print("{} has no configuration {!r}".format(machine.machine, args.config))
         return 1
-    routine, registry = Routine.load(args.runners), Registry.load(args.families)
+    routine, machine = _routine(args, machine, "is planned")
+    if machine is None:
+        return 0
+    registry = Registry.load(args.families)
     amps_dir = Path(args.amps_dir).expanduser() if args.amps_dir else None
     status = 0
     if not machine.enabled:
         print("{} is switched off (\"enabled\": false): nothing runs there; the plan below applies once it is "
               "switched on".format(machine.machine))
+    if routine.name != NIGHTLY:
+        print("routine {} ({}) on {}: starts {}, time limit {:g} h, {} run lane{}, {} compile lane{}, at most {} MPI "
+              "ranks per test; stage limits {}".format(
+                  routine.name, routine.label, machine.machine, machine.start, machine.night_limit_h, machine.lanes,
+                  "" if machine.lanes == 1 else "s", machine.compile_lanes, "" if machine.compile_lanes == 1 else "s",
+                  machine.max_ranks(routine.name),
+                  ", ".join("{} {} s".format(k, v) for k, v in machine.timeouts_s.items())))
     for config in configs:
         plans = plan(machine, config, routine, registry, amps_dir=amps_dir, table=args.table)
         print("\n{} · {} (column {}){}".format(machine.machine, config.compiler, config.column,
@@ -434,7 +486,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     with store_mod.Store(db) as st:
         summary = report.build(st, Registry.load(args.families), www, now=now,
                                window_days=args.window_days, stale_hours=args.stale_hours,
-                               declared=declared_columns(machines) if machines else None)
+                               declared=declared_columns(machines) if machines else None,
+                               routines=declared_routines(machines) if machines else None)
     print("wrote {} ({} columns, {} families, {} family pages)".format(
         www / "index.html", len(summary["columns"]), len(summary["families"]), summary["family_pages"]))
     print("wrote {}; updated the previous/next links of {} night pages".format(
@@ -443,6 +496,10 @@ def cmd_report(args: argparse.Namespace) -> int:
         print("no results yet for:", ", ".join(summary["waiting"]))
     if summary["hidden"]:
         print("not shown (no enabled machine file):", ", ".join(summary["hidden"]))
+    for name, info in summary["routines"].items():
+        print("routine {}: columns {}{}".format(name, ", ".join(info["columns"]) or "none",
+                                               "; no results yet for " + ", ".join(info["waiting"])
+                                               if info["waiting"] else ""))
     return 0
 
 
@@ -477,8 +534,14 @@ def build_parser() -> argparse.ArgumentParser:
         if table:
             p.add_argument("--table", help="Table path (default: MakefileTest/Table of this checkout)")
         p.add_argument("--families", help="families.json path (default: utility/nightly/families.json)")
-        p.add_argument("--runners", help="runners.json path (default: utility/nightly/runners.json)")
+        p.add_argument("--runners", help="runners.json path (default: utility/nightly/runners.json); another routine "
+                                         "is the runners.<routine>.json next to it")
         p.add_argument("--machines", help="machine files directory (default: utility/nightly/machines)")
+
+    def routine_option(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--routine", default=NIGHTLY, metavar="NAME",
+                       help="the routine: nightly (runners.json, the default) or another one, such as long "
+                            "(runners.long.json); the machine file must enable it in \"routines\"")
 
     p = sub.add_parser("install", help="install ~/bin/amps_nightly_test.sh, its settings and its crontab line "
                                         "(shows the changes and asks first)")
@@ -489,7 +552,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--update-site", choices=("yes", "no"),
                    help="also update the results and pages here (default: yes if the machine uploads to a local directory)")
     p.add_argument("--python", help="Python 3.8+ that runs amps-nightly (default: as installed, else python3)")
-    p.add_argument("--time", help="start time HH:MM (default: the machine file's start)")
+    p.add_argument("--time", help="start time HH:MM of the nightly, or [<day>] HH:MM of the --routine "
+                                  "(default: the machine file's start, and the start of each of its \"routines\")")
+    p.add_argument("--routine", default=NIGHTLY, metavar="NAME",
+                   help="the routine whose start --time sets (default: nightly); every routine the machine file "
+                        "enables gets its crontab line")
     p.add_argument("--machine", help="machine name (default: the machine file listing this host)")
     p.add_argument("--machines", help="machine files directory (default: utility/nightly/machines)")
     p.add_argument("--bin", default="~/bin", help="where the script goes (default: ~/bin)")
@@ -503,7 +570,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="make the changes without asking")
     p.set_defaults(func=cmd_uninstall)
 
-    p = sub.add_parser("check", help="validate the Table, families.json, runners.json and machines/ together")
+    p = sub.add_parser("check", help="validate the Table, families.json, runners.json, every runners.<routine>.json "
+                                      "and machines/ together")
     config_files(p)
     p.set_defaults(func=cmd_check)
 
@@ -520,10 +588,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--amps-dir", help="configured AMPS tree for the exact Makefile.test list "
                                       "(default: this checkout, if it was configured on that machine)")
     p.add_argument("--list", action="store_true", help="list every test")
+    routine_option(p)
     config_files(p)
     p.set_defaults(func=cmd_plan)
 
-    p = sub.add_parser("run", help="run the nightly test procedure of runners.json on this machine")
+    p = sub.add_parser("run", help="run the nightly test procedure of runners.json (or of another routine) on "
+                                    "this machine")
     p.add_argument("--machine", help="machine name (default: the machine file listing this host)")
     p.add_argument("--config", help="only this configuration")
     p.add_argument("--only", action="append", default=[], metavar="RUNNER", help="only this runner (repeatable)")
@@ -536,6 +606,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "commit it downloaded, so the tool and the tested code are the same)")
     p.add_argument("--note", default="", help="text added to the notes of every run (shown on the night's page)")
     p.add_argument("--dry-run", action="store_true", help="print the commands each runner would execute")
+    routine_option(p)
     config_files(p, table=False)
     p.set_defaults(func=cmd_run)
 
