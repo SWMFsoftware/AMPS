@@ -19,6 +19,7 @@ import traceback
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE));sys.path.insert(0, str(HERE.parent))
 import verify_ledger as ledger
+import atomic_targets
 import audit
 from prepare_physical_case import application_documents
 
@@ -210,10 +211,17 @@ def source_masses(profile_path, mapping, identities):
     profile=ledger.strict_json(profile_path)
     state_path=ledger.authenticate(profile['states'],Path(profile_path).parent,identities)
     rows={row['state_id']:row for row in ledger.csv_rows(state_path,ledger.STATE_HEADER)}
-    for key,charge,nuclei,kind in [('parent',0,{'23Na':1},'ground'),('ion',1,{'23Na':1},'ground'),('electron',-1,{},'free-electron')]:
+    # The P02 limits cover one admitted atomic target: the I21 Na/Na+ pair or,
+    # under the same approved limits, the I22 He/He+, Ne/Ne+ or Ar/Ar+ pilot.
+    parent_nuclei=states['parent']['nuclei']
+    if len(parent_nuclei)!=1:raise ValueError('P02 budget scope requires a single-isotope atomic parent')
+    nucleus,=parent_nuclei
+    atomic_targets.element_of_nucleus(nucleus)
+    isotope={nucleus:1}
+    for key,charge,nuclei,kind in [('parent',0,isotope,'ground'),('ion',1,isotope,'ground'),('electron',-1,{},'free-electron')]:
         state=states[key];row=rows[state['id']]
         if state['charge']!=charge or state['nuclei']!=nuclei or row['state_kind']!=kind or number(row['excitation_J'])!=0:
-            raise ValueError('P02 budget scope is explicitly Na/Na+ ground and free electron')
+            raise ValueError('P02 budget scope is explicitly an admitted atom/ion ground pair and free electron')
         state['physical_mass']=number(row['physical_rest_mass_kg'])
     c=constants['speed of light in vacuum'][0]
     return states,c

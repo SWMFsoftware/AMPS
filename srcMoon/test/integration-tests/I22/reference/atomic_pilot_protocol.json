@@ -1,0 +1,52 @@
+{
+  "schema": "srcMoon-M3-I22-atomic-pilot-protocol-v1",
+  "identity": "approved-I22-atomic-pilot-source-effective-photon-ground-ion-v1",
+  "scope": "I22 decision-2 part A development pilot: He, Ne and Ar photoionization X -> X+ + e- as real particle events through the normal native cohort owner; supporting evidence only, not formal I22 or ensemble-precision qualification",
+  "approval": {
+    "path": "srcMoon/test/integration-tests/I22/reference/atomic_pilot_approval_20261126.json",
+    "sha256": "cbea9ca290a2e48a0bb4df9c88e27d750fcdfdd6a2aeb1a9da42c2238d4c2e6e"
+  },
+  "revisions": [
+    {
+      "path": "srcMoon/test/integration-tests/I22/reference/atomic_pilot_revision_20261126.json",
+      "sha256": "02251163ccf54a5940d773c000e726e192d9c0b3fb4f0d104fc42c22fcdb499c"
+    },
+    {
+      "path": "srcMoon/test/integration-tests/I22/reference/atomic_pilot_revision_20261126b.json",
+      "sha256": "ec366b263258f9de77e82773237a76d81ab8e841b2d2f2616f400d276fd45f1a"
+    }
+  ],
+  "mechanical_budget": {
+    "path": "srcMoon/test/M3_P02_NUMERICAL_BUDGET.json",
+    "sha256": "26afdb36ae327c71de3b170c7c04daf28f644ab54925b106b3e18357eb484b09",
+    "use": "the three relative limits apply unchanged to parent, ion and electron; the classical-speed cap is 3.4e6 m/s for I22 (approval \"limits\")"
+  },
+  "prior_model_decisions": {
+    "path": "srcMoon/test/M3_DAUGHTER_AND_ION_SURFACE_DECISIONS.json",
+    "sha256": "1b21c0c7ae87e4d5eb0b8d52bf715f90513a0ff66dc87273cd4f49311fe226b9"
+  },
+  "model": "source-effective photon (D04 printed threshold + D04 endpoint mean excess) with the physical ground-ion formation energy; photoelectron isotropic in the parent rest frame, booked to the signed electron bath; ground ion only",
+  "admitted_observables": "heavy number, charge and mass budgets and event chronology; ion and electron energy observables are not admitted",
+  "unpopulated_eligible_states": [
+    "Ne+ 2P1/2 (~0.097 eV)",
+    "Ar+ 2P1/2 (~0.178 eV)",
+    "Ar+ 3s-1 (~13.5 eV above the ground ion)"
+  ],
+  "geometry": "actual frozen SPICE 2009-01-24T00:00:00, sphere Moon, LSO start (1e7, 0, 0) m, +1 m/s along x, point Sun, Earth occultation off",
+  "reference_problem": "compiled normal zero-acceleration kernel; Na weight reference, tracked parent and ground ion (compile mappings Na/He/He_PLUS, Na/Ne/Ne_plus, Na/Ar/AR_PLUS)",
+  "matrix": "both force-cut-surface movers; 8, 16 and 32 common steps; 1 and 8 MPI ranks, OMP 1; seed 731993; mover substep cap tracing_maximum_substep_s equal to the coarsest common step (horizon/8) in every case, so each refinement also refines the photon-history segments (revision b)",
+  "cases": "approval \"cases\" (horizons and parent counts chosen so recoiling ions stay inside the domain), with the revision parent counts (He-quiet 8,192 so one mover run fits the one-hour owner limit)",
+  "campaign_2_inputs": "protocol sha256 fd5dbae127e52e9f8d7d0d1bfab22f59e36f3bf9f2bbd910594a36adfa194e0d with every substep cap at 8192 s; its Ne/Ar refinement FAILs are retained evidence",
+  "oracles": [
+    "Exact source-bound event-ledger reconstruction",
+    "Independent straight-line integrated-exposure event-time oracle (illuminated-zero-force-lso-x-axis-v1)",
+    "Independent D04 endpoint rate and inverse-square checks",
+    "Original-parent 1/8 MPI identity"
+  ],
+  "statistics": "the 2% ensemble rate gate is reported, not scored, at these cohort sizes",
+  "missing_data": "SKIPPED; never fabricated",
+  "evaluated_mismatch": "FAIL; never threshold relaxation",
+  "infrastructure_or_resource_failure": "ERROR; retain original attempt",
+  "formal_I22_status": "SKIPPED / NOT QUALIFIED",
+  "observational_scoring": false
+}

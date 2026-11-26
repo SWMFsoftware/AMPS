@@ -45,7 +45,11 @@ improper-frame-refused-no-output wrong-parent-state-energy-refused-no-output out
 invalid-source-distance-refused missing-daughter-clock-refused finite-disc-or-cosine-not-substituted
 point-shadow-hazard-exact-zero same-source-ion-collector-state
 recorded-rounded-old-transpose-violates-existing-momentum-bound
-'''.split())
+'''.split())|{f'atomic-{x}-{c}' for x in ('He','Ne','Ar') for c in (
+    'source-effective-admitted','rate-is-own-D04-family','ground-ion-receipt','source-equals-state-refused')}|{
+    # I22 atomic pilot target selection (approved 2026-11-26).
+    'atomic-mixed-isotope-ion-refused','atomic-unsupported-nucleus-refused',
+    'atomic-wrong-element-channel-refused','atomic-Na-model-and-scope-unchanged'}
 
 
 def preflight():

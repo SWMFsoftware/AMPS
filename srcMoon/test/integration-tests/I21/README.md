@@ -75,6 +75,13 @@ PLAN_SHA256=$(sha256sum "$PLAN" | cut -d ' ' -f 1)
   --test-runtime-seconds 1800 --output-dir "$NEW_RUN_DIR"
 ```
 
+`--test-id I22` (default `I21`) freezes the same matrix for the I22 atomic
+photoionization pilot (approved 2026-11-26). The parent must be He, Ne or Ar,
+taken from the authenticated reference receipt, on the illuminated zero-force
+x-axis line with the SPICE Sun. The plan then runs through
+`run_all_test.py --only I22 --i22-cohort-plan PLAN --i22-cohort-plan-sha256 SHA`.
+See [the I22 README](../I22/README.md).
+
 The runner authenticates the reference geometry, D04, the native input graph,
 and the producer's recorded source checkout. The configured wall allowance
 covers prerequisite handling, all launches and the independent audit. The

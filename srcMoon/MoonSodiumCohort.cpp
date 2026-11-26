@@ -84,7 +84,7 @@ bool Crosswalk(const Request& r,const Species::Photochemistry::Registry& source,
 bool EventFrame(const Request& request,const T::Field& field,const Controller::EventContext& event,
     E::EventInput* input,std::string* error){
 #if defined(_NO_SPICE_CALLS_)
-  *error="actual Na event requires normal furnished SPICE state transforms";return false;
+  *error="actual atomic photoionization event requires normal furnished SPICE state transforms";return false;
 #else
   SpiceInt frameCode=0,centre=0,kind=0,classId=0;SpiceBoolean found=SPICEFALSE;
   namfrm_c(request.inertialFrame.c_str(),&frameCode);frinfo_c(frameCode,&centre,&kind,&classId,&found);
@@ -160,7 +160,7 @@ E::Status Prepared::Create(const Species::Photochemistry::Registry& source,const
       if(!status.ok())return status;
       if(i==0)p->parentInternalEnergyJ_=internal;
     }
-    if(!std::filesystem::is_regular_file(r.crosswalkPath))return Error(E::Code::Unavailable,"reviewed Na channel/state/threshold crosswalk is unavailable");
+    if(!std::filesystem::is_regular_file(r.crosswalkPath))return Error(E::Code::Unavailable,"reviewed atomic channel/state/threshold crosswalk is unavailable");
     if(d.photonEnergyPolicy==Species::ReducedKinematics::PhotonEnergyPolicy::SourceEffectivePhoton)
       d.physicalThresholdSourceIdentity=d.ion.state.definition().formation.sourceIdentity;
     if(!Crosswalk(r,source,d,&error))return Error(E::Code::SourceMismatch,error);
@@ -174,13 +174,13 @@ E::Status Prepared::Create(const Species::Photochemistry::Registry& source,const
     d.stateCrosswalkIdentity=r.crosswalkPath;d.stateCrosswalkSha256=r.crosswalkSha256;d.sourceStateCrosswalkAvailable=true;
     const auto prepared=E::SodiumPhotoionization::Create(source,d,&p->provider_);if(!prepared.ok())return prepared;
     p->definition_=std::move(d);*out=std::move(p);return {};
-  }catch(const std::bad_alloc&){return Error(E::Code::ResourceLimit,"physical Na profile preparation exhausted memory; reduce source inventory/cohort metadata or provide more memory; no particle was created");}
-  catch(const std::exception&e){return Error(E::Code::InvalidInput,std::string("physical Na preparation exception: ")+e.what());}
+  }catch(const std::bad_alloc&){return Error(E::Code::ResourceLimit,"physical atomic profile preparation exhausted memory; reduce source inventory/cohort metadata or provide more memory; no particle was created");}
+  catch(const std::exception&e){return Error(E::Code::InvalidInput,std::string("physical atomic preparation exception: ")+e.what());}
 }
 E::Status Prepared::RegisterForNormalStartup(){
   std::string error;
   if(!provider_.prepared()||installedOwner)
-    return Error(E::Code::InvalidInput,"unprepared or already installed normal physical Na binding");
+    return Error(E::Code::InvalidInput,"unprepared or already installed normal physical atomic binding");
   // Retain the exact context for the process lifetime. Neither the normal
   // callback nor future event hooks may borrow a temporary caller object.
   auto owner=shared_from_this();
@@ -242,7 +242,7 @@ bool Prepared::Resolve(long int ptr,Controller::Node*,void* user,std::size_t* st
   auto& p=*static_cast<Prepared*>(user);SemanticRandom::State key;
   if(!SemanticRandom::Read(ptr,&key,error))return false;
   if(PIC::ParticleBuffer::GetI(ptr)!=p.definition_.catalog[p.definition_.parent.catalogIndex].compiledSpecies){
-    *error="only explicit initial neutral Na sources may open a new controller history; products must retain staged state";return false;}
+    *error="only explicit initial neutral parent sources may open a new controller history; products must retain staged state";return false;}
   *state=p.definition_.parent.catalogIndex;*internal=p.parentInternalEnergyJ_;error->clear();return true;
 }
 bool Prepared::History(const Controller::ExposureRequest& request,void* user,Controller::ExposureHistory*out,std::string*error){

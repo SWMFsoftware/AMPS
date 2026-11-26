@@ -303,8 +303,10 @@ def validate_plan(plan):
         raise ValueError('unsupported cohort test_kind')
     zero=kind=='zero-hazard-invariant'
     varying=kind=='trajectory-integrated-hazard'
-    if varying and identity!='I21':
-        raise ValueError('the explicit straight-line exposure oracle belongs to I21')
+    # The trajectory oracles belong to I21, and the straight-line oracle also
+    # to the I22 atomic photoionization pilot (approved 2026-11-26).
+    if varying and identity not in ('I21','I22'):
+        raise ValueError('the explicit trajectory exposure oracles belong to I21 and the I22 atomic pilot')
     total=finite(plan.get('reference_total_rate_s'),'independent total rate',not zero)
     if zero and total!=0:raise ValueError('zero-hazard invariant requires exactly zero reference rate')
     integer(plan.get('branch_claims'),'whole frozen branch family count')

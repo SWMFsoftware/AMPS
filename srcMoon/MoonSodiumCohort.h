@@ -9,6 +9,10 @@
 namespace Moon { namespace Chemistry { namespace SodiumCohort {
 namespace E=Species::PhysicalReactionEvents;
 namespace P=Species::PhysicalStateProfile;
+// The owner keeps its original sodium name. Since the I22 atomic pilot
+// (approved 2026-11-26) it binds any target of E::AtomicPhotoionization:
+// 23Na, 4He, 20Ne or 40Ar, chosen by the explicit parent/ion state IDs and
+// compiled species below; the provider refuses every other combination.
 // This is an explicit SOURCE INPUT. No field chooses a missing physical
 // isotope/state/threshold or widens an error limit. Omitted values are invalid.
 struct Request {

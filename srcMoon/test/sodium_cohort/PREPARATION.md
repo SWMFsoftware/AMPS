@@ -138,6 +138,16 @@ Two verification-only selections were added for I21 decision 1
   `Moon::LunarPointMassReferenceAcceleration(a,s,p,x,v,n)` with its marker, and
   it records the production lunar GM for the Kepler oracle.
 
+For the I22 atomic photoionization pilot (approved 2026-11-26) a derived
+profile from `integration-tests/I22/prepare_atomic_pilot_inputs.py` also
+lists one crosswalk per He, Ne and Ar parent in
+`atomic_photoionization_crosswalks`. The preparer accepts the Na
+`atomic_extension` crosswalk or exactly one listed crosswalk, and that
+crosswalk's channel must belong to its listed parent. The selected states
+must carry that parent's isotope: `23Na`, `4He`, `20Ne` or `40Ar`
+(`atomic_targets.py`). Compiled species for the pilot are Na = 0,
+parent = 1 and ion = 2.
+
 The eight-column CSV must be the profile's pinned atomic crosswalk. All fields
 must agree with its pinned metadata; the selected three states must be available
 and explicitly describe the same 23Na nucleus, neutral/+1/-1 charges, and common

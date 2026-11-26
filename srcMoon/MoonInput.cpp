@@ -16,6 +16,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <tuple>
 #include <sstream>
 #include <utility>
 
@@ -443,6 +444,20 @@ bool ValidateTracingConfiguration(const Configuration& c,std::string* error) {
     *error="helium_to_sodium_reference_weight_ratio must be finite and positive when supplied";
     return false;
   }
+  // Ne+ and Ar+ follow the same pair rule; the neutral ratios are optional.
+  for (const auto& gas:{std::make_tuple("neon",c.neonIonCharacteristicSpeedMS,c.neonIonToSodiumReferenceWeightRatio,c.neonToSodiumReferenceWeightRatio),
+                        std::make_tuple("argon",c.argonIonCharacteristicSpeedMS,c.argonIonToSodiumReferenceWeightRatio,c.argonToSodiumReferenceWeightRatio)}) {
+    const std::string name=std::get<0>(gas);
+    const double speed=std::get<1>(gas),ratio=std::get<2>(gas),neutral=std::get<3>(gas);
+    if (!((speed==0 && ratio==0) || (speed>0 && ratio>0 && std::isfinite(speed) && std::isfinite(ratio)))) {
+      *error=name+"_ion_characteristic_speed_m_s and "+name+"_ion_to_sodium_reference_weight_ratio must both be finite and positive";
+      return false;
+    }
+    if (!(neutral==0 || (neutral>0 && std::isfinite(neutral)))) {
+      *error=name+"_to_sodium_reference_weight_ratio must be finite and positive when supplied";
+      return false;
+    }
+  }
   if(c.ionSurfaceBoundary!="unsupported" && c.ionSurfaceBoundary!="ideal-collector") {
     *error="ion_surface_boundary must be unsupported or ideal-collector";return false;
   }
@@ -685,6 +700,10 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
       "hydrogen_characteristic_speed_m_s","hydrogen_to_sodium_reference_weight_ratio",
       "helium_ion_characteristic_speed_m_s","helium_ion_to_sodium_reference_weight_ratio",
       "helium_to_sodium_reference_weight_ratio",
+      "neon_ion_characteristic_speed_m_s","neon_ion_to_sodium_reference_weight_ratio",
+      "neon_to_sodium_reference_weight_ratio",
+      "argon_ion_characteristic_speed_m_s","argon_ion_to_sodium_reference_weight_ratio",
+      "argon_to_sodium_reference_weight_ratio",
       "tracing_maximum_substeps","tracing_maximum_refinements",
       "tracing_maximum_interactions","tracing_maximum_same_point_interactions",
       "tracing_electric_field_v_m","tracing_magnetic_field_t","tracing_field_frame"};
@@ -735,7 +754,13 @@ bool ParseApplicationInput(const std::string& path, Configuration* result,
                     std::make_pair("hydrogen_to_sodium_reference_weight_ratio",&candidate.hydrogenToSodiumReferenceWeightRatio),
                     std::make_pair("helium_ion_characteristic_speed_m_s",&candidate.heliumIonCharacteristicSpeedMS),
                     std::make_pair("helium_ion_to_sodium_reference_weight_ratio",&candidate.heliumIonToSodiumReferenceWeightRatio),
-                    std::make_pair("helium_to_sodium_reference_weight_ratio",&candidate.heliumToSodiumReferenceWeightRatio)}) {
+                    std::make_pair("helium_to_sodium_reference_weight_ratio",&candidate.heliumToSodiumReferenceWeightRatio),
+                    std::make_pair("neon_ion_characteristic_speed_m_s",&candidate.neonIonCharacteristicSpeedMS),
+                    std::make_pair("neon_ion_to_sodium_reference_weight_ratio",&candidate.neonIonToSodiumReferenceWeightRatio),
+                    std::make_pair("neon_to_sodium_reference_weight_ratio",&candidate.neonToSodiumReferenceWeightRatio),
+                    std::make_pair("argon_ion_characteristic_speed_m_s",&candidate.argonIonCharacteristicSpeedMS),
+                    std::make_pair("argon_ion_to_sodium_reference_weight_ratio",&candidate.argonIonToSodiumReferenceWeightRatio),
+                    std::make_pair("argon_to_sodium_reference_weight_ratio",&candidate.argonToSodiumReferenceWeightRatio)}) {
     if (settings.count(item.first) && !ParsePositiveFinite(settings[item.first].value,item.second)) {
       *error=At(settings[item.first],std::string(item.first)+" must be finite and positive");
       return false;

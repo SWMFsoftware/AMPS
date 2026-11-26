@@ -1,0 +1,42 @@
+{
+  "schema": "srcMoon-I22-atomic-pilot-approval-v1",
+  "status": "APPROVED",
+  "approval_date": "2026-11-26 (UTC)",
+  "authority": "User answers in the 2026-11-26 session on decision 2 of srcMoon/test/M3_COMPLETION_FOLLOWUP_20261124.md.",
+  "scope": "Part A of decision 2 only: He, Ne and Ar photoionization X -> X+ + e- as real particle events. Para-water molecular reference, the missing-threshold convention and the U24 surface reference follow as separate packages; charged breakup stays deferred.",
+  "product_state": "every event to the ground ion (4He+, 20Ne+, 40Ar+ ground references); admitted observables: heavy number, charge and mass budgets and event chronology only; ion and electron energy observables not admitted. Ne+ 2P1/2 (~0.097 eV), Ar+ 2P1/2 (~0.178 eV) and Ar+ 3s-1 (~13.5 eV above the ground ion) are recorded as eligibility, not yields.",
+  "photon_and_electron": "source-effective-photon convention: photon energy = D04 printed threshold + D04 mean excess for the endpoint; products use the physical ground-ion Q; the photoelectron takes the remainder after recoil, isotropic in the parent rest frame, booked to the signed electron bath, as approved for Na (P02).",
+  "startup": "explicit Ne+ and Ar+ characteristic-speed and reference-weight keys (refused if missing when compiled), optional Ne and Ar neutral reference-weight ratios, following the H/He precedent; fix the main_lib.cpp Ne+ weight-copy bug.",
+  "limits": "P02 model-error limits for He, Ne and Ar equal the Na values: inertial mass 1e-8, acceleration 1e-8, relativistic kinetic 1e-4. Classical-speed cap 3.4e6 m/s for all I22 cases (revised the same day by user decision, before any run: the Ne-active photoelectron, 27.8 eV above threshold, moves at ~3.13e6 m/s and exceeds the Na cap of 3e6 m/s; the relativistic kinetic error at 3.4e6 m/s, ~0.75(v/c)^2 = 9.6e-5, stays within the approved 1e-4). I21 Na keeps 3e6 m/s.",
+  "cases": {
+    "geometry": "I21 straight line: x0 = 1e7 m, +1 m/s along x, SPICE Sun, frozen LSO, sphere Moon, seed 731993, Na/X/X+ zero-force builds, both movers, 8/16/32 steps, 1 and 8 ranks",
+    "revision": "The first approved horizons (He-quiet 2^24 s, He-active and Ne-quiet 2^22 s, Ne-active 2^20 s, Ar-quiet 2^21 s, Ar-active 2^20 s, 128 parents) were replaced the same day, by user decision, before any run: the photoelectron recoil (He+ ~340-364 m/s, Ne+ ~80-86 m/s, Ar+ ~25-28 m/s) carries ions out of the AMPS domain (x in [-7.59e8, +5.21e7] m, |y|,|z| <= 6.76e7 m; the sunward face is ~4.2e7 m from x0), the mover deletes them there and the cohort ledger has no domain-exit category. Shorter horizons with more parents were chosen instead of a new ledger category.",
+    "horizons_s": {
+      "He-quiet": 65536,
+      "He-active": 65536,
+      "Ne-quiet": 262144,
+      "Ne-active": 262144,
+      "Ar-quiet": 1048576,
+      "Ar-active": 1048576
+    },
+    "original_parents": {
+      "He-quiet": 16384,
+      "He-active": 8192,
+      "Ne-quiet": 2048,
+      "Ne-active": 512,
+      "Ar-quiet": 256,
+      "Ar-active": 128
+    },
+    "expected_events_at_1AU_rates": {
+      "He-quiet": 60,
+      "He-active": 90,
+      "Ne-quiet": 96,
+      "Ne-active": 73,
+      "Ar-quiet": 77,
+      "Ar-active": 71
+    },
+    "domain_margin": "the worst-case ion (emitted at t=0 toward +x at the active recoil speed, energy above threshold taken as the D04 mean excess + 1e-3 eV) stays at least 1.1e7 m inside the domain; the smallest margin is Ar-active, 1.17e7 m (the 1.2e7 m quoted when the cases were approved was rounded up; corrected the same day before any run, the design is unchanged)",
+    "statistics": "the 2% statistical rate gate is reported but not scored at these cohort sizes (development scope)"
+  },
+  "formal_I22_status": "SKIPPED / NOT QUALIFIED"
+}

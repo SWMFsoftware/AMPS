@@ -162,7 +162,9 @@ def run(plan_path,runs_path,output,*,development=False):
                 shadow=numerical.fixed_moon_shadow(plan,launch,receipt)
                 (output/('lunar_shadow-%02d.json'%index)).write_text(json.dumps(shadow,indent=2)+'\n')
                 records.append({'name':'independent-fixed-lunar-shadow-%02d'%index,'status':shadow['status']})
-            reference_rate,channel=numerical.source_rate(reference,manifest['input_sha256'])
+            element=numerical.atomic_targets.receipt_element(receipt)
+            numerical.atomic_targets.check_test(plan['test_id'],element)
+            reference_rate,channel=numerical.source_rate(reference,manifest['input_sha256'],element)
             motion=numerical.trajectory_motion(plan,receipt,reference_rate) if varying else None
             inverse_square=numerical.inverse_square_checks(actual_events,motion.point_rate if motion else reference_rate)
             if not actual_events and reference_rate > 0:
@@ -214,7 +216,7 @@ def run(plan_path,runs_path,output,*,development=False):
         figure,axis=plt.subplots(figsize=(7,4))
         for ranks,score in convergence['scores'].items():
             axis.plot(range(len(score['relative_errors'])),score['relative_errors'],marker='o',label=ranks+'MPI')
-        axis.axhline(q.NUMERICAL_LIMIT['I21'],label='approved numerical bias budget',color='black',linestyle='--')
+        axis.axhline(q.NUMERICAL_LIMIT[plan['test_id']],label='approved numerical bias budget',color='black',linestyle='--')
         axis.set_xlabel('Frozen successive time refinement');axis.set_ylabel('Maximum normalized first-hit time error');axis.legend(framealpha=1)
         figure.tight_layout()
         for extension in ('png','eps'):figure.savefig(output/('numerical_comparison.'+extension))

@@ -33,6 +33,11 @@ GROUND_CAPTURE_MAPPING = {**EXPECTED_MAPPING, 'H': '1H:ground'}
 # reference required by normal Moon startup; He is the stationary parent and
 # He+ the tracked ion. The electrons are untracked bath terms.
 HELIUM_IMPACT_MAPPING = {'Na': '23Na:ground', 'He': '4He:ground', 'He_PLUS': '4He+:ground'}
+# I22 atomic photoionization pilot (approved 2026-11-26): the same Na weight
+# reference, then the tracked parent and its ground ion. The He pilot reuses
+# the I23 helium mapping above; component names follow input/species.input.
+NEON_PHOTOIONIZATION_MAPPING = {'Na': '23Na:ground', 'Ne': '20Ne:ground', 'Ne_plus': '20Ne+:ground'}
+ARGON_PHOTOIONIZATION_MAPPING = {'Na': '23Na:ground', 'Ar': '40Ar:ground', 'AR_PLUS': '40Ar+:ground'}
 
 
 def strict(path):
@@ -54,9 +59,10 @@ def validate_mapping(path):
     # The I23 helium mapping is a separate explicit ABI (Na reference, He, He+).
     if not isinstance(value, dict) or list(value.items()) not in (
             list(EXPECTED_MAPPING.items()), list(GROUND_CAPTURE_MAPPING.items()),
-            list(HELIUM_IMPACT_MAPPING.items())):
+            list(HELIUM_IMPACT_MAPPING.items()), list(NEON_PHOTOIONIZATION_MAPPING.items()),
+            list(ARGON_PHOTOIONIZATION_MAPPING.items())):
         raise ValueError('expected ordered ground-state mapping for Na, NA_PLUS and optionally H, '
-                         'or the I23 Na, He, He_PLUS mapping')
+                         'the I23 Na, He, He_PLUS mapping, or the I22 Na, Ne, Ne_plus or Na, Ar, AR_PLUS mapping')
     return value
 
 

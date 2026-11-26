@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Freeze an I21 cohort from explicit physical inputs and a reference receipt."""
+"""Freeze an I21 (or I22 atomic-pilot) cohort from explicit inputs and a reference receipt.
+
+``--test-id I22`` (approved 2026-11-26, integration-tests/I22/reference/
+atomic_pilot_approval_20261126.json) freezes the same matrix for a He, Ne or
+Ar parent on the illuminated zero-force x-axis line. The parent is read from
+the authenticated reference receipt and must belong to the selected test ID.
+"""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +19,8 @@ import sys
 TEST_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(TEST_ROOT))
 import m3_qualification as qualification
+from m3_qualification_executor import PHYSICAL_PRODUCERS
+from sodium_cohort import atomic_targets
 from sodium_cohort.prepare_physical_case import (
     MissingConfiguration, prepare, validate_controls,
 )
@@ -71,7 +79,11 @@ def prepare_cohort(args):
         raise ValueError('branch family must include at least the six declared launches')
     case = qualification.strict_object(args.controls)
     _, controls, evidence = validate_controls(args.controls)
-    reference = reference_receipt(qualification.strict_object(args.reference))
+    test_id = getattr(args, 'test_id', None) or 'I21'
+    full_reference = qualification.strict_object(args.reference)
+    element = atomic_targets.receipt_element(full_reference)
+    atomic_targets.check_test(test_id, element)
+    reference = reference_receipt(full_reference)
     varying = controls['case_kind'] in ('trajectory-integrated-hazard', 'trajectory-lunar-gravity')
     gravity = controls['case_kind'] == 'trajectory-lunar-gravity'
     prescribed = controls.get('photon_source_geometry') == 'prescribed-static-point-sun'
@@ -79,6 +91,8 @@ def prepare_cohort(args):
         'lunar-point-mass-kepler-v1' if gravity else 'illuminated-zero-force-lso-x-axis-v1')
     if prescribed and not varying:
         raise ValueError('the prescribed static Sun is admitted only for the I21 trajectory cases')
+    if test_id == 'I22' and (not varying or gravity or prescribed or oracle != 'illuminated-zero-force-lso-x-axis-v1'):
+        raise ValueError('the I22 atomic pilot is the illuminated zero-force x-axis line with the SPICE Sun')
     if varying:
         # Authenticated native receipts additionally prove the force recipe,
         # the same velocity and visibility over the whole horizon. The x-axis
@@ -105,14 +119,14 @@ def prepare_cohort(args):
             or controls['source_reference_distance_identity'] != reference['source_reference_distance_identity']):
         raise ValueError('reference source position, endpoint or distance convention differs from case controls')
     data = {}
-    rate, channel = source_rate(reference, data)
+    rate, channel = source_rate(reference, data, element)
     kernels = spice_sources(args.producer)
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
     # Controls copied into the run directory must retain the original resolved
     # policy evidence path. A relative path would be relative to the new case.
     case['controls']['transport_policy_evidence_file'] = evidence['path']
-    plan = {'schema': 'srcMoon-M3-cohort-plan-v1', 'test_id': 'I21',
+    plan = {'schema': 'srcMoon-M3-cohort-plan-v1', 'test_id': test_id,
         'approved_addendum_sha256': qualification.APPROVED_SHA256,
         'cohort_id': case['cohort_id'], 'seed': int(controls['campaign_seed']),
         'original_parents': int(controls['original_parents']),
@@ -129,7 +143,7 @@ def prepare_cohort(args):
         'reference_binding': {'receipt': descriptor(args.reference), 'data_sha256': data,
             'spice_files': kernels},
         'native_adapter': {'schema': 'srcMoon-M3-normal-sodium-execution-v1',
-            'producer_id': 'normal-source-bound-sodium-cohort-v1',
+            'producer_id': PHYSICAL_PRODUCERS[test_id],
             'producer_manifest': descriptor(args.producer),
             'state_mapping': {}, 'runs': []}}
     if varying:
@@ -165,6 +179,8 @@ def main():
         parser.add_argument('--'+role,type=Path,required=True)
     parser.add_argument('--reference-sha256',required=True)
     parser.add_argument('--branch-claims',type=int,required=True)
+    parser.add_argument('--test-id',choices=('I21','I22'),default='I21',
+        help='existing test ID of the cohort (I22: approved atomic pilot He/Ne/Ar)')
     parser.add_argument('--trajectory-oracle',choices=('illuminated-zero-force-lso-x-axis-v1',
         'moon-shadow-crossing-zero-force-straight-line-v1','lunar-point-mass-kepler-v1'),
         help='independent oracle for a trajectory case (default: x-axis line, or Kepler for lunar gravity)')

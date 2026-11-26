@@ -1,4 +1,5 @@
-// Explicit conditional physical Na cohort. Normal amps_init/SPICE/mesh and
+// Explicit conditional physical atomic photoionization cohort: 23Na (I21) or
+// 4He/20Ne/40Ar (I22 atomic pilot, approved 2026-11-26). Normal amps_init/SPICE/mesh and
 // actual production services are used. Current missing Na+ state data =>77
 // BEFORE expensive initialization, never a synthetic state or zero rate.
 #include "MoonSodiumCohort.h"
@@ -198,10 +199,15 @@ void InputReceipt(const Input& c,const fs::path& out,bool sourceOnly,const Moon:
   }
   f<<",\n  \"solar_endpoint\": "<<Json(c.source.controls.solar==Moon::Species::Photochemistry::SolarCase::Quiet?"quiet":"active")<<",\n  \"source_channels\": [";
   const auto* source=Moon::Runtime::GetPhotochemistryRegistry();std::vector<Moon::Species::Photochemistry::Channel> channels;std::string error;
-  if(!source||!source->ChannelsForParent("Na",&channels,&error))throw std::runtime_error(error);
+  // The D04 family of the configured channel's parent (Na for I21; He, Ne or
+  // Ar for the I22 atomic pilot). The provider independently refuses any
+  // family that is not one complete reactive X -> X+ + e channel.
+  Moon::Species::Photochemistry::Channel configured;
+  if(!source||!source->GetChannel(c.source.controls.channelId,&configured,&error)||
+      !source->ChannelsForParent(configured.physicalParent,&channels,&error))throw std::runtime_error(error);
   bool channelFirst=true;for(const auto& channel:channels){if(!channelFirst)f<<',';channelFirst=false;
    f<<"{\"id\":"<<Json(channel.id)<<",\"quiet_rate_1au_s\":\""<<channel.rate1AuS[0]<<"\",\"active_rate_1au_s\":\""<<channel.rate1AuS[1]<<"\",\"threshold_ev\":\""<<channel.thresholdEnergyEv<<"\",\"quiet_mean_excess_ev\":\""<<channel.meanExcessEnergyEv[0]<<"\",\"active_mean_excess_ev\":\""<<channel.meanExcessEnergyEv[1]<<"\"}";}
-  f<<"]";
+  f<<"],\n  \"source_parent\": "<<Json(configured.physicalParent);
   const auto endpoint=c.source.controls.solar==Moon::Species::Photochemistry::SolarCase::Quiet?0:1;
   Moon::Species::TrajectoryExposure::Arc point;point.positionM=c.position;Moon::Species::TrajectoryExposure::History history;
   if(channels.size()!=1||!Moon::Species::TrajectoryExposure::BuildPhotonHistory(point,c.duration,*geometry,{{0,channels.front().rate1AuS[endpoint]}},{},c.source.exposure,&history,&error)||history.segments.empty())throw std::runtime_error("initial homogeneous point geometry unavailable: "+error);

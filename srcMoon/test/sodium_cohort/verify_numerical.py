@@ -19,7 +19,9 @@ import re
 from fractions import Fraction
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 import m3_qualification as q
+import atomic_targets
 
 D04=Path('/data/vtenishe/moon_validation_data/photochemistry')
 # Frozen I21 acceptance.json: inverse-square rate relative error <=0.1%.
@@ -217,8 +219,13 @@ def source_uniform(seed,cohort,parent):
     return (bits+.5)*2.**-52
 
 
-def source_rate(reference,identities):
-    """Read complete real Na endpoint, retaining original binary64 parse.
+def source_rate(reference,identities,element='Na'):
+    """Read the complete real D04 endpoint, retaining original binary64 parse.
+
+    ``element`` is the D04 parent of the cohort (Na for I21; He, Ne or Ar for
+    the I22 atomic pilot); callers with a native receipt pass
+    ``atomic_targets.receipt_element(receipt)``. Its D04 family must be the
+    one admitted X -> X+ + e channel at both endpoints.
 
     Hash every declared processed output before interpreting source records.
     Missing data/QA is SKIPPED; changed bytes or conflicting native records are
@@ -241,9 +248,10 @@ def source_rate(reference,identities):
     if endpoint not in ('quiet','active'):raise ValueError('explicit separate native solar endpoint required')
     table=D04/'processed/phidrates/photo_rates_1au.csv'
     with table.open(newline='') as stream:
-        family=[r for r in csv.DictReader(stream) if r['species']=='Na']
-    if len(family)!=2 or {r['solar_activity'] for r in family}!={'0.0','1.0'}:
-        raise ValueError('complete native Na endpoint family required')
+        family=[r for r in csv.DictReader(stream) if r['species']==element]
+    if (len(family)!=2 or {r['solar_activity'] for r in family}!={'0.0','1.0'} or
+            {r['products'] for r in family}!={atomic_targets.products(element)}):
+        raise ValueError('complete native '+element+' endpoint family required')
     rows=[r for r in family if r['solar_activity']==('0.0' if endpoint=='quiet' else '1.0')]
     row=rows[0]
     if row['optical_depth']!='0.0' or row['distance_au']!='1.0':raise ValueError('D04 native normalization changed')
@@ -296,7 +304,7 @@ def frozen_reference(plan):
     if digest!=receipt['sha256']:raise ValueError('frozen geometry receipt identity changed')
     reference=reference_receipt(q.strict_object(path))
     identities={}
-    source_rate(reference,identities)
+    source_rate(reference,identities,atomic_targets.receipt_element(q.strict_object(path)))
     if identities!=binding['data_sha256']:
         raise ValueError('D04 identities differ from the frozen cohort reference')
     for record in binding.get('spice_files',[]):
@@ -713,7 +721,8 @@ def verify(runs,plan):
                 (float(receipt['physical_horizon_s']),float(plan['horizon_s']),'common horizon'),
                 (float(receipt['initial_represented_number']),float(plan['initial_represented_number']),'represented number')):
             if actual!=expected:raise ValueError('actual native input contradicts frozen '+label)
-        reference=reference_receipt(receipt);rate,channel=source_rate(reference,identities)
+        element=atomic_targets.receipt_element(receipt);atomic_targets.check_test(plan['test_id'],element)
+        reference=reference_receipt(receipt);rate,channel=source_rate(reference,identities,element)
         if reference_basis is not None and reference!=reference_basis:
             raise ValueError('actual geometry, endpoint or zero-force binding differs from the frozen reference')
         precision=receipt.get('optical_clock_precision','binary64-log')
@@ -772,7 +781,7 @@ def verify(runs,plan):
                     actual_position=[Decimal(x.numerator)/Decimal(x.denominator) for x in positions]
                     if isinstance(motion,StraightLineExposure):
                         position_error=max(abs(x-x0-v*event) for x,x0,v in zip(actual_position,motion.start,motion.velocity))
-                        allocation=Decimal(str(q.NUMERICAL_LIMIT['I21']))*abs(motion.velocity[0])*horizon
+                        allocation=Decimal(str(q.NUMERICAL_LIMIT[plan['test_id']]))*abs(motion.velocity[0])*horizon
                     else:
                         expected_position=motion.expected_position(actual_time,event)
                         position_error=max(abs(x-y) for x,y in zip(actual_position,expected_position))
@@ -780,7 +789,7 @@ def verify(runs,plan):
                         if motion.in_dark(actual_time):
                             raise ArithmeticError('native event inside the independently located lunar shadow: parent'+str(parent))
                     if allocation is not None and position_error>allocation:
-                        raise ArithmeticError('native trajectory event position exceeds I21 numerical allocation')
+                        raise ArithmeticError('native trajectory event position exceeds the '+plan['test_id']+' numerical allocation')
                     level_position=max(level_position,position_error)
                 error=Decimal(0) if event is None or expected=='SURVIVED' else abs(Decimal(actual_time)-event)/horizon
                 maximum=max(maximum,error)
@@ -800,7 +809,7 @@ def verify(runs,plan):
     scores={}
     for ranks,rows in levels.items():
         rows.sort(key=lambda r:r['steps'])
-        scores[str(ranks)]=q.score_refinement('I21',rows)
+        scores[str(ranks)]=q.score_refinement(plan['test_id'],rows)
     if [r['steps'] for r in levels[1]]!=[r['steps'] for r in levels[8]]:
         raise ValueError('matched1/8MPI refinements must use the same frozen steps')
     status='PASS' if all(r['status']=='PASS' for r in scores.values()) else 'FAIL'

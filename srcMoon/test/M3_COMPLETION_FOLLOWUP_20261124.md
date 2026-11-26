@@ -343,6 +343,21 @@ preparation and scientific acceptance each keep their actual status.
    explicitly named effective-photon convention and the source-matched
    U24 reference strategy. Review the charged partition separately after
    a matching quantitative source is available.
+   *Part A resolved 2026-11-26:* the user approved the atomic pilot first:
+   He, then Ne and Ar, every event to the ground ion, with only heavy
+   budgets and chronology admitted. The approval also covers the
+   source-effective photon (D04 printed threshold + mean excess, physical
+   ground-ion Q, P02 photoelectron), Ne⁺/Ar⁺ startup keys and the P02
+   limits. Two revisions were made the same day before any run. Horizons
+   and parent counts changed so recoiling ions stay in the domain, and the
+   I22 classical-speed cap is 3.4×10⁶ m/s for the Ne-active photoelectron.
+   The pilot is implemented. After the runs the user approved two more
+   revisions: He-quiet uses 8,192 parents, and the Ne/Ar mover-substep cap
+   equals the coarsest step. All six cases now pass with both movers at
+   1 and 8 ranks (STATUS 5.63). Formal I22 remains SKIPPED. The para-water
+   reference, the missing-threshold convention and U24 (parts B–D) remain
+   open, and charged breakup stays deferred.
+   [Contract](integration-tests/I22/ATOMIC_PILOT_CONTRACT.md)
 3. Approve the stationary ⁴He I23 pilot at the proposed plasma inputs.
    Review the modeled observables and their source-supported error limits
    before physical activation or any extension to moving targets.

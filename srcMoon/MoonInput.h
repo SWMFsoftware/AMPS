@@ -189,6 +189,17 @@ struct Configuration {
   // the legacy He weight derived from an enabled He source rate; a positive
   // value is required for a He build whose parents are not source-injected.
   double heliumToSodiumReferenceWeightRatio=0;
+  // Reaction-born Ne+ and Ar+ follow the He+ rule (I22 atomic pilot, approved
+  // 2026-11-26): an explicit cell-crossing speed [m/s] and a dimensionless
+  // reference-weight ratio to Na, required as a pair whenever the ion is
+  // compiled. The optional neutral Ne and Ar ratios replace the legacy
+  // source-derived weight for parents that are not source-injected.
+  double neonIonCharacteristicSpeedMS=0;
+  double neonIonToSodiumReferenceWeightRatio=0;
+  double neonToSodiumReferenceWeightRatio=0;
+  double argonIonCharacteristicSpeedMS=0;
+  double argonIonToSodiumReferenceWeightRatio=0;
+  double argonToSodiumReferenceWeightRatio=0;
   bool tracingAdaptive=false;
   int tracingMaximumSubsteps=0,tracingMaximumRefinements=0;
   int tracingMaximumInteractions=0,tracingMaximumSamePointInteractions=0;

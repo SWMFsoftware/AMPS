@@ -25,7 +25,10 @@ LOCAL={'I21':('U14',),'I22':('U15','U24'),'I23':('U16',),'I24':('U17',)}
 # Current rate/zero-Q/controller fixtures are deliberately NOT in this list.
 # This is a source-installed adapter identity, NOT a physical-readiness flag.
 # It still requires source admission, actual execution and independent proofs.
-PHYSICAL_PRODUCERS={'I21':'normal-source-bound-sodium-cohort-v1'}
+# I22 (approved 2026-11-26) is the atomic photoionization pilot: the same
+# installed native owner bound to a He, Ne or Ar parent and its ground ion.
+PHYSICAL_PRODUCERS={'I21':'normal-source-bound-sodium-cohort-v1',
+    'I22':'normal-source-bound-atomic-photoionization-cohort-v1'}
 ARTIFACT_ROLES=('run_manifest','parent_records','event_ledger','numerical_evidence',
     'budget_evidence','executable','build_manifest','input_snapshot')
 NATIVE_RUNNER = Path('srcMoon/test/run_m3_sodium_cohort.py')
@@ -190,7 +193,7 @@ def readiness(plan_path,campaign_root,native_evidence=None,expected_evidence_sha
                     pinned = {(str(path), item['sha256']) for path, item in
                               zip(launch['document_paths'], launch['input_documents'])}
                     if not required.issubset(pinned):
-                        raise ValueError('I21 application/include graph differs from the frozen launch plan')
+                        raise ValueError(identity+' application/include graph differs from the frozen launch plan')
             # Independent source inspection precedes any costly compilation or
             # launch. It cannot infer an unavailable Na+ state or physical mass.
             if path:
@@ -246,7 +249,7 @@ def execute_cohort(plan_path,plan,output,remaining_seconds,*,development=False):
     reference,_=frozen_reference(plan)
     if plan.get('test_kind')=='trajectory-integrated-hazard':
         if not development:
-            raise q.MissingPrerequisite('trajectory oracle is admitted for development; formal I21 needs full reviewed scope')
+            raise q.MissingPrerequisite('trajectory oracle is admitted for development; formal '+plan['test_id']+' needs full reviewed scope')
         if reference is None:
             raise ValueError('varying-exposure plan needs an authenticated pre-launch geometry reference')
     runner=native_runner(request)
@@ -325,7 +328,7 @@ def run(plan_path,campaign_root,output,amps=None,native_evidence=None,expected_e
         if not plan_path.is_file():raise q.MissingPrerequisite('explicit frozen cohort plan is unavailable')
         shutil.copyfile(plan_path,output/'cohort_plan.json');manifest['plan_sha256']=q.sha(plan_path)
         if expected_plan_sha256 is not None and manifest['plan_sha256']!=expected_plan_sha256:
-            raise ValueError('frozen I21 cohort plan differs from the caller SHA-256')
+            raise ValueError('frozen cohort plan differs from the caller SHA-256')
         options={'development':True} if development else {}
         binding={'application':application} if application is not None else {}
         value=readiness(plan_path,campaign_root,native_evidence,expected_evidence_sha256,**options,**binding)

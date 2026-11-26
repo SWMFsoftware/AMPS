@@ -282,12 +282,21 @@ class StatisticalControls(unittest.TestCase):
         profile.write_text(json.dumps({'schema':'srcMoon-M3-state-profile-v1','physical_activation':False}))
         self.plan['source_profile']={'path':str(profile),'sha256':q.sha(profile)}
         path=self.directory/'ANALYTICAL_PLAN.json';path.write_text(json.dumps(self.plan))
-        for identity in tuple('I%02d'%i for i in range(13,21))+('U15','U24'):
+        for identity in tuple('I%02d'%i for i in range(13,21))+('U15','U16','U24'):
             directory=self.directory/identity;directory.mkdir();(directory/'result.json').write_text('{"status":"PASS","scope":"ADMINISTRATIVE FIXTURE NOT QUALIFICATION"}')
+        # I22 has an installed native adapter identity since the atomic pilot
+        # (approved 2026-11-26); a plan without its frozen native request
+        # still cannot run. I23 has no installed producer at all.
         result=executor.run(path,self.directory,self.directory/'attempt')
         self.assertEqual(result['status'],'SKIPPED');self.assertFalse(result['criteria_evaluated'])
-        self.assertTrue(any('not installed' in message for message in result['blocking_reasons']))
+        self.assertTrue(any('native adapter/inputs unavailable' in message for message in result['blocking_reasons']))
         self.assertFalse((self.directory/'attempt/receipt.txt').exists())
+        other=fixture_plan(identity='I23');other['source_profile']=self.plan['source_profile']
+        path=self.directory/'ANALYTICAL_PLAN_I23.json';path.write_text(json.dumps(other))
+        result=executor.run(path,self.directory,self.directory/'attempt-I23')
+        self.assertEqual(result['status'],'SKIPPED');self.assertFalse(result['criteria_evaluated'])
+        self.assertTrue(any('not installed' in message for message in result['blocking_reasons']))
+        self.assertFalse((self.directory/'attempt-I23/receipt.txt').exists())
 
     def test_corruption_cannot_hide_behind_missing_producer(self):
         self.plan['source_profile']={'path':str(self.path),'sha256':'0'*64}

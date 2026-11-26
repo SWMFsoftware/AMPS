@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Own the existing I21--I24 formal gates and retain their actual scope.
 
-The I21 owner can execute a pinned fixed or moving cohort. I24 can exercise a
+The I21 owner can execute a pinned fixed or moving cohort. The I22 owner can
+execute a pinned atomic photoionization pilot cohort (He, Ne or Ar on the
+illuminated zero-force line; approved 2026-11-26). I24 can exercise a
 specified sodium event-plan cohort and a separate linked PIC mover matrix. I23
 can exercise the approved controlled helium electron-bath ensemble and its
 linked PIC mover matrix.
@@ -167,7 +169,7 @@ def i23_supporting(directory, result, manifest, profile, producer, ranks, deadli
 
 
 def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
-        i21_plan=None,i21_plan_sha256=None,wall_seconds=3600,
+        cohort_plan=None,cohort_plan_sha256=None,wall_seconds=3600,
         i24_lock=None,i24_mass_inventory=None,i24_pic_producer=None,i24_pic_refinement=False,
         i24_total_capture=False,
         i23_profile=None,i23_pic_producer=None,i23_pic_refinement=False,
@@ -198,8 +200,10 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
     try:
         if not math.isfinite(wall_seconds) or not 0 < wall_seconds <= 3600:
             raise ValueError('one total development allowance in (0, 3600] seconds required')
-        if (i21_plan is None) != (i21_plan_sha256 is None) or (i21_plan is not None and test_id!='I21'):
-            raise ValueError('explicit plan and SHA-256 must be supplied together for I21 only')
+        # Cohort plans run through the I21 owner and, for the approved I22
+        # atomic photoionization pilot (2026-11-26), the I22 owner.
+        if (cohort_plan is None) != (cohort_plan_sha256 is None) or (cohort_plan is not None and test_id not in ('I21','I22')):
+            raise ValueError('explicit plan and SHA-256 must be supplied together for I21 or I22 only')
         if i24_lock is not None and (test_id!='I24' or mode!='regression'):
             raise ValueError('the controlled sodium provider case belongs to I24 regression mode')
         if i24_mass_inventory is not None and i24_lock is None:
@@ -293,41 +297,42 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
         elif i23_profile is not None:
             i23_supporting(directory,result,manifest,i23_profile,i23_pic_producer,
                            mpi_ranks,started+wall_seconds,i23_pic_refinement)
-        elif i21_plan is None or not manifest['input_snapshot_available']:
+        elif cohort_plan is None or not manifest['input_snapshot_available']:
             stdout.write_text('SKIPPED '+test_id+': '+result['reason']+'\n'
                 'No particle run, lifetime fit, branch score or observation comparison was performed.\n')
         else:
             from m3_qualification_executor import run as run_cohort
-            plan=Path(i21_plan).resolve()
-            if not digest_syntax(i21_plan_sha256):
-                raise ValueError('I21 plan needs its explicit lowercase SHA-256')
+            plan=Path(cohort_plan).resolve()
+            if not digest_syntax(cohort_plan_sha256):
+                raise ValueError(test_id+' plan needs its explicit lowercase SHA-256')
             if not plan.is_file():
-                raise MissingPrerequisite('I21 cohort plan unavailable: '+str(plan))
-            if sha(plan)!=i21_plan_sha256:
-                raise ValueError('I21 cohort plan SHA-256 mismatch')
+                raise MissingPrerequisite(test_id+' cohort plan unavailable: '+str(plan))
+            if sha(plan)!=cohort_plan_sha256:
+                raise ValueError(test_id+' cohort plan SHA-256 mismatch')
             planned=strict_object(plan)
-            if planned.get('test_id')!='I21':
-                raise ValueError('the I21 owner requires an I21 cohort plan')
+            if planned.get('test_id')!=test_id:
+                raise ValueError('the '+test_id+' owner requires an '+test_id+' cohort plan')
             case_name='trajectory' if planned.get('test_kind')=='trajectory-integrated-hazard' else 'homogeneous'
             mode_name='development' if mode=='regression' else 'qualification-candidate'
             child=directory/case_name
-            manifest['i21_cohort']={'mode':mode_name,'plan':str(plan),
-                'plan_sha256':i21_plan_sha256,'result':str(child/'result.json')}
+            cohort_key=test_id.lower()+'_cohort'
+            manifest[cohort_key]={'mode':mode_name,'plan':str(plan),
+                'plan_sha256':cohort_plan_sha256,'result':str(child/'result.json')}
             remaining=wall_seconds-(time.monotonic()-started)
-            if remaining<=0:raise RuntimeError('I21 owner exhausted its original wall allowance during preflight')
+            if remaining<=0:raise RuntimeError(test_id+' owner exhausted its original wall allowance during preflight')
             # The explicit development selection can exercise one numerical
             # matrix under the approved early-M3 exception. The candidate
             # qualification selection still checks U14 and I13-I20 before any
             # launch. Neither selection covers the complete I21 family.
             value=run_cohort(plan,predecessor_root,child,development=mode=='regression',wall_seconds=remaining,
-                application=application,expected_plan_sha256=i21_plan_sha256)
-            if sha(plan)!=i21_plan_sha256:
-                raise ValueError('I21 cohort plan changed during execution')
+                application=application,expected_plan_sha256=cohort_plan_sha256)
+            if sha(plan)!=cohort_plan_sha256:
+                raise ValueError(test_id+' cohort plan changed during execution')
             child_status=value['status']
-            manifest['i21_cohort'].update(execution=value['execution'],result_sha256=sha(child/'result.json'),
+            manifest[cohort_key].update(execution=value['execution'],result_sha256=sha(child/'result.json'),
                 manifest_sha256=sha(child/'run_manifest.json'))
             result.update(formal_status='SKIPPED / NOT QUALIFIED',
-                supporting_checks=[{'check':'I21 '+case_name+' '+mode_name,'status':child_status,
+                supporting_checks=[{'check':test_id+' '+case_name+' '+mode_name,'status':child_status,
                     'runner':str(TEST/'m3_qualification_executor.py'),'log':str(child/'stdout.log'),
                     'reason':value['reason']}],
                 supporting_counts={status:int(child_status==status) for status in STATUSES})
@@ -336,17 +341,17 @@ def run(test_id,amps,application,output,mpi_ranks=8,mode='regression',*,
                 # The per-ID formal status still identifies an incomplete gate.
                 failed=[entry['name'] for entry in value.get('checks',[])
                         if entry['status'] in ('FAIL','ERROR')]
-                reason=(case_name+' I21 check failed: '+', '.join(failed) if failed else value['reason'])
+                reason=(case_name+' '+test_id+' check failed: '+', '.join(failed) if failed else value['reason'])
                 result.update(status=child_status,reason=reason)
                 if child_status=='FAIL':
                     registry=child/'native_runs.json'
                     if not registry.is_file():
-                        raise ValueError('evaluated I21 cohort failure has no retained native launch registry')
+                        raise ValueError('evaluated '+test_id+' cohort failure has no retained native launch registry')
                     # The receipt indexes the actual completed native runs. It
                     # never exists for prerequisite-only or failed launches.
                     shutil.copyfile(registry,directory/'receipt.txt')
             else:
-                reason=('one '+case_name+' cohort completed; full I21 coverage remains open'
+                reason=('one '+case_name+' cohort completed; full '+test_id+' coverage remains open'
                     if child_status=='PASS' else value['reason'])
                 result['reason']=reason
             stdout.write_text((child/'stdout.log').read_text())
@@ -378,6 +383,8 @@ def main():
     parser.add_argument('--campaign-mode',choices=('regression','qualification'),default='regression')
     parser.add_argument('--i21-cohort-plan',type=Path)
     parser.add_argument('--i21-cohort-plan-sha256')
+    parser.add_argument('--i22-cohort-plan',type=Path,help='frozen I22 atomic-pilot cohort plan (He, Ne or Ar)')
+    parser.add_argument('--i22-cohort-plan-sha256')
     parser.add_argument('--i24-sodium-lock',type=Path,help='run the controlled r14 MPI provider in regression mode')
     parser.add_argument('--i24-pic-producer',type=Path,help='source-bound producer manifest for both native PIC mover orders at 1 and 8 ranks')
     parser.add_argument('--i24-pic-refinement',action='store_true',help='refine native timestep and reference weights at fixed physical horizon and population')
@@ -390,8 +397,14 @@ def main():
     parser.add_argument('--test-runtime-seconds',type=float,default=3600)
     args=parser.parse_args()
     if args.mpi_ranks<1:parser.error('MPI ranks must be positive')
+    if args.i21_cohort_plan is not None and args.i22_cohort_plan is not None:
+        parser.error('one cohort plan per owner launch')
+    cohort=(args.i22_cohort_plan,args.i22_cohort_plan_sha256) if args.i22_cohort_plan is not None or \
+        args.i22_cohort_plan_sha256 is not None else (args.i21_cohort_plan,args.i21_cohort_plan_sha256)
+    if (args.i21_cohort_plan is not None and args.test_id!='I21') or (args.i22_cohort_plan is not None and args.test_id!='I22'):
+        parser.error('the --iNN-cohort-plan option must match the owner test ID')
     value=run(args.test_id,args.amps,args.input,args.output_dir,args.mpi_ranks,args.campaign_mode,
-        i21_plan=args.i21_cohort_plan,i21_plan_sha256=args.i21_cohort_plan_sha256,
+        cohort_plan=cohort[0],cohort_plan_sha256=cohort[1],
         wall_seconds=args.test_runtime_seconds,i24_lock=args.i24_sodium_lock,i24_mass_inventory=args.i24_mass_inventory,
         i24_pic_producer=args.i24_pic_producer,i24_pic_refinement=args.i24_pic_refinement,
         i24_total_capture=args.i24_total_capture,

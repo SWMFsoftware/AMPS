@@ -22,6 +22,10 @@ import sys
 import subprocess
 from datetime import datetime,timezone
 
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+import atomic_targets
+
+
 class Unavailable(Exception):
     """Required source/capability evidence is absent, rather than evaluated."""
 
@@ -161,9 +165,14 @@ def load_photon_source(mapping,base,identities,constants,scope):
     limits=[row for row in csv_rows(thresholds,thresholdHeader) if row['reaction_id']==source['reaction_id']]
     if len(matches)!=1 or len(limits)!=1:raise ValueError('nonunique/missing native source endpoint or threshold')
     row,limit=matches[0],limits[0]
-    if row['reaction_type']!='photoionization' or row['products']!='Na+ + e' or row['species']!='Na' or limit['products']!=row['products']:raise ValueError('source is not the complete single reactive Na endpoint')
+    # One admitted atomic target (I21 Na; I22 atomic pilot He/Ne/Ar), from the
+    # independent verifier table; the selected states must carry its isotope.
+    element=row['species']
+    if (row['reaction_type']!='photoionization' or element not in atomic_targets.TARGETS or
+            row['products']!=atomic_targets.products(element) or limit['products']!=row['products']):
+        raise ValueError('source is not the complete single reactive endpoint of an admitted atomic target')
     unit=constants['elementary charge'][0]
-    return {'rate':decimal(row['rate_1au_s-1']),'mean':decimal(row['excess_energy_eV'])*unit,
+    return {'element':element,'rate':decimal(row['rate_1au_s-1']),'mean':decimal(row['excess_energy_eV'])*unit,
             'threshold':decimal(limit['threshold_eV'])*unit,'electron_volt_J':unit}
 
 
@@ -243,6 +252,11 @@ def verify(paths,profile_json,mapping,bounds):
         for name in ('mass_kg','momentum_kg_m_s','energy_j','number','rotation'):_bound(bounds,name)
         for path in paths:result['input_sha256'][str(Path(path).resolve())]=digest(path)
         source=load_photon_source(mapping,Path(profile_json).resolve().parent,result['input_sha256'],constants,bounds['scope'])
+        if source is not None:
+            # The source parent's isotope must be the selected parent and ion.
+            isotope={atomic_targets.nucleus(source['element']):1}
+            if states['parent']['nuclei']!=isotope or states['ion']['nuclei']!=isotope:
+                raise ValueError('selected parent/ion states do not carry the '+source['element']+' source isotope')
         energy_policy=verify_energy_crosswalk(mapping,states,source,Path(profile_json).resolve().parent,result['input_sha256'])
         if source is not None:_bound(bounds,'rate_s')
         events=read_events(paths);c=constants['speed of light in vacuum'][0]

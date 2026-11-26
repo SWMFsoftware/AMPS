@@ -1,0 +1,11 @@
+{
+  "schema": "srcMoon-I22-atomic-pilot-revision-v1",
+  "status": "APPROVED",
+  "approval_date": "2026-11-26 (UTC)",
+  "authority": "User answer in the 2026-11-26 session after the first He-quiet run exceeded the owner wall limit.",
+  "revises": "srcMoon/test/integration-tests/I22/reference/atomic_pilot_approval_20261126.json (cases.original_parents); that record is otherwise unchanged",
+  "changes": {"He-quiet": {"original_parents": {"from": 16384, "to": 8192}, "expected_events_at_1AU_rates": {"from": 60, "to": 30}}},
+  "reason": "With 16,384 parents one He-quiet mover run did not finish within the existing 3,600 s owner limit: launches 00-04 PASS, launch 05 (8 ranks, 32 steps) was stopped by the resource guard (ERROR, retained in test_output/srcMoon/i22-atomic-pilot-C7b2SG5d/campaign/He-quiet/). The 8-rank launches took about as long as the 1-rank launches. The user chose fewer parents over a longer allowance.",
+  "unchanged": "horizons, geometry, seed, endpoints, limits, acceptance criteria and the one-hour owner limit; statistics remain reported, not scored",
+  "formal_I22_status": "SKIPPED / NOT QUALIFIED"
+}

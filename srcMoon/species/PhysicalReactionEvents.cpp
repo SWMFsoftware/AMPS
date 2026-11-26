@@ -15,7 +15,28 @@ namespace {
 // SI defines one electronvolt by the exact elementary charge. This is a
 // dimensional definition, not a fitted atomic threshold or a numerical gate.
 constexpr Real ExactElectronVoltJ=1.602176634e-19L;
-const char* const Model="EXPERIMENTAL-Na-D04-source-mean-isotropic-moving-parent-v1";
+// Supported atomic photoionization targets X -> X+ + e (I21 Na; I22 atomic
+// pilot He/Ne/Ar, approved 2026-11-26). The target is selected by the parent
+// state's single isotope nucleus, never by a caller flag, and its D04 family
+// must be the complete single reactive channel with exactly these products.
+// The Na entry keeps the original model and receipt-scope strings so existing
+// Na receipts are unchanged. He/Ne/Ar are admitted only under the named
+// source-effective-photon convention with the ground ion: their D04 printed
+// thresholds differ from the physical ground-ion thresholds, and only heavy
+// number/charge/mass budgets and event chronology are admitted observables.
+struct AtomicTarget {
+  const char* nucleus;const char* sourceParent;const char* sourceIon;
+  const char* model;const char* scope;bool requiresSourceEffectivePhoton;
+};
+const AtomicTarget Targets[]={
+  {"23Na","Na","Na+","EXPERIMENTAL-Na-D04-source-mean-isotropic-moving-parent-v1",
+   "EXPERIMENTAL source-mean/isotropic moving-parent Na; not validated kinetics",false},
+  {"4He","He","He+","EXPERIMENTAL-He-D04-source-effective-photon-isotropic-ground-ion-v1",
+   "EXPERIMENTAL source-effective-photon/isotropic moving-parent He to ground He+; number/charge/mass and chronology only",true},
+  {"20Ne","Ne","Ne+","EXPERIMENTAL-Ne-D04-source-effective-photon-isotropic-ground-ion-v1",
+   "EXPERIMENTAL source-effective-photon/isotropic moving-parent Ne to ground Ne+; number/charge/mass and chronology only",true},
+  {"40Ar","Ar","Ar+","EXPERIMENTAL-Ar-D04-source-effective-photon-isotropic-ground-ion-v1",
+   "EXPERIMENTAL source-effective-photon/isotropic moving-parent Ar to ground Ar+; number/charge/mass and chronology only",true}};
 Status Error(Code code,const std::string& message){return {code,message};}
 bool Finite(Real x){return std::isfinite(x);}
 bool Positive(Real x){return Finite(x)&&x>0;}
@@ -110,9 +131,12 @@ bool SameState(const K::ResolvedState& state,const R::SpeciesIdentity& material)
   return state.valid()&&s.identity==material.identity&&s.state==material.state&&s.elementaryCharge==material.elementaryCharge&&
       Nuclei(s.nuclei)==Nuclei(material.nuclei)&&static_cast<double>(state.referenceMassKg())==material.modelMassKg;
 }
-bool SodiumNuclei(const K::ResolvedState& state){
+// The supported target whose single nucleus this state carries, or null.
+const AtomicTarget* TargetFor(const K::ResolvedState& state){
   const auto& nuclei=state.definition().nuclei;
-  return nuclei.size()==1&&nuclei.front().identity=="23Na"&&nuclei.front().count==1;
+  if(nuclei.size()!=1||nuclei.front().count!=1)return nullptr;
+  for(const auto& target:Targets)if(nuclei.front().identity==target.nucleus)return &target;
+  return nullptr;
 }
 bool ErrorsDeclared(const K::ErrorLimits& limits){
   const Real x[]={limits.maximumRelativeInertialMassError,limits.maximumRelativeAccelerationError,limits.maximumRelativeRelativisticKineticError};
@@ -136,7 +160,8 @@ Status ValidateFrame(const EventFrame& frame,const Definition& d){
 }
 
 namespace detail {
-struct SodiumPhotoionizationData {
+struct AtomicPhotoionizationData {
+  const AtomicTarget* target=nullptr;
   P::Registry source;
   Definition definition;
   P::Channel channel;
@@ -170,12 +195,12 @@ Status ReferenceCatalogEntry(const K::ResolvedState& state,int compiled,R::Speci
   catch(const std::exception& e){return Error(Code::InvalidInput,std::string("catalog binding: ")+e.what());}
 }
 
-Status SodiumPhotoionization::Create(const P::Registry& source,const Definition& d,SodiumPhotoionization* output){
+Status AtomicPhotoionization::Create(const P::Registry& source,const Definition& d,AtomicPhotoionization* output){
   if(!output)return Error(Code::InvalidInput,"provider output storage is required");
   if(!source.loaded())return Error(Code::Unavailable,"complete frozen D04 registry is unavailable");
-  if(!d.sourceStateCrosswalkAvailable)return Error(Code::Unavailable,"reviewed Na source/state/threshold crosswalk is unavailable; no transport is admitted");
+  if(!d.sourceStateCrosswalkAvailable)return Error(Code::Unavailable,"reviewed atomic source/state/threshold crosswalk is unavailable; no transport is admitted");
   if(!d.parent.state.valid()||!d.ion.state.valid()||!d.electron.state.valid())
-    return Error(Code::Unavailable,"required Na/Na+/electron physical states are unresolved");
+    return Error(Code::Unavailable,"required atom/ion/electron physical states are unresolved");
   if(d.identity.empty()||d.sourceProfileIdentity.empty()||d.stateCrosswalkIdentity.empty()||d.energyReferenceIdentity.empty()||
       !ReactionData::DigestSyntax(d.sourceProfileSha256)||!ReactionData::DigestSyntax(d.stateCrosswalkSha256)||
       d.electronVoltJ!=ExactElectronVoltJ||d.electronVoltSourceIdentity.empty())
@@ -211,29 +236,33 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
       if(!Positive(states[i]->physicalRestMass.kg)||states[i]->physicalRestMass.sourceIdentity.empty()||!ErrorsDeclared(states[i]->modelErrorLimits))
         return Error(Code::Unavailable,"independent physical rest masses and reviewed reference-inertia/relativistic error limits are required");
     }
+    const AtomicTarget* target=TargetFor(d.parent.state);
     if(d.catalog[ids[0]].compiledSpecies<0||d.catalog[ids[1]].compiledSpecies<0||d.catalog[ids[2]].compiledSpecies!=-1||
-        !SodiumNuclei(d.parent.state)||!SodiumNuclei(d.ion.state)||!d.electron.state.definition().nuclei.empty()||
+        !target||TargetFor(d.ion.state)!=target||!d.electron.state.definition().nuclei.empty()||
         d.parent.state.definition().elementaryCharge!=0||d.ion.state.definition().elementaryCharge!=1||d.electron.state.definition().elementaryCharge!=-1)
-      return Error(Code::SourceMismatch,"reference scope is tracked23Na -> tracked23Na+ + untracked free electron, with exact integer charge");
+      return Error(Code::SourceMismatch,"reference scope is a tracked 23Na, 4He, 20Ne or 40Ar atom -> the same tracked isotope ion + untracked free electron, with exact integer charge");
+    if(target->requiresSourceEffectivePhoton&&d.photonEnergyPolicy!=K::PhotonEnergyPolicy::SourceEffectivePhoton)
+      return Error(Code::SourceMismatch,std::string(target->sourceParent)+" photoionization is approved only under the source-effective-photon convention");
     if(d.parent.state.referenceInventoryIdentity()!=d.ion.state.referenceInventoryIdentity()||
         d.parent.state.referenceInventoryIdentity()!=d.electron.state.referenceInventoryIdentity())
       return Error(Code::SourceMismatch,"event states use different reference-mass inventories");
     std::vector<P::Channel> family;
-    if(!source.ChannelsForParent("Na",&family,&error))return Error(Code::SourceMismatch,error);
+    const std::string element=target->sourceParent;
+    if(!source.ChannelsForParent(element,&family,&error))return Error(Code::SourceMismatch,error);
     if(family.size()!=1||!family.front().reactive||family.front().id!=d.channelId)
-      return Error(Code::SourceMismatch,"Na provider requires its COMPLETE single reactive D04 family; no branch dropping or renormalization");
+      return Error(Code::SourceMismatch,element+" provider requires its COMPLETE single reactive D04 family; no branch dropping or renormalization");
     const auto& channel=family.front();
-    if(channel.physicalParent!="Na"||!channel.hasThreshold||channel.products.size()!=2)
-      return Error(Code::Unavailable,"source Na channel lacks a complete threshold/product contract");
+    if(channel.physicalParent!=element||!channel.hasThreshold||channel.products.size()!=2)
+      return Error(Code::Unavailable,"source "+element+" channel lacks a complete threshold/product contract");
     bool ion=false,electron=false;
     for(const auto& product:channel.products){
-      if(product.multiplicity!=1)return Error(Code::SourceMismatch,"unsupported Na source product multiplicity");
-      if(product.species=="Na+"&&product.charge==1&&!ion)ion=true;
+      if(product.multiplicity!=1)return Error(Code::SourceMismatch,"unsupported "+element+" source product multiplicity");
+      if(product.species==target->sourceIon&&product.charge==1&&!ion)ion=true;
       else if(product.species=="e"&&product.charge==-1&&!electron)electron=true;
-      else return Error(Code::SourceMismatch,"source channel is not complete atomic Na photoionization");
+      else return Error(Code::SourceMismatch,"source channel is not complete atomic "+element+" photoionization");
     }
     if(!ion||!electron)return Error(Code::SourceMismatch,"source channel omits ion or reservoir electron");
-    auto data=std::make_shared<detail::SodiumPhotoionizationData>();data->source=source;data->definition=d;data->channel=channel;
+    auto data=std::make_shared<detail::AtomicPhotoionizationData>();data->target=target;data->source=source;data->definition=d;data->channel=channel;
     data->thresholdJ=static_cast<Real>(channel.thresholdEnergyEv)*d.electronVoltJ;
     data->meanExcessJ=static_cast<Real>(channel.meanExcessEnergyEv[endpoint])*d.electronVoltJ;
     if(!Positive(data->thresholdJ)||!Finite(data->meanExcessJ)||data->meanExcessJ<0)
@@ -271,7 +300,7 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
     if(!Close(data->formation.qJ+data->thresholdJ,std::max(std::fabs(data->formation.qJ),data->thresholdJ),d.numerical.thresholdJ))
       return Error(Code::SourceMismatch,"native D04 threshold and supplied physical state gap disagree; an unresolved physical crosswalk cannot be hidden by a numerical tolerance");
     }else if(!Positive(-data->formation.qJ)){
-      return Error(Code::SourceMismatch,"physical Na ionization crosswalk requires a finite positive formation-state gap");
+      return Error(Code::SourceMismatch,"physical atomic ionization crosswalk requires a finite positive formation-state gap");
     }
     if(!Internal(d.parent.state,&data->parentInternalJ)||!Internal(d.ion.state,&data->ionInternalJ)||!Internal(d.electron.state,&data->electronInternalJ))
       return Error(Code::NumericalFailure,"source state energies cannot be stored in the planner's binary64 internal-energy field");
@@ -290,32 +319,33 @@ Status SodiumPhotoionization::Create(const P::Registry& source,const Definition&
     if(!K::PhotonTwoBody(probe,&temporary,&error))return Error(Code::OutsideDomain,error);
     for(unsigned i=0;i<3;++i)if(!K::EvaluateModelErrors(states[i]->state,states[i]->physicalRestMass,d.numerical.maximumClassicalSpeedMS,
         states[i]->modelErrorLimits,&data->errors[i],&error))return Error(Code::OutsideDomain,error);
-    data->reaction.identity=channel.id+";"+Model+";"+d.stateCrosswalkIdentity;
+    data->reaction.identity=channel.id+";"+target->model+";"+d.stateCrosswalkIdentity;
     if(d.photonEnergyPolicy==K::PhotonEnergyPolicy::SourceEffectivePhoton)
       data->reaction.identity+=";source-effective-photon";
     data->reaction.reactants={{d.parent.catalogIndex,1,R::Population::Tracked}};
     data->reaction.products={{d.ion.catalogIndex,1,R::Population::Tracked},{d.electron.catalogIndex,1,R::Population::Bath}};
     if(!R::ValidateReaction(d.catalog,data->reaction,&error))return Error(Code::SourceMismatch,error);
-    SodiumPhotoionization candidate;candidate.data_=std::move(data);*output=std::move(candidate);return {};
+    AtomicPhotoionization candidate;candidate.data_=std::move(data);*output=std::move(candidate);return {};
   }catch(const std::bad_alloc&){return Error(Code::ResourceLimit,"source/state binding allocation failed; reduce simultaneously retained profiles or provide more memory");}
-  catch(const std::exception& e){return Error(Code::InvalidInput,std::string("Na source binding: ")+e.what());}
+  catch(const std::exception& e){return Error(Code::InvalidInput,std::string("atomic source binding: ")+e.what());}
 }
 
-const std::vector<R::SpeciesIdentity>* SodiumPhotoionization::catalog()const{return data_?&data_->definition.catalog:nullptr;}
-const R::Reaction* SodiumPhotoionization::reaction()const{return data_?&data_->reaction:nullptr;}
-const P::Channel* SodiumPhotoionization::sourceChannel()const{return data_?&data_->channel:nullptr;}
-Status SodiumPhotoionization::RateS(double distance,int visible,double* output)const{
+const std::vector<R::SpeciesIdentity>* AtomicPhotoionization::catalog()const{return data_?&data_->definition.catalog:nullptr;}
+const R::Reaction* AtomicPhotoionization::reaction()const{return data_?&data_->reaction:nullptr;}
+const P::Channel* AtomicPhotoionization::sourceChannel()const{return data_?&data_->channel:nullptr;}
+const char* AtomicPhotoionization::sourceParent()const{return data_?data_->target->sourceParent:nullptr;}
+Status AtomicPhotoionization::RateS(double distance,int visible,double* output)const{
   if(!output)return Error(Code::InvalidInput,"rate output storage is required");
-  if(!data_)return Error(Code::Unavailable,"Na source/state provider is not prepared");
+  if(!data_)return Error(Code::Unavailable,"atomic source/state provider is not prepared");
   if(visible!=0&&visible!=1)return Error(Code::InvalidInput,"this point-Sun model accepts exactly0/1 gas visibility, not a facet cosine or finite-disc fraction");
   std::string error;double value=0;
-  if(!data_->source.TotalDestructionRateS("Na",data_->definition.solar,distance,visible,&value,&error))return Error(Code::OutsideDomain,error);
+  if(!data_->source.TotalDestructionRateS(data_->target->sourceParent,data_->definition.solar,distance,visible,&value,&error))return Error(Code::OutsideDomain,error);
   *output=value;return {};
 }
 
-Status SodiumPhotoionization::Compose(const EventInput& input,Composition* output)const{
+Status AtomicPhotoionization::Compose(const EventInput& input,Composition* output)const{
   if(!output)return Error(Code::InvalidInput,"event composition output storage is required");
-  if(!data_)return Error(Code::Unavailable,"Na source/state provider is not prepared");
+  if(!data_)return Error(Code::Unavailable,"atomic source/state provider is not prepared");
   const auto& d=data_->definition;
   if(!input.interval.valid()||input.parentAtEvent.species!=d.parent.catalogIndex||input.parentAtEvent.internalEnergyJ!=data_->parentInternalJ||
       !Positive(input.parentAtEvent.referenceWeight)||!Positive(input.parentAtEvent.individualCorrection)||
@@ -335,7 +365,7 @@ Status SodiumPhotoionization::Compose(const EventInput& input,Composition* outpu
     return Error(Code::SourceMismatch,"actual event epoch disagrees with the immutable interval's supported binary64 projection");
   try {
     Composition value;auto& receipt=value.receipt;
-    receipt.modelIdentity=Model;receipt.sourceProfileIdentity=d.sourceProfileIdentity;receipt.sourceProfileSha256=d.sourceProfileSha256;
+    receipt.scope=data_->target->scope;receipt.modelIdentity=data_->target->model;receipt.sourceProfileIdentity=d.sourceProfileIdentity;receipt.sourceProfileSha256=d.sourceProfileSha256;
     receipt.stateCrosswalkIdentity=d.stateCrosswalkIdentity;receipt.stateCrosswalkSha256=d.stateCrosswalkSha256;
     receipt.channelId=data_->channel.id;receipt.energyReferenceIdentity=d.energyReferenceIdentity;
     receipt.photonGeometryIdentity=input.photonGeometryIdentity;receipt.solar=d.solar;
@@ -419,7 +449,7 @@ Status SodiumPhotoionization::Compose(const EventInput& input,Composition* outpu
     two.availableCOMKineticJ=available.Value();two.controls=d.numerical;
     two.context={input.frame.inertialIdentity,d.identity+";"+d.stateCrosswalkIdentity};
     if(!K::GeneralTwoBodyFinalState(two,&receipt.inertialProducts,&error))return Error(Code::NumericalFailure,error);
-    receipt.inertialProducts.modelIdentity=Model;receipt.inertialProducts.photonIncluded=true;
+    receipt.inertialProducts.modelIdentity=data_->target->model;receipt.inertialProducts.photonIncluded=true;
     receipt.inertialProducts.photonEnergyJ=photon;receipt.inertialProducts.photonMomentumKgMS=receipt.incomingPhoton.inertialMomentumKgMS;
     receipt.inertialProducts.stateQJ=data_->formation.qJ;receipt.inertialProducts.formationBalance=data_->formation;
     receipt.inertialProducts.channelThresholdJ=data_->thresholdJ;receipt.inertialProducts.sourceMeanExcessJ=data_->meanExcessJ;
@@ -470,12 +500,12 @@ Status SodiumPhotoionization::Compose(const EventInput& input,Composition* outpu
     receipt.representedPhotonNumberChange=-value.plan.ledger().parentNumber;
     *output=std::move(value);return {};
   }catch(const std::bad_alloc&){return Error(Code::ResourceLimit,"event composition allocation failed; retain the selected event and reduce simultaneous histories or provide more memory; never discard an electron/ion or redraw products");}
-  catch(const std::exception& e){return Error(Code::NumericalFailure,std::string("Na event composition: ")+e.what());}
+  catch(const std::exception& e){return Error(Code::NumericalFailure,std::string("atomic event composition: ")+e.what());}
 }
 
-Status SodiumPhotoionization::IonCollectorState(IonCollector::StateDefinition* output)const{
+Status AtomicPhotoionization::IonCollectorState(IonCollector::StateDefinition* output)const{
   if(!output)return Error(Code::InvalidInput,"collector-state output storage is required");
-  if(!data_)return Error(Code::Unavailable,"Na source/state provider is not prepared");
+  if(!data_)return Error(Code::Unavailable,"atomic source/state provider is not prepared");
   try {
     IonCollector::StateDefinition state;const auto& d=data_->definition;
     state.material=d.catalog[d.ion.catalogIndex];

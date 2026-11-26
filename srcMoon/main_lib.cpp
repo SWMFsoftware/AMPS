@@ -489,11 +489,19 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
     case _HE_PLUS_SPEC_:
       CharacteristicSpeed=Moon::Runtime::GetConfiguration().heliumIonCharacteristicSpeedMS;
       break;
+    // Reaction-born Ne+ and Ar+ (I22 atomic pilot) use their explicitly
+    // declared speeds [m/s]; startup refuses an ion build without them.
+    case _NE_PLUS_SPEC_:
+      CharacteristicSpeed=Moon::Runtime::GetConfiguration().neonIonCharacteristicSpeedMS;
+      break;
+    case _AR_PLUS_SPEC_:
+      CharacteristicSpeed=Moon::Runtime::GetConfiguration().argonIonCharacteristicSpeedMS;
+      break;
 	  case _NA_SPEC_: case _HE_SPEC_:case _NE_SPEC_: case _AR_SPEC_: 
     CharacteristicSpeed=2.0E3;
     break;
 
-	  case _NA_PLUS_SPEC_:case _NE_PLUS_SPEC_:case _AR_PLUS_SPEC_: 
+	  case _NA_PLUS_SPEC_:
     CharacteristicSpeed=8.0E4;
     break;
 
@@ -1385,6 +1393,21 @@ void amps_init() {
     if (_HE_SPEC_<0 && Moon::Runtime::GetConfiguration().heliumToSodiumReferenceWeightRatio>0)
       exit(__LINE__,__FILE__,"helium_to_sodium_reference_weight_ratio was supplied, but neutral He "
           "is not compiled. Remove the key or compile He.");
+    // Ne+ and Ar+ (I22 atomic pilot) follow the same explicit rule.
+    if ((_NE_PLUS_SPEC_>=0)!=(Moon::Runtime::GetConfiguration().neonIonCharacteristicSpeedMS>0))
+      exit(__LINE__,__FILE__,"Moon tracked Ne+ requires neon_ion_characteristic_speed_m_s and "
+          "neon_ion_to_sodium_reference_weight_ratio in the Moon .in section. "
+          "Supply both controls when Ne+ is compiled, or omit both when Ne+ is absent.");
+    if ((_AR_PLUS_SPEC_>=0)!=(Moon::Runtime::GetConfiguration().argonIonCharacteristicSpeedMS>0))
+      exit(__LINE__,__FILE__,"Moon tracked Ar+ requires argon_ion_characteristic_speed_m_s and "
+          "argon_ion_to_sodium_reference_weight_ratio in the Moon .in section. "
+          "Supply both controls when Ar+ is compiled, or omit both when Ar+ is absent.");
+    if (_NE_SPEC_<0 && Moon::Runtime::GetConfiguration().neonToSodiumReferenceWeightRatio>0)
+      exit(__LINE__,__FILE__,"neon_to_sodium_reference_weight_ratio was supplied, but neutral Ne "
+          "is not compiled. Remove the key or compile Ne.");
+    if (_AR_SPEC_<0 && Moon::Runtime::GetConfiguration().argonToSodiumReferenceWeightRatio>0)
+      exit(__LINE__,__FILE__,"argon_to_sodium_reference_weight_ratio was supplied, but neutral Ar "
+          "is not compiled. Remove the key or compile Ar.");
     Moon::RegisterParticleTracing();
 
 #if _PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ == _PIC_MODE_ON_
@@ -2229,28 +2252,47 @@ if (writeMeshTecplot) {
           _HE_PLUS_SPEC_,_NA_SPEC_,Moon::Runtime::GetConfiguration().heliumIonToSodiumReferenceWeightRatio);
     }
 
+    // Ne and Ar neutrals: as for He, an explicit positive ratio to Na
+    // replaces the legacy weight derived from the enabled source rate, which
+    // would divide by a zero rate for parents that are not source-injected.
+    // The legacy 0.1*Na neutral time step is unchanged.
     if (_NE_SPEC_>=0) {
-      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NE_SPEC_,_NA_SPEC_,1.0);
-
-      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_NE_SPEC_);
+      const double neonRatio=Moon::Runtime::GetConfiguration().neonToSodiumReferenceWeightRatio;
+      if (neonRatio>0) {
+        PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NE_SPEC_,_NA_SPEC_,neonRatio);
+      }
+      else {
+        PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NE_SPEC_,_NA_SPEC_,1.0);
+        PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_NE_SPEC_);
+      }
       PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_NE_SPEC_,_NA_SPEC_,0.1);
     }
 
+    // Ne+ and Ar+ have no primary source. Their reference weights are the
+    // declared ratios to Na (the earlier Ne+ line copied Ne onto Ne and left
+    // Ne+ unset); the reaction transaction sets each daughter's individual
+    // correction. Their local time steps come from localTimeStep() with the
+    // declared ion speeds.
     if (_NE_PLUS_SPEC_>=0) {
-      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NE_SPEC_,_NE_SPEC_,1.0);
-      PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_NE_SPEC_,_NE_SPEC_,1.0);
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(
+          _NE_PLUS_SPEC_,_NA_SPEC_,Moon::Runtime::GetConfiguration().neonIonToSodiumReferenceWeightRatio);
     }
 
     if (_AR_SPEC_>=0) {
-      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_AR_SPEC_,_NA_SPEC_,1.0);
-
-      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_AR_SPEC_);
+      const double argonRatio=Moon::Runtime::GetConfiguration().argonToSodiumReferenceWeightRatio;
+      if (argonRatio>0) {
+        PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_AR_SPEC_,_NA_SPEC_,argonRatio);
+      }
+      else {
+        PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_AR_SPEC_,_NA_SPEC_,1.0);
+        PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_AR_SPEC_);
+      }
       PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_AR_SPEC_,_NA_SPEC_,0.1);
     }
 
     if (_AR_PLUS_SPEC_>=0) {
-      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_AR_PLUS_SPEC_,_AR_SPEC_,1.0);
-      PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_AR_PLUS_SPEC_,_AR_SPEC_,0.1);
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(
+          _AR_PLUS_SPEC_,_NA_SPEC_,Moon::Runtime::GetConfiguration().argonIonToSodiumReferenceWeightRatio);
     }
 
 

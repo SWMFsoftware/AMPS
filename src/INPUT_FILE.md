@@ -1048,6 +1048,27 @@ compiled weight-reference species. The I23 electron-impact runner writes
 the chosen values in each retained `moon.in`.
 [I23 input and run instructions](../srcMoon/test/integration-tests/I23/README.md)
 
+### Moon neon and argon time steps and reference weights
+
+Reaction-born Ne⁺ and Ar⁺ follow the He⁺ rule (I22 atomic photoionization
+pilot, approved 2026-11-26). Supply both ion fields of a gas when the
+executable tracks that ion (`_NE_PLUS_SPEC_ >= 0` or `_AR_PLUS_SPEC_ >= 0`),
+and omit both otherwise. Startup refuses a mismatch before mesh allocation.
+Neither field has a physical default.
+
+| Key | Input type and units | Use by AMPS |
+|---|---|---|
+| `neon_ion_characteristic_speed_m_s`, `argon_ion_characteristic_speed_m_s` | Finite positive real, m/s | Reference speed for the Ne⁺ or Ar⁺ cell-crossing time `0.3 * L / speed` in seconds. |
+| `neon_ion_to_sodium_reference_weight_ratio`, `argon_ion_to_sodium_reference_weight_ratio` | Finite positive real, dimensionless | Sets `W_Ne+ = ratio * W_Na` or `W_Ar+ = ratio * W_Na`. |
+| `neon_to_sodium_reference_weight_ratio`, `argon_to_sodium_reference_weight_ratio` | Optional finite positive real, dimensionless | Sets `W_Ne` or `W_Ar = ratio * W_Na` for neutral parents that no registered source injects. When omitted, the legacy weight derived from an enabled source rate is unchanged. Startup refuses the key if that neutral is not compiled. |
+
+Neutral Ne and Ar keep their legacy local time step, 0.1 times the Na step.
+The earlier Ne⁺ setup copied the Ne weight onto Ne and left Ne⁺ unset; Ne⁺
+now takes its declared ratio. The I22 pilot decks write these keys only to
+admit normal startup; the cohort owner then sets the common time step and the
+explicit reference weights.
+[I22 input and run instructions](../srcMoon/test/integration-tests/I22/README.md)
+
 ### Optional Moon physical-time cut-cell tracing
 
 Set `particle_tracing_mover` to `force-cut-surface-first-order` or

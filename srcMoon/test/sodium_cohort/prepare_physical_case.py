@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))
 from profile_projection import project, pairs, sha
+import atomic_targets
 from m2_initial_state import assignments
 
 SCHEMA = 'srcMoon-native-sodium-case-controls-v1'
@@ -282,21 +283,48 @@ def validate_controls(case_path):
     return cohort, result, evidence
 
 
+ATOMIC_CROSSWALK_SCHEMA = 'srcMoon-M3-atomic-source-energy-crosswalk-v1'
+
+
 def authenticate_crosswalk(profile, profile_path, crosswalk_path):
+    """Bind the one profile-listed crosswalk at this exact path.
+
+    The original Na crosswalk is the profile's ``atomic_extension``. A profile
+    derived for the I22 atomic pilot (approved 2026-11-26) also lists one
+    crosswalk per He/Ne/Ar parent in ``atomic_photoionization_crosswalks``;
+    each must name its own parent's D04 channel. No other path is accepted.
+    """
     extension = profile.get('atomic_extension')
     if not isinstance(extension, dict):
         raise MissingConfiguration('source-bound atomic crosswalk metadata unavailable')
     descriptor = pinned(extension['crosswalk_csv'], profile_path.parent)
+    meta_record, schema, element = extension['crosswalk'], 'srcMoon-M3-Na-source-energy-crosswalk-v1', 'Na'
     if absolute(crosswalk_path) != Path(descriptor['path']):
-        raise ValueError('crosswalk must be the exact profile-bound CSV path')
-    meta_pin = pinned(extension['crosswalk'], profile_path.parent)
+        listed = profile.get('atomic_photoionization_crosswalks', {})
+        if not isinstance(listed, dict):
+            raise ValueError('atomic photoionization crosswalk list must be an object keyed by D04 parent')
+        found = []
+        for name, entry in listed.items():
+            if name == 'Na' or name not in atomic_targets.TARGETS or not isinstance(entry, dict) \
+                    or set(entry) != {'crosswalk', 'crosswalk_csv'}:
+                raise ValueError('invalid profile-listed atomic crosswalk entry: ' + str(name))
+            if absolute(entry['crosswalk_csv']['path'], profile_path.parent) == absolute(crosswalk_path):
+                found.append((name, entry))
+        if len(found) != 1:
+            raise ValueError('crosswalk must be the exact profile-bound CSV path')
+        element, entry = found[0]
+        descriptor = pinned(entry['crosswalk_csv'], profile_path.parent)
+        meta_record, schema = entry['crosswalk'], ATOMIC_CROSSWALK_SCHEMA
+    meta_pin = pinned(meta_record, profile_path.parent)
     meta = load_json(meta_pin['path'])
-    if not isinstance(meta, dict) or meta.get('schema') != 'srcMoon-M3-Na-source-energy-crosswalk-v1':
+    if not isinstance(meta, dict) or meta.get('schema') != schema:
         raise ValueError('unsupported atomic crosswalk metadata schema')
     columns, rows = csv_rows(crosswalk_path)
     if columns != CROSSWALK_COLUMNS or len(rows) != 1:
-        raise ValueError('one exact eight-column sodium crosswalk required')
+        raise ValueError('one exact eight-column atomic crosswalk required')
     row = rows[0]
+    if not row['channel_id'].startswith('PHIDRATES:' + element + ':'):
+        raise ValueError('crosswalk channel does not belong to its listed parent ' + element)
     for key in CROSSWALK_COLUMNS:
         safe(row[key], key)
         if row[key] != meta.get(key):
@@ -320,8 +348,9 @@ def authenticate_crosswalk(profile, profile_path, crosswalk_path):
             raise MissingConfiguration('requested source state unavailable: ' + row[key])
         selected.append(state)
     parent, ion, electron = selected
-    if [(s['nuclei'], s['charge']) for s in selected] != [('23Na:1','0'), ('23Na:1','1'), ('','-1')]:
-        raise ValueError('explicit Na ground/ion/electron state topology differs')
+    isotope = atomic_targets.nucleus(element) + ':1'
+    if [(s['nuclei'], s['charge']) for s in selected] != [(isotope,'0'), (isotope,'1'), ('','-1')]:
+        raise ValueError('explicit ' + element + ' ground/ion/electron state topology differs')
     if identity(ion, 'formation') != row['physical_threshold_source_identity']:
         raise ValueError('physical threshold is not the exact ion formation source identity')
     for state in (parent, electron):

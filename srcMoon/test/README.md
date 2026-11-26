@@ -1399,6 +1399,19 @@ both movers. `test_m3_i21_decision1.py` runs in the U16 orchestration battery.
 [Contract](integration-tests/I21/DECISION1_CONTRACT.md) ·
 [Commands](integration-tests/I21/README.md#decision-1-cases-approved-2026-11-26)
 
+### I22 atomic photoionization pilot
+
+The I22 owner runs the atomic pilot (decision 2 part A, approved 2026-11-26)
+through `run_all_test.py --only I22 --i22-cohort-plan PLAN
+--i22-cohort-plan-sha256 SHA`. The cases are He, Ne and Ar
+photoionization to the ground ion at both D04 endpoints, using both movers
+at 1 and 8 ranks. `I21/prepare_cohort.py --test-id I22` freezes the plans.
+`test_m3_i22_atomic_pilot.py` runs in the same orchestration battery, and
+`physical_reaction_events/probe.cpp` carries 16 atomic target-selection
+checks. Formal I22 stays SKIPPED.
+[Contract](integration-tests/I22/ATOMIC_PILOT_CONTRACT.md) ·
+[Commands](integration-tests/I22/README.md#atomic-photoionization-pilot-decision-2-part-a-approved-2026-11-26)
+
 ### Python interpreter check for the I23/I24 supporting runners
 
 The six I23/I24 supporting runners check their third-party packages through

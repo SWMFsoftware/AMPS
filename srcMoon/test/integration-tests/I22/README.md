@@ -39,6 +39,58 @@ stdout/stderr and an exact input snapshot when available. No `receipt.txt`
 or comparison figure exists for a run that did not execute. Exit codes:
 `0=PASS`, `1=FAIL`, `2=ERROR`, `77=SKIPPED`. Do not overwrite prior evidence.
 
+## Atomic photoionization pilot (decision 2, part A; approved 2026-11-26)
+
+He, Ne and Ar photoionization X → X⁺ + e⁻ now runs as real particle events
+through the normal native cohort owner. The production provider
+`AtomicPhotoionization` (formerly `SodiumPhotoionization`, kept as an alias)
+binds 23Na, 4He, 20Ne or 40Ar by the parent state's nucleus. He, Ne and Ar
+are admitted only under the source-effective-photon convention, and every
+event goes to the ground ion. Only the heavy number, charge and mass budgets
+and the event chronology are admitted observables. The contract is
+[ATOMIC_PILOT_CONTRACT.md](ATOMIC_PILOT_CONTRACT.md); the decisions,
+including two same-day revisions made before any run, are in
+[reference/atomic_pilot_approval_20261126.json](reference/atomic_pilot_approval_20261126.json).
+Two later approved revisions are applied by the case generator:
+[He-quiet 8,192 parents](reference/atomic_pilot_revision_20261126.json) (one
+mover run must fit the one-hour owner limit) and
+[revision b](reference/atomic_pilot_revision_20261126b.json), which sets
+`tracing_maximum_substep_s` to the coarsest common step in Ne and Ar.
+Production builds the photon history over each mover substep, so a cap below
+the step leaves the exposure grid unrefined. Campaign-2 showed this as a flat
+Ne/Ar refinement error of about 1.5×10⁻¹⁵; that FAIL is retained.
+
+From the repository root, using `/usr/bin/python3` (numpy, scipy,
+matplotlib, mpmath):
+
+```sh
+# 1. Source-bound inputs: three crosswalks and the derived profile (new directory).
+P=test_output/srcMoon/m3-followup-MfThQfny/atomic-family/profile.json
+/usr/bin/python3 -B srcMoon/test/integration-tests/I22/prepare_atomic_pilot_inputs.py \
+  --profile $P --profile-sha256 $(sha256sum $P | cut -d' ' -f1) --output-dir NEW/inputs
+# 2. Frozen decks, case controls and protocol (byte check).
+/usr/bin/python3 -B srcMoon/test/integration-tests/I22/prepare_atomic_pilot_cases.py --check
+# 3. One zero-force producer per gas (mapping Na/He/He_PLUS, Na/Ne/Ne_plus or Na/Ar/AR_PLUS):
+/usr/bin/python3 -B srcMoon/test/build_m3_source_qualification.py --checkout CHECKOUT \
+  --profile NEW/inputs/profile.json --mapping MAPPING.json \
+  --reference-problem homogeneous-zero-acceleration --output-dir NEW/He-producer \
+  --spice-path /home/vtenishe/SPICE/cspice --spice-kernels /home/vtenishe/SPICE/Kernels
+# 4. Per case: prepare_physical_case.py -> run_m3_sodium_cohort.py --mode run (1 rank)
+#    -> I21/prepare_cohort.py --test-id I22 -> run_all_test.py --only I22 \
+#       --i22-cohort-plan PLAN --i22-cohort-plan-sha256 SHA
+```
+
+The retained case driver `test_output/srcMoon/i22-atomic-pilot-C7b2SG5d/run_cases.py`
+runs step 4 for all six cases. The I22 owner hands the frozen plan to
+`m3_qualification_executor.py`. That runs both MPI layouts at 8, 16 and 32
+steps, then the independent ledger, event-time and inverse-square audit.
+A PASS here is supporting development evidence; formal I22 remains
+SKIPPED / NOT QUALIFIED. Molecular chemistry, the missing-threshold
+convention, U24 and charged breakup are separate packages.
+`../../test_m3_i22_atomic_pilot.py` (11 controls, in the orchestration
+battery) and the provider probe `../../physical_reaction_events/probe.cpp`
+(16 atomic checks) cover the target selection and the input preparation.
+
 The owner now retains `protocol_preparation.json`, binding the concrete
 [physical model](../../M3_PHYSICAL_MODEL_SPECIFICATION.md) and
 [qualification protocol](../../M3_QUALIFICATION_PROTOCOL.md). Matching

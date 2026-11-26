@@ -35,6 +35,20 @@ K::ResolvedState State(const std::string& id,int charge,Real formation){
       {1e-30L,"ANALYTICAL-1e-30kg-not-electron-data"},&s,&error))throw std::runtime_error(error);
   return s;
 }
+// I22 atomic pilot (approved 2026-11-26): analytical states that carry one
+// declared nucleus. One shared mathematical isotope table keeps the three
+// states in a common reference inventory; masses are NOT isotope data.
+K::ResolvedState NucleusState(const std::string& id,const std::string& nucleus,int charge,Real formation){
+  K::StateDefinition d;d.identity=id;d.state="ANALYTICAL-STATE-NOT-A-PHYSICAL-CROSSWALK";
+  d.elementaryCharge=charge;if(!nucleus.empty())d.nuclei={{nucleus,1}};
+  d.formation={formation,"ANALYTICAL-fixture-state-gap-not-NIST"};
+  d.excitation={0,"ANALYTICAL-explicit-zero"};
+  K::ResolvedState s;std::string error;
+  const K::MassValue mass{4e-26L,"ANALYTICAL-4e-26kg-not-isotope-data"};
+  if(!K::ResolveState(d,{{"4He",mass},{"20Ne",mass},{"40Ar",mass},{"39K",mass}},
+      {1e-30L,"ANALYTICAL-1e-30kg-not-electron-data"},&s,&error))throw std::runtime_error(error);
+  return s;
+}
 void Catalog(E::Definition* d){
   d->catalog.resize(3);std::string error;double internal=0;
   auto a=E::ReferenceCatalogEntry(d->parent.state,0,&d->catalog[0],&internal);
@@ -222,6 +236,48 @@ int main(int argc,char** argv){
     Check("supported-absolute-projection-retains-actual-context",projection.ok()&&projected.receipt.frame.physicalEventEpochEtS==rounded.frame.physicalEventEpochEtS&&projected.receipt.intervalProjectedEventEpochEtS==100.375);
     C::StateDefinition collector;const auto state=stable.IonCollectorState(&collector);
     Check("same-source-ion-collector-state",state.ok()&&collector.material.state==d.catalog[1].state&&collector.material.modelMassKg==d.catalog[1].modelMassKg&&collector.formationEnergyJ==static_cast<double>(d.ion.state.definition().formation.joules)&&collector.energyReferenceIdentity==d.energyReferenceIdentity);
+    // I22 atomic pilot target selection. The provider must bind each admitted
+    // atom to its own complete D04 family and rate, only under the named
+    // source-effective photon, and refuse every other atom or combination.
+    // The analytical ion gap is the printed D04 threshold + 1e-4 eV: a
+    // mathematical perturbation, not a physical ionization energy.
+    auto atomic=[&](const std::string& element,const std::string& parentNucleus,const std::string& ionNucleus){
+      auto a=Definition(source,P::SolarCase::Quiet,argv[2]);std::vector<P::Channel> rows;std::string failure;
+      if(!source.ChannelsForParent(element,&rows,&failure)||rows.size()!=1)throw std::runtime_error("atomic fixture family: "+failure);
+      a.channelId=rows.front().id;
+      const Real gap=(static_cast<Real>(rows.front().thresholdEnergyEv)+1e-4L)*a.electronVoltJ;
+      a.parent.state=NucleusState(element,parentNucleus,0,0);a.ion.state=NucleusState(element+"+",ionNucleus,1,gap);
+      a.electron.state=NucleusState("e","",-1,0);
+      for(auto* b:{&a.parent,&a.ion,&a.electron})b->physicalRestMass={b->state.referenceMassKg(),"ANALYTICAL-reference-equals-physical-mass-control"};
+      Catalog(&a);a.photonEnergyPolicy=K::PhotonEnergyPolicy::SourceEffectivePhoton;
+      a.physicalThresholdSourceIdentity=a.ion.state.definition().formation.sourceIdentity;
+      return a;
+    };
+    for(const auto& target:{std::make_pair(std::string("He"),std::string("4He")),std::make_pair(std::string("Ne"),std::string("20Ne")),
+                            std::make_pair(std::string("Ar"),std::string("40Ar"))}){
+      const auto& element=target.first;auto a=atomic(element,target.second,target.second);E::AtomicPhotoionization provider;
+      const auto created=E::AtomicPhotoionization::Create(source,a,&provider);
+      const std::string model="EXPERIMENTAL-"+element+"-D04-source-effective-photon-isotropic-ground-ion-v1";
+      Check("atomic-"+element+"-source-effective-admitted",created.ok()&&provider.sourceParent()==element&&
+          provider.reaction()->identity.find(model)!=std::string::npos);
+      double expected=0,actual=-1;std::string failure;
+      const bool table=source.TotalDestructionRateS(element,P::SolarCase::Quiet,1,1,&expected,&failure);
+      Check("atomic-"+element+"-rate-is-own-D04-family",created.ok()&&table&&provider.RateS(1,1,&actual).ok()&&actual==expected&&actual>0);
+      E::Composition composed;const auto status=created.ok()?provider.Compose(Input(0),&composed):created;
+      Check("atomic-"+element+"-ground-ion-receipt",status.ok()&&composed.receipt.modelIdentity==model&&
+          composed.receipt.scope.find("moving-parent "+element+" to ground "+element+"+")!=std::string::npos&&
+          composed.plan.products().size()==1&&composed.plan.ledger().bathChargeChangeElementary==-1&&
+          composed.receipt.photonEnergyPolicy=="source-effective-photon");
+      auto strict=a;strict.photonEnergyPolicy=K::PhotonEnergyPolicy::SourceEqualsState;strict.physicalThresholdSourceIdentity.clear();
+      refuse("atomic-"+element+"-source-equals-state-refused",strict,E::Code::SourceMismatch);
+    }
+    refuse("atomic-mixed-isotope-ion-refused",atomic("He","4He","20Ne"),E::Code::SourceMismatch);
+    refuse("atomic-unsupported-nucleus-refused",atomic("Ar","39K","39K"),E::Code::SourceMismatch);
+    {auto wrongChannel=atomic("He","4He","4He");wrongChannel.channelId=d.channelId;
+     refuse("atomic-wrong-element-channel-refused",wrongChannel,E::Code::SourceMismatch);}
+    Check("atomic-Na-model-and-scope-unchanged",std::string(stable.sourceParent())=="Na"&&retained.receipt.modelIdentity==
+        "EXPERIMENTAL-Na-D04-source-mean-isotropic-moving-parent-v1"&&retained.receipt.scope==
+        "EXPERIMENTAL source-mean/isotropic moving-parent Na; not validated kinetics");
     checks.flush();metrics.flush();std::cout<<"SUMMARY checks="<<total<<" failed="<<failed<<'\n';return failed?1:0;
   }catch(const std::exception& e){std::cerr<<"ERROR "<<e.what()<<'\n';return 2;}
 }

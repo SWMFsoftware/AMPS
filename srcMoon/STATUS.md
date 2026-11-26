@@ -2,6 +2,17 @@
 
 **Status date:** 2026-11-26 UTC
 
+**I22 atomic photoionization pilot implemented.** He, Ne and Ar
+photoionization X → X⁺ + e⁻ now runs as real particle events through the
+normal cohort owner. It uses the user-approved ground-ion,
+source-effective-photon scope. All six cases pass with both movers at 1 and
+8 ranks (264 checks). The refinement errors fall 4× per halving, as the
+independent interpolation estimate predicts. The first Ne/Ar campaign failed
+refinement because an inherited 8,192 s substep cap was too small; that FAIL
+is retained and the user approved a fix. The nightly diff is zero bytes.
+Formal I22 remains SKIPPED.
+[Cases, evidence and limits](#563-i22-atomic-photoionization-pilot-he-ne-ar--2026-11-26-utc)
+
 **I21 decision 1 implemented.** The user approved the constant-cohort rule,
 accepted the existing varying-rate pair and approved four new controls. All
 eight new cases pass with both movers at 1 and 8 ranks (352 checks). The native
@@ -6158,3 +6169,99 @@ the exposure, real ephemeris variation, the Na photoelectron/recoil policy and
 ion surface fate remain open. The gravity path uses a gravity-only reference
 build, not the full Moon force with radiation pressure. Formal I21 also needs
 same-campaign I13–I20 and U14.
+
+## 5.63 I22 atomic photoionization pilot (He, Ne, Ar) — 2026-11-26 UTC
+
+The user approved decision 2, part A of the M3 completion follow-up, then
+four case revisions (two before any run, two after).
+[Contract](test/integration-tests/I22/ATOMIC_PILOT_CONTRACT.md) ·
+[Approval record](test/integration-tests/I22/reference/atomic_pilot_approval_20261126.json) ·
+[Revision 1](test/integration-tests/I22/reference/atomic_pilot_revision_20261126.json) ·
+[Revision b](test/integration-tests/I22/reference/atomic_pilot_revision_20261126b.json)
+
+**Scope.** Photoionization X → X⁺ + e⁻ for 4He, 20Ne and 40Ar. Every event
+produces the ground ion. Only the heavy number, charge and mass budgets and
+the event chronology are admitted. The source-effective photon is the D04
+printed threshold plus the D04 endpoint mean excess, with the physical
+ground-ion formation energy. The photoelectron is isotropic in the parent
+rest frame and booked to the electron bath (the P02 Na treatment). Ne⁺/Ar⁺
+fine structure and Ar⁺ 3s⁻¹ are recorded as eligible states, not as yields.
+The limits are P02's 1e-8/1e-8/1e-4, with an I22 classical-speed cap of
+3.4e6 m/s.
+
+**Production changes.**
+- `SodiumPhotoionization` became `AtomicPhotoionization`; the old name
+  remains as an alias. It selects 23Na, 4He, 20Ne or 40Ar by the parent
+  state's nucleus and binds that parent's own D04 family. He, Ne and Ar are
+  admitted only under the source-effective-photon convention. The Na model
+  and scope strings are unchanged.
+- `MoonInput`/`main_lib.cpp` add explicit `neon_*`/`argon_*` reference-weight
+  and ion-speed keys, following He⁺, with startup refusals for mismatched
+  pairs. This also fixes the old Ne⁺ weight copy, which overwrote Ne and left
+  Ne⁺ unset.
+- The native adapter records `source_parent` in each input receipt.
+
+**Test-side changes.**
+- `sodium_cohort/atomic_targets.py` is a verifier-side target table, written
+  independently of the C++ provider.
+- `verify_numerical`, `verify_ledger`, `verify_p02`, `audit`,
+  `prepare_physical_case` and `I21/prepare_cohort.py` are now element-aware,
+  and `prepare_cohort.py` takes `--test-id I22`.
+- The executor maps I22 to its producer. `run_all_test.py` and
+  `integration_m3.py` take `--i22-cohort-plan[-sha256]`.
+- `I22/prepare_atomic_pilot_inputs.py` writes the crosswalks and derived
+  profile. `I22/prepare_atomic_pilot_cases.py` writes the decks, cases and
+  protocol, and `--check` verifies them byte for byte.
+- `test_m3_i22_atomic_pilot.py` (11, in U16) and 16 atomic provider-probe
+  checks are new.
+
+**Results.** [Evidence index](../test_output/srcMoon/i22-atomic-pilot-C7b2SG5d/README.md).
+Each row covers both movers at 1 and 8 ranks.
+
+| Case | Parents | Events | Checks per mover | First-hit error / horizon at 8/16/32 steps |
+| --- | --- | --- | --- | --- |
+| He-quiet (65,536 s) | 8,192 | 35 | 22 PASS | 1.54e-15, 3.81e-16, 9.34e-17 |
+| He-active | 8,192 | 83 | 22 PASS | 1.53e-15, 3.76e-16, 9.46e-17 |
+| Ne-quiet (262,144 s) | 2,048 | 105 | 22 PASS | 2.49e-14, 6.22e-15, 1.55e-15 |
+| Ne-active | 512 | 73 | 22 PASS | 2.46e-14, 6.10e-15, 1.51e-15 |
+| Ar-quiet (1,048,576 s) | 256 | 92 | 22 PASS | 3.95e-13, 9.83e-14, 2.44e-14 |
+| Ar-active | 128 | 74 | 22 PASS | 3.79e-13, 9.37e-14, 2.35e-14 |
+
+- **Checks.** Ledgers close exactly. The D04 endpoint values, inverse square
+  and the 1/8-rank original-parent identity all pass.
+- **Errors.** They fall 4× per halving and match the independent estimate
+  h²·6(v/r)²/12 for linear interpolation of (AU/r)² over a substep h. That
+  estimate gives 1.56e-15, 2.49e-14 and 3.98e-13 at 8,192, 32,768 and
+  131,072 s. The largest error, 3.95e-13, is about 5×10⁹ times below the
+  0.002 limit.
+- **Survival.** The observed survival lies within 1.7σ of the oracle in
+  every case. It is reported, not scored.
+- **Other suites.** The provider probe passes 997; the orchestration battery
+  passes 143; qualification passes 31; the sodium-cohort, numerical,
+  decision-1, runtime and formal-owner suites pass. The nightly
+  `make -j test_Moon` diff is zero bytes.
+
+**Retained FAIL and ERROR attempts.**
+- He-quiet at the approved 16,384 parents exceeded the 3,600 s owner limit
+  (ERROR). The user chose 8,192 parents (revision 1).
+- In campaign-2, Ne and Ar failed only the strict-decrease refinement check,
+  with errors flat at about 1.5e-15. The decks inherited
+  `tracing_maximum_substep_s = 8192` from the I21 deck. Production builds
+  the photon history over each mover substep, so refining a step of at least
+  8,192 s did not refine the exposure.
+- This plateau was first described as an arithmetic floor; that was wrong.
+  The I21 constant-cohort floor (about 5e-17, section 5.62) is a different
+  effect.
+- The user chose revision b: the cap equals the coarsest step, horizon/8, in
+  every case. The generator and the unit test now enforce this. The
+  campaign-2 inputs (protocol `fd5dbae1…`) are kept with checksums. Parent
+  outcomes and oracle times were identical in campaign-3.
+
+**Open limits.**
+- Energy observables, excited ion states and molecular chemistry are not
+  admitted.
+- Still open: the missing-threshold convention (part C), para-water
+  (part B), U24 (part D) and charged breakup.
+- The 8-rank launches are no faster than the 1-rank launches; this has not
+  been investigated.
+- Formal I22 also needs U15, U24 and same-campaign I13–I20.

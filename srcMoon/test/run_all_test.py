@@ -682,6 +682,8 @@ def run_test(
     i23_pic_producer: Path | None = None,
     i23_pic_refinement: bool = False,
     i24_total_capture: bool = False,
+    i22_cohort_plan: Path | None = None,
+    i22_cohort_plan_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Execute one registered CLI runner and consume its structured result."""
     runner = (TEST_ROOT / runner_name).resolve()
@@ -725,6 +727,11 @@ def run_test(
         if test_id=="I21" and i21_cohort_plan is not None:
             command.extend(["--i21-cohort-plan",str(i21_cohort_plan),
                 "--i21-cohort-plan-sha256",i21_cohort_plan_sha256,
+                "--test-runtime-seconds",str(test_runtime_seconds)])
+        # I22 atomic photoionization pilot (approved 2026-11-26).
+        if test_id=="I22" and i22_cohort_plan is not None:
+            command.extend(["--i22-cohort-plan",str(i22_cohort_plan),
+                "--i22-cohort-plan-sha256",i22_cohort_plan_sha256,
                 "--test-runtime-seconds",str(test_runtime_seconds)])
         if test_id=="I24" and (i24_sodium_lock is not None or i24_total_capture):
             # The 4.0 keV/u H(1s) fixture needs the r14 lock; the approved
@@ -827,6 +834,9 @@ def main() -> int:
     parser.add_argument("--i21-cohort-plan",type=Path,
         help="explicit frozen I21 fixed-position or development trajectory cohort plan")
     parser.add_argument("--i21-cohort-plan-sha256",help="SHA-256 of the explicit I21 cohort plan")
+    parser.add_argument("--i22-cohort-plan",type=Path,
+        help="explicit frozen I22 atomic-pilot (He, Ne or Ar) development trajectory cohort plan")
+    parser.add_argument("--i22-cohort-plan-sha256",help="SHA-256 of the explicit I22 cohort plan")
     parser.add_argument("--i24-sodium-lock",type=Path,
         help="run the 4.0 keV/u sodium provider and event-plan comparison with the pinned r14 lock")
     parser.add_argument("--i24-pic-producer",type=Path,
@@ -904,6 +914,8 @@ def main() -> int:
         parser.error("--mpi-ranks must be a positive integer")
     if (args.i21_cohort_plan is None)!=(args.i21_cohort_plan_sha256 is None):
         parser.error("--i21-cohort-plan and --i21-cohort-plan-sha256 are required together")
+    if (args.i22_cohort_plan is None)!=(args.i22_cohort_plan_sha256 is None):
+        parser.error("--i22-cohort-plan and --i22-cohort-plan-sha256 are required together")
 
     registry_errors = validate_registry()
     if registry_errors:
@@ -925,6 +937,8 @@ def main() -> int:
         parser.error("a test ID may be selected only once")
     if args.i21_cohort_plan is not None and "I21" not in selected:
         parser.error("an explicit I21 cohort plan requires selecting I21")
+    if args.i22_cohort_plan is not None and "I22" not in selected:
+        parser.error("an explicit I22 cohort plan requires selecting I22")
     if args.i24_sodium_lock is not None and ("I24" not in selected or args.campaign_mode!="regression"):
         parser.error("--i24-sodium-lock requires I24 in regression mode")
     if args.i24_total_capture and ("I24" not in selected or args.campaign_mode!="regression"):
@@ -1078,6 +1092,7 @@ def main() -> int:
             args.i24_sodium_lock,args.i24_mass_inventory,args.i24_pic_producer,args.i24_pic_refinement,
             args.i23_helium_profile,args.i23_pic_producer,args.i23_pic_refinement,
             args.i24_total_capture,
+            i22_cohort_plan=args.i22_cohort_plan,i22_cohort_plan_sha256=args.i22_cohort_plan_sha256,
         )
         results.append(result)
         print(f"{result['status']:7s} {test_id}  log={result['log']}", flush=True)

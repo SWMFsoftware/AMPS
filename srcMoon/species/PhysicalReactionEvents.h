@@ -104,6 +104,7 @@ struct ElectronRecord {
   Real stateEnergyJ=0,inertialKineticJ=0,eventKineticJ=0;
 };
 struct Receipt {
+  // Set by Compose from the bound target; the Na text is unchanged.
   std::string scope="EXPERIMENTAL source-mean/isotropic moving-parent Na; not validated kinetics";
   std::string modelIdentity,sourceProfileIdentity,sourceProfileSha256;
   std::string stateCrosswalkIdentity,stateCrosswalkSha256,channelId;
@@ -138,19 +139,26 @@ struct Composition {
   Receipt receipt;
 };
 
-namespace detail {struct SodiumPhotoionizationData;}
-class SodiumPhotoionization {
+namespace detail {struct AtomicPhotoionizationData;}
+// Atomic photoionization X -> X+ + e for one tracked isotope: 23Na (I21), and
+// 4He, 20Ne, 40Ar (I22 atomic pilot, approved 2026-11-26; source-effective
+// photon and ground ion only). The target follows from the parent state's
+// nucleus; there is no caller flag and no other atom is accepted.
+class AtomicPhotoionization {
  public:
   bool prepared()const{return static_cast<bool>(data_);}
   // Creates one immutable source/state/policy binding. It accepts ONLY the
-  // complete single reactive Na family from the frozen production registry.
+  // complete single reactive D04 family of the target from the frozen registry.
   // Missing states/crosswalk/errors return Unavailable; contradictory supplied
   // claims return SourceMismatch/InvalidInput. Previous output is preserved.
   static Status Create(const P::Registry&,const Definition&,
-      SodiumPhotoionization* output);
+      AtomicPhotoionization* output);
   const std::vector<R::SpeciesIdentity>* catalog()const;
   const R::Reaction* reaction()const;
   const P::Channel* sourceChannel()const;
+  // D04 parent name of the bound target ("Na", "He", "Ne" or "Ar"); null if
+  // the provider is not prepared.
+  const char* sourceParent()const;
   // SAME production source law; no conditional branching or renormalization.
   Status RateS(double distanceAu,int pointSunVisible,double* output)const;
   // No RNG, PIC, SPICE, I/O, allocation publication or global mutation. The
@@ -163,8 +171,10 @@ class SodiumPhotoionization {
   // lunar neutralization/retention or conversion of kinetic energy to heat.
   Status IonCollectorState(IonCollector::StateDefinition* output)const;
  private:
-  std::shared_ptr<const detail::SodiumPhotoionizationData> data_;
+  std::shared_ptr<const detail::AtomicPhotoionizationData> data_;
 };
+// The original name of the I21 sodium binding, kept for existing callers.
+using SodiumPhotoionization=AtomicPhotoionization;
 
 // Pure conversion for source initialization/profile wiring. It rounds to the
 // ACTUAL binary64 planner/PIC representation, choosing no state or mass data.

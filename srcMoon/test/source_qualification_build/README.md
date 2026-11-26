@@ -130,3 +130,16 @@ Supply `$build_receipt/normal_build_evidence.json` to the I24 aggregate
 while the private checkout and its build artifacts are available. Putting
 a build directory on temporary storage means a machine reboot may require
 rebuilding it. [Run the linked tests](../integration-tests/I24/README.md#running-both-the-mpi-cohort-and-the-linked-pic-movers)
+
+### Build the I22 atomic photoionization pilot producers
+
+The I22 pilot (approved 2026-11-26) uses three further whitelisted mappings,
+each with the Na weight reference, the tracked parent and its ground ion:
+`{"Na": "23Na:ground", "He": "4He:ground", "He_PLUS": "4He+:ground"}` (shared
+with I23), `{"Na": "23Na:ground", "Ne": "20Ne:ground", "Ne_plus": "20Ne+:ground"}`
+and `{"Na": "23Na:ground", "Ar": "40Ar:ground", "AR_PLUS": "40Ar+:ground"}`.
+The component names follow `input/species.input`; the profile supplies the
+isotope masses. Build each with `--reference-problem homogeneous-zero-acceleration`
+and the derived profile from
+`integration-tests/I22/prepare_atomic_pilot_inputs.py`. Any other order or
+combination is refused. [I22 pilot](../integration-tests/I22/README.md)
