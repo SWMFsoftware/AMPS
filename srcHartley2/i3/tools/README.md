@@ -1,4 +1,4 @@
-# I3 comparison figures: `make_qfit_figures.py`
+# I3 comparison figures: `make_qfit_figures.py`, `make_o_gfactor_figure.py`
 
 Draws the comparison of the I3 (3I/ATLAS) AMPS runs with MAVEN/IUVS for all six cases:
 
@@ -9,7 +9,11 @@ Draws the comparison of the I3 (3I/ATLAS) AMPS runs with MAVEN/IUVS for all six 
   model of the same slide, with observed / model per IUVS bin.
 
 The runs are those of the SA1982_VH OH-loss campaign with Q(H2O) fitted to the MAVEN/IUVS OH
-(`validation_runs/i3_qfit_campaign_20261123`); they are shown as run, not scaled.
+(`validation_runs/i3_qfit_campaign_20261123`); they are shown as run, not scaled. The deck, build input and
+scripts to rerun that campaign on another machine are in `../campaigns/qfit_20261123/`.
+
+`make_o_gfactor_figure.py` draws the O I 130.4-nm g-factor of the same runs (section "O I 130.4-nm g-factor"
+below).
 
 ## Requirements
 
@@ -34,13 +38,16 @@ python3 srcHartley2/i3/tools/make_qfit_figures.py
 
 This uses the newest output written by all six runs of the default campaign and writes to
 `validation_runs/i3_qfit_campaign_20261123/report_20261124/`. It takes about 1 minute on the login node.
+For converged runs use `--output final`: the last output of each run, i.e. the window in which it converged
+(the runs converge after different numbers of iterations).
 
 Options:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--output K` | newest output written by all six runs | output index; output K covers iterations K x 10000 + 1 to (K + 1) x 10000 |
+| `--output K` or `--output final` | newest output written by all six runs | output index; output K covers iterations K x 10000 + 1 to (K + 1) x 10000. `final`: the last output of each run (file names end in `_final`) |
 | `--campaign DIR` | `validation_runs/i3_qfit_campaign_20261123` | campaign directory (layout above) |
+| `--np NP` | 128 | MPI ranks in the run-directory names `caseN_np<NP>` |
 | `--report-dir DIR` | `<campaign>/report_20261124` | where `plots/` and `data/` are written (created if missing) |
 | `--predicted FILE` | `inputs/ohfit_numbers_output4.json` | fit numbers of the cancelled runs ("predicted by the fit" values, Q(H2O) check) |
 
@@ -49,6 +56,9 @@ Examples:
 ```
 # a given output
 python3 srcHartley2/i3/tools/make_qfit_figures.py --output 4
+
+# the converged (last) output of each run
+python3 srcHartley2/i3/tools/make_qfit_figures.py --output final
 
 # write somewhere else, leaving the report folder untouched
 python3 srcHartley2/i3/tools/make_qfit_figures.py --output 4 --report-dir /tmp/i3_figures
@@ -95,9 +105,36 @@ IUVS / model per bin.
 
 | File | Content |
 |---|---|
-| `make_qfit_figures.py` | the script (copy of `validation_runs/i3_qfit_campaign_20261123/report_20261124/scripts/make_qfit_figures.py`, made to run from git) |
+| `make_qfit_figures.py` | the script (copy of `validation_runs/i3_qfit_campaign_20261123/report_20261124/scripts/make_qfit_figures.py`, made to run from git; `--output final` and `--np` added 2026-11-26) |
+| `make_o_gfactor_figure.py` | O I 130.4-nm g-factor figure (copy of the script of the same name in that report, made to run from git, 2026-11-26) |
 | `i3_figure_helpers.py` | table reader, run loader, edge-correction call, bin average, palette and axis style (copied from the I3 report scripts in `validation_runs/`) |
 | `inputs/` | case 5 IUVS O I 130.4-nm profile, the slide's model curve, the OH fit numbers; sources and SHA-256 in `inputs/README.md` |
 
 The input folder is called `inputs/`, not `data/`: the repository's `.gitignore` excludes every directory
 named `data`.
+
+## O I 130.4-nm g-factor: `make_o_gfactor_figure.py`
+
+```
+python3 srcHartley2/i3/tools/make_o_gfactor_figure.py [--output K|final] [--campaign DIR] [--report-dir DIR] [--np NP]
+```
+
+Same options and defaults as above, except that `--output` defaults to 4. The figure has three panels:
+
+- (a) g at 1 AU against heliocentric radial velocity: direct (KVB2022) and Ly-beta Bowen, with the case-5
+  solar fluxes, and the six cases at their r-dot;
+- (b) g of each case at r-dot and r_h;
+- (c) the g-factor applied in the run (the column-weighted "Effective Photon g Factor" of the brightness
+  tables) divided by the g of (b).
+
+The g evaluation repeats `src/models/resonance_fluorescence/resonance_fluorescence.cpp` on the compiled tables
+(`generated/reference_tables.inc`).
+
+Output, with tag `out<K>` or `final`:
+
+- `plots/o1304_gfactor_<tag>.png`;
+- `data/o1304_gfactor_cases_<tag>.csv`;
+- `data/o1304_gfactor_<tag>.json`;
+- `data/o1304_gfactor_1au_case5_fluxes.csv`.
+
+Sources and method: `srcHartley2/i3/README.md`, section "Chemical model and g-factors in detail".

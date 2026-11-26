@@ -1,8 +1,9 @@
 # 3I/ATLAS six-case radial campaign
 
 Related documentation: [collisionless reference](../COLLISIONLESS_REFERENCE.md),
-[edge-correction method](../EDGE_CORRECTION.md), and
-[MAVEN/IUVS model comparison](COMPARISON.md). The comparison tables describe
+[edge-correction method](../EDGE_CORRECTION.md),
+[MAVEN/IUVS model comparison](COMPARISON.md), and
+[how to compile and run a given chemistry, case, and production or test build](HOW_TO.md). The comparison tables describe
 the COMET1D campaign; production archives are separate from this source tree.
 
 This directory owns the observation-derived data and deterministic runtime
@@ -58,6 +59,42 @@ allocation:
 ```sh
 mpiexec -n 2 ./amps -i input/i3.in -case 1 --validate-runtime-input
 ```
+
+## Consistency with MAVEN/IUVS: campaign `qfit_20261123`
+
+Added 2026-11-26 at the user's request. The I3 model is consistent with the MAVEN/IUVS observations of OH
+(0-0), H Lyman-alpha and O I 130.4 nm for all six cases. This holds with the OH chemistry that was
+implemented later, `OH_LOSS = SA1982_VH` (2026-11-21, section "OH loss variants"), and Q(H2O) fitted to the
+IUVS OH.
+
+The table gives edge-corrected model / observation for the converged runs (70000-100000 iterations), as the
+geometric mean over the MAVEN/IUVS points:
+
+| Case | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|--:|--:|--:|--:|--:|--:|
+| Q(H2O) (s^-1) | 1.853e28 | 3.775e28 | 8.893e28 | 2.102e29 | 1.527e29 | 1.483e29 |
+| OH (0-0) | 1.03 | 1.03 | 1.05 | 1.00 | 1.03 | 1.02 |
+| H Lyman-alpha | 0.62 | 0.79 | 1.15 | 1.08 | 0.78 | 0.84 |
+| O I 130.4 nm at 1e5 km (R) | 0.161 | 0.504 | 4.45 | 92.0 | 56.4 | 68.9 |
+
+- **OH:** Q(H2O) was fitted to OH, so OH agrees by construction.
+- **H Lyman-alpha:** individual points range from 0.47 to 1.91 of the observations.
+- **O I 130.4 nm:** case 5 is the only case with an IUVS O profile. IUVS / model is 0.60-1.23 per bin, with
+  geometric mean 0.87. The O values of the other cases are model predictions.
+- **O model:** direct (KVB2022) + Ly-beta Bowen, optically thin; see "Chemical model and g-factors in
+  detail".
+
+Everything needed to rebuild and rerun this campaign from git on another machine is in
+`campaigns/qfit_20261123/`. Its `README.md` gives the steps, resources and reference results. The folder
+holds:
+
+- the deck, which carries a comment with this statement;
+- the build input, `BlockCells=12`;
+- scripts to build, validate, run and compare.
+
+The default deck `input/i3.in` keeps the earlier `STATE_RESOLVED` OH loss with the generator's source rates.
+Both variants remain runnable for every case, with either deck: select one with
+`--chemistry-variant OH_LOSS=...` (section "OH loss variants").
 
 ## Nightly regression test
 
@@ -431,6 +468,8 @@ molecule is re-emitted and the steady net outflow is the input rate. The
 same factors therefore supply about 1.25--1.3 times as much H2O to the coma
 as in the fitted runs, and they must be refitted to runs with the fix. The
 evidence is in `validation_runs/inner_boundary_probe_20261121/README.md`.
+For the `SA1982_VH` OH loss, the rates refitted to runs with the fix are in the
+deck of `campaigns/qfit_20261123/` (section "Consistency with MAVEN/IUVS").
 
 ### Time step
 
@@ -587,6 +626,328 @@ hash. Run them with:
 ```sh
 make -C src/models/resonance_fluorescence test
 ```
+
+## Chemical model and g-factors in detail
+
+Added 2026-11-26. The three observed emissions depend on two parts of the model:
+
+- **Chemistry and transport.** These set how many OH molecules, H atoms and O atoms are where.
+- **The g-factor.** This is the number of photons that one molecule or atom emits per second.
+
+This section describes both as implemented. The sections above give the inputs, files and commands.
+The numbers are for the six cases. Q(H2O) does not enter the rates or g-factors.
+
+### Species
+
+`input/i3.conf` compiles seven neutral species: H, H2, O, OH, H2O, CO and CO2.
+
+- **Parents.** H2O, CO and CO2 are injected at the nucleus surface (175 K).
+- **Daughters.** OH, H, H2 and O are produced only by the chemistry below.
+- **CO and CO2** are collision partners only. They have no photochemistry.
+- **Ions** are not tracked. Ionization, and dissociative ionization, remove the neutral; no neutral product
+  is created.
+- **No UV shielding.** The solar UV is not attenuated in the coma, so every rate below applies everywhere.
+
+### Photolysis network and rates
+
+Each reaction rate is computed at 1 AU from the per-channel solar-activity law of Moore and Mapaye (2025):
+
+```text
+k_1AU = A0 * F10.7P^alpha,   F10.7P = (daily adjusted F10.7 + centred 81-day mean) / 2
+k(r_h) = k_1AU * (1 AU / r_h)^2
+```
+
+F10.7P is averaged over each case's Earth-equivalent interval (section "Solar-activity correction and
+reaction rates"). It is 136.2, 142.9, 139.7, 143.6, 150.4 and 138.1 sfu for cases 1--6.
+
+The generator writes `k_1AU` per case as `chemistry.rate.<ID>_1au_s-1`. The `HELIOCENTRIC` law applies
+`(1 AU / r_h)^2` once. In the 1-D model, r_h is constant within a case, so each rate is a constant of the
+case.
+
+A0, alpha and the excess energies are in `reference/photochemistry_channels.csv`. In the table, "1-AU rate"
+gives the range over the six cases. Within a channel the cases differ by 1--12%; the channels with larger
+alpha differ more. "Product speeds" are the recoil speeds in the
+parent's rest frame (explained after the table).
+
+| ID | Reaction | A0 (s^-1) | alpha | 1-AU rate (s^-1) | Excess energy (eV) | Product speeds (km/s) |
+|---|---|--:|--:|---|--:|---|
+| `H2O_H_OH` | H2O -> H + OH | 3.60e-6 | 0.24 | 1.17--1.20e-5 | 4.04 | H 27.0, OH 1.60 |
+| `H2O_H2_O` | H2O -> H2 + O | 1.80e-7 | 0.36 | 1.06--1.09e-6 | 3.94 | H2 18.3, O 2.31 |
+| `H2O_2H_O` | H2O -> 2H + O | 2.40e-7 | 0.36 | 1.41--1.46e-6 | 0.697 | three-body, random split |
+| `H2O_OHPLUS_H_ION`, `H2O_OPLUS_H2_ION`, `H2O_HPLUS_OH_ION`, `H2O_ION` | H2O -> sink | see CSV | see CSV | 8.1--8.7e-7 together | 0 | none |
+| `OH_O3P_H` | OH -> O(3P) + H | 3.97e-6 | 0.059 | 5.31--5.34e-6 | 1.27 | H 15.1, O 0.95 |
+| `OH_O1D_H` | OH -> O(1D) + H | 1.38e-6 | 0.35 | 7.71--7.98e-6 | 7.73 | H 37.3, O 2.35 |
+| `OH_O1S_H` | OH -> O(1S) + H | 1.74e-7 | 0.36 | 1.02--1.06e-6 | 10.0 | H 42.4, O 2.67 |
+| `OH_ION` | OH -> sink | 1.53e-8 | 0.68 | 4.32--4.63e-7 | 0 | none |
+| `H2_2H_EXCITED` | H2 -> 2H | 1.03e-8 | 0.36 | 6.0--6.3e-8 | 0.488 | each H 6.8 |
+| `H2_2H` | H2 -> 2H | 6.84e-9 | 0.50 | 8.0--8.4e-8 | 8.22 | each H 28.1 |
+| `H2_ION`, `H2_DISS_ION` | H2 -> sink | see CSV | see CSV | 1.4--1.5e-7 together | 0 | none |
+| `H_ION` | H -> sink | 1.20e-8 | 0.45 | 1.10--1.15e-7 | 0 | none |
+| `O_ION` | O -> sink | 1.81e-8 | 0.67 | 4.87--5.21e-7 | 0 | none |
+
+The energy sources are as follows:
+
+- **H2O and H2 channels:** Huebner and Mukherjee (2015), as tabulated by Carberry Mogan et al. (2022).
+- **OH channels:** Bryans and Pesnell (2012) for O(3P), and Bisikalo et al. (2015) for O(1D) and O(1S).
+- **Ionization rates:** Moore and Mapaye (2025).
+
+O(1D) and O(1S) are the electronic states at birth. The model has only one O species, so all of them become
+ordinary O atoms: there is no O(1D) 630-nm or O(1S) 557.7-nm emission and no quenching. The channels keep
+separate IDs, rates and excess energies.
+
+At 1 AU, the lifetimes and branching are:
+
+- **H2O:** total lifetime 6.5--6.7e4 s. The branches are H + OH 78%, 2H + O 9.4%, H2 + O 7.1% and ionization
+  5.5%. At the comet this lifetime is 1.2e5 s (cases 4--6) to 2.0e5 s (case 1).
+- **OH:** in the default (`STATE_RESOLVED`) OH loss, the lifetime is 6.7--6.9e4 s. The branches are
+  O(1D) + H 53--54%, O(3P) + H 36--37%, O(1S) + H 7.1% and ionization 3.0%.
+- **Other species:** H lives 8.7--9.1e6 s, O 1.9--2.1e6 s and H2 3.4--3.6e6 s.
+
+**How a reaction is carried out** (`srcHartley2/CometChemistry.cpp`):
+
+1. A parent particle reacts at the total rate of its species, using its species-local time step.
+2. One channel is chosen with probability k_i / k_total.
+3. All products of that event are created together. In I3, reactions occur stochastically in the ordinary
+   way: no forced reactions and no channel biasing.
+4. The product velocities are the parent velocity plus an isotropic recoil. The recoil conserves momentum,
+   and its kinetic energy in the parent frame equals the channel's full excess energy.
+
+All of the excess energy goes into translation; no internal excitation of OH or H2 is kept. The speeds in
+the table follow from this:
+
+- **Two-body channels:** each product's speed is fixed (momentum balance).
+- **H2 -> 2H:** the two H atoms share the energy equally.
+- **H2O -> 2H + O:** the energy is split at random among the three products.
+
+The parent's own velocity is then added.
+
+### OH loss variants used in the comparisons
+
+The OH loss is the `OH_LOSS` chemistry group (section "OH loss variants" and
+`srcHartley2/CHEMISTRY_VARIANTS.md`):
+
+- **`STATE_RESOLVED`** uses the four OH channels above.
+- **`SA1982_VH`** replaces them with one lumped channel, `OH_O_H_SA1982` (OH -> O + H, 0.36 eV), plus
+  ionization `OH_ION_SA1982`:
+
+```text
+k_d(1 AU)   = 1/tau_FUV + 1/(S * OHTAUS(v_h)),   tau_FUV = 4.24e5 s,  S = 0.833e5 s
+k_ion(1 AU) = 0.05 * k_d
+both * (1 AU / r_h)^2, no solar-activity scaling
+```
+
+The terms in this formula are:
+
+- `OHTAUS` is the heliocentric-velocity-dependent part of the OH photodissociation lifetime, from the legacy
+  Fortran `BLOCKDATA OHPHOT` (which cites Schleicher and A'Hearn 1982, ApJ 258, 864). It is tabulated in
+  `reference/oh_lifetime_sa1982.csv` (-60..+60 km/s, 2 km/s steps, linear interpolation, clamped outside).
+- `tau_FUV` is the velocity-independent FUV/EUV part (mostly Lyman-alpha).
+- `v_h` is the case's `brightness.heliocentric_radial_velocity_km_s`.
+
+The OH lifetime uses this one bulk value per case. The g-factors below are evaluated per particle.
+
+| Case | v_h (km/s) | OHTAUS (1e5 s) | k_d, 1 AU (s^-1) | k_ion, 1 AU (s^-1) | OH lifetime, 1 AU (s) | `STATE_RESOLVED` lifetime, 1 AU (s) |
+|---|--:|--:|--:|--:|--:|--:|
+| 1 | -39.7 | 3.755 | 5.56e-6 | 2.78e-7 | 1.71e5 | 6.91e4 |
+| 2 | -36.2 | 3.320 | 5.97e-6 | 2.99e-7 | 1.59e5 | 6.83e4 |
+| 3 | -29.6 | 2.860 | 6.56e-6 | 3.28e-7 | 1.45e5 | 6.87e4 |
+| 4 | -5.8 | 2.035 | 8.26e-6 | 4.13e-7 | 1.15e5 | 6.82e4 |
+| 5 | +0.4 | 2.760 | 6.71e-6 | 3.35e-7 | 1.42e5 | 6.74e4 |
+| 6 | +7.1 | 3.420 | 5.87e-6 | 2.93e-7 | 1.62e5 | 6.89e4 |
+
+`SA1982_VH` OH lives 1.7--2.5 times longer. Its H atoms from OH leave at 8.0 km/s and its O atoms at
+0.51 km/s; the state-resolved channels give 15--42 km/s and 0.95--2.7 km/s. The H2O network is the same in
+both variants.
+
+The run log and every brightness header record:
+
+- the active variant (`Chemistry.Variant.OH_LOSS`);
+- the table rates (`Chemistry.TableRate.*`);
+- the SHA-256 of the table file.
+
+The comparison with MAVEN/IUVS in `validation_runs/i3_qfit_campaign_20261123` uses `SA1982_VH`. Its deck,
+build input and scripts are in `campaigns/qfit_20261123/`. Q(H2O) is fitted to the IUVS OH: 1.85e28, 3.78e28, 8.89e28, 2.10e29, 1.53e29 and 1.48e29 s^-1 for cases 1--6. CO and CO2
+are as in the generated `input/i3.in`.
+
+### g-factors: what AMPS evaluates
+
+All three emissions are treated as optically thin, isotropic (4 pi) resonance fluorescence. A molecule or
+atom moving with heliocentric velocity `V` sees the solar line Doppler-shifted by
+
+```text
+v_r = (V_comet + v_particle) . e_r,     V_comet = rdot * e_r
+```
+
+where `rdot` is the case's `brightness.heliocentric_radial_velocity_km_s` and `e_r` points from the Sun to
+the comet.
+
+The brightness sampler (`srcHartley2/CometBrightness.cpp`) handles each line-of-sight point as follows:
+
+1. It rotates the particle's DIM1 local velocity into the physical frame.
+2. It evaluates the g-factor of that particle at its own `v_r`, which includes the Swings effect particle by
+   particle.
+3. It adds `column x g / 1e10` to the brightness in rayleigh.
+
+No velocity is clamped or extrapolated. A particle outside a model's velocity range is either excluded and
+reported, or stops the run, according to `brightness.velocity_domain_policy`.
+
+The output tables `PT/plots/pic.<species>.brightness.s=<i>.out=<k>.dat` record, per impact parameter:
+
+- the column;
+- the brightness;
+- the "Effective Photon g Factor" (brightness x 1e10 / column), i.e. the column-weighted mean g that was
+  applied.
+
+At start-up AMPS also evaluates every line at the bulk `rdot`, as a check of the inputs. All g-factors
+scale as `(1 AU / r_h)^2`.
+
+The models live in `src/models/resonance_fluorescence/`:
+
+- its manifest records the sources, URLs, units, velocity ranges and SHA-256;
+- its tests check the evaluators against the source data.
+
+The case inputs are in `reference/i3_cases.csv` (OH, H) and `reference/solar_fuv_lines.csv` (O).
+
+#### OH A-X (0-0) band, 308.5 nm (`OH_AX00_SA1988_LOWELL_UNQUENCHED`)
+
+Source: the fluorescence efficiency of Schleicher and A'Hearn (1988, ApJ 331:1058), from the Lowell
+Observatory comet g-factor service. The service gives the (0-0) band's energy g-factor at 1 AU
+(erg s^-1 molecule^-1) as a function of heliocentric radial velocity. The data were retrieved from -60 to +60
+km/s in 0.1 km/s steps; all 1,201 values are reviewed, interpolated linearly and never extrapolated.
+
+- **Unquenched.** These are the collision-free values. Collisions in the inner coma change the OH
+  ground-state populations, and with them the g-factor; that effect is not included.
+- **Photon conversion.** Energy is converted to photons at the effective band wavelength of 308.5 nm, which
+  each case selects explicitly to reproduce the archived conversion.
+- **No solar-activity scaling.** The values are for one fixed solar spectrum.
+
+The solar spectrum near 309 nm is full of absorption lines, so g depends strongly on velocity (Swings
+effect). Within +-20 km/s it is lowest at -0.3 km/s, 1.49e-15 erg s^-1 at 1 AU. It reaches 2.68e-15 at
++6 km/s and 2.47e-15 at -10 km/s, and its largest value is 5.93e-15 at +15 km/s.
+
+| Case | rdot (km/s) | energy g, 1 AU (erg s^-1) | photon g, 1 AU (s^-1) | photon g at r_h (s^-1) | applied / bulk at 1e5 km | at 1e6 km |
+|---|--:|--:|--:|--:|--:|--:|
+| 1 | -39.7 | 3.55e-15 | 5.52e-4 | 1.80e-4 | 0.99 | 0.99 |
+| 2 | -36.2 | 3.33e-15 | 5.18e-4 | 1.88e-4 | 1.02 | 1.03 |
+| 3 | -29.6 | 3.06e-15 | 4.75e-4 | 2.00e-4 | 0.98 | 0.94 |
+| 4 | -5.8 | 1.71e-15 | 2.66e-4 | 1.44e-4 | 1.01 | 1.01 |
+| 5 | +0.4 | 1.50e-15 | 2.33e-4 | 1.26e-4 | 1.09 | 1.21 |
+| 6 | +7.1 | 2.70e-15 | 4.20e-4 | 2.24e-4 | 1.02 | 1.05 |
+
+"Applied / bulk" is the Effective Photon g Factor of the comparison runs (`i3_qfit_campaign_20261123`,
+output 4) divided by the g at `rdot`. In case 5 the comet sits at the minimum of the g curve, so the spread
+of OH velocities raises the applied g-factor by 9% at 1e5 km and 21% at 1e6 km.
+
+#### H Lyman-alpha, 121.6 nm (`H_LYA_IKL2020`)
+
+Source: the solar Lyman-alpha line model of Kowalska-Leszczynska et al. (2020, ApJS 247:62), the authors'
+Table 1 (`table1v4.txt`). The model gives the radiation-pressure factor `mu` (Lyman-alpha radiation pressure
+relative to solar gravity) as an analytic function of radial velocity:
+
+- a kappa function for the line;
+- minus a Gaussian for its self-reversed core;
+- plus a linear background.
+
+Each of the nine coefficients depends linearly on the total solar Lyman-alpha flux. The model covers
+-200..+200 km/s and is evaluated directly; no H table is stored.
+
+The flux is the LASP/LISIRD composite Lyman-alpha, version 4 (Machol et al. 2019), averaged over the
+case's Earth-equivalent interval: 5.10--5.45e11 photons cm^-2 s^-1 at 1 AU (`h_lya_photon_flux_1au` in
+`reference/i3_cases.csv`).
+
+`mu` is converted into a photon scattering rate by momentum balance. Each scattered photon transfers
+`h nu / c` of radial momentum, so
+
+```text
+g(1 AU) = mu * (G M_sun m_H / AU^2) / (h nu / c),     g(r_h) = g(1 AU) * (1 AU / r_h)^2
+```
+
+| Case | rdot (km/s) | Ly-alpha flux, 1 AU (cm^-2 s^-1) | g, 1 AU (s^-1) | g at r_h (s^-1) | applied / bulk at 1e5 km | at 1e6 km |
+|---|--:|--:|--:|--:|--:|--:|
+| 1 | -39.7 | 5.10e11 | 2.96e-3 | 9.66e-4 | 0.96 | 0.95 |
+| 2 | -36.2 | 5.28e11 | 2.95e-3 | 1.07e-3 | 0.97 | 0.95 |
+| 3 | -29.6 | 5.44e11 | 2.85e-3 | 1.20e-3 | 0.97 | 0.95 |
+| 4 | -5.8 | 5.24e11 | 2.42e-3 | 1.31e-3 | 1.01 | 1.01 |
+| 5 | +0.4 | 5.45e11 | 2.54e-3 | 1.37e-3 | 1.01 | 1.02 |
+| 6 | +7.1 | 5.45e11 | 2.55e-3 | 1.36e-3 | 1.03 | 1.03 |
+
+At 1 AU the g-factor is highest in cases 1--3, despite their lower flux. At -30 to -40 km/s the comet sees
+the brighter part of the solar line instead of its self-reversed centre.
+
+The H output stays optically thin. A conservative line-centre cross section (9.5e-18 m^2: b = 8 km/s,
+f = 0.4164) flags where tau > 0.1, but the result is not attenuated.
+
+The radiation-pressure acceleration that defines `mu` is not applied to the H trajectories: in exact
+spherical symmetry a Sun-directed force cannot be represented.
+
+#### O I 130.4-nm triplet (`O_I_1304_KVB2022_DIRECT_J2` + `O_I_1304_SUMER2001_LYB_BOWEN_J2`)
+
+The g-factor counts photons of the whole triplet (130.217 + 130.486 + 130.603 nm), which IUVS does not
+resolve. It is given per O atom in the 2p4 3P2 ground level; the 3P1 and 3P0 levels relax radiatively within
+3.1 h and 16 h. The comparison uses the sum of two terms (section "O I 130.4-nm brightness").
+
+**Direct scattering at 130.217 nm (KVB2022).** The source is the data behind Fig. 14 of Killen, Vervack and
+Burger (2022, ApJS 263:37):
+
+- **The source table.** It gives the g-factors of the three lines from -50 to +50 km/s in 0.1 km/s steps, at
+  0.352 au. They are computed from Gladstone (1992) two-Gaussian solar line shapes scaled to the SORCE
+  SOLSTICE spectrum of 2009-03-01.
+- **What we use.** We take the 130.217-nm (3P2 - 3S1) table and multiply it by 0.352^2 to get 1 AU. We use it
+  within +-48 km/s, where the generated profiles end.
+- **Scaling to the case.** The table is multiplied by the case triplet flux divided by the 8.41e9 photons
+  cm^-2 s^-1 that the table implies.
+- **The case triplet flux.** It is that reference times the FISM2 130.1--130.7-nm flux of the case's
+  Earth-equivalent interval divided by the FISM2 flux of 2009-03-01. The ratio is 1.21--1.27 and cancels the
+  FISM2/SOLSTICE calibration offset.
+
+**Lyman-beta (Bowen) fluorescence.** Solar Lyman-beta pumps 3P2 to 3d 3D at 102.576 nm, and the 1128.7-nm and
+844.6-nm cascade reaches 3s 3S1 and gives one triplet photon.
+
+- **Line shape.** The solar line shape is from the SOHO/SUMER quiet-Sun disk-centre atlas (Curdt et al. 2001,
+  from BASS2000). It is normalized to the case's FISM2 102.4--102.8-nm flux, 4.82--4.96e9 photons cm^-2 s^-1
+  at 1 AU.
+- **Atomic data.** Oscillator strengths and the branching to 1128.7 nm (0.287--0.289) are from NIST ASD.
+- **Size.** The term is about 4.2e-7 s^-1 at 1 AU and almost independent of velocity.
+
+| Case | rdot (km/s) | direct, 1 AU (s^-1) | Bowen, 1 AU (s^-1) | total at r_h (s^-1) | Bowen share | applied / bulk at 1e5 km |
+|---|--:|--:|--:|--:|--:|--:|
+| 1 | -39.7 | 3.30e-8 | 3.91e-7 | 1.38e-7 | 92% | 1.02 |
+| 2 | -36.2 | 1.44e-7 | 4.09e-7 | 2.01e-7 | 74% | 1.05 |
+| 3 | -29.6 | 1.29e-6 | 4.42e-7 | 7.30e-7 | 25% | 1.14 |
+| 4 | -5.8 | 1.27e-5 | 4.18e-7 | 7.11e-6 | 3% | 0.97 |
+| 5 | +0.4 | 1.04e-5 | 4.25e-7 | 5.85e-6 | 4% | 1.01 |
+| 6 | +7.1 | 1.40e-5 | 4.17e-7 | 7.66e-6 | 3% | 1.02 |
+
+**Velocity spread.** In cases 1--3, `rdot` lies on the steep wing of the solar line, so the velocity spread
+of the O atoms raises the applied g-factor. In case 3 it is 37% higher at 2/3 of the domain radius.
+
+**Line-shape uncertainty.** The direct term of cases 1--3 depends on the far wing of the assumed line shape.
+The SUMER-atlas shape (`O_I_1304_SUMER2001_DIRECT_J2`, also written to the output) gives 53, 18 and 3.6 times
+the KVB2022 value for cases 1, 2 and 3. Within |v| < 10 km/s the two shapes agree within 30%.
+
+**Not included in the O model:**
+
+- electron impact;
+- prompt emission from photodissociation of H2O, CO or CO2;
+- optical depth. The 130.217-nm line-centre tau exceeds 0.1 in all IUVS bins of case 5; it is flagged but
+  not applied.
+
+### Where the numbers come from
+
+| Quantity | File | Written by |
+|---|---|---|
+| A0, alpha, excess energies | `reference/photochemistry_channels.csv` | reviewed transcription |
+| F10.7P per case | `reference/i3_cases.csv`, `reference/solar_activity_audit.csv` | derivation recorded in this README |
+| per-case rates `chemistry.rate.*` | `input/i3.in` | `prepare_i3_cases.py` |
+| `SA1982_VH` lifetime table | `reference/oh_lifetime_sa1982.csv` | legacy `BLOCKDATA OHPHOT` |
+| OH, H and O g-factor data and evaluators | `src/models/resonance_fluorescence/` | `tools/generate_reference_tables.py` |
+| Ly-alpha flux and bulk OH/H g at r_h | `reference/i3_cases.csv` | `prepare_i3_cases.py` inputs |
+| O triplet and Ly-beta fluxes | `reference/solar_fuv_lines.csv` | `derive_solar_fuv_lines.py` |
+| applied g-factor | "Effective Photon g Factor" columns of the brightness tables | AMPS |
+
+The "applied / bulk" ratios and the O table come from the comparison runs; that figure and its data are
+in `validation_runs/i3_qfit_campaign_20261123/report_20261124/` (`plots/o1304_gfactor_out4.png`), which is
+not in git.
 
 ## What does "corrected for the 3e9-m edge (collisionless reference)" mean?
 

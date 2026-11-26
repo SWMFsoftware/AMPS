@@ -2,11 +2,11 @@
 
 Step-by-step guide for the I3 cases of the generic comet application (`srcHartley2`): building the executable,
 choosing a case, the chemical model and the brightness g-factor models, running, and finding the output.
-Background and validation details are in [README.md](README.md), [i3/README.md](i3/README.md),
-[CHEMISTRY.md](CHEMISTRY.md) and [CHEMISTRY_VARIANTS.md](CHEMISTRY_VARIANTS.md).
+Background and validation details are in [../README.md](../README.md), [README.md](README.md),
+[../CHEMISTRY.md](../CHEMISTRY.md) and [../CHEMISTRY_VARIANTS.md](../CHEMISTRY_VARIANTS.md).
 
 Keep this file current: any change to the comet model that affects how I3 is built, configured or run must
-update this guide in the same change (rule in [README.md](README.md)).
+update this guide in the same change (rule in [../README.md](../README.md)).
 
 Written 2026-11-21 for the working tree on top of commit `7c05480`, which includes the (not yet committed)
 chemistry-variant implementation `OH_LOSS` (`CometChemistryVariants.*`).
@@ -62,7 +62,7 @@ srcHartley2/tests/run_all_stage_tests.sh        # portable regression suite (set
 ./amps --help                                    # usage, and the compiled chemistry groups and variants
 ```
 
-Nightly regression test `i3` (details: [i3/README.md](i3/README.md), "Nightly regression test"): a test-mode build,
+Nightly regression test `i3` (details: [README.md](README.md), "Nightly regression test"): a test-mode build,
 then two runs of case 1 from `input/i3-test.in`: `case1` with the default `STATE_RESOLVED` OH loss,
 and `case1sa` with `--chemistry-variant OH_LOSS=SA1982_VH`. Each is compared with its references
 for the number of MPI processes (18 outputs per layout):
@@ -121,7 +121,7 @@ mpiexec -n 2 ./amps -i input/i3.in -case 1 --validate-runtime-input     # prints
 | `chemistry.rate.<ID>_1au_s-1` (case block) | positive number | 1-AU rate of reaction `<ID>`; required for every reaction of an active variant and every ungrouped reaction; optional for inactive variants |
 
 Other chemistry options on the command line: `--chemistry-estimator-mode configured|analog|enhanced` (Stage-9
-estimator arms; see [CHEMISTRY.md](CHEMISTRY.md)).
+estimator arms; see [../CHEMISTRY.md](../CHEMISTRY.md)).
 
 ### 4.2 The OH-loss variants (`OH_LOSS`)
 
@@ -164,7 +164,7 @@ The run log (`chemistry Chemistry.*` lines) and the brightness file headers (`DA
 the effective variant, where it was selected, the table file and its SHA-256, and the derived rates.
 
 A `channel-importance` policy (Stage 7) that does not match the active OH channels stops the run with an
-explanation; see [CHEMISTRY_VARIANTS.md](CHEMISTRY_VARIANTS.md).
+explanation; see [../CHEMISTRY_VARIANTS.md](../CHEMISTRY_VARIANTS.md).
 
 ## 5. Choose the g-factor (brightness) models
 
@@ -234,8 +234,15 @@ sbatch --job-name=i3-case${CASE} --partition=superlong128cores --time=6-00:00:00
 
 with a job script that freezes the inputs as above and runs `mpiexec -n $SLURM_NTASKS ./amps -i i3.in -case $CASE`
 (template: `validation_runs/i3_master_campaign3_oxygen_20261119/scripts/production.sbatch`, which also checks the
-executable's SHA-256 and refuses to reuse a run directory). The generated inputs request 200 brightness rays, a
-10,000-iteration sampling window and at most 30,000 iterations.
+executable's SHA-256 and refuses to reuse a run directory). The generated inputs request:
+
+- 200 brightness rays;
+- a 10,000-iteration sampling window;
+- at most 150,000 iterations (`simulation.max_iterations`).
+
+A run stops earlier once it has converged: the relative L1 change stays below
+`simulation.convergence_tolerance = 0.05` for `simulation.convergence_windows = 3` consecutive windows. The
+campaign `campaigns/qfit_20261123` converged after 70,000-100,000 iterations.
 
 ## 8. Output and plots
 
@@ -250,9 +257,9 @@ executable's SHA-256 and refuses to reuse a run directory). The generated inputs
       "$RUN/PT/plots/pic.OH.brightness.s=3.out=0.dat" --no-show --output "$RUN/case${CASE}_OH_vs_IUVS.png"
   ```
 
-- Edge correction and the collisionless reference: [EDGE_CORRECTION.md](EDGE_CORRECTION.md),
-  [COLLISIONLESS_REFERENCE.md](COLLISIONLESS_REFERENCE.md); campaign interpretation: [i3/README.md](i3/README.md),
-  [i3/COMPARISON.md](i3/COMPARISON.md).
+- Edge correction and the collisionless reference: [../EDGE_CORRECTION.md](../EDGE_CORRECTION.md),
+  [../COLLISIONLESS_REFERENCE.md](../COLLISIONLESS_REFERENCE.md); campaign interpretation: [README.md](README.md),
+  [COMPARISON.md](COMPARISON.md).
 
 ## 9. Quick reference
 
@@ -262,4 +269,26 @@ executable's SHA-256 and refuses to reuse a run directory). The generated inputs
 mpiexec -n 2 ./amps -i input/i3.in -case N --validate-runtime-input                    # check a case
 mpiexec -n 12 ./amps -i i3.in -case N                                                  # run (default chemistry)
 mpiexec -n 12 ./amps -i i3.in -case N --chemistry-variant OH_LOSS=SA1982_VH            # run with the SA1982 OH loss
+```
+
+## 10. The campaign consistent with MAVEN/IUVS (`i3/campaigns/qfit_20261123`)
+
+Added 2026-11-26. The six-case campaign that is consistent with the MAVEN/IUVS OH, H Lyman-alpha and O I
+130.4-nm observations has its own frozen inputs:
+
+- `OH_LOSS = SA1982_VH` with Q(H2O) fitted to OH;
+- build input with `BlockCells=12` and a 4e9-m domain.
+
+Do not build it from `input/i3.conf` (`BlockCells=8`) and do not run it with `input/i3.in`. Use the scripts
+of [campaigns/qfit_20261123/README.md](campaigns/qfit_20261123/README.md). They clone and build the
+campaign's commit `848e9c5` in a separate directory, then validate, run, and compare with the reference
+results. [HOW_TO.md](HOW_TO.md) shows how each combination of build input, production or test build,
+deck, case and OH chemistry is compiled and run:
+
+```sh
+C=srcHartley2/i3/campaigns/qfit_20261123
+$C/scripts/compile_amps.sh --dest /path/to/build_qfit --jobs 32
+$C/scripts/validate_inputs.sh --amps /path/to/build_qfit/amps --work /path/to/validate
+$C/scripts/run_case.sh --amps /path/to/build_qfit/amps --case N --out /path/to/qfit_rerun   # 128 ranks
+$C/scripts/run_case.sh --amps /path/to/build_qfit/amps --case N --out /path/to/qfit_rerun --chemistry state_resolved
 ```

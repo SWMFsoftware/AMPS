@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Comparison figures of the OH-fitted SA1982_VH campaign (runs NOT converged): OH (0-0),
-H Lyman-alpha and O I 130.4 nm of all six cases against MAVEN/IUVS, and case 5 O I 130.4 nm
-against the digitized MAVEN/IUVS profile.
+"""Comparison figures of the OH-fitted SA1982_VH campaign: OH (0-0), H Lyman-alpha and O I 130.4 nm
+of all six cases against MAVEN/IUVS, and case 5 O I 130.4 nm against the digitized MAVEN/IUVS profile.
 
 Copy of validation_runs/i3_qfit_campaign_20261123/report_20261124/scripts/make_qfit_figures.py
 (2026-11-25, user request), made to run from git: the helpers come from i3_figure_helpers.py and the
@@ -9,10 +8,11 @@ small input files from inputs/ (both copied here, see inputs/README.md); reposit
 the options --campaign, --report-dir and --predicted. Paths below are relative to the AMPS root.
 
 Runs
-- <campaign>/sa1982_vh/caseN_np128/production, default campaign
+- <campaign>/sa1982_vh/caseN_np<NP>/production (--np, default 128), default campaign
   validation_runs/i3_qfit_campaign_20261123: inner-boundary fix + SA1982_VH OH loss, Q(H2O) refitted
   to MAVEN/IUVS OH from output 4 of the cancelled runs (README.md of the campaign); the newest output
-  written by all six runs unless --output is given. Shown as run, NOT scaled.
+  written by all six runs unless --output is given. --output final takes the last output of each run
+  (for converged runs, the window in which the run converged). Shown as run, NOT scaled.
 - "predicted": the values that the fit expected, read from inputs/ohfit_numbers_output4.json (copy of
   validation_runs/i3_fixed_campaign_20261122/report_interim_20261123/data/ohfit_numbers.json:
   cancelled SA1982_VH runs at output 4 x fit factor; "fill-corr." = their fill-corrected estimate).
@@ -32,9 +32,9 @@ references/i3_brightness_MAVEN). Outside git: only the AMPS run output (--campai
 
 Figures (300 dpi, <report-dir>/plots/): qfit_OH_H_O_vs_maven_out<K>.png,
 qfit_o_case5_vs_iuvs_out<K>.png. Data: <report-dir>/data/qfit_numbers_out<K>.json,
-<report-dir>/data/qfit_o_case5_vs_iuvs_out<K>.csv. Default report directory:
-<campaign>/report_20261124. Run from any directory:
-    python3 srcHartley2/i3/tools/make_qfit_figures.py [--output K] [--campaign DIR] [--report-dir DIR]
+<report-dir>/data/qfit_o_case5_vs_iuvs_out<K>.csv. With --output final, "out<K>" becomes "final".
+Default report directory: <campaign>/report_20261124. Run from any directory:
+    python3 srcHartley2/i3/tools/make_qfit_figures.py [--output K|final] [--campaign DIR] [--report-dir DIR]
 Reads run output only; writes only under <report-dir>/plots and <report-dir>/data.
 """
 import argparse
@@ -96,13 +96,24 @@ def title(c, what, d):
             f"{d['iterations'] // 1000}k it{'' if d['converged'] else ' (running)'}")
 
 
+def state(converged):
+    return "converged" if converged else "NOT converged"
+
+
+def window(k):
+    return f"iterations {k * H.SAMPLE_LENGTH + 1}-{(k + 1) * H.SAMPLE_LENGTH}"
+
+
 def main():
     global CAMPAIGN, REPORT, QFIT, PRED
     parser = argparse.ArgumentParser(description=" ".join(__doc__.split("\n\n")[0].split()))
-    parser.add_argument("--output", type=int, default=None,
-                        help="output index of the OH-fitted runs (default: newest written by all six)")
+    parser.add_argument("--output", default=None,
+                        help="output index K of the OH-fitted runs, or 'final' for the last output of each run "
+                             "(default: newest written by all six)")
     parser.add_argument("--campaign", type=Path, default=CAMPAIGN,
                         help="campaign directory with sa1982_vh/caseN_np128/production (default: %(default)s)")
+    parser.add_argument("--np", type=int, default=128,
+                        help="MPI ranks in the run-directory names caseN_np<NP> (default: %(default)s)")
     parser.add_argument("--report-dir", type=Path, default=None,
                         help="where plots/ and data/ are written (default: <campaign>/report_20261124)")
     parser.add_argument("--predicted", type=Path, default=PRED,
@@ -111,26 +122,35 @@ def main():
     PRED = args.predicted.resolve()
     CAMPAIGN = args.campaign.resolve()
     REPORT = (args.report_dir or CAMPAIGN / "report_20261124").resolve()
-    QFIT = {c: CAMPAIGN / f"sa1982_vh/case{c}_np128/production" for c in CASES}
-    out = args.output if args.output is not None else min(max(H.outputs_of(QFIT[c])) for c in CASES)
+    QFIT = {c: CAMPAIGN / f"sa1982_vh/case{c}_np{args.np}/production" for c in CASES}
+    final = args.output == "final"
+    if final:
+        outs = {c: max(H.outputs_of(QFIT[c])) for c in CASES}
+    else:
+        k = int(args.output) if args.output is not None else min(max(H.outputs_of(QFIT[c])) for c in CASES)
+        outs = {c: k for c in CASES}
+    out = "final" if final else outs[CASES[0]]        # label and file-name tag (out<K> or final)
+    tag = "final" if final else f"out{out}"
     (REPORT / "plots").mkdir(parents=True, exist_ok=True)
     (REPORT / "data").mkdir(exist_ok=True)
     pred = json.loads(PRED.read_text())
 
     runs = {}
     for c in CASES:
-        if out not in H.outputs_of(QFIT[c]):
-            raise SystemExit(f"case {c}: output {out} of the OH-fitted run is incomplete")
-        n = H.load(QFIT[c], c, out)
+        if outs[c] not in H.outputs_of(QFIT[c]):
+            raise SystemExit(f"case {c}: output {outs[c]} of the OH-fitted run is incomplete")
+        n = H.load(QFIT[c], c, outs[c])
         if n["variants"].get("OH_LOSS") != "SA1982_VH":
             raise SystemExit(f"case {c}: the run is not SA1982_VH ({n['variants']})")
         q_fit = pred["cases"][str(c)]["now"]["q_h2o_fitted_s-1"]
         if abs(n["q_h2o"] / q_fit - 1) > 1e-3:
             raise SystemExit(f"case {c}: input Q(H2O) {n['q_h2o']:.4e} is not the fitted {q_fit:.4e}")
         runs[c] = n
-        print(f"case {c}: output {out} ({H.status(n)}), Q(H2O) {n['q_h2o']:.4g}")
+        print(f"case {c}: output {outs[c]} ({H.status(n)}), Q(H2O) {n['q_h2o']:.4g}")
 
-    numbers = {"output": out, "window_iterations": [out * H.SAMPLE_LENGTH + 1, (out + 1) * H.SAMPLE_LENGTH],
+    all_converged = all(runs[c]["converged"] for c in CASES)
+    numbers = {"output": out,
+               "window_iterations": None if final else [out * H.SAMPLE_LENGTH + 1, (out + 1) * H.SAMPLE_LENGTH],
                "o_model": "direct OI_1304_TRIPLET_DIRECT_KVB2022 + OI_1304_TRIPLET_LYB_BOWEN_SUMER2001, edge-corrected",
                "predicted_from": rel(PRED), "cases": {}}
     for c in CASES:
@@ -139,7 +159,7 @@ def main():
         tau = n["cols"]["O"][f"Line Center Tau {KVB}"]
         spans = H.flagged_spans(n["b"], n["cols"]["O"][f"Tau Threshold Exceeded {KVB}"])
         e = numbers["cases"][str(c)] = {
-            "run": rel(QFIT[c]), "output": out, "iterations": n["iterations"],
+            "run": rel(QFIT[c]), "output": outs[c], "iterations": n["iterations"],
             "converged": n["converged"], "q_h2o_s-1": n["q_h2o"], "variants": n["variants"], "sha256": n["sha256"],
             "rh_au": n["rh"], "rdot_km_s": n["rdot"],
             "predicted": {"h_model_over_obs": p["now"]["h_model_over_obs_after_fit_geomean"],
@@ -169,7 +189,7 @@ def main():
         "per_bin": [float(v) for v in r5], "geomean": geo(r5),
         "predicted_geomean": pc5["now_KVB2022"]["geomean"],
         "predicted_geomean_fill_corrected": pc5["now_est_KVB2022"]["geomean"]}
-    with open(REPORT / f"data/qfit_o_case5_vs_iuvs_out{out}.csv", "w", newline="") as stream:
+    with open(REPORT / f"data/qfit_o_case5_vs_iuvs_{tag}.csv", "w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=["bin", "distance_1e5_km", "observed_R",
                                                     "model_KVB2022_bowen_R_binmean_edge", "obs_over_model"])
         writer.writeheader()
@@ -228,7 +248,7 @@ def main():
         if c == c5:
             ylo, yhi = min(ylo, yo.min()), max(yhi, yo.max())
             # the model bin means are not drawn here (user request, 2026-11-24); they are in the text and
-            # in qfit_o_case5_vs_iuvs_out<K>.png
+            # in qfit_o_case5_vs_iuvs_<tag>.png
             ax.errorbar(xo, yo, xerr=[xo - np.maximum(lo, X_LIM[0]), hi - xo], fmt="o", ms=3.8, color=INK,
                         elinewidth=0.9, capsize=0, zorder=5)
             g = numbers["cases"][str(c5)]["o_case5_obs_over_model_binmean"]
@@ -246,19 +266,25 @@ def main():
         ax.set_xlabel("Distance from comet (10$^5$ km)")
         if j == 0:
             ax.set_ylabel("O I 130.4 nm brightness (R)")
+    which = "last output of each run" if final else f"output {out}"
     handles = [Line2D([], [], color=INK, ls="none", marker="o", ms=3.5, label="MAVEN/IUVS"),
                Line2D([], [], color=S1, lw=1.6, label=f"AMPS inner-boundary fix + SA1982_VH OH loss, Q(H$_2$O) fitted to OH "
-                                                      f"(output {out}, NOT converged); O: direct (KVB2022) + Ly$\\beta$ Bowen")]
+                                                      f"({which}, {state(all_converged)}); O: direct (KVB2022) + Ly$\\beta$ Bowen")]
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.03), ncol=2, frameon=False, fontsize=8.0)
+    if final:
+        span = "; ".join(f"{c}: {outs[c]}" for c in CASES)
+        lead = (f"Last output of each run of {CAMPAIGN.name} (case: output {span}; output K = iterations "
+                f"K x {H.SAMPLE_LENGTH} + 1 to (K + 1) x {H.SAMPLE_LENGTH}), {state(all_converged)}")
+    else:
+        lead = f"Output {out} = {window(out)} of {CAMPAIGN.name} ({state(all_converged)})"
     fig.text(0.5, 0.004,
-             f"Output {out} = iterations {out * H.SAMPLE_LENGTH + 1}-{(out + 1) * H.SAMPLE_LENGTH} of "
-             f"{CAMPAIGN.name} (NOT converged), shown as run (not scaled); Q(H$_2$O) was fitted to OH from the "
+             f"{lead}, shown as run (not scaled); Q(H$_2$O) was fitted to OH from the "
              "cancelled runs at output 4 ('predicted by the fit' = those runs x fit factor).\nAll curves edge-corrected, "
              "shown to 2/3 of the domain radius. Model O comes from H$_2$O only (no CO/CO$_2$ photolysis or electron "
              "impact in I3); optically thin brightness.",
              ha="center", va="bottom", color=MUTED, fontsize=7.8, linespacing=1.4)
     fig.tight_layout(rect=(0, 0.06, 1, 1))
-    fig.savefig(REPORT / f"plots/qfit_OH_H_O_vs_maven_out{out}.png")
+    fig.savefig(REPORT / f"plots/qfit_OH_H_O_vs_maven_{tag}.png")
     plt.close(fig)
 
     # ------------------------------------------------ figure 2: case 5 O vs IUVS
@@ -279,7 +305,7 @@ def main():
     ax.set_xlabel("Distance from comet (10$^5$ km)")
     ax.set_ylabel("O I 130.4 nm brightness (R)")
     ax.set_title(f"(a) Case {c5} O I 130.4 nm vs MAVEN/IUVS: r$_h$ = {n5['rh']:.2f} AU, "
-                 f"$\\dot r$ = {n5['rdot']:+.1f} km/s; output {out}, NOT converged",
+                 f"$\\dot r$ = {n5['rdot']:+.1f} km/s; output {outs[c5]}, {state(n5['converged'])}",
                  loc="left", color=INK, fontsize=8.8)
     ax.text(0.035, 0.035,
             "AMPS edge-corrected, shown as run (not scaled), optically thin. Model O comes from H$_2$O only\n"
@@ -301,24 +327,24 @@ def main():
     H.style(axr)
     axr.legend(loc="lower left", frameon=False, fontsize=6.8)
     fig.text(0.5, 0.005,
-             f"Output {out} = iterations {out * H.SAMPLE_LENGTH + 1}-{(out + 1) * H.SAMPLE_LENGTH} of "
-             f"{CAMPAIGN.name}, NOT converged. 'Predicted by the fit' = cancelled runs at output 4 x fit factor.\n"
+             f"Output {outs[c5]} = {window(outs[c5])} of "
+             f"{CAMPAIGN.name}, {state(n5['converged'])}. 'Predicted by the fit' = cancelled runs at output 4 x fit factor.\n"
              "Observation and emission model as in o_case5_vs_iuvs.png of the O report (digitized slide; resonant scattering "
              "+ Ly$\\beta$ Bowen only; bin means along the slit).",
              ha="center", va="bottom", color=MUTED, fontsize=7.3, linespacing=1.4)
     fig.tight_layout(rect=(0, 0.075, 1, 1))
-    fig.savefig(REPORT / f"plots/qfit_o_case5_vs_iuvs_out{out}.png")
+    fig.savefig(REPORT / f"plots/qfit_o_case5_vs_iuvs_{tag}.png")
     plt.close(fig)
 
-    (REPORT / f"data/qfit_numbers_out{out}.json").write_text(json.dumps(numbers, indent=1))
+    (REPORT / f"data/qfit_numbers_{tag}.json").write_text(json.dumps(numbers, indent=1))
     for c in CASES:
         e = numbers["cases"][str(c)]
         print(f"case {c}: model/obs OH {e['OH_model_over_obs']['geomean']:.3f}, H {e['H_model_over_obs']['geomean']:.3f} "
               f"(predicted {e['predicted']['h_model_over_obs']:.3f}); O(KVB2022+Bowen) at 1e5 km "
               f"{e['O_KVB2022_bowen_edge_corrected_R']['1e+05 km']:.3g} R")
     print(f"case 5 O obs/model (bin means): {', '.join(f'{v:.2f}' for v in r5)}; geo. mean {geo(r5):.3f}")
-    print(f"wrote plots/qfit_OH_H_O_vs_maven_out{out}.png, plots/qfit_o_case5_vs_iuvs_out{out}.png, "
-          f"data/qfit_numbers_out{out}.json, data/qfit_o_case5_vs_iuvs_out{out}.csv")
+    print(f"wrote plots/qfit_OH_H_O_vs_maven_{tag}.png, plots/qfit_o_case5_vs_iuvs_{tag}.png, "
+          f"data/qfit_numbers_{tag}.json, data/qfit_o_case5_vs_iuvs_{tag}.csv")
 
 
 if __name__ == "__main__":

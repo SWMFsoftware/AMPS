@@ -14,11 +14,11 @@ The application currently supports:
 
 ## I3 run guide (keep it current)
 
-[README_I3_RUN.md](README_I3_RUN.md) is the step-by-step guide for building and running the 3I/ATLAS (I3) cases:
+[i3/README_I3_RUN.md](i3/README_I3_RUN.md) is the step-by-step guide for building and running the 3I/ATLAS (I3) cases:
 build, case selection, chemical-model (variant) selection, g-factor models, run and output.
 
 **Rule:** any change to the comet model that affects how I3 is built, configured or run must update
-`README_I3_RUN.md` in the same change. This includes compile-time records in `input/i3.conf` (species, reaction,
+`i3/README_I3_RUN.md` in the same change. This includes compile-time records in `input/i3.conf` (species, reaction,
 group or rate-table records and their build-time constants), runtime keys in `input/i3.in`, command-line options
 of `amps`, chemistry groups and variants, brightness/g-factor models and their required inputs, case-generator
 options of `i3/prepare_i3_cases.py`, and output file names or locations.
