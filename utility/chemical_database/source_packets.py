@@ -46,11 +46,20 @@ _HOSTS = {
     "aas-moore-mapaye-2025-cc-by-4.0": {"iopscience.iop.org"},
     "aas-peschel-2026-cc-by-4.0": {"iopscience.iop.org"},
     "nature-laurell-ext4-cc-by-4.0": {"static-content.springer.com"},
+    "rsc-bodi-2014-cc-by-nc-3.0": {"www.dora.lib4ri.ch"},
 }
 
 # Bind each reviewed publication or deposit version to its own rights evidence.
 # The permission for one publication does not extend to referenced datasets.
 _M3_ARTICLES = {
+    # The PSI repository copy is the RSC article PDF; every page prints its
+    # CC BY-NC 3.0 Unported licence, so the article is its own notice. The
+    # non-commercial condition travels with the policy record.
+    "rsc-bodi-2014-cc-by-nc-3.0": ({
+        "https://www.dora.lib4ri.ch/psi/islandora/object/psi:9276/datastream/PDF/download":
+            "8882498b8d343b4603db90162a56eee4f0e424c94b2bf720e8d9461d8c1eaad2",
+    }, {"https://www.dora.lib4ri.ch/psi/islandora/object/psi:9276/datastream/PDF/download":
+        "8882498b8d343b4603db90162a56eee4f0e424c94b2bf720e8d9461d8c1eaad2"}),
     # Page 1 grants CC BY 4.0 for the authors' original work. Bind the
     # permitted Table 1 projection to the same version that prints the grant.
     "aas-peschel-2026-cc-by-4.0": ({

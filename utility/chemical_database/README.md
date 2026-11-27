@@ -183,3 +183,12 @@ three deposited median frequencies at 1 au and specifies a stationary newborn
 ion in the lunar frame. The monoenergetic ground-capture case binds the Shingal
 A34 partial to the approved isotropic pair-COM model and conservative two-body
 recoil. See the [installed README and runnable API example](DATABASE_README.md#sodium-pickup-and-binary-charge-exchange-r14).
+
+The [I22 decision-2 sources](NATIVE_I22_DECISION2_SOURCES.md) are in the
+independent `amps-chemistry-20261126-r15` snapshot. It records the 19 papers
+behind the I22 decision-2 review. Each has a Crossref record, and copies
+supplied by the user or the review are identified by SHA-256 and held. Bodi
+et al. 2014 and its printed OH⁺ appearance energies are stored under the
+article's CC BY-NC 3.0 licence (policy `rsc-bodi-2014-cc-by-nc-3.0`). Rebuild
+the packet with `native_i22_decision2.py`. See installed README section
+"I22 decision-2 sources (r15)" for queries.

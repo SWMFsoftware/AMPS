@@ -1042,3 +1042,31 @@ The original Poppe numerical file and its projection retain their attribution.
 The Shingal selector resolves to the published fact preserved in bibliographic
 metadata. Both sources retain their original access policies. Database tests
 verify the selections independently of an application enabling transport.
+
+## I22 decision-2 sources (r15)
+
+The r15 release adds one packet, `i22-decision2-sources-20261126`. It records
+the 19 papers behind the I22 decision-2 review of water and OH energetics,
+water-ion fragmentation and water adsorption. Only the Bodi et al. 2014
+article and its printed OH⁺ appearance energies are stored, under the article's
+CC BY-NC 3.0 licence: non-commercial use, with attribution. Every other
+record is metadata-only. See [the sources note](NATIVE_I22_DECISION2_SOURCES.md).
+
+```bash
+db=/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261126-r15
+"$db/bin/chemdb" --lock "$db/database-lock.json" table bodi2014:oh-plus-appearance-energy --csv
+PYTHONPATH="$db/python" python3 -B - "$db/database-lock.json" <<'PY'
+import sys
+from amps_chemical_database import Database
+
+db = Database.from_lock(sys.argv[1])
+for row in db.table("bodi2014:oh-plus-appearance-energy").dictionaries():
+    print(row["measurement"], row["E0_eV_native"], "+/-", row["uncertainty_eV_native"], "eV")
+files = {f["id"]: f for f in db.describe("i22-decision2-sources-20261126")["files"]}
+print(files["bodi2014:article"]["rights"]["conditions"])
+print(files["i22-decision2:liu2009:crossref"]["quantity_metadata"]["review_use"])
+PY
+```
+
+The weighted value is printed as 18.1182 ± 0.0009 eV. The threshold is for
+H₂O → OH⁺ + H + e only; the table selects no threshold convention for a model.

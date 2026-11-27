@@ -189,3 +189,27 @@ The `aas-peschel-2026-cc-by-4.0` policy covers the identified Peschel
 et al. article and the attributed projection of its Table 1 model inputs.
 The article carries its own CC BY 4.0 notice on page 1. Its citations have
 their own access and reuse terms. [Article](https://doi.org/10.3847/PSJ/ae4901)
+
+## I22 decision-2 sources, 2026-11-26
+
+`rsc-bodi-2014-cc-by-nc-3.0` covers only Bodi et al. 2014, Chem. Sci. 5,
+3057, doi:10.1039/C4SC00791C. It applies to the RSC article PDF as served by
+the PSI DORA repository, SHA-256 `8882498b…`, and to the projection of its
+printed OH⁺ appearance energies. Every page of the article prints "This
+article is licensed under a Creative Commons Attribution-NonCommercial 3.0
+Unported Licence", so the article is its own notice.
+
+The redistribution field is `non-commercial-with-attribution`. Use is
+non-commercial only, and any redistribution must be non-commercial with
+attribution. This is the first non-commercial grant in the catalogue. It does
+not extend to the article's supplementary files or to the works it cites.
+
+The other records in this packet are metadata-only:
+- **Schörghofer 2023 and 2025.** Their CC BY 4.0 payloads await a genuine
+  HTTP-200 retrieval; iopscience returned 403.
+- **OSTI, HAL and GUP repository copies.** No licence statement was located.
+- **Publisher PDFs supplied by the user.** They are identified by SHA-256 in
+  record metadata only.
+
+The user's approval to incorporate the sources follows this policy. It is not
+treated as a third-party licence. [Sources](NATIVE_I22_DECISION2_SOURCES.md)

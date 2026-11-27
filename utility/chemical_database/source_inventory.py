@@ -109,6 +109,10 @@ NTRS_19730006011 = _policy('allowed', 'allowed', 'source-specific-public-use',
     dict(url='https://ntrs.nasa.gov/citations/19730006011',
          note='Public distribution and GOV_PUBLIC_USE_PERMITTED for the exact Sutton and Kay preprint. Its record declares no third-party material.'),
     conditions='Credit Sutton and Kay and NASA Goddard. The published numerical view selects only the authors’ original experimental ratios.')
+RSC_BODI_2014 = _policy('allowed', 'allowed', 'non-commercial-with-attribution',
+    dict(url='https://doi.org/10.1039/C4SC00791C',
+         note='Every page of the article prints: This article is licensed under a Creative Commons Attribution-NonCommercial 3.0 Unported Licence.'),
+    conditions='Credit Bodi et al. (2014), Chem. Sci. 5, 3057, with DOI and the CC BY-NC 3.0 licence. Non-commercial use only; any redistribution must also be non-commercial. Covers this article and the projection of its printed OH+ appearance energies, not cited works or supplementary files.')
 NIST_UNMARKED = _policy('allowed', 'allowed', 'allowed-with-source-credit',
     dict(url='https://www.nist.gov/copyrights-disclaimers',
          note='Use of NIST information permits copying of information not marked copyrighted.'),
@@ -636,7 +640,8 @@ def inventory(amps_root: Path, validation_root: Path, source_packets=()) -> list
                     'aas-moore-mapaye-2025-cc-by-4.0': AAS_MOORE_MAPAYE,
                     'aas-peschel-2026-cc-by-4.0': AAS_PESCHEL,
                     'nature-laurell-ext4-cc-by-4.0': NATURE_LAURELL_EXT4,
-                    'ntrs-19730006011-public-use': NTRS_19730006011}
+                    'ntrs-19730006011-public-use': NTRS_19730006011,
+                    'rsc-bodi-2014-cc-by-nc-3.0': RSC_BODI_2014}
         for item in module.load_packets(source_packets, policies):
             if item['id'] in datasets or any(row['id'] in file_ids for row in item['files']):
                 raise ValueError('new source packet collides with historical dataset/source IDs')

@@ -2,6 +2,16 @@
 
 **Status date:** 2026-11-26 UTC
 
+**Chemical database r15: I22 decision-2 sources.** The user approved
+evidence step C-0 and asked that all review data go into the shared chemical
+database under its rights policy. The new snapshot `amps-chemistry-20261126-r15`
+records the 19 papers behind the decision-2 proposals. Bodi et al. 2014 and its
+printed OH⁺ appearance energies are stored under the article's CC BY-NC
+licence. Everything else is metadata-only. The checks passed: 409 suite, 311
+nightly, and an independent comparison with r14. The PHIDRATES solar flux for
+C-0 waits for the service, which is down.
+[Details](#564-chemical-database-r15-i22-decision-2-sources--2026-11-26-utc)
+
 **I22 atomic photoionization pilot implemented.** He, Ne and Ar
 photoionization X → X⁺ + e⁻ now runs as real particle events through the
 normal cohort owner. It uses the user-approved ground-ion,
@@ -6265,3 +6275,45 @@ Each row covers both movers at 1 and 8 ranks.
 - The 8-rank launches are no faster than the 1-rank launches; this has not
   been investigated.
 - Formal I22 also needs U15, U24 and same-campaign I13–I20.
+
+## 5.64 Chemical database r15: I22 decision-2 sources — 2026-11-26 UTC
+
+**Request and policy.** The user approved decision C2: the C-0 evidence step
+with a report-only 1 % rate-reconstruction tolerance. The user asked that all
+data from the [decision-2 review](test/M3_I22_DECISION2_PROPOSALS_20261126.md)
+be incorporated in the shared chemical database. The user chose to follow
+`utility/chemical_database/RIGHTS.md`: payloads are stored only where a
+licence is evidenced. [Evidence index](../test_output/chemical_database/i22-decision2-sources-GzoR4a/README.md)
+
+**Snapshot.** `/data/vtenishe/CHEMICAL_DATABASE/snapshots/amps-chemistry-20261126-r15`,
+lock `edbd5572…`.
+- It replays r14's 39 packets unchanged and adds one,
+  `i22-decision2-sources-20261126`.
+- That packet holds Crossref records for 19 papers, plus held repository
+  copies from OSTI, HAL and GUP.
+- It stores Bodi et al. 2014 under a new policy, `rsc-bodi-2014-cc-by-nc-3.0`,
+  based on the licence printed in the article. Alongside it is a lossless
+  table of the four printed OH⁺ onsets (weighted value
+  18.1182 ± 0.0009 eV).
+- The 13 publisher PDFs the user supplied are identified by SHA-256 only.
+- Both Schörghofer CC BY 4.0 papers are metadata-only, because iopscience
+  returned 403. No bot check was bypassed.
+- The default lock and earlier snapshots are unchanged.
+
+**Checks.**
+- Staged and installed comparisons with r14 PASS: 164 tables and 994
+  sources unchanged, and the 23 held records refuse payloads.
+- Full shared-database suite 409 PASS (3 new release tests); nightly
+  CORE-CHEMICAL-DATABASE-001 311 PASS; neither had FAIL, ERROR or SKIPPED.
+- Installer integrity PASS on 914 objects.
+
+**Pending.** The PHIDRATES solar flux needed for C-0 is not acquired. The
+service refused connections on 2026-11-26, both from this host and from an
+outside fetch. A probe checks every 15 minutes for 24 hours. PHIDRATES
+remains "unknown: metadata-only" under RIGHTS.md, so its flux will be
+catalogued metadata-only, with the bytes kept in the acquisition directory.
+The archived D04 documentation PDFs are image scans, and reading their
+tables would need OCR, which is not allowed.
+
+**Correction recorded.** The research index had listed `suarez_jpcs2015.pdf`
+as a paper. It is a saved HTTP 403 page, and is now labelled as such.

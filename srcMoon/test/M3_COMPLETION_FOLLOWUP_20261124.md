@@ -357,7 +357,8 @@ preparation and scientific acceptance each keep their actual status.
    1 and 8 ranks (STATUS 5.63). Formal I22 remains SKIPPED. The para-water
    reference, the missing-threshold convention and U24 (parts B–D) remain
    open, and charged breakup stays deferred.
-   [Contract](integration-tests/I22/ATOMIC_PILOT_CONTRACT.md)
+   [Contract](integration-tests/I22/ATOMIC_PILOT_CONTRACT.md) ·
+   [Proposals for parts B–D and charged breakup (2026-11-26, not approved)](M3_I22_DECISION2_PROPOSALS_20261126.md)
 3. Approve the stationary ⁴He I23 pilot at the proposed plasma inputs.
    Review the modeled observables and their source-supported error limits
    before physical activation or any extension to moving targets.
