@@ -258,6 +258,27 @@ class RoutineFile(unittest.TestCase):
                           out.getvalue())
             self.assertIn("results: exit-code\n", out.getvalue() + "\n")
 
+    def test_repository_sep3d_event_spice(self):
+        """The nightly runs E3D07, the CSPICE-backed body-observer ephemeris (test/stage1 links only the typed
+        refusal), with passion's toolkit and kernels; a machine without spice_lsk/spice_spk skips it."""
+        machines, _ = load_machines()
+        passion = find_machine(machines, "passion")
+        source = Routine.load_routine("nightly").source("sep3d-event-spice")
+        self.assertIsNotNone(source)
+        self.assertEqual((source.kind, source.workspace, source.family, source.results),
+                         ("command", "plain", "app-sep", {"reader": "exit-code"}))
+        self.assertEqual(source.command, ["sh", "srcSEP3D/test/event_2013_04_11/run_spice_test.sh",
+                                          "{spice_path}", "{spice_lsk}", "{spice_spk}"])
+        self.assertEqual(sorted(source.requires_vars), ["spice_lsk", "spice_path", "spice_spk"])
+        for var in source.requires_vars:
+            self.assertTrue(passion.vars.get(var), var)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["run", "--machine", "passion", "--only", "sep3d-event-spice", "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertIn("run_spice_test.sh /home/vtenishe/SPICE/cspice /home/vtenishe/SPICE/Kernels/NAIF/naif0012.tls "
+                      "/home/vtenishe/SPICE/Kernels/NAIF/de430.bsp", out.getvalue())
+
     def test_disabled_entries(self):
         r = routine(disabled=[{"test": "SEP-*", "reason": "new reference pending", "until": "2026-11-30",
                                "machines": ["passion"]},

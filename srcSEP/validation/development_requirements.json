@@ -410,7 +410,8 @@
       "unmet_or_unverified_gates": [
         "Resolve physical energy and exchange laws.",
         "Establish native persistent ownership, one-time SWMF handoff, pending transactions, remap/restart, and complete signed source/sink accounting.",
-        "Component checkpoints and ledgers do not establish application-level persistence or physical particle-wave closure."
+        "Component checkpoints and ledgers do not establish application-level persistence or physical particle-wave closure.",
+        "2026-11-28 user decisions (FINITE_WAVE_ENERGY_COLLISION_DESIGN.md section 10): the four-spectrum coupling uses weighted native particles with the constrained interacting jump approximation (section 4); the phase-population finite-volume system (section 5) is built only as its independent continuum reference. The first coupled case uses the approved Stage 12 SWCME1D SHOCK_ONLY material profile (WAVE_EVOLUTION_CONTRACT_REVIEW.md). The two-branch model is a regression baseline only."
       ],
       "clarification_dependencies": [
         "Q01",
@@ -884,7 +885,8 @@
       "required_evidence_level": "native-amps",
       "registered_release_status": "not-specified",
       "unmet_or_unverified_gates": [
-        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary.",
+        "2026-11-28 user decision: the retained two-branch model (integrated E+/E- and branch-major E+/-(k) with the legacy growth/reflection/cascade adapters) is a regression baseline only, not a production closure. Audit this case against its original acceptance gate, run it natively and in the routine sep runner; production preflight continues to reject the model."
       ],
       "clarification_dependencies": []
     },
@@ -917,7 +919,8 @@
       "required_evidence_level": "native-amps",
       "registered_release_status": "not-specified",
       "unmet_or_unverified_gates": [
-        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary.",
+        "2026-11-28 user decision: the retained two-branch model (integrated E+/E- and branch-major E+/-(k) with the legacy growth/reflection/cascade adapters) is a regression baseline only, not a production closure. Audit this case against its original acceptance gate, run it natively and in the routine sep runner; production preflight continues to reject the model."
       ],
       "clarification_dependencies": []
     },
@@ -950,7 +953,8 @@
       "required_evidence_level": "native-amps",
       "registered_release_status": "not-specified",
       "unmet_or_unverified_gates": [
-        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary."
+        "Registration and source presence are established; a requirement-by-requirement implementation audit and current independent/native completion evidence remain necessary.",
+        "2026-11-28 user decision: the retained two-branch model (integrated E+/E- and branch-major E+/-(k) with the legacy growth/reflection/cascade adapters) is a regression baseline only, not a production closure. Audit this case against its original acceptance gate, run it natively and in the routine sep runner; production preflight continues to reject the model."
       ],
       "clarification_dependencies": []
     },
@@ -1222,7 +1226,8 @@
       "unmet_or_unverified_gates": [
         "Current wave state uses integrated energy; resonant_bin is hard-coded as 3 in model output, reference, and scorer. Local B/rigidity resonance and resolved spectral localization are not calculated.",
         "Growth is a prescribed scalar expression; a separate scalar reservoir is decremented by the applied source while simulated particles evolve pitch only at fixed momentum. This closure is not a demonstrated transfer of actual particle kinetic energy.",
-        "Complete independent particle/time/segment/k-bin/seed refinements, physical resonance, and native causal exchange using the agreed energy and growth laws."
+        "Complete independent particle/time/segment/k-bin/seed refinements, physical resonance, and native causal exchange using the agreed energy and growth laws.",
+        "2026-11-28 user decision: the retained two-branch model (integrated E+/E- and branch-major E+/-(k) with the legacy growth/reflection/cascade adapters) is a regression baseline only, not a production closure. Rewrite this case with a computed local resonance (no hard-coded bin) and actual particle energy transfer, or retire it; production preflight continues to reject the model."
       ],
       "clarification_dependencies": [
         "Q01",
@@ -1954,8 +1959,8 @@
       "id": "Q04",
       "status": "partially-resolved",
       "question_and_dependency": "What is the intended physical treatment when requested scattering would withdraw more energy than the available wave state, and what transaction/rollback behavior is required? Independent wave clipping is not an accepted resolution. Blocks affected CP05 implementation.",
-      "resolution": "Adopted closure requires -deltaK total wave change and -deltaK/2 stored magnetic change. Depleted-bin/global transaction treatment still needs a physically justified convergent implementation; no independent clipping, arbitrary redraw or suppressed event is approved.",
-      "authority": "User-adopted closure and original no-shortcut requirement, 2026-11-16."
+      "resolution": "Adopted closure requires -deltaK total wave change and -deltaK/2 stored magnetic change; no independent clipping, arbitrary redraw or suppressed event is approved. 2026-11-28: the target is the stimulated continuum QLT system; bin depletion by finite weights is a numerical sampling effect, converged with sum(w^2)->0 at fixed physical density. The jump generator chooses budget-feasible pitch targets before hazards are built and treats W=0 as absorbing; per-particle clocks keep their residual optical depth and every particle sharing an affected bin is re-rated from the accepted wave state. No finite-population fluctuation or spontaneous-emission law is adopted. Open: the run-level policy after a typed Unresolved result (stop, or split the particle before a new attempt).",
+      "authority": "User-adopted closure and original no-shortcut requirement, 2026-11-16. User decision, 2026-11-28 (FINITE_WAVE_ENERGY_COLLISION_DESIGN.md section 10)."
     },
     {
       "id": "Q05",

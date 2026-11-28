@@ -48,6 +48,15 @@ rejection remains a prepare-only bookkeeping gate. Canonical wave
 pseudomomentum and physical prescribed-background impulse require separate
 labels; this design adds no production update or qualification claim.
 
+The user selected on 2026-11-28 (design section 10): weighted native particles
+with the constrained interacting jump approximation, the phase-population
+finite-volume system only as its independent reference, the continuum QLT
+target with per-particle residual-hazard clocks, and the Stage 12 SWCME1D
+`SHOCK_ONLY` material profile as the first coupled-case background. The
+retained two-branch model below is a regression baseline only: its tests
+describe software behavior and are not run as qualification of self-excited
+waves. The next step is the independent stopped benchmarks of design section 8.
+
 ## Four-spectrum WKB boundary and material-tube contract
 
 The first qualification case uses a **material magnetic tube**: vertices move

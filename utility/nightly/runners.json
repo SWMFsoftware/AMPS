@@ -64,12 +64,24 @@
       "families": "app-sep"
     },
     {
+      "id": "sep3d-event-spice",
+      "title": "srcSEP3D 2013-04-11 3-D additions: SPICE body-observer ephemeris E3D07",
+      "workspace": "plain",
+      "command": ["sh", "srcSEP3D/test/event_2013_04_11/run_spice_test.sh", "{spice_path}", "{spice_lsk}", "{spice_spk}"],
+      "requires_vars": ["spice_path", "spice_lsk", "spice_spk"],
+      "time_limit_min": 10,
+      "note": "the CSPICE-backed body-observer path (output/spice_ephemeris.cpp with -DSEP3D_WITH_SPICE, linked with the toolkit's cspice.a) reproduces the checked-in Earth table within the E3D07 tolerances (srcSEP3D/test/event_2013_04_11/README.md, section 5). test/stage1 links only the typed refusal, so this is the nightly's check of the SPICE path; no AMPS build. About 10 s.",
+      "results": {"reader": "exit-code"},
+      "families": "app-sep"
+    },
+    {
       "id": "sep",
       "title": "srcSEP: build and all test steps (tools/sep_test_orchestrator.py)",
       "command": ["{python}", "tools/sep_test_orchestrator.py", "--app", "srcsep", "--output-dir", "{out}/run"],
       "env": {"MAKEFLAGS": "-j{jobs}"},
       "jobs": 16,
-      "time_limit_min": 120,
+      "time_limit_min": 150,
+      "note": "150 min: the runner took 101-104 min on 2026-11-23..26 and reached 120 min on 2026-11-27, when other jobs loaded passion (material-checkpoint-native 3464 s instead of about 2400 s)",
       "results": {"reader": "sep-orchestrator-json", "file": "{out}/run/run_all_test.json"},
       "families": "app-sep",
       "logs": ["{out}/run/*.log", "{out}/run/failed_tests.txt"]

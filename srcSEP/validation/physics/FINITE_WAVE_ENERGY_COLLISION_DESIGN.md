@@ -494,6 +494,36 @@ publication. Existing owner/checkpoint/source lifecycle gates remain required.
 
 ## 10. Decisions and unresolved scope
 
+**User decisions, 2026-11-28.** These select the design; they implement
+nothing and qualify nothing.
+
+1. **Coupling algorithm.** Production keeps weighted native particles and
+   uses the constrained interacting jump approximation of section 4. The
+   phase-population finite-volume system of section 5 is built only as its
+   independent conservative continuum reference, not as a production
+   representation. The five proofs listed in section 4 remain required
+   before the jump approximation may serve as a collision solver.
+2. **Finite budgets (Q04).** The target is the stimulated continuum QLT
+   system. A bin emptied by finite macroparticle weights is a numerical
+   sampling effect, studied with `sum_i w_i^2 -> 0` at fixed represented
+   physical density (section 3). The generator chooses budget-feasible
+   targets before any hazard is built, and `W=0` is absorbing (section 4).
+   Event time uses per-particle clocks that keep their residual optical
+   depth; every particle sharing an affected bin is re-rated from the
+   accepted wave state (section 6). No finite-population fluctuation or
+   spontaneous-emission law is adopted. Still open: what the run does after
+   a typed Unresolved result, either stop or split the particle before a
+   new attempt.
+3. **Background of the first coupled case.** The approved Stage 12 SWCME1D
+   `SHOCK_ONLY` material profile; see
+   [the contract review](WAVE_EVOLUTION_CONTRACT_REVIEW.md).
+4. **Retained two-branch model.** A regression baseline only (CV10–CV12
+   audited and run routinely, IV06 rewritten with a computed resonance or
+   retired). It is not a production closure for self-excited waves.
+
+The first implementation step is section 9 (a): the independent stopped
+benchmarks and negative controls of section 8.
+
 Already fixed and **not** questions to reopen: magnetic-only storage and
 `E_wave=2 W`, four independent spectra, the real-wave QLT normalization,
 stimulated zero-power behavior, finite support/gaps, initial reservoirs,

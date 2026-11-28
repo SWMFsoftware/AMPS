@@ -294,8 +294,8 @@ copies them there.
 
 | Test | What |
 |---|---|
-| `run_unit_tests.sh` | E3D01–E3D06, standalone under ASan/UBSan: frame, inertial terms, ephemeris, tracing and the tube, absorbing shock and bridge statistics, tube-line source rate, weights, spectrum and pitch law |
-| `run_spice_test.sh CSPICE_DIR LSK SPK` | E3D07: the SPICE body-observer path against the Horizons Earth table. On passion (CSPICE N0067, `naif0012.tls`, `de430.bsp`) Earth differs by at most 0.14 km and 3×10⁻⁵ m/s over the 67 samples. SPICE kernels for SOHO and ACE are not available here, so those bodies use the table. |
+| `run_unit_tests.sh` | E3D01–E3D06 (nightly runner `sep3d-event-units`), standalone under ASan/UBSan: frame, inertial terms, ephemeris, tracing and the tube, absorbing shock and bridge statistics, tube-line source rate, weights, spectrum and pitch law |
+| `run_spice_test.sh CSPICE_DIR LSK SPK` | E3D07: the SPICE body-observer path against the Horizons Earth table. On passion (CSPICE N0067, `naif0012.tls`, `de430.bsp`) Earth differs by at most 0.14 km and 3×10⁻⁵ m/s over the 67 samples. SPICE kernels for SOHO and ACE are not available here, so those bodies use the table. The nightly runs it as the runner `sep3d-event-spice` with the machine's `spice_path`, `spice_lsk` and `spice_spk`. It is the only routine check of the SPICE path: `srcSEP3D/test/stage1` links `output/spice_ephemeris.stage1.o`, the typed refusal, in every configuration. |
 | `SEP3D--event-2013-04-11--{Parker,FTE-Dmumu,FTE-MFP}` | Nightly Table tests: first hour, DiffNum of `observers`, `radial_energy` and `ledger` (`regression_products.sh`) against `output/test_SEP3D/SEP3D--event-2013-04-11--<Mover>--<label>.ref_np<N>.gz` |
 | `SEP3D--event-2013-04-11-long--{FTE-MFP,Parker,FTE-Dmumu}` | Long tier: full event, `Ranks=16` |
 | `run_convergence.sh AMPS MOVER WORK_DIR [RADIUS_TAG ...]` | The collection-radius study (section 6): one long-tier run of `event3d.convergence-<tag>.<mover>.in` per radius (`MPIRUN`, default `mpirun -np 16`), then `convergence_report.py`. Finished runs are reused. |

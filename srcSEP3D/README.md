@@ -289,7 +289,12 @@ and `focused-scattering` (Alfven-wave frames) movers.  It adds, all opt-in:
   `reduced_front_shock_surface.*` for both geometries of the shared core; the
   v1.3 heliocentric sphere is no longer rejected);
 - body observers with a checksummed ephemeris table or SPICE
-  (`output/observer_trajectory.*`, `output/spice_ephemeris.*`);
+  (`output/observer_trajectory.*`, `output/spice_ephemeris.*`); SPICE needs
+  an AMPS build configured with `Config.pl -spice-path=DIR`. The standalone
+  `test/stage1` always links the typed refusal
+  (`output/spice_ephemeris.stage1.o`); E3D07 checks the SPICE path
+  (`test/event_2013_04_11/run_spice_test.sh`, nightly runner
+  `sep3d-event-spice`);
 - the observer flux tube active region (`mesh/observer_flux_tube.*`) with a
   distance-graded refinement and an observer coverage check;
 - the 1-D net source on the tube lines (`adapters/tube_line_source.*`) and

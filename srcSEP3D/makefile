@@ -233,6 +233,13 @@ TRANSPORT_OBJ := $(TRANSPORT_SRC:.cpp=.o)
 RUNTIME_OBJ := $(RUNTIME_SRC:.cpp=.o)
 ADAPTER_OBJ := $(ADAPTER_SRC:.cpp=.o)
 OUTPUT_OBJ := $(OUTPUT_SRC:.cpp=.o)
+# The dependency-light test/stage1 binary links neither AMPS nor CSPICE, so it
+# uses its own copy of the SPICE ephemeris object, always compiled without
+# SEP3D_WITH_SPICE: the typed refusal of a nospice build (rule below). The
+# application keeps output/spice_ephemeris.o, which is compiled against CSPICE
+# when the AMPS configuration names a toolkit.
+STAGE1_OUTPUT_OBJ := $(filter-out output/spice_ephemeris.o,$(OUTPUT_OBJ)) \
+                     output/spice_ephemeris.stage1.o
 VALIDATION_OBJ := $(VALIDATION_SRC:.cpp=.o)
 CORONAL_CME_VALIDATION_OBJ := $(CORONAL_CME_VALIDATION_SRC:.cpp=.o)
 AMPS_OBJ := $(AMPS_SRC:.cpp=.o)
@@ -501,7 +508,13 @@ output/%.o: output/%.cpp
 # Body-observer SPICE ephemeris (output/spice_ephemeris.h): compiled against
 # CSPICE only when the AMPS configuration names a SPICE toolkit
 # (Config.pl -spice-path=DIR writes SPICE=DIR into Makefile.local); the AMPS
-# link then adds cspice.a.  A nospice build compiles the typed refusal.
+# application link then adds cspice.a (Makefile, AMPSLINKLIB).  A nospice build
+# compiles the typed refusal.  test/stage1 has no CSPICE on its link line and
+# never uses this object: it links output/spice_ephemeris.stage1.o, the typed
+# refusal in every configuration (a stage1 link against the CSPICE-backed
+# object failed with undefined erract_c ... str2et_c from 2026-11-26).  The
+# CSPICE-backed path is checked by E3D07
+# (test/event_2013_04_11/run_spice_test.sh) and the application.
 # SEP3D_SPICE_PATH may be set on the make command line; otherwise it is the
 # last SPICE= line of Makefile.local (SPICEKERNELS= does not match).  An empty
 # value or "nospice" keeps the generic output/%.o rule; any other value
@@ -513,20 +526,27 @@ output/spice_ephemeris.o: output/spice_ephemeris.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -DSEP3D_WITH_SPICE -I$(SEP3D_SPICE_PATH)/include -MMD -MP -c -o $@ $<
 endif
 
+# Stage-1 copy of the ephemeris object: the same source and flags as the
+# generic output/%.o rule, never -DSEP3D_WITH_SPICE.  It needs its own rule
+# because output/%.o cannot derive spice_ephemeris.stage1.o from
+# spice_ephemeris.cpp.
+output/spice_ephemeris.stage1.o: output/spice_ephemeris.cpp
+	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
+
 validation/%.o: validation/%.cpp
 	$(CXX) $(STAGE1_CXXFLAGS) -MMD -MP -c -o $@ $<
 
-test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
+test/stage1: check-layering $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(STAGE1_OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
              $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
              $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(PITCH_ANGLE_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
-	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
+	$(CXX) -o $@ $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(STAGE1_OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) \
 	  $(SEP_CORONA_SWCME_ARCHIVE) $(SEP_CORONAL_CME_ARCHIVE) \
 	  $(SEP_COMMON_ARCHIVE) $(PARALLEL_DIFFUSION_ARCHIVE) $(PITCH_ANGLE_DIFFUSION_ARCHIVE) $(SWCME_ARCHIVE)
 	@echo "[srcSEP3D] standalone test binary built: test/stage1"
 
 # Generated dependency files make additions to public option/provider records
 # trigger a complete ABI-consistent standalone rebuild.
--include $(CORE_OBJ:.o=.d) $(BG_OBJ:.o=.d) $(TURBULENCE_OBJ:.o=.d) $(TRANSPORT_OBJ:.o=.d) $(RUNTIME_OBJ:.o=.d) $(ADAPTER_OBJ:.o=.d) $(OUTPUT_OBJ:.o=.d) $(VALIDATION_OBJ:.o=.d) $(STAGE1_TEST_OBJ:.o=.d)
+-include $(CORE_OBJ:.o=.d) $(BG_OBJ:.o=.d) $(TURBULENCE_OBJ:.o=.d) $(TRANSPORT_OBJ:.o=.d) $(RUNTIME_OBJ:.o=.d) $(ADAPTER_OBJ:.o=.d) $(OUTPUT_OBJ:.o=.d) output/spice_ephemeris.stage1.d $(VALIDATION_OBJ:.o=.d) $(STAGE1_TEST_OBJ:.o=.d)
 
 .PHONY: test-stage1 test-harn-unit test-lay-unit test-bld-unit test-util-unit \
         test-life-unit test-configuration-unit test-mesh-unit test-background-unit test-turbulence-unit \
@@ -598,7 +618,7 @@ clean-production:
 	rm -f $(MAINLIBOBJ) $(MAINOBJ) mainlib.a main.a
 
 clean-standalone:
-	rm -f $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) test/stage1
+	rm -f $(CORE_OBJ) $(BG_OBJ) $(TURBULENCE_OBJ) $(TRANSPORT_OBJ) $(RUNTIME_OBJ) $(ADAPTER_OBJ) $(OUTPUT_OBJ) output/spice_ephemeris.stage1.o $(VALIDATION_OBJ) $(STAGE1_TEST_OBJ) test/stage1
 
 .PHONY: help
 help:

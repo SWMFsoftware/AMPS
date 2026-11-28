@@ -24,11 +24,22 @@ ${CXX:-c++} -std=c++11 -Wall -Wextra -Werror -pedantic \
 # accessor fixtures are the separate runtime evidence. A count of two direct
 # conversions in coefficient_providers became invalid when raw SWMF totals
 # acquired their explicit read-only half-energy adapter.
-rg -q 'CP::MagneticVarianceFromEnergyDensity' "$src_dir/coefficient_providers.cpp"
-rg -q 'ReadStandardBatsrusWaveView' "$src_dir/coefficient_providers.cpp"
-rg -q 'InterpolateMagneticView' "$src_dir/standard_batsrus_wave_adapter.cpp"
-rg -q 'CP::MagneticVarianceFromEnergyDensity' "$src_dir/util/sep_standard_batsrus_waves.cpp"
-rg -q 'CoefficientPhysics::MagneticVarianceFromEnergyDensity' "$src_dir/util/sep_turbulence_core.cpp"
+# The lookups use POSIX grep with -F (the symbol is plain text, not a regular
+# expression), not ripgrep: rg is not installed on every test machine, and a
+# missing tool used to stop this script with exit 127 before WN-SOURCE was
+# reported (every nightly from 2026-11-17 to 2026-11-27). A symbol that is
+# absent prints which routing check failed and returns 1.
+require_symbol() {
+  if ! grep -qF -- "$1" "$2"; then
+    echo "FAIL WN-SOURCE: '$1' not found in $2" >&2
+    exit 1
+  fi
+}
+require_symbol 'CP::MagneticVarianceFromEnergyDensity' "$src_dir/coefficient_providers.cpp"
+require_symbol 'ReadStandardBatsrusWaveView' "$src_dir/coefficient_providers.cpp"
+require_symbol 'InterpolateMagneticView' "$src_dir/standard_batsrus_wave_adapter.cpp"
+require_symbol 'CP::MagneticVarianceFromEnergyDensity' "$src_dir/util/sep_standard_batsrus_waves.cpp"
+require_symbol 'CoefficientPhysics::MagneticVarianceFromEnergyDensity' "$src_dir/util/sep_turbulence_core.cpp"
 echo 'PASS WN-SOURCE: local magnetic conversion and typed SWMF-total half-energy routing use the common magnetic formula'
 
 if [ -n "${SRCSEP_REPORT_DIR:-}" ]; then

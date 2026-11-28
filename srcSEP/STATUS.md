@@ -1,6 +1,6 @@
 # srcSEP development status
 
-Last updated: **2026-11-25**. This file tracks the active implementation of
+Last updated: **2026-11-28**. This file tracks the active implementation of
 both DOCX plans and their corrective proposal. **The full development and
 validation program is not complete.** A passing software or isolated-physics
 test does not qualify an unimplemented production path.
@@ -13,6 +13,33 @@ primary requirement inventory is
 the original requirements remain in
 [the development plan](improvement_and_validation_plan.docx) and
 [the validation plan](srcSEP_Physics_Validation_Campaign_Implementation_Plan.docx).
+
+## Self-consistent turbulence decisions, 2026-11-28
+
+The user accepted four decisions for the self-excited (self-consistent)
+Alfvén-turbulence work. Nothing is implemented or qualified by them; the
+production preflight still rejects dependent scattering and local wave
+evolution.
+
+1. **Coupling algorithm:** weighted native particles with the constrained
+   interacting jump approximation; the phase-population finite-volume system
+   only as its independent continuum reference
+   ([design](validation/physics/FINITE_WAVE_ENERGY_COLLISION_DESIGN.md), sections 4, 5, 10).
+2. **Background of the first coupled case:** the approved Stage 12 SWCME1D
+   `SHOCK_ONLY` material profile, not the canonical radial background
+   ([contract review](validation/physics/WAVE_EVOLUTION_CONTRACT_REVIEW.md)).
+   Its native field-line/source/restart admission remains to be qualified.
+3. **Finite wave budgets (Q04):** the stimulated continuum QLT target;
+   budget-feasible targets chosen before hazards, `W=0` absorbing, weight
+   convergence at fixed physical density, and per-particle clocks keeping
+   their residual optical depth. Open: the run-level policy after a typed
+   Unresolved result.
+4. **Retained two-branch model:** a regression baseline only. CV10–CV12 are
+   to be audited against their original gates and run in the routine sep
+   runner; IV06 is to be rewritten with a computed resonance or retired.
+
+Next step, not started: the independent stopped benchmarks and negative
+controls of design section 8.
 
 ## Real-event SEP tests, 2013-04-11 event, 2026-11-25
 
@@ -992,6 +1019,11 @@ has been selected. Component PASS results do not resolve those physical inputs.
 - The dispersion study uses explicitly declared parallel proton/electron
   Maxwellian cases. Report error curves; proposed 1%, 5%, and 10% contour labels
   do not select accepted physical tolerances.
+- 2026-11-28: constrained jump approximation on weighted native particles,
+  with the phase-population system as its reference; continuum QLT budgets
+  with per-particle residual-hazard clocks; the Stage 12 SWCME1D `SHOCK_ONLY`
+  background for the first coupled case; the two-branch model as a
+  regression baseline only. See the dated section at the top of this file.
 
 ## Implemented and verified portions
 

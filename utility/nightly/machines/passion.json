@@ -23,13 +23,15 @@
   "vars": {
     "spice_path": "/home/vtenishe/SPICE/cspice",
     "spice_kernels": "/home/vtenishe/SPICE/Kernels",
+    "spice_lsk": "/home/vtenishe/SPICE/Kernels/NAIF/naif0012.tls",
+    "spice_spk": "/home/vtenishe/SPICE/Kernels/NAIF/de430.bsp",
     "swmf_data": "/data/vtenishe/AMPSTEST/SWMF_data",
     "enceladus_shape_manifest": "/home/vtenishe/Mars2/AMPS/srcEnceladus/test/data/shape_manifest.json",
     "enceladus_validation_data": "/data/vtenishe/cassini_validation_data",
     "sep_validation_data": "/data/vtenishe/sep_validation_data",
     "sep_python_path": "/data/vtenishe/sep_validation_data/tools/python"
   },
-  "_vars_note": "sep_validation_data holds the raw observational archives of the SEP real-event tests (event_2013_04_11/, SHA256SUMS there); sep_python_path is cdflib 1.2.6 unpacked from its PyPI wheel (SHA-256 checked against PyPI) for prepare_event.py check. swmf_data is the nightly's own copy: amps_nightly_test.sh resets it to the newest SWMF_data commit each night (tests edit reference files in it). enceladus_shape_manifest is temporary: the file is excluded from git by the .gitignore pattern 'data' (to decide 2026-11-15)",
+  "_vars_note": "spice_lsk and spice_spk are the leap-seconds kernel and the planetary SPK (Earth and Sun states) of the sep3d-event-spice runner (E3D07, srcSEP3D/test/event_2013_04_11/run_spice_test.sh); a machine without them skips that runner. sep_validation_data holds the raw observational archives of the SEP real-event tests (event_2013_04_11/, SHA256SUMS there); sep_python_path is cdflib 1.2.6 unpacked from its PyPI wheel (SHA-256 checked against PyPI) for prepare_event.py check. swmf_data is the nightly's own copy: amps_nightly_test.sh resets it to the newest SWMF_data commit each night (tests edit reference files in it). enceladus_shape_manifest is temporary: the file is excluded from git by the .gitignore pattern 'data' (to decide 2026-11-15)",
   "make_vars": {"MPIRUN": "mpirun -np 8", "TESTMPIRUN4": "mpirun -np 4", "TESTMPIRUN1": "mpirun -np 1"},
   "lanes": 4,
   "_lanes_note": "4 Makefile.test runs at once (most use 8 MPI ranks): 32 ranks on 36 cores. With 10 lanes (80 ranks) the long tests ran 2-3 times slower and magnetic-reconnection, fast-wave_rebalancing and CG-dust hit the 2-hour limit (2026-11-14/15); OpenMP threads per rank: makefile_runner.OMP_THREADS",
