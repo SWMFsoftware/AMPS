@@ -27,6 +27,22 @@ namespace {
 
 namespace fs = std::filesystem;
 
+// Only installation reads assets. Retain the exact prepared bytes throughout
+// that transaction; observation readers never reopen a verified path.
+const ResolvedRun* gPreparingRun=nullptr;
+double gCellDiagonalPerMaximumEdge=std::sqrt(3.0);
+Status SelectedAsset(const std::string& path,std::string* bytes) {
+  if(gPreparingRun) {
+    const auto found=gPreparingRun->assetBytes.find(path);
+    if(found==gPreparingRun->assetBytes.end())return Status::Error("asset missing from prepared snapshot: "+path);
+    *bytes=found->second;return Status::Ok();
+  }
+  std::ifstream f(path,std::ios::binary);
+  if(!f)return Status::Error("cannot read selected asset: "+path);
+  std::ostringstream buffer;buffer<<f.rdbuf();
+  if(f.bad())return Status::Error("failed selected asset read: "+path);
+  *bytes=buffer.str();return Status::Ok();
+}
 bool gInstalled = false;
 bool gNumericsFinalized = false;
 Configuration gConfiguration;
@@ -187,7 +203,10 @@ Status LoadObservation(const ObservationRequest& request,
                        LoadedObservation* output) {
   output->request = request;
   output->points.clear();
-  std::ifstream input(request.dataFile);
+  std::string inputBytes;
+  const auto inputStatus=SelectedAsset(request.dataFile,&inputBytes);
+  if(!inputStatus.success)return inputStatus;
+  std::istringstream input(inputBytes);
   if (!input)
     return Status::Error("cannot open observation data_file: " +
                          request.dataFile);
@@ -359,7 +378,10 @@ Status LoadObservation(const ObservationRequest& request,
     return Status::Ok();
   }
 
-  std::ifstream observer(request.observerGeometryFile);
+  std::string observerBytes;
+  const auto observerStatus=SelectedAsset(request.observerGeometryFile,&observerBytes);
+  if(!observerStatus.success)return observerStatus;
+  std::istringstream observer(observerBytes);
   if (!observer)
     return Status::Error("cannot open observer_geometry_file: " +
                          request.observerGeometryFile);
@@ -436,7 +458,10 @@ Status LoadObservation(const ObservationRequest& request,
 Status LoadFlybyTrajectory(const Configuration& configuration,
                            std::vector<FlybyPoint>* output) {
   output->clear();
-  std::ifstream input(configuration.flybyTrajectoryFile);
+  std::string inputBytes;
+  const auto inputStatus=SelectedAsset(configuration.flybyTrajectoryFile,&inputBytes);
+  if(!inputStatus.success)return inputStatus;
+  std::istringstream input(inputBytes);
   if (!input)
     return Status::Error("cannot open flyby_trajectory_file: " +
                          configuration.flybyTrajectoryFile);
@@ -1119,24 +1144,19 @@ void OutputAllObservationProducts(int dataOutputFileNumber) {
 
 }  // namespace
 
-bool InstallFromInput(const std::string& inputFile, std::string* error) {
-  if (gInstalled) {
-    if (error != nullptr) *error = "Enceladus runtime configuration is already installed";
-    return false;
-  }
-  Configuration configuration;
-  Status status = ParseConfiguration(inputFile, &configuration);
-  if (!status.success) {
-    if (error != nullptr) *error = status.message;
-    return false;
-  }
-  SourceDistribution distribution;
-  status = ParseSourceDistribution(configuration.sourceDistributionFile,
-                                   &distribution);
-  if (!status.success) {
-    if (error != nullptr) *error = status.message;
-    return false;
-  }
+bool InstallFromInput(const std::string& inputFile,std::string* error) {
+  RuntimeSelection selection;selection.inputFile=inputFile;ResolvedRun prepared;
+  const auto status=ResolveRun(selection,"",&prepared);
+  if(!status.success){if(error)*error=status.message;return false;}
+  return InstallPreparedRun(prepared,error);
+}
+
+bool InstallPreparedRun(const ResolvedRun& prepared,std::string* error) {
+  if(gInstalled) {if(error)*error="Enceladus runtime configuration is already installed";return false;}
+  struct Guard {Guard(const ResolvedRun& r){gPreparingRun=&r;} ~Guard(){gPreparingRun=nullptr;}} guard(prepared);
+  Configuration configuration=prepared.configuration;
+  SourceDistribution distribution=prepared.distribution;
+  Status status;
   status = ValidateConfiguration(configuration, distribution);
   if (!status.success) {
     if (error != nullptr) *error = status.message;
@@ -1264,6 +1284,44 @@ bool InstallFromInput(const std::string& inputFile, std::string* error) {
 
 bool IsInstalled() { return gInstalled; }
 
+bool RuntimeMeshEnabled() {return gInstalled&&gConfiguration.mesh.explicitConfiguration;}
+Status ConfigureMeshMetric(const double* minimum,const double* maximum) {
+  const double counts[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  double maximumEdge=0,diagonal2=0;
+  for(int d=0;d<3;++d) {
+    const double width=(maximum[d]-minimum[d])/counts[d];
+    if(!(width>0)||!std::isfinite(width))return Status::Error("mesh root-cell widths must be finite and positive");
+    maximumEdge=std::max(maximumEdge,width);diagonal2+=width*width;
+  }
+  gCellDiagonalPerMaximumEdge=std::sqrt(diagonal2)/maximumEdge;
+  if(!std::isfinite(gCellDiagonalPerMaximumEdge))return Status::Error("invalid mesh cell aspect ratio");
+  return ValidateMeshCapabilities(gConfiguration.mesh,_RADIUS_(_TARGET_),
+      Vec3{double(counts[0]),double(counts[1]),double(counts[2])},_MAX_REFINMENT_LEVEL_,
+      gConfiguration.flybyMeshRefinement?gConfiguration.flybyRefinementTargetCellSizeM:0);
+}
+double RuntimeMeshResolution(const double* position,bool surface) {
+  const double edge=MeshCellSizeAt(gConfiguration.mesh,Vec3{position[0],position[1],position[2]},surface);
+  return RequestedMeshResolution(position,edge*gCellDiagonalPerMaximumEdge);
+}
+bool RuntimeNodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  if(!RuntimeMeshEnabled())return false;
+  const Vec3 lo{node->xmin[0],node->xmin[1],node->xmin[2]};
+  const Vec3 hi{node->xmax[0],node->xmax[1],node->xmax[2]};
+  double target=MeshCellSizeForBox(gConfiguration.mesh,lo,hi,_RADIUS_(_TARGET_));
+  if(gConfiguration.flybyMeshRefinement) {
+    const double radius2=gConfiguration.flybyRefinementRadiusM*gConfiguration.flybyRefinementRadiusM;
+    for(std::size_t i=1;i<gFlybyRefinementTrajectory.size();++i) {
+      const auto& a=gFlybyRefinementTrajectory[i-1];const auto& b=gFlybyRefinementTrajectory[i];
+      if(SegmentBoxDistanceSquared(Vec3{a.positionM[0],a.positionM[1],a.positionM[2]},
+          Vec3{b.positionM[0],b.positionM[1],b.positionM[2]},lo,hi)<=radius2) {
+        target=std::min(target,gConfiguration.flybyRefinementTargetCellSizeM);break;
+      }
+    }
+  }
+  const double edge=std::max({(hi.x-lo.x)/_BLOCK_CELLS_X_,(hi.y-lo.y)/_BLOCK_CELLS_Y_,(hi.z-lo.z)/_BLOCK_CELLS_Z_});
+  return edge>std::nextafter(target,std::numeric_limits<double>::infinity());
+}
+
 double RequestedMeshResolution(const double* position,
                                double legacyResolutionM) {
   if (!gInstalled || !gConfiguration.flybyMeshRefinement ||
@@ -1308,7 +1366,7 @@ double RequestedMeshResolution(const double* position,
   // a Cartesian cell, whereas the input parameter is the more user-facing
   // maximum edge width. Multiplication by sqrt(3) is therefore the exact
   // isotropic conversion. Dyadic AMR may produce a smaller actual edge.
-  const double requestedDiagonal = std::sqrt(3.0) *
+  const double requestedDiagonal = gCellDiagonalPerMaximumEdge *
       gConfiguration.flybyRefinementTargetCellSizeM;
   return std::min(legacyResolutionM, requestedDiagonal);
 }
@@ -1436,6 +1494,18 @@ void FinalizeNumericsAfterMeshAllocation() {
       !gConfiguration.volumeFieldOutput)
     PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(
         FlybySamplingNoOp, OutputAllObservationProducts);
+  // reproducible_parallel_run=true removes both load-dependent inputs to the
+  // particle histories of a multi-rank run (core switches, pic.h): it keeps
+  // the decomposition made at mesh initialization (the core otherwise moves
+  // blocks by measured wall-clock time) and sorts every cell's particle list
+  // by particle signature after each exchange (received particles otherwise
+  // enter the lists, and draw random numbers, in message-arrival order).
+  // Every rank holds the same validated configuration, so both switches are
+  // set identically everywhere before the first time step.
+  PIC::Parallel::DynamicLoadRebalancingEnabled =
+      !gConfiguration.reproducibleParallelRun;
+  PIC::Parallel::DeterministicParticleExchangeOrder =
+      gConfiguration.reproducibleParallelRun;
   gNumericsFinalized = true;
   PrintReceipt();
 }
@@ -1691,6 +1761,8 @@ void PrintReceipt() {
       << (gConfiguration.volumeFieldOutput ? "on" : "off")
       << " flyby_density_output="
       << (gConfiguration.flybyDensityOutput ? "on" : "off")
+      << " reproducible_parallel_run="
+      << (gConfiguration.reproducibleParallelRun ? "on" : "off")
       << " observation_requests=" << gObservations.size()
       << " plasma_back_coupling=off\n";
   if (gConfiguration.flybyDensityOutput)

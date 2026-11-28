@@ -1,0 +1,387 @@
+! Named cases consume complete source data; fitting methods are not runtime controls.
+! Configure the root with Config.pl -model-data-path=/absolute/path/to/studies.
+! This example source set initially contains the explicitly selected E3 H2O case.
+! Other declared cases remain MISSING_PUBLICATION until their source files are selected upstream.
+! All lengths/cell widths are metres in IAU_ENCELADUS. Mesh controls below are independent of TESTMODE.
+! Numerical settings retain the prior user controls; this is not a convergence qualification.
+#begin application: enceladus
+schema_version=3
+source_set=enceladus_sources_20261113
+reaction_products=discard
+solar_activity=active
+plasma_background_mode=none
+sample_length_steps=1000
+total_iterations=10000
+volume_field_output=false
+particle_splitting_merging=off
+random_seed=184467
+mesh.domain_min_m=-1260500,-1260500,-1260500
+mesh.domain_max_m=1260500,1260500,1260500
+mesh.background_cell_size_m=600000
+mesh.surface_cell_size_north_m=300000
+mesh.surface_cell_size_south_m=150000
+mesh.south_polar_half_angle_deg=45
+mesh.south_polar_cell_size_m=300000
+
+#begin case: E3--tenishev2014_hybrid_8
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=true
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+#end case
+
+#begin case: E3--porco2014_98
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=true
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+#end case
+
+#begin case: E3--portyankina2022_solar_41
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=true
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+#end case
+
+#begin case: E3--porco2014_98_plus_e17_candidate
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=true
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+#end case
+
+#begin case: E5--tenishev2014_hybrid_8
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E5--porco2014_98
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E5--portyankina2022_solar_41
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E5--porco2014_98_plus_e17_candidate
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E14--tenishev2014_hybrid_8
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E14--porco2014_98
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E14--portyankina2022_solar_41
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E14--porco2014_98_plus_e17_candidate
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E17--tenishev2014_hybrid_8
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E17--porco2014_98
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E17--portyankina2022_solar_41
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E17--porco2014_98_plus_e17_candidate
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E18--tenishev2014_hybrid_8
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E18--porco2014_98
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E18--portyankina2022_solar_41
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: E18--porco2014_98_plus_e17_candidate
+simulated_species=CO2
+injected_species=CO2
+chemistry_species=none
+selected_reactions=none
+primary_macroparticles_per_step.CO2=100
+characteristic_speed.CO2_m_s-1=300
+courant.CO2=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2007_zeta_orionis--tenishev2014_hybrid_8
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2007_zeta_orionis--porco2014_98
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2007_zeta_orionis--portyankina2022_solar_41
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2007_zeta_orionis--porco2014_98_plus_e17_candidate
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2010_e10_solar--tenishev2014_hybrid_8
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2010_e10_solar--porco2014_98
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2010_e10_solar--portyankina2022_solar_41
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#begin case: uvis_2010_e10_solar--porco2014_98_plus_e17_candidate
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+flyby_density_output=false
+flyby_mesh_refinement=false
+#end case
+
+#end application
+
+! Optional local refinement; add inside the application/common or selected case:
+! #begin refinement: plume_shell
+! geometry=shell
+! center_m=0,0,0
+! inner_radius_m=252100
+! outer_radius_m=400000
+! cell_size_m=20000
+! #end refinement

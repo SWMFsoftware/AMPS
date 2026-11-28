@@ -2,6 +2,7 @@
 #define SRCENCELADUS_FORWARD_MODEL_AMPS_H
 
 #include "ForwardModel.h"
+#include "SourceCatalog.h"
 #include "pic.h"
 
 #include <string>
@@ -13,6 +14,7 @@ namespace AMPS {
 // Parse and transactionally install the immutable runtime/source receipts.
 // This must be called before PIC::InitMPI().
 bool InstallFromInput(const std::string& inputFile, std::string* error);
+bool InstallPreparedRun(const ResolvedRun&, std::string* error);
 bool IsInstalled();
 const Configuration& InstalledConfiguration();
 const SourceDistribution& InstalledDistribution();
@@ -25,6 +27,12 @@ const NumericalPlan& InstalledNumericalPlan();
 // resolution is preserved exactly.
 double RequestedMeshResolution(const double* position,
                                double legacyResolutionM);
+// Root-cell aspect ratio converts max-edge requests into the AMR diagonal
+// metric without assuming cubic domains. Capability checks precede allocation.
+Status ConfigureMeshMetric(const double* minimum,const double* maximum);
+bool RuntimeMeshEnabled();
+double RuntimeMeshResolution(const double* position,bool surface);
+bool RuntimeNodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
 
 // Called after the final distributed AMR blocks exist. It scans the actual
 // allocated minimum cell width, computes the single global Courant step and

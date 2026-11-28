@@ -5,6 +5,18 @@ long-term staged science gates below remain open. The bounded one-rank E3
 neutral/parent-loss execution gate now passes, but it is not a converged or
 observationally validated science run.
 
+**Later status (pointer, 2026-11-13).** The 2026-11-01 block below is kept as
+a dated record; its check counts and blocker list are no longer current.
+`STATUS.md` is the authoritative ledger. Since that block, fitted sources are
+exported automatically for all four source bases (2026-11-11 campaign,
+`FITTING_CAMPAIGN_111126.md`). The `measurement--basis` case runner and
+runtime mesh controls are implemented, with 45 application-independent checks
+and a 77-check combined campaign passing. One real prescription
+(`E3--tenishev2014_hybrid_8`, independent H2O fit) is published, and bounded
+one- and four-rank native runs exercise MPI validation and injection
+ownership. Physical E3/E5 CO2 remains deferred. Mesh/timestep/particle/seed
+convergence and observational validation remain open.
+
 ### 2026-11-01 bounded forward-model implementation status
 
 Implemented:

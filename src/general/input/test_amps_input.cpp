@@ -13,6 +13,7 @@
 // ============================================================================
 
 #include "amps_input.h"
+#include "amps_input_digest.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -273,6 +274,28 @@ Outcome CaseSelection() {
 
 }  // namespace
 
+Outcome Digests() {
+  using AMPS::InputDigest::Sha256Hex;
+  // Published standard SHA-256 vectors, independent of the production
+  // implementation. A million-byte case spans many compression blocks.
+  if(Sha256Hex("")!="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")return Fail("empty digest");
+  if(Sha256Hex("abc")!="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")return Fail("abc digest");
+  if(Sha256Hex(std::string(1000000,'a'))!="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")return Fail("long digest");
+  return Pass();
+}
+Outcome ByteSnapshots() {
+  const std::string text="! preserve exact bytes\r\n#begin fixture\r\nx = 3\r\n#end fixture\r\n";
+  In::Document document;
+  auto s=In::ParseText(text,"snapshot.in",".",&document);
+  if(!s.ok())return Fail(s.message);
+  if(document.sourceBytes.at("snapshot.in")!=text)return Fail("parsed bytes were normalized or lost");
+  const auto first=In::ToCanonicalText(document.root);
+  // The retained raw bytes are provenance, not another serialization rule.
+  In::Document other;s=In::ParseText(first,"canonical.in",".",&other);
+  if(!s.ok()||In::ToCanonicalText(other.root)!=first)return Fail("snapshot changed grammar/canonicalization");
+  return Pass();
+}
+
 int main(int argc, char** argv) {
   struct Test {
     std::string id;
@@ -290,6 +313,8 @@ int main(int argc, char** argv) {
        CanonicalAndOwnership},
       {"INP-05", "explicit named-case overlays and selector diagnostics",
        CaseSelection},
+      {"INP-06", "standard SHA-256 identity vectors", Digests},
+      {"INP-07", "exact parsed byte snapshots preserve canonical grammar", ByteSnapshots},
   };
 
   // Keep this dependency-light program's selection contract aligned with the

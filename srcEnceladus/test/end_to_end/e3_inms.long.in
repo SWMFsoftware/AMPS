@@ -1,0 +1,87 @@
+! E3 flyby: AMPS H2O density compared with INMS (long tier, 10000 steps).
+! Table test Enceladus--E3-INMS-long (MakefileTest/Table).
+! Source basis tenishev2014_hybrid_8 (8 jets + 7 stripes), mode=absolute:
+! the H2O source rates fitted to the E3 INMS profile alone (independent fit;
+! total 3.142482e28 molecules/s).
+!
+! Physics and numerics copy the production case of input/enceladus_cases.in
+! (E3--tenishev2014_hybrid_8): H2O only, active-Sun Burger (2007) parent-loss
+! photolysis with discarded products, no plasma, 100 primaries per step,
+! 300 m/s characteristic speed and Courant 0.5, seed 184467, no split/merge,
+! and the explicit runtime mesh below (it makes the mesh independent of the
+! compile-time nightly test mode). Only total_iterations differs between the
+! nightly (5000 steps) and long (10000 steps) decks; sampling windows
+! are 1000 steps, so the nightly run writes 5 and the long run 10
+! comparison zones.
+!
+! Every relative path resolves against this deck's directory. The fitted
+! source distribution and the observations are the SWMF_data copies under
+! data/input/Enceladus/ (README.md and SHA256SUMS there); the AMPS root
+! links data/ to SWMF_data/PT/AMPS/data.
+! This is a regression and comparison test, not a convergence or
+! validation claim (srcEnceladus/test/end_to_end/README.md).
+
+#begin application: enceladus
+schema_version=2
+source_distribution_file=../../../data/input/Enceladus/fitted_plume/tenishev2014_hybrid_8__independent_each_observation__E3__H2O__absolute.in
+
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+reaction_products=discard
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+plasma_background_mode=none
+
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+
+sample_length_steps=1000
+total_iterations=10000
+volume_field_output=false
+random_seed=184467
+particle_splitting_merging=off
+! Reproducible multi-rank run: keep the initial domain decomposition (no
+! wall-clock-driven load rebalancing) and sort the cell particle lists after
+! every exchange (no dependence on MPI message arrival order). This seed and
+! rank count then reproduce exactly, which the regression check requires
+! (srcEnceladus/RUNTIME_INPUT.md).
+reproducible_parallel_run=true
+
+! Runtime mesh of the production cases: SI metres, IAU_ENCELADUS.
+mesh.domain_min_m=-1260500,-1260500,-1260500
+mesh.domain_max_m=1260500,1260500,1260500
+mesh.background_cell_size_m=600000
+mesh.surface_cell_size_north_m=300000
+mesh.surface_cell_size_south_m=150000
+mesh.south_polar_half_angle_deg=45
+mesh.south_polar_cell_size_m=300000
+
+! Dense E3 flyby density product and the production 150 km tube of
+! <=20 km cells around the in-domain E3 track (realized 15.75625 km edges).
+flyby_density_output=true
+flyby_id=E3
+flyby_trajectory_file=../../standalone/figure_data/e3_spice_ground_track.csv
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+
+observation_data_root=../../../data/input/Enceladus/observation_files
+
+! INMS: completed time-averaged H2O density at the E3 spacecraft positions.
+#begin observation: inms_e3_h2o
+instrument=INMS
+event_id=E3
+data_file=e3_h2o_sticking_corrected.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=H2O
+value_column=density_m3
+uncertainty_column=sigma_m3
+#end observation
+#end application

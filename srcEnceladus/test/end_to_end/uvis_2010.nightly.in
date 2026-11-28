@@ -1,0 +1,78 @@
+! UVIS 2010 E10 solar occultation: AMPS H2O column compared with UVIS (nightly tier, 5000 steps).
+! Table test Enceladus--UVIS-2010 (MakefileTest/Table).
+! Source basis tenishev2014_hybrid_8 (8 jets + 7 stripes), mode=absolute:
+! the H2O source rates fitted to the 2010 E10 solar occultation alone
+! (independent fit; total 4.576082e27 molecules/s).
+!
+! Physics and numerics copy the production case of input/enceladus_cases.in
+! (uvis_2010_e10_solar--tenishev2014_hybrid_8): H2O only, active-Sun Burger (2007) parent-loss
+! photolysis with discarded products, no plasma, 100 primaries per step,
+! 300 m/s characteristic speed and Courant 0.5, seed 184467, no split/merge,
+! and the explicit runtime mesh below (it makes the mesh independent of the
+! compile-time nightly test mode). Only total_iterations differs between the
+! nightly (5000 steps) and long (10000 steps) decks; sampling windows
+! are 1000 steps, so the nightly run writes 5 and the long run 10
+! comparison zones.
+!
+! Every relative path resolves against this deck's directory. The fitted
+! source distribution and the observations are the SWMF_data copies under
+! data/input/Enceladus/ (README.md and SHA256SUMS there); the AMPS root
+! links data/ to SWMF_data/PT/AMPS/data.
+! This is a regression and comparison test, not a convergence or
+! validation claim (srcEnceladus/test/end_to_end/README.md).
+
+#begin application: enceladus
+schema_version=2
+source_distribution_file=../../../data/input/Enceladus/fitted_plume/tenishev2014_hybrid_8__independent_each_observation__uvis_2010_e10_solar__H2O__absolute.in
+
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+reaction_products=discard
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+plasma_background_mode=none
+
+primary_macroparticles_per_step.H2O=100
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+
+sample_length_steps=1000
+total_iterations=5000
+volume_field_output=false
+random_seed=184467
+particle_splitting_merging=off
+! Reproducible multi-rank run: keep the initial domain decomposition (no
+! wall-clock-driven load rebalancing) and sort the cell particle lists after
+! every exchange (no dependence on MPI message arrival order). This seed and
+! rank count then reproduce exactly, which the regression check requires
+! (srcEnceladus/RUNTIME_INPUT.md).
+reproducible_parallel_run=true
+
+! Runtime mesh of the production cases: SI metres, IAU_ENCELADUS.
+mesh.domain_min_m=-1260500,-1260500,-1260500
+mesh.domain_max_m=1260500,1260500,1260500
+mesh.background_cell_size_m=600000
+mesh.surface_cell_size_north_m=300000
+mesh.surface_cell_size_south_m=150000
+mesh.south_polar_half_angle_deg=45
+mesh.south_polar_cell_size_m=300000
+
+! No flyby product or tube, as in the production UVIS case.
+flyby_density_output=false
+flyby_mesh_refinement=false
+
+observation_data_root=../../../data/input/Enceladus/observation_files
+
+! UVIS: H2O column along each finite observer-to-Sun ray; the published
+! peak column sets the separate absolute-scale test.
+#begin observation: uvis_2010_e10_solar
+instrument=UVIS
+event_id=uvis_2010_e10_solar
+data_file=uvis_2010_e10_solar_optical_depth.csv
+ray_geometry=finite_observer_to_sun
+observer_geometry_file=uvis_2010_e10_solar_observer_range.csv
+published_h2o_column_m-2=9.0e19
+published_h2o_column_sigma_m-2=2.3e19
+#end observation
+#end application

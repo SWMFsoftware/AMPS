@@ -4,7 +4,7 @@ DEFAULT_TARGET : lib
 
 include ../../Makefile.conf
 
-MAINLIBOBJ = plume.o Enceladus.o ForwardModel.o ForwardModelAMPS.o main_lib.o
+MAINLIBOBJ = plume.o Enceladus.o ForwardModel.o MeshControls.o CaseSelection.o SourceCatalog.o ForwardModelAMPS.o main_lib.o
 MAINOBJ = main.o
 
 lib : $(MAINLIBOBJ)

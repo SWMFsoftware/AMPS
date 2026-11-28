@@ -597,12 +597,89 @@ const char* Name(UvisRayGeometry geometry) {
       ? "infinite_chord_tangent_track_normal" : "finite_observer_to_sun";
 }
 
-Status ParseSourceDistribution(const std::string& file,
-                               SourceDistribution* output) {
-  if (output == nullptr) return Status::Error("source distribution output is null");
-  AMPS::Input::Document document;
-  const AMPS::Input::Status parsed = AMPS::Input::ParseFile(file, &document);
-  if (!parsed.ok()) return Status::Error(parsed.message);
+namespace {
+Status ParseRuntimeMesh(const AMPS::Input::Block& block,MeshControls* output) {
+  MeshControls mesh;
+  const auto fields=AssignmentMap(block);
+  const std::set<std::string> allowed={"mesh.domain_min_m","mesh.domain_max_m",
+    "mesh.background_cell_size_m","mesh.surface_cell_size_north_m",
+    "mesh.surface_cell_size_south_m","mesh.south_polar_half_angle_deg",
+    "mesh.south_polar_cell_size_m"};
+  auto vector=[&](const AMPS::Input::Assignment& item,Vec3* v) {
+    const auto parts=ParseList(item.value);
+    if(parts.size()!=3)return InputError(item,"expected three comma-separated finite SI coordinates");
+    if(!ParseFinite(parts[0],&v->x)||!ParseFinite(parts[1],&v->y)||!ParseFinite(parts[2],&v->z))
+      return InputError(item,"coordinates must be finite");
+    return Status::Ok();
+  };
+  for(const auto& field:fields)if(field.first.rfind("mesh.",0)==0) {
+    if(!allowed.count(field.first))return InputError(*field.second,"unknown runtime mesh key '"+field.first+"'");
+    mesh.explicitConfiguration=true;
+  }
+  for(const auto& child:block.blocks)if(child.kind=="refinement")mesh.explicitConfiguration=true;
+  if(!mesh.explicitConfiguration){*output=mesh;return Status::Ok();}
+  for(const std::string key:{"mesh.domain_min_m","mesh.domain_max_m","mesh.background_cell_size_m"})
+    if(!fields.count(key))return BlockError(block,"explicit runtime mesh requires "+key);
+  auto status=vector(*fields.at("mesh.domain_min_m"),&mesh.minimumM);
+  if(!status.success)return status;
+  status=vector(*fields.at("mesh.domain_max_m"),&mesh.maximumM);
+  if(!status.success)return status;
+  const double minimum[]={mesh.minimumM.x,mesh.minimumM.y,mesh.minimumM.z};
+  const double maximum[]={mesh.maximumM.x,mesh.maximumM.y,mesh.maximumM.z};
+  for(int d=0;d<3;++d)if(!(maximum[d]>minimum[d])||!std::isfinite(maximum[d]-minimum[d]))
+    return BlockError(block,"runtime domain bounds must have finite positive extents");
+  for(auto entry:std::vector<std::pair<std::string,double*>>{
+      {"mesh.background_cell_size_m",&mesh.backgroundCellSizeM},
+      {"mesh.surface_cell_size_north_m",&mesh.northSurfaceCellSizeM},
+      {"mesh.surface_cell_size_south_m",&mesh.southSurfaceCellSizeM},
+      {"mesh.south_polar_half_angle_deg",&mesh.polarHalfAngleDeg},
+      {"mesh.south_polar_cell_size_m",&mesh.polarCellSizeM}}) {
+    const auto found=fields.find(entry.first);
+    if(found!=fields.end()&&!ParsePositive(found->second->value,entry.second))
+      return InputError(*found->second,"mesh sizes/angle must be finite and positive");
+  }
+  if((mesh.northSurfaceCellSizeM>0)!=(mesh.southSurfaceCellSizeM>0))
+    return BlockError(block,"both north and south surface cell sizes are required together");
+  if((mesh.polarHalfAngleDeg>0)!=(mesh.polarCellSizeM>0)||mesh.polarHalfAngleDeg>=90)
+    return BlockError(block,"south-polar cell size and angle in (0,90) must be specified together");
+  for(const auto& child:block.blocks)if(child.kind=="refinement") {
+    if(child.name.empty())return BlockError(child,"refinement region requires a name");
+    const auto keys=AssignmentMap(child);
+    status=RequireKeys(child,keys,{"geometry","cell_size_m"});
+    if(!status.success)return status;
+    if(!child.blocks.empty())return BlockError(child,"refinement does not accept child blocks");
+    RefinementRegion r;r.id=child.name;
+    if(!ParsePositive(keys.at("cell_size_m")->value,&r.cellSizeM))return BlockError(child,"refinement cell size must be positive");
+    std::set<std::string> legal={"geometry","cell_size_m"};
+    const auto kind=Unquote(keys.at("geometry")->value);
+    if(kind=="box") {
+      r.geometry=RefinementRegion::Geometry::Box;
+      legal.insert("min_m");legal.insert("max_m");
+      status=RequireKeys(child,keys,{"min_m","max_m"});if(!status.success)return status;
+      status=vector(*keys.at("min_m"),&r.minimumM);if(!status.success)return status;
+      status=vector(*keys.at("max_m"),&r.maximumM);if(!status.success)return status;
+      if(!(r.maximumM.x>r.minimumM.x&&r.maximumM.y>r.minimumM.y&&r.maximumM.z>r.minimumM.z))
+        return BlockError(child,"refinement box must have positive extents");
+    } else if(kind=="sphere"||kind=="shell") {
+      r.geometry=kind=="sphere"?RefinementRegion::Geometry::Sphere:RefinementRegion::Geometry::Shell;
+      legal.insert("center_m");legal.insert(kind=="sphere"?"radius_m":"outer_radius_m");
+      if(kind=="shell")legal.insert("inner_radius_m");
+      for(const auto& key:legal)if(!keys.count(key))return BlockError(child,"missing refinement key "+key);
+      status=vector(*keys.at("center_m"),&r.centerM);if(!status.success)return status;
+      if(!ParsePositive(keys.at(kind=="sphere"?"radius_m":"outer_radius_m")->value,&r.outerRadiusM))
+        return BlockError(child,"outer/radius must be finite and positive");
+      if(kind=="shell"&&(!ParseNonnegative(keys.at("inner_radius_m")->value,&r.innerRadiusM)||r.innerRadiusM>=r.outerRadiusM))
+        return BlockError(child,"shell radii require 0 <= inner < outer");
+    } else return BlockError(child,"refinement geometry must be box, sphere or shell");
+    for(const auto& key:keys)if(!legal.count(key.first))return InputError(*key.second,"unknown refinement key "+key.first);
+    mesh.regions.push_back(r);
+  }
+  *output=std::move(mesh);return Status::Ok();
+}
+
+Status ParseSourceDocument(const AMPS::Input::Document& document,
+                           const std::string& file,SourceDistribution* output) {
+  if(output==nullptr)return Status::Error("source distribution output is null");
   AMPS::Input::Status generic = AMPS::Input::RequireNoAssignments(document.root);
   if (!generic.ok()) return Status::Error(generic.message);
   generic = AMPS::Input::RequireOnlyBlocks(
@@ -723,6 +800,25 @@ Status ParseSourceDistribution(const std::string& file,
   return Status::Ok();
 }
 
+} // namespace
+
+Status ParseSourceDistribution(const std::string& file,SourceDistribution* output) {
+  AMPS::Input::Document document;
+  const auto parsed=AMPS::Input::ParseFile(file,&document);
+  if(!parsed.ok())return Status::Error(parsed.message);
+  return ParseSourceDocument(document,file,output);
+}
+Status ParseSourceDistributionText(const std::string& bytes,const std::string& file,
+                                   SourceDistribution* output) {
+  AMPS::Input::Document document;
+  const auto parsed=AMPS::Input::ParseText(bytes,file,fs::path(file).parent_path().string(),&document);
+  if(!parsed.ok())return Status::Error(parsed.message);
+  // Published sources must be self-contained; otherwise the verified bytes
+  // would not bind geometry hidden in a subsequently opened include file.
+  if(document.files.size()!=1)return Status::Error("published sources must not use #include");
+  return ParseSourceDocument(document,file,output);
+}
+
 Status ParseConfiguration(const std::string& file, Configuration* output) {
   if (output == nullptr) return Status::Error("configuration output is null");
   AMPS::Input::Document document;
@@ -737,10 +833,17 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
   }
   if (block == nullptr)
     return Status::Error(file + ": required '#begin application: enceladus' block not found");
+  return ParseResolvedConfiguration(*block,file,output);
+}
+
+Status ParseResolvedConfiguration(const AMPS::Input::Block& resolved,
+                                 const std::string& file,Configuration* output) {
+  if(output==nullptr)return Status::Error("configuration output is null");
+  const AMPS::Input::Block* block=&resolved;
   for (const AMPS::Input::Block& child : block->blocks)
-    if (child.kind != "observation")
+    if (child.kind != "observation" && child.kind != "refinement")
       return BlockError(child,
-          "application: enceladus accepts only observation child blocks");
+          "application: enceladus accepts only observation/refinement child blocks");
   const auto settings = AssignmentMap(*block);
   const std::vector<std::string> required = {
       "schema_version", "source_distribution_file", "simulated_species",
@@ -757,10 +860,14 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
   const fs::path inputPath = fs::absolute(file, ec).lexically_normal();
   candidate.inputFile = ec ? file : inputPath.string();
   long schema = 0;
-  if (!ParsePositiveLong(settings.at("schema_version")->value, &schema) || schema != 2)
+  if (!ParsePositiveLong(settings.at("schema_version")->value, &schema) || (schema != 2 && schema != 3))
     return InputError(*settings.at("schema_version"),
-                      "only application schema_version=2 is supported");
-  candidate.schemaVersion = 2;
+                      "only application schema_version=2 or 3 is supported");
+  candidate.schemaVersion = static_cast<int>(schema);
+  status = ParseRuntimeMesh(*block,&candidate.mesh);
+  if(!status.success)return status;
+  if(schema==3&&!candidate.mesh.explicitConfiguration)
+    return BlockError(*block,"schema 3 requires explicit runtime domain/background mesh controls");
   status = ResolveInputPath(inputPath, settings.at("source_distribution_file")->value,
                             &candidate.sourceDistributionFile);
   if (!status.success) return InputError(*settings.at("source_distribution_file"), status.message);
@@ -832,6 +939,7 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
     const std::string& key = entry.first;
     const AMPS::Input::Assignment& item = *entry.second;
     if (std::find(required.begin(), required.end(), key) != required.end()) continue;
+    if (key.rfind("mesh.",0)==0) continue;
     if (key == "plasma_cache_directory" || key == "observation_data_root")
       continue;
     double scalar = 0.0;
@@ -897,6 +1005,9 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
     } else if (key == "volume_field_output") {
       if (!ParseBoolean(item.value, &candidate.volumeFieldOutput))
         return InputError(item, key + " must be true or false");
+    } else if (key == "reproducible_parallel_run") {
+      if (!ParseBoolean(item.value, &candidate.reproducibleParallelRun))
+        return InputError(item, key + " must be true or false");
     } else if (key == "flyby_id") {
       candidate.flybyId = Unquote(item.value);
       if (!IsPortableName(candidate.flybyId))
@@ -954,6 +1065,7 @@ Status ParseConfiguration(const std::string& file, Configuration* output) {
   }
   std::set<std::string> observationIds;
   for (const AMPS::Input::Block& child : block->blocks) {
+    if(child.kind=="refinement")continue;
     ObservationRequest request;
     status = ParseObservationBlock(child, inputPath,
                                    candidate.observationDataRoot, &request);
@@ -1047,6 +1159,12 @@ Status EvaluateReactionRate(const Reaction& reaction,
 
 Status ValidateConfiguration(const Configuration& configuration,
                              const SourceDistribution& distribution) {
+  if(configuration.mesh.explicitConfiguration) {
+    const auto& m=configuration.mesh;const double r=distribution.stripeReferenceRadiusM;
+    if(!(m.minimumM.x<-r&&m.minimumM.y<-r&&m.minimumM.z<-r&&
+         m.maximumM.x>r&&m.maximumM.y>r&&m.maximumM.z>r))
+      return Status::Error("runtime mesh domain must contain the complete spherical surface");
+  }
   Status status = RequireUniqueNonempty(configuration.simulatedSpecies,
                                         "simulated_species");
   if (!status.success) return status;
@@ -1317,6 +1435,7 @@ Status BuildNumericalPlan(const Configuration& configuration,
       minimumAllocatedCellSizeM <= 0.0)
     return Status::Error("minimum allocated cell size must be finite and positive");
   NumericalPlan plan;
+  plan.minimumAllocatedCellSizeM=minimumAllocatedCellSizeM;
   plan.globalTimeStepS = std::numeric_limits<double>::infinity();
   for (const std::string& species : configuration.simulatedSpecies) {
     const double dt = configuration.courantNumber.at(species) *

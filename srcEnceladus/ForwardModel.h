@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+namespace AMPS { namespace Input { struct Block; } }
+
 namespace Enceladus {
 namespace ForwardModel {
 
@@ -47,6 +49,27 @@ struct Vec3 {
   double x = 0.0;
   double y = 0.0;
   double z = 0.0;
+};
+
+// Explicit runtime AMR requests use maximum Cartesian cell-edge widths [m].
+// The PIC adapter converts them to the core's diagonal metric using the
+// actual root-cell aspect ratio. Regions are fixed in IAU_ENCELADUS and are
+// resolved at startup, never driven by noisy particle counts during transport.
+struct RefinementRegion {
+  enum class Geometry { Box, Sphere, Shell };
+  std::string id;
+  Geometry geometry = Geometry::Box;
+  Vec3 minimumM, maximumM, centerM;
+  double innerRadiusM = 0.0, outerRadiusM = 0.0;
+  double cellSizeM = 0.0;
+};
+struct MeshControls {
+  bool explicitConfiguration = false;
+  Vec3 minimumM, maximumM;
+  double backgroundCellSizeM = 0.0;
+  double northSurfaceCellSizeM = 0.0, southSurfaceCellSizeM = 0.0;
+  double polarHalfAngleDeg = 0.0, polarCellSizeM = 0.0;
+  std::vector<RefinementRegion> regions;
 };
 
 struct Source {
@@ -133,6 +156,7 @@ struct Configuration {
   int schemaVersion = 0;
   std::string inputFile;
   std::string sourceDistributionFile;
+  MeshControls mesh;
   std::vector<std::string> simulatedSpecies;
   std::vector<std::string> injectedSpecies;
   std::vector<std::string> chemistrySpecies;
@@ -149,6 +173,16 @@ struct Configuration {
   // volume dumps while retaining native sampling and registered observation
   // callbacks.  The completed buffer is still consumed and reset each window.
   bool volumeFieldOutput = true;
+  // reproducible_parallel_run (default false): true makes a run with a fixed
+  // seed and MPI rank count reproducible regardless of machine load. It keeps
+  // the initial AMR decomposition (PIC::Parallel::DynamicLoadRebalancingEnabled
+  // = false: both core rebalancing paths move blocks by measured wall-clock
+  // time) and sorts every cell's particle list by particle signature after
+  // each exchange (PIC::Parallel::DeterministicParticleExchangeOrder = true:
+  // received particles otherwise enter the lists in message-arrival order and
+  // draw their random numbers in that order). Physics is unchanged; the load
+  // balance, the run time and which particle gets which random number differ.
+  bool reproducibleParallelRun = false;
   std::string observationDataRoot;
   std::vector<ObservationRequest> observations;
   // Optional observation operator evaluated from AMPS' completed sampling
@@ -211,6 +245,7 @@ struct Reaction {
 };
 
 struct NumericalPlan {
+  double minimumAllocatedCellSizeM = 0.0;
   double globalTimeStepS = 0.0;
   std::string limitingSpecies;
   std::map<std::string, double> physicalSourceRatePerS;
@@ -220,10 +255,28 @@ struct NumericalPlan {
 };
 
 Status ParseConfiguration(const std::string& file, Configuration* output);
+// Parse a resolved owned block without temporary generated input files.
+// Source locations survive case overlays; path context remains explicit.
+Status ParseResolvedConfiguration(const ::AMPS::Input::Block& block,
+                                 const std::string& file, Configuration* output);
 Status ParseSourceDistribution(const std::string& file,
                                SourceDistribution* output);
+Status ParseSourceDistributionText(const std::string& bytes,
+                                  const std::string& file,
+                                  SourceDistribution* output);
 Status ValidateConfiguration(const Configuration& configuration,
                              const SourceDistribution& distribution);
+
+// Conservative region/block intersection requests. These independent geometry
+// helpers prevent a small refinement region being missed by block-center-only
+// probes. Requested cell widths are never coarser than the background request.
+double MeshCellSizeAt(const MeshControls&, const Vec3&, bool surface = false);
+double MeshCellSizeForBox(const MeshControls&, const Vec3&, const Vec3&,
+                          double surfaceRadiusM);
+double SegmentBoxDistanceSquared(const Vec3&, const Vec3&, const Vec3&, const Vec3&);
+Status ValidateMeshCapabilities(const MeshControls&, double radiusM,
+                               const Vec3& rootCellCounts, int maximumLevel,
+                               double extraTargetM = 0.0);
 
 const std::vector<Reaction>& Burger2007Reactions();
 const Reaction* FindReaction(const std::string& id);

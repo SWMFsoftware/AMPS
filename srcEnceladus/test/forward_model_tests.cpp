@@ -1,4 +1,6 @@
 #include "../ForwardModel.h"
+#include "../SourceCatalog.h"
+#include "../../src/general/input/amps_input_digest.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -6,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <limits>
 #include <string>
@@ -270,6 +273,45 @@ int NumericsCase(const std::string& sourceFile) {
   return EXIT_SUCCESS;
 }
 
+// reproducible_parallel_run is optional. Absent (every runtime input written
+// by run_tests.py) it is false, the compiled AMPS behavior; "true" requests a
+// reproducible multi-rank run; any other value is a typed input error that
+// names the key. The two variants are the same runtime input with one line
+// added before "#end application", parsed from the same directory so that
+// relative paths resolve identically.
+int ReproducibleParallelRunChecks(const std::string& inputFile,
+                                  const FM::Configuration& parsed) {
+  if (parsed.reproducibleParallelRun)
+    return Fail("reproducible_parallel_run did not default to false");
+  std::ifstream input(inputFile);
+  const std::string text((std::istreambuf_iterator<char>(input)),
+                         std::istreambuf_iterator<char>());
+  const std::size_t end = text.rfind("#end application");
+  if (end == std::string::npos)
+    return Fail("runtime input has no #end application line");
+  const std::string variant = inputFile + ".reproducible_parallel_run.in";
+  auto parseWith = [&](const std::string& line, FM::Configuration* output) {
+    {
+      std::ofstream stream(variant);
+      stream << text.substr(0, end) << line << '\n' << text.substr(end);
+    }
+    const FM::Status result = FM::ParseConfiguration(variant, output);
+    std::filesystem::remove(variant);
+    return result;
+  };
+  FM::Configuration on;
+  FM::Status status = parseWith("reproducible_parallel_run=true", &on);
+  if (!status.success) return Fail(status.message);
+  if (!on.reproducibleParallelRun)
+    return Fail("reproducible_parallel_run=true was parsed as false");
+  FM::Configuration invalid;
+  status = parseWith("reproducible_parallel_run=sometimes", &invalid);
+  if (status.success ||
+      status.message.find("reproducible_parallel_run") == std::string::npos)
+    return Fail("an invalid reproducible_parallel_run value was accepted");
+  return EXIT_SUCCESS;
+}
+
 int InputCase(const std::string& inputFile, const std::string& sourceFile) {
   FM::Configuration parsed;
   FM::Status status = FM::ParseConfiguration(inputFile, &parsed);
@@ -331,7 +373,7 @@ int InputCase(const std::string& inputFile, const std::string& sourceFile) {
     Value("parsed_nonuniform_split_position_shift",
           parsed.nonuniformSplitPositionShift ? 1.0 : 0.0);
   }
-  return EXIT_SUCCESS;
+  return ReproducibleParallelRunChecks(inputFile, parsed);
 }
 
 int ValidationCase(const std::string& sourceFile) {
@@ -479,9 +521,56 @@ int ValidationCase(const std::string& sourceFile) {
 
 }  // namespace
 
+int RuntimeMeshCase() {
+  FM::MeshControls m;m.explicitConfiguration=true;
+  m.minimumM={-1000000,-1000000,-1000000};m.maximumM={1000000,1000000,1000000};
+  m.backgroundCellSizeM=100000;m.northSurfaceCellSizeM=20000;m.southSurfaceCellSizeM=10000;
+  if(FM::MeshCellSizeAt(m,{252100,0,1},true)!=20000||FM::MeshCellSizeAt(m,{252100,0,-1},true)!=10000)
+    return Fail("hemisphere surface requests differ");
+  FM::RefinementRegion box;box.id="small";box.minimumM={100,100,100};box.maximumM={110,110,110};box.cellSizeM=2;
+  m.regions.push_back(box);
+  if(FM::MeshCellSizeAt(m,{0,0,0})!=100000||FM::MeshCellSizeForBox(m,{0,0,0},{200,200,200},252100)!=2)
+    return Fail("a small off-center region was missed");
+  FM::RefinementRegion shell;shell.id="shell";shell.geometry=FM::RefinementRegion::Geometry::Shell;
+  shell.centerM={500000,0,0};shell.innerRadiusM=10;shell.outerRadiusM=20;shell.cellSizeM=1;m.regions.push_back(shell);
+  if(FM::MeshCellSizeAt(m,{500000,0,0})!=100000||FM::MeshCellSizeAt(m,{500015,0,0})!=1)
+    return Fail("shell inner exclusion differs");
+  const FM::Vec3 lo{-1,-1,-1},hi{1,1,1};
+  if(FM::SegmentBoxDistanceSquared({-2,2,0},{2,2,0},lo,hi)!=1||
+     FM::SegmentBoxDistanceSquared({-2,0,0},{2,0,0},lo,hi)!=0||
+     FM::SegmentBoxDistanceSquared({3,4,0},{3,4,0},lo,hi)!=13)
+    return Fail("independent segment/AABB distances differ");
+  if(FM::ValidateMeshCapabilities(m,252100,{5,5,5},12).success)
+    return Fail("unattainable runtime refinement accepted");
+  if(!FM::ValidateMeshCapabilities(m,252100,{5,5,5},30).success)
+    return Fail("attainable runtime refinement rejected");
+  m.polarHalfAngleDeg=45;m.polarCellSizeM=3000;
+  if(FM::MeshCellSizeForBox(m,{-1000,-1000,-900000},{1000,1000,-800000},252100)!=3000)
+    return Fail("south-polar cone intersection differs");
+  std::cout<<"runtime_mesh_geometry=PASS\n";return 0;
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) return Fail("usage: forward_model_tests CASE [arguments]");
   const std::string test = argv[1];
+  if(test=="runtime_mesh"&&argc==2)return RuntimeMeshCase();
+  if(test=="case_cli") {
+    FM::RuntimeSelection selection;
+    const auto s=FM::ParseRuntimeArguments(argc-1,argv+1,&selection);
+    if(!s.success)return Fail(s.message);
+    std::cout<<"input="<<selection.inputFile<<" case="<<selection.caseId<<"\n";return 0;
+  }
+  if(test=="case_resolve"&&argc==5) {
+    FM::RuntimeSelection selection;selection.inputFile=argv[2];selection.caseId=argv[4];
+    FM::ResolvedRun run;const auto s=FM::ResolveRun(selection,argv[3],&run);
+    if(!s.success)return Fail(s.message);
+    std::cout<<FM::DescribeRun(run);return 0;
+  }
+  if(test=="case_list"&&argc==4) {
+    FM::RuntimeSelection selection;selection.inputFile=argv[2];std::vector<FM::CaseInventory> cases;
+    const auto s=FM::ListRuntimeCases(selection,argv[3],&cases);if(!s.success)return Fail(s.message);
+    for(const auto& c:cases)std::cout<<c.status<<" "<<c.id<<" "<<c.detail<<"\n";return 0;
+  }
   if (test == "source" && argc == 3) return SourceCase(argv[2]);
   if (test == "catalog" && argc == 4) return CatalogCase(argv[2],std::stoul(argv[3]));
   if (test == "catalog_subnormal" && argc == 4)

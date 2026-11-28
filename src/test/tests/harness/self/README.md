@@ -40,6 +40,15 @@ owned I21-I24. The pin was not updated in that commit, so nightly
   unchanged.
 - Verification is the real 13-case harness.
 
+## Enceladus case-runner/runtime-mesh pin (2026-11-13, merged 2026-11-28)
+
+This checkout also carries the Enceladus case-runner/runtime-mesh registry
+work. It adds two generic input/digest core cases (`INP-06`, `INP-07`) and
+eight Enceladus cases (`U09`, `U10`, `N06`-`N11`) without adding a suite. The
+pinned case totals are therefore CORE 62/1222, Enceladus 3/70 and Moon 2/50,
+that is `[1222, 70, 50]`. The suite pin `[62, 3, 2]` and the exact Moon
+identity pin above are unchanged.
+
 ## Run the owner or the new coverage case
 
 From the AMPS root:

@@ -43,7 +43,8 @@ def validate_zones(path: Path, zones: list[plot_flyby_density.Zone],
             f"expected_zones={expected}")
 
 
-def plot_inms(path: Path, output: Path) -> dict[str, object]:
+def plot_inms(path: Path, output: Path,
+              source_label: str = "current E3 source distribution") -> dict[str, object]:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -154,7 +155,7 @@ def plot_inms(path: Path, output: Path) -> dict[str, object]:
         }
     axes[-1].set_xlabel("Time from closest approach [s]")
     figure.suptitle(
-        f"{path.stem}: current E3 source distribution transferred without refit\n"
+        f"{path.stem}: {source_label} transferred without refit\n"
         "Density comparisons and native-count context retain distinct units")
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=180)
@@ -164,7 +165,8 @@ def plot_inms(path: Path, output: Path) -> dict[str, object]:
             "rows_per_zone": len(zone.rows), "metrics": metrics}
 
 
-def plot_uvis(path: Path, output: Path) -> dict[str, object]:
+def plot_uvis(path: Path, output: Path,
+              source_label: str = "current E3 source distribution") -> dict[str, object]:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -217,7 +219,7 @@ def plot_uvis(path: Path, output: Path) -> dict[str, object]:
     for axis in axes:
         axis.grid(True, which="both", alpha=.25)
     figure.suptitle(
-        f"{path.stem}: UVIS comparison for the current E3 source distribution\n"
+        f"{path.stem}: UVIS comparison for the {source_label}\n"
         "Optical depth constrains shape; the published column constrains absolute scale")
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=180)
@@ -243,6 +245,10 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--expected-zones", type=int)
+    parser.add_argument(
+        "--source-label", default="current E3 source distribution",
+        help=("source distribution named in the plot titles (default: the "
+              "historical 'current E3 source distribution')"))
     args = parser.parse_args()
     output_dir = args.output_dir.resolve()
     results = []
@@ -252,9 +258,9 @@ def main() -> int:
         variables, zones = plot_flyby_density.read_tecplot(path)
         validate_zones(path, zones, args.expected_zones)
         if "observed_optical_depth" in variables:
-            results.append(plot_uvis(path, output))
+            results.append(plot_uvis(path, output, args.source_label))
         else:
-            results.append(plot_inms(path, output))
+            results.append(plot_inms(path, output, args.source_label))
         print(f"PASS {path.name} -> {output}")
     summary = (args.summary.resolve() if args.summary else
                output_dir/"observation_comparison_summary.json")

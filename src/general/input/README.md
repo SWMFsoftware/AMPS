@@ -60,3 +60,22 @@ rejection.
 It prints `[INP-xx] PASS|FAIL message` lines and exits nonzero on failure; it
 is the `amps-input` step of `srcSEP/test/run_all_test.sh` and
 `srcSEP3D/test/run_all_test.sh`.
+
+
+## Exact-byte snapshots and content identity
+
+`Document::sourceBytes` retains the exact root/include bytes that were parsed,
+keyed by their diagnostic file path. Existing `root`/`files` fields and the
+grammar/canonical serializer retain their layout and meaning. A repeated
+include whose bytes change during parsing is rejected. Owners can build
+portable identities from logical relative names and these captured bytes,
+avoiding a second read of mutable input. This map is not a physics cache.
+
+`amps_input_digest.h` provides the dependency-free C++17
+`AMPS::InputDigest::Sha256Hex(bytes)` helper. It hashes binary bytes, including
+CR/LF and embedded zeroes, for input/asset/binary identity. It adds no OpenSSL,
+PIC, MPI or application dependency. INP-06 checks independent published SHA-256
+vectors (empty, `abc`, million `a`); INP-07 checks exact CRLF byte preservation
+and unchanged canonical parsing. Existing INP-01–05 remain unchanged.
+The Enceladus case owner uses both features for content-checked native startup;
+unchanged CME and other parser consumers need no new input fields.

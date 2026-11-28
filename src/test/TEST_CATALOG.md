@@ -14,15 +14,15 @@ python3 src/test/generate_test_catalog.py
 python3 src/test/generate_test_catalog.py --check
 ```
 
-Registry summary: **67 suites / 1332 cases**. Registry SHA-256: `51542bad69dad439d6e8521191b01a50bc5fb7871acb25da2e7a0387ef96c658`.
-Description provenance: **800 maintained source descriptions / 532 stable-ID fallbacks**.
+Registry summary: **67 suites / 1342 cases**. Registry SHA-256: `3b14de21a268aa44b9229de6b9ad3e8cf3549fb39dc3f4a15e773f1926b63f5c`.
+Description provenance: **808 maintained source descriptions / 534 stable-ID fallbacks**.
 
 ## Suite index
 
 | Suite | Component | Level | Campaigns | Cases | Isolation | What | Where |
 | --- | --- | --- | --- | ---: | --- | --- | --- |
 | `CORE-HARNESS-001` | `src/test` | unit | smoke, nightly | 13 | nonexclusive | Test registry, layered configuration, selection, and result-protocol self-test | [runner](tests/harness/self/run_test.py) |
-| `CORE-GENERAL-INPUT-001` | `src/general/input` | unit | smoke, nightly | 5 | nonexclusive | Generic runtime-input grammar, diagnostics, includes, and canonicalization | [runner](tests/general/input/run_test.py) |
+| `CORE-GENERAL-INPUT-001` | `src/general/input` | unit | smoke, nightly | 7 | nonexclusive | Generic runtime-input grammar, diagnostics, includes, and canonicalization | [runner](tests/general/input/run_test.py) |
 | `CORE-GENERAL-CONTAINERS-001` | `src/general` | unit | smoke, nightly | 6 | nonexclusive | General array, bit-array, stack, linked-container, string, and 4-D index utilities | [runner](tests/general/containers/run_test.py) |
 | `CORE-GENERAL-NUMERICS-001` | `src/general` | unit | smoke, nightly | 14 | nonexclusive | Rank-1 through rank-5 arrays, managed stack, special-function identities, and independent quadrature oracles | [runner](tests/general/numerics/run_test.py) |
 | `CORE-GENERAL-RNG-001` | `src/general` | unit | smoke, nightly | 7 | nonexclusive | Reproducible streams, endpoint exclusion, uniform/normal/gamma moments, and isotropic directions | [runner](tests/general/rng/run_test.py) |
@@ -83,8 +83,8 @@ Description provenance: **800 maintained source descriptions / 532 stable-ID fal
 | `CORE-MODEL-SEP-CORONA-SWCME-REDUCED-001` | `src/models/sep_corona_swcme` | integration | extended | 97 | exclusive | Complete 97-row reduced-front plus ambient registry with 35 explicit routine native SKIPs | [runner](tests/models/cme/sep_corona_swcme_reduced/run_test.py) |
 | `CORE-LEGACY-REGISTRY-AUDIT-001` | `src/test` | module | extended | 13 | nonexclusive | Explicit governance/disposition audit for every roadmap legacy application without behavioral migration qualification | [runner](tests/legacy/registry/run_test.py) |
 | `CORE-T12-PORTABILITY-001` | `src/general` | integration | extended | 16 | nonexclusive | Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performance matrix plus the truthful strict-coverage gate | [runner](tests/portability/matrix/run_test.py) |
-| `APPLICATION-ENCELADUS-FORWARD-001` | `srcEnceladus` | integration | extended, application-smoke | 43 | nonexclusive | Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign | [runner](tests/applications/enceladus/run_test.py) |
-| `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` | `srcEnceladus` | system | extended, application-smoke | 6 | exclusive | Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates | [runner](tests/applications/enceladus_native/run_test.py) |
+| `APPLICATION-ENCELADUS-FORWARD-001` | `srcEnceladus` | integration | extended, application-smoke | 45 | nonexclusive | Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign | [runner](tests/applications/enceladus/run_test.py) |
+| `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` | `srcEnceladus` | system | extended, application-smoke | 12 | exclusive | Clean Enceladus build; six legacy startup gates and six case, MPI, transport, UVIS and runtime mesh groups | [runner](tests/applications/enceladus_native/run_test.py) |
 | `APPLICATION-ENCELADUS-E3-001` | `srcEnceladus` | system | extended | 13 | exclusive | Capability-gated clean build and 10,000-step E3 process, transport-ledger, and flyby-product campaign | [runner](tests/applications/enceladus_e3/run_test.py) |
 | `APPLICATION-MOON-REGRESSION-001` | `srcMoon` | system | extended, application-smoke | 40 | exclusive | Clean Moon/SPICE build plus all U01-U26 and bounded linked I11-I24 regression outcomes with typed scientific skips | [runner](tests/applications/moon_regression/run_test.py) |
 | `APPLICATION-MOON-M0-001` | `srcMoon` | system | extended, application-smoke | 10 | nonexclusive | Complete Moon I01-I10 M0 registry with explicit non-execution until its multi-build workflow satisfies the mandatory native preflight | [runner](tests/applications/moon_m0/run_test.py) |
@@ -113,7 +113,7 @@ Test registry, layered configuration, selection, and result-protocol self-test *
 
 ### 2. `CORE-GENERAL-INPUT-001`
 
-Generic runtime-input grammar, diagnostics, includes, and canonicalization **5 cases.** Eligible for suite-level concurrency.
+Generic runtime-input grammar, diagnostics, includes, and canonicalization **7 cases.** Eligible for suite-level concurrency.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -122,6 +122,8 @@ Generic runtime-input grammar, diagnostics, includes, and canonicalization **5 c
 | `INP-03` | Inp case 03 | unit; isolated suite adapter; tools cxx | covered coverage evidence for `src/general/input`; preserves this contract as an exact global result | [src/general/input](../general/input); [adapter](tests/general/input/run_test.py) |
 | `INP-04` | Inp case 04 | unit; isolated suite adapter; tools cxx | covered coverage evidence for `src/general/input`; preserves this contract as an exact global result | [src/general/input](../general/input); [adapter](tests/general/input/run_test.py) |
 | `INP-05` | Inp case 05 | unit; isolated suite adapter; tools cxx | covered coverage evidence for `src/general/input`; preserves this contract as an exact global result | [src/general/input](../general/input); [adapter](tests/general/input/run_test.py) |
+| `INP-06` | Inp case 06 | unit; isolated suite adapter; tools cxx | covered coverage evidence for `src/general/input`; preserves this contract as an exact global result | [src/general/input](../general/input); [adapter](tests/general/input/run_test.py) |
+| `INP-07` | Inp case 07 | unit; isolated suite adapter; tools cxx | covered coverage evidence for `src/general/input`; preserves this contract as an exact global result | [src/general/input](../general/input); [adapter](tests/general/input/run_test.py) |
 
 ### 3. `CORE-GENERAL-CONTAINERS-001`
 
@@ -1747,7 +1749,7 @@ Bounded compiler, Fortran ABI, sanitizer, leak, OpenMP, MPI, CUDA and performanc
 
 ### 63. `APPLICATION-ENCELADUS-FORWARD-001`
 
-Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign **43 cases.** Eligible for suite-level concurrency.
+Complete dependency-light Enceladus forward-model parser, source, chemistry, numerics and 31-value reference campaign **45 cases.** Eligible for suite-level concurrency.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -1763,6 +1765,8 @@ Complete dependency-light Enceladus forward-model parser, source, chemistry, num
 | `ENCELADUS-U06-SOURCE-LAW` | U06 source law | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U07-NUMERICS` | U07 numerics | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-U08-VALIDATION` | U08 validation | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
+| `ENCELADUS-U09-CASE-RUNTIME` | Actual CLI/catalog parser preserves all 28 nonuniform rate vectors and rejects wrong or unavailable inputs; no silent source fallback. | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py); [case source](../../srcEnceladus/test/README.md) |
+| `ENCELADUS-U10-RUNTIME-MESH` | Independent box/sphere/shell/cone and exact-distance fixtures verify refinement intersection and compiled-depth rejection. | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py); [case source](../../srcEnceladus/test/README.md) |
 | `ENCELADUS-REF-MINIMUM-CELL-SIZE-M` | Ref minimum cell size m | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-REF-GLOBAL-TIME-STEP-S` | Ref global time step s | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
 | `ENCELADUS-REF-PRIMARY-WEIGHT-H2O` | Ref primary weight H2O | integration; isolated suite adapter; tools python, cxx | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus/run_test.py) |
@@ -1797,7 +1801,7 @@ Complete dependency-light Enceladus forward-model parser, source, chemistry, num
 
 ### 64. `APPLICATION-ENCELADUS-NATIVE-STARTUP-001`
 
-Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates **6 cases.** Runs behind an exclusive checkout barrier.
+Clean Enceladus build; six legacy startup gates and six case, MPI, transport, UVIS and runtime mesh groups **12 cases.** Runs behind an exclusive checkout barrier.
 
 | Case | What | How | Why | Where |
 | --- | --- | --- | --- | --- |
@@ -1807,6 +1811,12 @@ Clean Enceladus build and exact import of all six pre-MPI native startup/configu
 | `ENCELADUS-N03-PLASMA-CACHE-DIRECTORY-GATE` | N03 plasma cache directory gate | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
 | `ENCELADUS-N04-POINTER-MOVER-GENERATED` | N04 pointer mover generated | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
 | `ENCELADUS-N05-CHEMISTRY-PROCESSING-GENERATED` | N05 chemistry processing generated | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py) |
+| `ENCELADUS-N06-CASE-LOCAL` | Native list/describe/local validation resolves all 28 measurement–basis cases, including both UVIS ray schemas, without mesh allocation. | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py); [case source](../../srcEnceladus/test/README.md) |
+| `ENCELADUS-N07-CASE-MPI` | One/four ranks agree on content; rank-local mismatch and missing data fail collectively without hanging and without a particle buffer. | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py); [case source](../../srcEnceladus/test/README.md) |
+| `ENCELADUS-N08-CASE-TRANSPORT` | Nine short native runs cover every source basis, H2O and CO2 plus four-rank ownership; each closes an exact 40-particle global injection ledger. | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py); [case source](../../srcEnceladus/test/README.md) |
+| `ENCELADUS-N09-CASE-UVIS` | Both native UVIS ray operators advance and output all three fixture rays in each of two sampling windows with positive domain paths. | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py); [case source](../../srcEnceladus/test/README.md) |
+| `ENCELADUS-N10-RUNTIME-MESH` | A noncubic domain with box/sphere/shell refinements produces actual observation cells within 80 km and the independently calculated global timestep. | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py); [case source](../../srcEnceladus/test/README.md) |
+| `ENCELADUS-N11-CASE-ERRORS` | Native local validation rejects a domain cutting the surface, an unattainable cell target and a misspelled mesh key before allocation. | system; serialized configuration owner; tools python, make | partial coverage evidence for `srcEnceladus`; preserves this contract as an exact global result | [srcEnceladus](../../srcEnceladus); [adapter](tests/applications/enceladus_native/run_test.py); [case source](../../srcEnceladus/test/README.md) |
 
 ### 65. `APPLICATION-ENCELADUS-E3-001`
 

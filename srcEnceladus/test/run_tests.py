@@ -21,8 +21,14 @@ ROOT = Path(__file__).resolve().parents[1]
 TEST = ROOT / "test"
 REFERENCE = TEST / "reference" / "forward_model_reference.json"
 STANDALONE_TESTS = ROOT / "standalone" / "tests"
-# U00_exporter runs these three modules together; every other standalone/tests/test_<name>.py is the case S_<name>
-EXPORTER_MODULES = ("test_export_forward_sources", "test_fit_source_export", "test_export_forward_observations")
+# Every test of standalone/tests is reported as its own row S_<module>.<Class>.<method> (standalone_test_receipt.py).
+# These four exporter/publisher modules run together, in the caller's environment, and their tests also make up the
+# registered aggregate case U00_exporter (PASS when none of them fails).  test_prepare_forward_cases (the
+# measurement--basis bundle publisher) belongs to U00 as documented in test/README.md.  Every other module runs in
+# its own interpreter with the validation-data and SPICE roots below.
+EXPORTER_MODULES = ("test_export_forward_sources", "test_fit_source_export", "test_prepare_forward_cases",
+                    "test_export_forward_observations")
+STANDALONE_RECEIPT = TEST / "standalone_test_receipt.py"
 # Inputs of the standalone tests that are machine dependent, passed on in these environment variables
 DATA_ROOT_ENV = "ENCELADUS_VALIDATION_DATA_ROOT"          # Cassini validation data (standalone/validation_paths.py)
 SPICE_TOOLKIT_ENV = "ENCELADUS_SPICE_TOOLKIT_ROOT"        # CSPICE (standalone/tests/test_spice_ground_tracks.py)
@@ -34,19 +40,30 @@ def run(command: list[str], *, cwd: Path = ROOT, env: dict | None = None) -> sub
     return subprocess.run(command, cwd=cwd, text=True, capture_output=True, env=env)
 
 
-def standalone_case(module: str, env: dict) -> tuple:
-    """(name, passed, detail) of one standalone/tests module; passed is SKIP when every test was skipped."""
-    result = run([sys.executable, "-m", "unittest", "-v", "standalone.tests." + module], env=env)
-    detail = result.stdout + result.stderr
-    name = "S_" + module[len("test_"):]
-    if result.returncode != 0:
-        return name, False, detail
-    ran = re.search(r"^Ran (\d+) tests?", detail, re.M)
-    skipped = re.search(r"^OK \(skipped=(\d+)\)", detail, re.M)
-    if ran and (int(ran.group(1)) == 0 or (skipped and int(skipped.group(1)) == int(ran.group(1)))):
-        reason = re.search(r"\.\.\. skipped '(.*)'$", detail, re.M) or re.search(r"skipped '(.*)'$", detail, re.M)
-        return name, SKIP, detail + "SKIP: " + (reason.group(1) if reason else "all tests skipped") + "\n"
-    return name, True, detail
+def standalone_tests(modules: list[str], env: dict | None, record: Path) -> list[tuple]:
+    """Run standalone/tests modules in one fresh interpreter; one (name, passed, detail, duration_s) per test.
+
+    passed is True, False or SKIP.  The per-test JSON written by standalone_test_receipt.py is kept at ``record``.
+    If the interpreter ends without writing it (a crash, not a test failure), every module becomes one failing row
+    S_<module> carrying the interpreter's output, so no test disappears silently.
+    """
+    record.parent.mkdir(parents=True, exist_ok=True)
+    if record.exists():
+        record.unlink()
+    result = run([sys.executable, "-B", str(STANDALONE_RECEIPT), "--output", str(record)] + list(modules), env=env)
+    transcript = result.stdout + result.stderr
+    try:
+        rows = json.loads(record.read_text(encoding="utf-8"))["tests"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return [("S_" + module[len("test_"):], False,
+                 "ERROR: standalone test recorder wrote no outcomes ({}; exit {})\n{}".format(
+                     error, result.returncode, transcript), None) for module in modules]
+    if result.returncode != (1 if any(row["status"] == "FAIL" for row in rows) else 0):
+        rows.append({"name": "S_recorder_" + modules[0][len("test_"):], "status": "FAIL", "duration_s": None,
+                     "detail": "ERROR: recorder exit {} disagrees with its outcomes\n{}".format(
+                         result.returncode, transcript)})
+    status = {"PASS": True, "FAIL": False, "SKIP": SKIP}
+    return [(row["name"], status[row["status"]], row["detail"] + "\n", row.get("duration_s")) for row in rows]
 
 
 def parse_receipt(text: str) -> dict[str, object]:
@@ -235,14 +252,29 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     started = time.time()
     outcomes = []
+    durations: dict[str, float] = {}
     values: dict[str, object] = {}
+    records = output / "standalone_tests"
 
-    standalone = run([sys.executable, "-m", "unittest"] +
-                     ["standalone.tests." + module for module in EXPORTER_MODULES])
-    outcomes.append(("U00_exporter", standalone.returncode == 0,
-                     standalone.stdout + standalone.stderr))
+    def add_standalone(rows: list[tuple]) -> None:
+        for name, passed, detail, duration in rows:
+            outcomes.append((name, passed, detail))
+            if isinstance(duration, (int, float)):
+                durations[name] = duration
 
-    # The other tests of the standalone plume model (standalone/README.md), one case per module
+    # U00_exporter: the exporter/publisher modules in the caller's environment, as before; the aggregate row
+    # comes first (registered order), then one row per test.
+    exporter = standalone_tests(list(EXPORTER_MODULES), None, records / "exporter.json")
+    exporter_failed = [name for name, passed, _, _ in exporter if passed is False]
+    exporter_skipped = [name for name, passed, _, _ in exporter if passed is SKIP]
+    summary = "{} exporter tests: {} PASS, {} SKIP, {} FAIL (their S_ rows follow)\n".format(
+        len(exporter), len(exporter) - len(exporter_failed) - len(exporter_skipped), len(exporter_skipped),
+        len(exporter_failed))
+    outcomes.append(("U00_exporter", bool(exporter) and not exporter_failed,
+                     summary + "".join("FAIL: {}\n".format(name) for name in exporter_failed)))
+    add_standalone(exporter)
+
+    # The other tests of the standalone plume model (standalone/README.md): each module in its own interpreter
     standalone_env = dict(os.environ)
     for variable, value in ((DATA_ROOT_ENV, args.validation_data_root), (SPICE_TOOLKIT_ENV, args.spice_path),
                             (SPICE_KERNELS_ENV, args.spice_kernels)):
@@ -250,7 +282,7 @@ def main() -> int:
             standalone_env[variable] = str(Path(value).expanduser().resolve())
     for path in sorted(STANDALONE_TESTS.glob("test_*.py")):
         if path.stem not in EXPORTER_MODULES:
-            outcomes.append(standalone_case(path.stem, standalone_env))
+            add_standalone(standalone_tests([path.stem], standalone_env, records / (path.stem + ".json")))
 
     with tempfile.TemporaryDirectory(prefix="enceladus_forward_") as temporary:
         temp = Path(temporary)
@@ -270,7 +302,7 @@ def main() -> int:
         # owned by this application test.
         compiled = run(list(args.cxx) + [
             "-std=c++17", "-O2", "-I..", "-I../src",
-            "ForwardModel.cpp", "test/forward_model_tests.cpp", "-o", str(binary),
+            "ForwardModel.cpp", "MeshControls.cpp", "CaseSelection.cpp", "SourceCatalog.cpp", "test/forward_model_tests.cpp", "-o", str(binary),
         ])
         outcomes.append(("U02_core_compile", compiled.returncode == 0,
                          compiled.stdout + compiled.stderr))
@@ -307,6 +339,8 @@ def main() -> int:
                 ("U06_source_law", [str(binary), "source_law"]),
                 ("U07_numerics", [str(binary), "numerics", str(source)]),
                 ("U08_validation", [str(binary), "validation", str(source)]),
+                ("U09_case_runtime", [sys.executable,str(TEST/"run_case_runtime_tests.py"),"--executable",str(binary)]),
+                ("U10_runtime_mesh", [str(binary),"runtime_mesh"]),
             ):
                 result = run(command)
                 outcomes.append((name, result.returncode == 0,
@@ -333,8 +367,8 @@ def main() -> int:
         "elapsed_s": time.time() - started,
         "reference": str(REFERENCE.resolve()),
         "results": [
-            {"test": name, "status": "SKIP" if passed is SKIP else "PASS" if passed else "FAIL",
-             "detail": detail}
+            dict({"test": name, "status": "SKIP" if passed is SKIP else "PASS" if passed else "FAIL",
+                  "detail": detail}, **({"duration_s": durations[name]} if name in durations else {}))
             for name, passed, detail in outcomes
         ],
         "calculated_values": values,

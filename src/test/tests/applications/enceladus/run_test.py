@@ -33,6 +33,7 @@ LOCAL_CASES = [
     "U03_source_parser",
     "U04_runtime_parser", "U04b_transport_only_parser", "U05_chemistry",
     "U06_source_law", "U07_numerics", "U08_validation",
+    "U09_case_runtime", "U10_runtime_mesh",
 ]
 
 # These names are copied from the reviewed, hand-maintained reference file,
@@ -119,8 +120,38 @@ def main() -> int:
 
     receipt_path = local_output / "test_receipt.json"
     payload = load_receipt(receipt_path)
-    rows = payload["results"]
-    observed_names = [str(row.get("test")) for row in rows if isinstance(row, dict)]
+    all_rows = [row for row in payload["results"] if isinstance(row, dict)]
+    if len(all_rows) != len(payload["results"]):
+        raise RunnerError("Enceladus receipt contains a non-object result row")
+    # The local runner also reports every standalone plume-model test
+    # (srcEnceladus/standalone/tests) as its own row
+    # "S_<module>.<Class>.<method>" (PASS, FAIL, or SKIP when its external
+    # data/SPICE inputs are absent); a module that cannot be imported or has
+    # no tests, or a failing class/module fixture, is a FAIL row "S_<module>"
+    # or "S_<module>.<Class>.<fixture>". Those rows are the nightly's
+    # per-test cases, not identities of this registered owner, so they are
+    # validated here but not imported. The registered U*/R_* rows must still
+    # match the reviewed list exactly and in order.
+    standalone_rows = [row for row in all_rows if str(row.get("test")).startswith("S_")]
+    rows = [row for row in all_rows if not str(row.get("test")).startswith("S_")]
+    standalone_names = [str(row.get("test")) for row in standalone_rows]
+    if (len(standalone_names) != len(set(standalone_names)) or
+            any(not re.fullmatch(r"S_[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*", name)
+                for name in standalone_names)):
+        raise RunnerError("malformed Enceladus standalone-test rows: {}".format(
+            standalone_names))
+    standalone_status = {str(row.get("test")): str(row.get("status")) for row in standalone_rows}
+    unsupported = {name: status for name, status in standalone_status.items()
+                   if status not in {"PASS", "FAIL", "SKIP"}}
+    if unsupported:
+        raise RunnerError("unsupported Enceladus standalone status {!r}".format(unsupported))
+    standalone_failures = sorted(name for name, status in standalone_status.items()
+                                 if status == "FAIL")
+    if standalone_failures:
+        # Not a registered identity, but never hidden behind a PASS suite.
+        raise RunnerError("Enceladus standalone plume-model test(s) failed: {}".format(
+            ", ".join(standalone_failures)))
+    observed_names = [str(row.get("test")) for row in rows]
     expected_names = LOCAL_CASES + ["R_{}".format(key) for key in REFERENCE_KEYS]
     if observed_names != expected_names or len(observed_names) != len(set(observed_names)):
         raise RunnerError(
@@ -160,7 +191,10 @@ def main() -> int:
         context, suite_status,
         "imported {} exact Enceladus outcomes".format(len(selected_rows)),
         cases=selected_rows, evidence=evidence,
-        metrics={"local_case_count": len(rows), "selected_case_count": len(selected_rows)})
+        metrics={"local_case_count": len(rows), "selected_case_count": len(selected_rows),
+                 "standalone_test_case_count": len(standalone_rows),
+                 "standalone_test_skipped": sorted(
+                     name for name, status in standalone_status.items() if status == "SKIP")})
 
 
 if __name__ == "__main__":

@@ -8,6 +8,13 @@ published open-source H2O/CO2 detector counts in their native observable; it
 does not invent a scalar count-to-density conversion.  The latter is suitable
 for a labelled context panel until the velocity/attitude-dependent SIMION
 response is accumulated from the AMPS phase-space distribution.
+
+The Cassini validation-data root is a machine-local input, resolved exactly
+as in the other standalone tools: ``--validation-data-root`` takes precedence
+over ``ENCELADUS_VALIDATION_DATA_ROOT``.  With neither, the exporter stops
+instead of guessing a developer-specific path.  Raw inputs are read from the
+documented layout beneath that root (``data/raw/inms`` and
+``data/raw/external/swri_inms_modeling/extracted``).
 """
 
 from __future__ import annotations
@@ -22,8 +29,9 @@ from pathlib import Path
 import numpy as np
 from scipy.io import loadmat
 
+from validation_paths import VALIDATION_ROOT_ENV, resolve_validation_root
 
-DEFAULT_VALIDATION_ROOT = Path("/data/vtenishe/cassini_validation_data")
+
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "observations"
 
 
@@ -235,13 +243,38 @@ def export_e21_species(swri: Path, species: str,
             "metadata": metadata_path.name, "rows": len(rows)}
 
 
-def main() -> int:
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the CLI and resolve the machine-local validation-data root.
+
+    ``--validation-data-root`` is the common spelling used by every other
+    standalone tool; ``--validation-root`` is this exporter's original
+    spelling and is retained so existing commands keep working.  Precedence
+    is explicit option, then ``ENCELADUS_VALIDATION_DATA_ROOT``.  A missing or
+    non-directory root is a usage error (exit status 2) raised before any raw
+    archive is opened or any output is written; no default path is assumed.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--validation-root", type=Path,
-                        default=DEFAULT_VALIDATION_ROOT)
+    parser.add_argument(
+        "--validation-data-root", "--validation-root",
+        dest="validation_data_root", type=Path,
+        help=("Cassini validation-data root containing data/raw/. "
+              f"If omitted, {VALIDATION_ROOT_ENV} is used."))
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    args = parser.parse_args()
-    root = args.validation_root.resolve()
+    args = parser.parse_args(argv)
+    try:
+        root = resolve_validation_root(args.validation_data_root)
+    except ValueError as error:
+        parser.error(str(error))
+    if root is None:
+        parser.error("the validation-data root is required: pass "
+                     f"--validation-data-root or set {VALIDATION_ROOT_ENV}")
+    args.validation_data_root = root
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_arguments(argv)
+    root = args.validation_data_root
     raw_inms = root / "data" / "raw" / "inms"
     swri = (root / "data" / "raw" / "external" /
             "swri_inms_modeling" / "extracted")

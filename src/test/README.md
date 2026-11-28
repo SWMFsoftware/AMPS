@@ -24,13 +24,42 @@ compatibility correction, raw full attempts, scoped retries and unchanged
 coverage/refinement nonpasses. The earlier campaign counts below remain
 historical checkpoints.
 
+## Enceladus case/runtime-mesh additions (2026-11-13)
+
+After the 2026-11-28 merge with upstream `master` (`5ce1335`; the previous
+merge was `74b15db` on 2026-11-24), the combined registry has
+**67 suites / 1,342 cases**: **62 core suites / 1,222 cases**,
+**3 Enceladus suites / 70 cases**, and **2 Moon suites / 50 cases**. The
+harness self-test pins these stream totals as `[1222, 70, 50]`: upstream
+`cb91ebb` now pins `[1220, 62, 50]` and the exact Moon identities, and the
+Enceladus additions below add two core and eight Enceladus cases to it.
+These are the upstream inventory plus the Enceladus additions below;
+registration is not a PASS claim. At the 2026-11-13 checkpoint, before that
+merge, the registry had 56 suites / 1,203 cases (51 core / 1,087, Enceladus
+70, Moon 46).
+
+Two generic-input identities check SHA-256 and exact parsed-byte snapshots.
+Enceladus adds two dependency-light groups and six native groups for named
+measurement–basis cases, content integrity, collective one/four-rank startup,
+all source bases/species, both UVIS operators and realized runtime AMR.
+The unchanged 43 application outcomes and six legacy native gates remain.
+
+At the 2026-11-13 checkpoint the focused selection was CORE-HARNESS-001 (13),
+CORE-GENERAL-INPUT-001 (7), APPLICATION-ENCELADUS-FORWARD-001 (45), and
+APPLICATION-ENCELADUS-NATIVE-STARTUP-001 (12): 77 checks. Test evidence,
+commands, superseded development attempts and scientific limits are recorded
+in `srcEnceladus/STATUS.md`. These additions do not claim that every unrelated
+core/CME qualification gate passes or that synthetic plume runs converge to
+Cassini observations. New tests must update `TEST_CATALOG.md` with their
+registry and local documentation.
+
 ## Current validation and new development (2026-11-10)
 
 Fast-wave P0–P4 performance changes add **18 independent case identities**:
 seven MPI periodic-transport cases (each 1/2/4 ranks), three complete-stencil
 cases, three ordered sparse-multiply cases, four full-width legacy CRC cases
-and one native particle-signature case. The complete registry is now
-**56 suites / 1,192 cases**, with **51 core suites / 1,085 cases**. This is
+and one native particle-signature case. At this earlier checkpoint the
+reported registry was **56 suites / 1,192 cases**, with **51 core suites / 1,085 cases**. This is
 registration, not an assertion that every case qualifies on this machine.
 The focused performance suite passes 13/13, general numerics 14/14 and the
 native PIC owner 95/95. Complete core revalidation with explicit owner retries
@@ -333,9 +362,11 @@ python3 src/test/run_tests.py --config "$PROFILE" --test APPLICATION-ENCELADUS-E
 python3 src/test/run_tests.py --config "$PROFILE" --component srcMoon --list
 ```
 
-`APPLICATION-ENCELADUS-FORWARD-001` executes 42 dependency-light checks.
+`APPLICATION-ENCELADUS-FORWARD-001` executes 45 dependency-light checks.
 `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` performs the mandatory clean native
-build and imports all six pre-MPI startup/configuration gates. The separate
+build and imports six pre-MPI startup/configuration gates plus six native
+case/MPI/UVIS/runtime-mesh groups. Its synthetic fixture bundle is retained
+with the configured executable; no Cassini data is needed. The separate
 13-case `APPLICATION-ENCELADUS-E3-001` owner is in `extended`, not the routine
 application-smoke campaign: it reports every identity as `SKIP` unless a
 machine overlay enables `enceladus-e3` or the operator explicitly requests

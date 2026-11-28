@@ -11,7 +11,7 @@ BUILD := build
 test: $(BUILD)/test_amps_input
 	./$(BUILD)/test_amps_input
 
-$(BUILD)/test_amps_input: test_amps_input.cpp amps_input.h
+$(BUILD)/test_amps_input: test_amps_input.cpp amps_input.h amps_input_digest.h
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS) -I. test_amps_input.cpp -o $@
 

@@ -23,7 +23,7 @@ Documentation is divided by purpose:
 - [`EXTRA_JET_SEARCH.md`](EXTRA_JET_SEARCH.md) records why the E17 candidate
   was investigated, the search objective and constraints, sensitivity tests,
   complete 98-versus-99 refit, and interpretation limits.
-- [`RUN.d`](RUN.d) is the concise execution runbook: case definition, the
+- [`RUN.md`](RUN.md) is the concise execution runbook: case definition, the
   complete command sequence with one command per line, and the expected
   output tree and products.
 
@@ -50,6 +50,16 @@ those flybys therefore cease to be untouched validation cases for any model
 or source geometry selected with that study.
 
 ## Automatic AMPS export and manuscript campaign
+
+Exported fits reach the forward Monte Carlo model through an explicit
+upstream publication step. `prepare_forward_cases.py` maps each
+`measurement--basis` case ID to one complete source bundle plus qualified
+observation assets, and the AMPS case runner (`-case MEASUREMENT--BASIS`)
+consumes that bundle without selecting or interpreting a fitting strategy.
+Both are implemented (2026-11-13); see
+[Prepare forward case data](#prepare-forward-case-data) below,
+[`CASE_RUNNER_PROPOSAL.md`](../CASE_RUNNER_PROPOSAL.md) for the design
+contract, and [`RUNTIME_INPUT.md`](../RUNTIME_INPUT.md) for the runtime CLI.
 
 New fitting CLI runs default to `--stripe-surface-mapping
 local_vertical_to_reference_sphere`: all stripe nodes are projected radially
@@ -556,7 +566,16 @@ can legitimately become worse.
 | `run_ch4_fitting_study.py` | Fits externally calibrated INMS mass-15 CH4-equivalent profiles with independent, shared-primary, and shared-low-speed source shapes |
 | `extra_jet_e17_study.py` | constrained E17 extra-jet location search, direction/window sensitivity, and five-flyby CO2 transfer tests |
 | `compare_extra_jet_studies.py` | verified 98-versus-99 comparison over every H2O INMS, UVIS, and CO2 observation and every source-shape strategy |
+| `compare_source_case_studies.py` | checked cross-case CSV/JSON/Markdown/PNG/PDF synthesis of completed hybrid, 98-jet, and 41-jet studies; refuses to overwrite an existing synthesis |
 | `validation_paths.py` | portable CLI/environment resolution of the external validation-data tree |
+| `source_contract.py` | dependency-free canonical component IDs for all four source bases and the radial projection of stripe nodes to the reference sphere, shared by the exporters, publisher, and campaign tools |
+| `fit_source_export.py` | automatic per-target/per-strategy export of absolute and shape source files, resolved geometry snapshot, and hashed `index.json`; keeps zero components, excludes backgrounds, defers E3/E5 absolute CO2 |
+| `export_forward_sources.py` | reference validator/writer of the schema-2 AMPS source file from an explicit JSON manifest (`../SOURCE_DISTRIBUTION_FILE.md`) |
+| `run_fitting_campaign.py` | complete 124-target manuscript fit matrix into a new campaign directory, with per-command logs/receipts and explicit resume options |
+| `build_campaign_report.py` | audits a completed campaign, plots every strategy against the observations, and builds the Word/PDF/HTML report (requires LibreOffice) |
+| `prepare_forward_cases.py` | packages explicitly selected source files and qualified observation assets into a new immutable `measurement--basis` bundle for the AMPS case runner |
+| `export_forward_observations.py` | regenerates the repository-released E7 mass-44 density and E21 H2O/CO2 open-source count tables, metadata, and `release_manifest.json` in `observations/` |
+| `observations/` | repository-released E7/E21 tables, referenced by `input/enceladus.in` through `input:` paths |
 | `config/tenishev2014_stage0.json` | reference H2O physics, three source-case definitions, empirical background, and fit controls |
 | `data/published_stripes_2014.json` | seven IAU_ENCELADUS polylines, 102 nodes in metres |
 | `${ENCELADUS_VALIDATION_DATA_ROOT}/data/derived/porco2014_jet_catalog.json` | external 98-jet geometry, uncertainty metadata, and published 41-jet selection |
@@ -573,6 +592,7 @@ can legitimately become worse.
 | `figure_data/e[35]_spice_ground_track.csv` | 1 s SPICE states and sub-spacecraft coordinates over +/-1600 s |
 | `tools/extract_figure3_vector.py` | recover the published Figure 3 curve centerlines from PDF vector paths |
 | `tools/plot_reconstructed_figures.py` | polar-map reprojection and deterministic Figure 2/3 rendering |
+| `tools/plot_current_fits.py` | paper-style E3/E5 comparison from the current Stage-0 fits, with plotted inputs, hashes, and chi-square in adjacent metadata |
 | `figures/figure2_ground_tracks_sources.*` | reconstructed source/stripe/ground-track map in PNG and PDF |
 | `figures/figure3_published_density_comparison.*` | reconstructed published density comparison in PNG and PDF |
 | `figures/figure3_current_stage0_fit.*` | paper-style comparison generated from the current Stage-0 fits |
@@ -1235,7 +1255,8 @@ The tests require all of the following:
 
 Without the SPICE variables the ground-track tests are skipped (and so are the
 tests that need the validation data without `ENCELADUS_VALIDATION_DATA_ROOT`).
-`srcEnceladus/test/run_tests.py` runs these modules as its `S_<module>` cases.
+`srcEnceladus/test/run_tests.py` reports each of these tests as its own row
+`S_<module>.<Class>.<method>` (see `srcEnceladus/test/README.md`).
 
 These tests verify the mathematical implementation and internal conservation.
 They do not validate the collisionless assumptions, published source geometry,
@@ -1308,3 +1329,102 @@ changed layout, because its axis calibration would then be invalid.
   `10.1007/s11214-014-0133-8`.
 - Cassini INMS calibrated archive `CO-S-INMS-3-L1A-U-V2.0`, used here only for
   time-tagged IAU_ENCELADUS trajectory geometry.
+
+
+## Prepare forward case data
+
+`prepare_forward_cases.py` creates a new local, self-contained case bundle for
+the Monte Carlo consumer. Here “publication” means this directory-creation
+step; it neither uploads results nor changes Git. It does not run a fit or
+choose an optimization strategy. The upstream operator selects one complete
+source prescription for each `measurement--basis` ID. Alternative fits of
+the same observation require distinct bundles, selected with runtime
+`source_set`; the ID itself carries no fitting-method preference.
+
+A selection JSON uses paths relative to itself (absolute input paths are also
+accepted):
+
+```json
+{
+  "schema_version": 1,
+  "publication_id": "enceladus_sources_VERSION",
+  "cases": {
+    "E3--tenishev2014_hybrid_8": {
+      "source_files": ["chosen_fit/E3_H2O_absolute.in"],
+      "observation_input": "enceladus_observations.in",
+      "observation_ids": ["inms_e3_h2o"],
+      "flyby_trajectory_file": "e3_spice_ground_track.csv"
+    }
+  }
+}
+```
+
+`source_files` names complete schema 2 `.in` files exported by the fitter,
+including projected coordinates, axes, temperatures, bulk speeds and every
+source coefficient. Multiple files must carry disjoint species and identical
+geometry/kinematics/mode/law. They are merged without changing any strengths.
+The publisher rejects missing/duplicate sources, invalid numbers, unsigned
+calibration substitutions, incomplete species vectors and inconsistent source
+radii. Shape vectors must sum to one; absolute vectors retain their fitted
+rates. Zero-rate components remain present. Nuisance backgrounds are excluded.
+`physical_CO2_calibration` may carry an explicit upstream physical calibration
+provenance for an absolute E3/E5 CO2 receipt; its presence does not apply a
+numerical correction. The tool never chooses or applies a factor of 2–5.
+
+`observation_input` contains qualified native `observation` blocks, named by
+`observation_ids`. Their event/species/instrument must match the chosen case.
+The publisher copies each data file and any finite-observer ray table into
+the bundle. An optional dense flyby trajectory is copied exactly. These data
+are not synthesized from the ID. The existing input path convention
+`input:relative/path` resolves relative to that observation input; ordinary
+observation paths use its `observation_data_root`, if present.
+
+```bash
+python3 srcEnceladus/standalone/prepare_forward_cases.py \
+  --selection /path/to/selection.json \
+  --output-dir /configured/model-data-root/enceladus_sources_VERSION
+```
+
+Output layout:
+
+```text
+enceladus_sources_VERSION/
+  enceladus_cases.in              # schema 1 case_catalog: enceladus
+  publication.json               # machine-readable preparation receipt
+  selection.json                 # exact upstream selection
+  cases/MEASUREMENT--BASIS/
+    sources.in                   # complete, self-contained source data
+    provenance.json              # opaque upstream source/calibration receipts
+  observations/MEASUREMENT--BASIS/*
+  trajectories/MEASUREMENT--BASIS.csv  # optional
+```
+
+The catalog declares `schema_version=1`, `publication_id`,
+`frame=IAU_ENCELADUS` and `reference_radius_m`. Each named `case` records
+`measurement_id`, `instrument`, `source_basis`, `available_species`,
+`source_distribution_file`/`source_sha256`,
+`provenance_file`/`provenance_sha256`; optional trajectory file/hash and
+`unavailable_source.SPECIES` explain deferred species. Repeated native
+`observation` blocks add `data_sha256` and, where applicable,
+`observer_geometry_sha256`. Every data path is relative to the bundle root.
+See the full field example in
+[`../CASE_RUNNER_PROPOSAL.md`](../CASE_RUNNER_PROPOSAL.md#6-published-catalog-syntax).
+Unknown selection fields fail rather than silently ignoring misspellings.
+
+Preparation occurs in a same-filesystem staging directory and becomes visible
+through one rename after all files/hashes exist. Existing output directories
+are refused. Original fit data and observations remain unchanged. The native
+reader independently checks hashes, rejects `..`/absolute paths and escaping
+symlinks, and snapshots verified bytes for native sampling. This bundle is a
+portable data handoff, not a declaration of physical model qualification.
+
+Current real bundle:
+`/data/vtenishe/cassini_validation_data/studies/enceladus_sources_20261113`
+contains only the independently fitted E3 H2O hybrid prescription
+(`Q=3.1424817803383656e28 s^-1`). Other real prescriptions need explicit
+upstream selection. The 28-case synthetic bundle is test input only.
+
+`python3 -B -m unittest standalone.tests.test_prepare_forward_cases -v`
+(from `srcEnceladus`) tests all 28 identities, coefficient preservation,
+multispecies merge, incompatible gas parameters, duplicates and CO2 deferral.
+These four test methods are also included in global `ENCELADUS-U00-EXPORTER`.

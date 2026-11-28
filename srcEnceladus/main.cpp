@@ -16,6 +16,10 @@
 #include <iostream>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
+#include <sstream>
+#include <cstring>
+#include "../src/general/input/amps_input_digest.h"
 #include <limits>
 #include <time.h>
 
@@ -82,6 +86,8 @@ void TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,doub
 
 //the mesh resolution
 double localSphericalSurfaceResolution(double *x) {
+  if(Enceladus::ForwardModel::AMPS::RuntimeMeshEnabled())
+    return Enceladus::ForwardModel::AMPS::RuntimeMeshResolution(x,true);
   double r,l[3];
   int idim;
   double SubsolarAngle;
@@ -108,6 +114,8 @@ double localSphericalSurfaceResolution(double *x) {
 }
 
 double localResolution(double *x) {
+  if(Enceladus::ForwardModel::AMPS::RuntimeMeshEnabled())
+    return Enceladus::ForwardModel::AMPS::RuntimeMeshResolution(x,false);
   double legacyResolution=DebugRunMultiplier*rSphere*dxMaxGlobal;
   const double radius2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
 
@@ -227,71 +235,104 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
 
 int main(int argc,char **argv) {
-  // Per-run physics and numerics never come from input/enceladus.input: that
-  // file is consumed only by the AMPS build generator.  Parse the run deck
-  // transactionally before MPI, matching srcSEP's startup ordering so an
-  // invalid deck cannot leave partially initialized distributed state.
-  std::string applicationInput="input/enceladus.in";
-  bool explicitInput=false;
-  bool validateInputOnly=false;
-  for (int argument=1;argument<argc;argument++) {
-    const std::string option(argv[argument]);
-    if ((option=="-input" || option=="--input") && argument+1<argc &&
-        !explicitInput) {
-      applicationInput=argv[++argument];
-      explicitInput=true;
-    }
-    else if (option.rfind("--input=",0)==0 && !explicitInput &&
-             option.size()>8) {
-      applicationInput=option.substr(8);
-      explicitInput=true;
-    }
-    else if (option=="--validate-input" && !validateInputOnly) {
-      validateInputOnly=true;
-    }
-    else if (option=="--help" || option=="-h") {
-      std::cout << "Usage: " << argv[0]
-                << " [--validate-input] "
-                << "[-input FILE|--input FILE|--input=FILE]\n"
-                << "Default run deck: input/enceladus.in\n";
-      return EXIT_SUCCESS;
-    }
-    else {
-      std::cerr << "Usage: " << argv[0]
-                << " [--validate-input] "
-                << "[-input FILE|--input FILE|--input=FILE]\n";
-      return EXIT_FAILURE;
-    }
-  }
-  std::string error;
-  if (!Enceladus::ForwardModel::AMPS::InstallFromInput(
-          applicationInput,&error)) {
-    std::cerr << error << '\n';
-    return EXIT_FAILURE;
-  }
-  if (validateInputOnly) {
-    const auto& configuration =
-        Enceladus::ForwardModel::AMPS::InstalledConfiguration();
-    std::cout << "[srcEnceladus] input_validation=PASS"
-              << " source_distribution="
-              << Enceladus::ForwardModel::AMPS::InstalledDistribution().name
-              << " solar_activity="
-              << Enceladus::ForwardModel::Name(configuration.solarActivity)
-              << " sample_length_steps=" << configuration.sampleLengthSteps
-              << " total_iterations=" << configuration.totalIterations
-              << " flyby_density_output="
-              << (configuration.flybyDensityOutput ? "on" : "off")
-              << " flyby_mesh_refinement="
-              << (configuration.flybyMeshRefinement ? "on" : "off")
-              << " plasma_background_mode="
-              << Enceladus::ForwardModel::Name(
-                     configuration.plasmaBackgroundMode)
-              << '\n';
+  namespace FM=Enceladus::ForwardModel;
+  FM::RuntimeSelection selection;
+  auto preparedStatus=FM::ParseRuntimeArguments(argc,argv,&selection);
+  if(!preparedStatus.success){std::cerr<<preparedStatus.message<<'\n'<<FM::RuntimeUsage(argv[0]);return EXIT_FAILURE;}
+  if(selection.help){std::cout<<FM::RuntimeUsage(argv[0]);return EXIT_SUCCESS;}
+  if(selection.list) {
+    std::vector<FM::CaseInventory> cases;
+    preparedStatus=FM::ListRuntimeCases(selection,PIC::UserModelInputDataPath,&cases);
+    if(!preparedStatus.success){std::cerr<<preparedStatus.message<<'\n';return EXIT_FAILURE;}
+    for(const auto& c:cases)std::cout<<c.status<<" "<<c.id<<" "<<c.detail<<'\n';
     return EXIT_SUCCESS;
   }
+  FM::ResolvedRun prepared;
+  preparedStatus=FM::ResolveRun(selection,PIC::UserModelInputDataPath,&prepared);
+  if(preparedStatus.success)preparedStatus=FM::ValidateMeshCapabilities(prepared.configuration.mesh,rSphere,
+      FM::Vec3{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},_MAX_REFINMENT_LEVEL_,
+      prepared.configuration.flybyMeshRefinement?prepared.configuration.flybyRefinementTargetCellSizeM:0);
+  std::string error;
+  // Inspection is local/pre-MPI. Actual runs retain failures as values until
+  // all ranks can enter the same status collective; no rank jumps into mesh
+  // initialization while another rank exits on a missing rank-local file.
+  if(selection.validateLocal||selection.describe) {
+    if(!preparedStatus.success){std::cerr<<preparedStatus.message<<'\n';return EXIT_FAILURE;}
+    if(!FM::AMPS::InstallPreparedRun(prepared,&error)){std::cerr<<error<<'\n';return EXIT_FAILURE;}
+    if(selection.describe)std::cout<<FM::DescribeRun(prepared);
+    const auto& configuration=prepared.configuration;
+    std::cout << "[srcEnceladus] input_validation=PASS"
+              << " source_distribution=" << prepared.distribution.name
+              << " solar_activity=" << FM::Name(configuration.solarActivity)
+              << " sample_length_steps=" << configuration.sampleLengthSteps
+              << " total_iterations=" << configuration.totalIterations
+              << " flyby_density_output=" << (configuration.flybyDensityOutput?"on":"off")
+              << " flyby_mesh_refinement=" << (configuration.flybyMeshRefinement?"on":"off")
+              << " plasma_background_mode=" << FM::Name(configuration.plasmaBackgroundMode)
+              << " case_id=" << prepared.caseId << '\n';
+    return EXIT_SUCCESS;
+  }
+  // Preserve the historical flat-deck pre-MPI surface/cache rejection gates.
+  // Named cases use the collective prepare/commit path below; the legacy
+  // installer remains resource-free and has always preceded MPI initialization.
+  bool legacyInstalled=false;
+  if(selection.caseId.empty()) {
+    if(!preparedStatus.success){std::cerr<<preparedStatus.message<<'\n';return EXIT_FAILURE;}
+    if(!FM::AMPS::InstallPreparedRun(prepared,&error)){std::cerr<<error<<'\n';return EXIT_FAILURE;}
+    legacyInstalled=true;
+  }
   PIC::InitMPI();
-
-  //  MPI_Init(&argc,&argv);
+  auto collectiveStatus=[&](bool local,const std::string& message) {
+    int ok=local?1:0,all=0;MPI_Allreduce(&ok,&all,1,MPI_INT,MPI_MIN,MPI_GLOBAL_COMMUNICATOR);
+    if(!all) {
+      if(!local)std::cerr<<"[srcEnceladus] rank="<<PIC::ThisThread<<" "<<message<<'\n';
+      if(PIC::ThisThread==0)std::cerr<<"collective_input_validation=FAIL; no mesh/particles allocated\n";
+    }
+    return all!=0;
+  };
+  if(!collectiveStatus(preparedStatus.success,preparedStatus.message)){MPI_Finalize();return EXIT_FAILURE;}
+  // Bind executable bytes as well as the source/input assets. /proc/self/exe
+  // is used on Linux; argv[0] is the portable fallback for other hosts.
+  std::ifstream executable("/proc/self/exe",std::ios::binary);
+  if(!executable)executable.open(argv[0],std::ios::binary);
+  std::ostringstream executableBytes;executableBytes<<executable.rdbuf();
+  if(!collectiveStatus(!executable.bad()&&!executableBytes.str().empty(),"cannot read executable identity")){MPI_Finalize();return EXIT_FAILURE;}
+  prepared.executableSha256=::AMPS::InputDigest::Sha256Hex(executableBytes.str());
+  prepared.fingerprint=::AMPS::InputDigest::Sha256Hex(prepared.fingerprint+prepared.executableSha256);
+  prepared.mpiRanks=PIC::nTotalThreads;
+  char authority[65]={0};
+  if(PIC::ThisThread==0)std::memcpy(authority,prepared.fingerprint.c_str(),64);
+  MPI_Bcast(authority,65,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
+  if(!collectiveStatus(prepared.fingerprint==authority,"ranks resolved different input/source/observation/executable bytes")){MPI_Finalize();return EXIT_FAILURE;}
+  const bool installed=legacyInstalled||FM::AMPS::InstallPreparedRun(prepared,&error);
+  if(!collectiveStatus(installed,error)){MPI_Finalize();return EXIT_FAILURE;}
+  if(selection.validateMPI) {
+    const bool empty=PIC::ParticleBuffer::ParticleDataBuffer==nullptr;
+    if(!collectiveStatus(empty,"particle buffer unexpectedly allocated during input validation")){MPI_Finalize();return EXIT_FAILURE;}
+    if(PIC::ThisThread==0)std::cout<<"[srcEnceladus] mpi_input_validation=PASS ranks="<<PIC::nTotalThreads
+       <<" case_id="<<prepared.caseId<<" allocated_particle_buffer=false fingerprint="<<prepared.fingerprint<<'\n';
+    MPI_Finalize();return EXIT_SUCCESS;
+  }
+  bool snapshotOK=true;
+  if(PIC::ThisThread==0) {
+    try {
+    // Named cases require a fresh directory. A stale output tree must never
+    // look like a continuation of another source prescription or measurement.
+    if(!prepared.caseId.empty()&&(std::filesystem::exists("run_manifest.json")||
+       std::filesystem::exists("mesh.msh")||
+       (std::filesystem::is_directory("PT/plots")&&!std::filesystem::is_empty("PT/plots")))) {
+      snapshotOK=false;error="case run requires a fresh output directory (existing run/mesh/plot artifacts)";
+    } else {
+      const auto snapshot=FM::WriteRunSnapshot(prepared,".");snapshotOK=snapshot.success;error=snapshot.message;
+    }
+    } catch(const std::filesystem::filesystem_error& failure) {
+      // Rank zero owns output publication, but all ranks own the failure
+      // decision. A filesystem exception must still reach the collective;
+      // otherwise other ranks could wait forever before mesh initialization.
+      snapshotOK=false;error=std::string("case output access failed: ")+failure.what();
+    }
+  }
+  if(!collectiveStatus(snapshotOK,error)){MPI_Finalize();return EXIT_FAILURE;}
 
   // The runtime seed controls every stochastic parent-loss draw. Fold the
   // 64-bit receipt into the positive int accepted by the generic generator;
@@ -401,6 +442,21 @@ int main(int argc,char **argv) {
 
 
 
+  // Explicit runtime bounds are physical SI coordinates and do not depend
+  // on TESTMODE. Legacy decks retain the old domain construction above.
+  if(FM::AMPS::RuntimeMeshEnabled()) {
+    const auto& mesh=prepared.configuration.mesh;
+    const double lo[3]={mesh.minimumM.x,mesh.minimumM.y,mesh.minimumM.z};
+    const double hi[3]={mesh.maximumM.x,mesh.maximumM.y,mesh.maximumM.z};
+    for(int d=0;d<3;++d){xmin[d]=lo[d];xmax[d]=hi[d];}
+    PIC::Mesh::mesh->UserNodeSplitCriterion=FM::AMPS::RuntimeNodeSplitCriterion;
+  }
+  const auto metric=FM::AMPS::ConfigureMeshMetric(xmin,xmax);
+  if(!collectiveStatus(metric.success,metric.message)){MPI_Finalize();return EXIT_FAILURE;}
+  if(PIC::ThisThread==0)std::cout<<"[srcEnceladus] domain_min_m="<<xmin[0]<<","<<xmin[1]<<","<<xmin[2]
+    <<" domain_max_m="<<xmax[0]<<","<<xmax[1]<<","<<xmax[2]
+    <<" explicit_runtime_mesh="<<(FM::AMPS::RuntimeMeshEnabled()?"true":"false")<<'\n';
+
   //generate only the tree
   PIC::Mesh::mesh->AllowBlockAllocation=false;
   PIC::Mesh::mesh->init(xmin,xmax,localResolution);
@@ -489,6 +545,13 @@ int main(int argc,char **argv) {
       Enceladus::ForwardModel::AMPS::GlobalTimeStep : localTimeStep;
   if (Enceladus::ForwardModel::AMPS::IsInstalled())
     Enceladus::ForwardModel::AMPS::FinalizeNumericsAfterMeshAllocation();
+  bool planSnapshotOK=true;
+  if(PIC::ThisThread==0) {
+    const auto status=FM::WriteRunSnapshot(prepared,".",&FM::AMPS::InstalledNumericalPlan());
+    planSnapshotOK=status.success;error=status.message;
+  }
+  if(!collectiveStatus(planSnapshotOK,error)){MPI_Finalize();return EXIT_FAILURE;}
+
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   //set up the particle weight
@@ -617,6 +680,12 @@ int main(int argc,char **argv) {
   }
 
   Enceladus::ForwardModel::AMPS::PrintFinalReceipt(nTotalIterations);
+  prepared.completedIterations=nTotalIterations;
+  if(PIC::ThisThread==0) {
+    const auto status=FM::WriteRunSnapshot(prepared,".",&FM::AMPS::InstalledNumericalPlan());
+    if(!status.success){std::cerr<<status.message<<'\n';MPI_Abort(MPI_GLOBAL_COMMUNICATOR,1);}
+  }
+
 
   //output the particle statistics of the test run
   #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_

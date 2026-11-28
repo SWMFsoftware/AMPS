@@ -648,11 +648,14 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
       //check if the number of iterations between the load rebalancing exeeds 
       //the minimum number '_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_'
-      if (_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) { 
+      if (_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) {
       if (PIC::Parallel::IterationNumberAfterRebalancing<_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) {
         EmergencyLoadRebalancingFlag=false;
       }
       }
+
+      //runtime switch (pic.h): with dynamic rebalancing disabled the latency never moves blocks
+      if (!PIC::Parallel::DynamicLoadRebalancingEnabled) EmergencyLoadRebalancingFlag=false;
 
       MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
@@ -1667,7 +1670,8 @@ void PIC::Sampling::Sampling() {
 
     //redistribute the processor load and check the mesh afterward
 #if _PIC_SAMPLING_BREAK_LOAD_REBALANCING_MODE_ == _PIC_MODE_ON_
-    if (PIC::Parallel::IterationNumberAfterRebalancing!=0) {
+    //runtime switch (pic.h): with dynamic rebalancing disabled the sampling break keeps the decomposition
+    if ((PIC::Parallel::IterationNumberAfterRebalancing!=0)&&(PIC::Parallel::DynamicLoadRebalancingEnabled==true)) {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
       PIC::Parallel::RebalancingTime=MPI_Wtime();
 

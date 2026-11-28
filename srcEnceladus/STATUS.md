@@ -1,6 +1,503 @@
 # Enceladus forward-model status
 
-Last updated: 2026-11-11 (America/Chicago)
+Last updated: 2026-11-28 (America/Chicago)
+
+## Merge with upstream `master` `6791b5a` — 2026-11-28 (second)
+
+User authorization: pull upstream AMPS and merge if needed; nothing
+committed. Fast-forward `5ce1335` → `6791b5a` (three SEP/SEP3D/nightly
+commits; long-tier SEP tests on 16 ranks, routine `max_ranks` 16, new
+`sep3d-event-spice` runner). Backup:
+`test_output/upstream-merge-20261128b/backup/`. Only `MakefileTest/Table` and
+`utility/nightly/runners.json` changed on both sides; both merged cleanly
+three ways (the four Enceladus end-to-end blocks keep `Ranks=8` <= 16 and the
+per-test `S_` runner note is kept). Upstream changed nothing under `src/`,
+`srcEnceladus/` or `input/`, so the production executable is unchanged.
+Checks: nightly tooling tests OK, Table check no problems, regenerated
+`Makefile.test`/`.long` contain all four targets, test catalog 67/1342 PASS,
+Enceladus application suite 117/117 PASS.
+
+## End-to-end Table tests: E3 INMS and UVIS 2010 — 2026-11-28
+
+User request: E3 and UVIS 2010 end-to-end runs in `MakefileTest/Table` that
+load fitted plume parameters and plot the model against INMS and UVIS.
+Decisions (user): `tenishev2014_hybrid_8` for both; nightly 5000 steps and
+long tier 10000 steps; fitted sources in
+`SWMF_data/PT/AMPS/data/input/Enceladus/fitted_plume` and observations in
+`…/observation_files`; gate on an exact regression, plots and fit statistics
+reported but never gating.
+
+**Inputs.** Byte-identical copies (each directory with `README.md` and
+`SHA256SUMS`) of the 2026-11-11 campaign's
+`independent_each_observation` absolute H2O fits for E3 (3.142482e28 s^-1,
+reduced chi-square 6.44) and UVIS 2010 E10 solar (4.576082e27 s^-1, shape
+reduced chi-square 3.88), with manifests and the two geometry files their
+headers cite, and of `plume_fit_v1` E3 H2O density and UVIS 2010 optical
+depth plus ray table.
+
+**Tests** (`srcEnceladus/test/end_to_end/README.md`): `Enceladus--E3-INMS`
+and `Enceladus--UVIS-2010` (nightly, family `enceladus-e2e`, `${MPIRUN}`) and
+`Long--Enceladus--E3-INMS` and `Long--Enceladus--UVIS-2010` (Tier=long,
+`Ranks=8`, family `enceladus-long`; a long name may not begin with the nightly
+test name `Enceladus`). Production build (`-amps-test=off`); decks copy the
+production cases' physics, numerics and explicit mesh (E3 with its 20 km
+tube); `check.sh` gates on completion, rank count, zone count, ledger closure
+and `DiffNum.pl` equality of the observation and ledger products with
+`output/test_Enceladus/<NAME>--*.ref_np8.gz`; `compare.sh` writes the
+comparison PNGs and prints INMS chi-square/ratio and UVIS shape-fit/peak-scale
+metrics. A perturbed one-particle ledger reference, a wrong zone count and a
+wrong rank count each fail the gate.
+
+**Reproducibility and `reproducible_parallel_run`.** Two 8-rank 40-step runs
+were bit-identical, but two 8-rank 5000-step UVIS runs with the same seed were
+not (resident 1,132 vs 1,135; photolytic losses 289 vs 295; columns up to
+about 0.8% apart). Two load-dependent inputs were found: (1) the build enables
+both core rebalancing paths (emergency, by measured latency, and at every
+sampling break), which move AMR blocks by wall-clock time; (2) the unbuffered
+particle exchange inserts received particles in MPI message-arrival order
+(`MPI_Testany`), and particles draw random numbers in list order. With only
+(1) removed, both E3 tests reproduced exactly but both UVIS tests still
+differed after the first window (7 particles; columns up to 4%). The core
+already sorts the cell lists by particle signature after each exchange, but
+only in the nightly test mode (`-amps-test=on`), which these production-mode
+tests do not use. Single-rank runs were reproducible. By user choice (keep 8
+ranks; option 1), two core runtime switches were added, both defaulting to
+the previous behavior for every application: `PIC::Parallel::DynamicLoadRebalancingEnabled`
+(true; gates both rebalancing sites in `pic.cpp`) and
+`PIC::Parallel::DeterministicParticleExchangeOrder` (false; also enables the
+existing signature sort in the unbuffered and non-CUDA buffered exchange,
+`pic_parallel.cpp`), declared and documented in `src/pic/pic.h`. The optional
+Enceladus key `reproducible_parallel_run` (default false; parsed in
+`ForwardModel.cpp`, allowed in schema-3 cases by `SourceCatalog.cpp`, applied
+in `FinalizeNumericsAfterMeshAllocation`, shown in the receipt) sets both; the
+four decks set it `true`. The runtime-parser cases U04/U04b also check default
+false, `true`, and rejection of an invalid value.
+
+**Verification** (evidence `test_output/enceladus-e2e-20261128/`; the four
+tests built and staged through their own Table compile/rundir targets after
+the native preflight, `stage.log`; runs through their Table run/check targets
+with `MPIRUN`/`TESTMPILAUNCH` = `mpirun --bind-to none -np 8`, all four at once
+on a shared node, `runs.log`):
+
+- application suite (`srcEnceladus/test/run_tests.py`): **117/117 PASS**;
+  nightly tooling tests **116 PASS**, Table check no problems;
+- run A2 → references `output/test_Enceladus/<NAME>--{observation,ledger}.ref_np8.gz`
+  (SWMF_data); run B2 against them: **4/4 empty diffs**, products
+  byte-identical to A2; receipts `reproducible_parallel_run=on`, zero
+  rebalancing events, 5 or 10 zones, ledger residual 0;
+- run times at 8 ranks (compile ~1.7 min each): nightly E3 256-267 s, UVIS
+  118-122 s; long E3 387-401 s, UVIS 187-191 s (Table `Time=` 15/8/20/12 min
+  allow for a loaded node: up to 874 s was observed for nightly E3);
+- comparison (not gating), last window: E3 INMS H2O chi2/sample 64.0 (5000
+  steps) and 33.8 (10000), median model/observation 0.95 and 0.90 over the 16
+  in-domain samples; UVIS 2010 shape chi2 9992 and 9922 over 1133 samples, model
+  peak column 0.564 and 0.582 x the published 9.0e19 m^-2. Plots:
+  `runB2.<NAME>/comparison/`.
+
+**Notes.** The nightly publishes test logs, not run directories, so the
+plots appear in the log only as metrics. `Makefile.test`/`Makefile.test.long`
+(generated, git-ignored) were regenerated from the Table with
+`utility/TestScripts/table_parser.cpp` to run the targets locally. The
+legacy-test manual chapter (`doc/update_legacy_test_catalog.py --check`)
+already fails on pristine upstream (`Mars-ions` lacks an editorial purpose)
+and will need entries for these four tests when it is next updated. The
+SWMF_data fixtures and references must be committed and pushed in SWMF_data
+for the nightly, which tests a fresh SWMF_data clone.
+
+## One receipt row per standalone test — 2026-11-28
+
+User request: report one row per standalone plume-model test instead of one
+row per module. `srcEnceladus/test/run_tests.py` now runs `standalone/tests`
+through the new recorder `test/standalone_test_receipt.py` and writes one row
+`S_<module>.<Class>.<method>` per test (the unittest selector without
+`standalone.tests.test_`), with its own status, reason line, traceback and
+duration. Module grouping and environments are unchanged: the four
+exporter/publisher modules run together in the caller's environment and
+still make up the registered aggregate `U00_exporter`; every other module runs
+in its own interpreter with the data/SPICE roots. Rules: a unittest error is
+`FAIL`; a failing subtest fails its test; a test not run because a class or
+module fixture was skipped or failed inherits that outcome; a fixture failure
+that explains no test (e.g. `tearDownClass`) is its own `FAIL` row; an
+unimportable or empty module is one `FAIL` row `S_<module>`; a recorder crash
+turns each of its modules into a `FAIL` row. All of these paths were exercised
+on a throwaway fixture package (`--root`, not used by the runner).
+
+The receipt grows from 55 to **117 rows** (14 `U`, 31 `R_`, 72 `S_`); the
+registered 45 rows, their order and the global registry/catalog are
+unchanged. `APPLICATION-ENCELADUS-FORWARD-001` accepts the dotted names and
+reports `standalone_test_case_count`/`standalone_test_skipped`. The nightly
+reader (`enceladus-receipt`) needed no change. Evidence under
+`test_output/upstream-merge-20261128/`: `pertest-app-suite-roots` 117 PASS;
+`pertest-app-suite-noroots` 107 PASS / 10 SKIP (the `S_spice_ground_tracks`,
+`S_source_cases` and two `S_fitting` tests, which the per-module row had shown
+as PASS); `pertest-global-forward` 45/45 PASS with 72 standalone rows; nightly
+tooling unit tests 116 PASS. The nightly's history for the old ten
+`S_<module>` rows ends when this change is committed; the new recorder file
+must be committed with it.
+
+## Merge with upstream `master` — 2026-11-28
+
+User authorization: merge the local source with the current upstream core,
+without committing. Local `master` again had no commits of its own (0 ahead /
+15 behind), so `git merge --ff-only origin/master` fast-forwarded `74b15db` to
+upstream `5ce1335` (2026-11-27); no merge commit exists and nothing is staged.
+The same 35 tracked files remain modified, unstaged, on top of it.
+
+**Preservation.** Every locally modified tracked file, the full local patch,
+the before/target refs, the pre-merge `Makefile.def`, `AGENTS.md` and
+`doc/AMPS.pdf` are saved under
+`/home/vtenishe/Mars2/AMPS/test_output/upstream-merge-20261128/backup/`. Only
+`Makefile` and `src/test/tests/harness/self/run_test.py` changed on both sides;
+they were set to the committed base for the fast-forward and re-merged three
+ways. No untracked file blocked the merge.
+
+**Resolution.**
+
+- `Makefile`: clean three-way merge (local `EXTRALINKEROPTIONS` and
+  `FAST_WAVE_CXXFLAGS`; upstream `allclean` removes `Makefile.test.long`).
+- `src/test/tests/harness/self/run_test.py`: upstream `cb91ebb` now pins the
+  Moon cases itself (`[1220, 62, 50]` plus exact Moon identities); the local
+  pin keeps upstream's form with `[1222, 70, 50]` for INP-06/07 and
+  U09/U10/N06–N11. Its README gains a matching note; `src/test/README.md`
+  names the new upstream base.
+- The 2026-11-24 fix of `APPLICATION-ENCELADUS-FORWARD-001` (`S_` rows) is
+  still required: upstream did not change that owner.
+- Installed `Makefile.def` (git-ignored, written by `Config.pl -install`):
+  upstream added `-include ${PTDIR}/Makefile.test.long` to `Makefile.def.amps`,
+  after which the SWMF `Config.pl` refused every configuration ("Makefile.def.amps
+  is newer than Makefile.def"). This was the first native-owner ERROR below.
+  The existing site header (12 lines) was kept and the new template appended,
+  which is exactly what install writes for that file; `-install` itself was not
+  run because it would regenerate `Makefile.conf`. `Makefile.test.long` and the
+  `table_parser` that writes it are produced only by a reinstall, so the
+  Tier=long Table tests are not available from this checkout's `make`.
+- Catalogs needed no regeneration (`--check` PASS, 67 suites / 1342 cases);
+  `doc/AMPS.pdf` was rebuilt for upstream's `doc/ApplicationRegression.tex`
+  change (PASS, snapshot 67/1342).
+
+Upstream changed no `srcEnceladus/`, `src/general/`, `src/pic/` or registry
+file; its core changes are SEP models, chemistry database, nightly tooling and
+the Tier=long build hooks. No Enceladus model or physics change was needed.
+
+**Validation** (evidence root
+`/home/vtenishe/Mars2/AMPS/test_output/upstream-merge-20261128/`):
+
+- Standalone discovery with data/SPICE roots: **72 PASS** (run twice).
+- `srcEnceladus/test/run_tests.py` with data/SPICE roots: **55 PASS**
+  (45 registered + ten `S_` modules), run twice.
+- `global-focused/`: CORE-HARNESS-001 13, CORE-GENERAL-INPUT-001 7 and
+  APPLICATION-ENCELADUS-FORWARD-001 45 PASS; the native owner ERROR (12) was
+  the `Makefile.def` freshness refusal above, before any build step.
+- `global-native/` (after the `Makefile.def` merge): native owner clean
+  configure/hooks/`-j16` build and **12/12 PASS** (N00–N11).
+- `global-forward-harness/`: **65/65 PASS, 3/3 suites**; the owner without
+  data/SPICE roots records `S_source_cases` and `S_spice_ground_tracks` as SKIP.
+- `production-build/`: preflight (limited to processes in this checkout;
+  unrelated SEP/Earth jobs ran elsewhere on the node), `rm -rf -- build`,
+  `Config.pl -application=enceladus
+  -model-data-path=/data/vtenishe/cassini_validation_data/studies`, hooks,
+  `env MAKEFLAGS=-j16 make amps` — PASS; `Makefile.conf` unchanged; the
+  executable SHA-256 `1a6af0b7…` is identical to the 2026-11-24 build.
+- `production/`: startup **6 PASS**; 1 READY / 27 MISSING_PUBLICATION;
+  describe identical to 2026-11-24; local and four-rank validation PASS
+  (fingerprint `1fdfc8af…`). The bounded E3 deck (`real-e3-short.in`) gives the
+  same receipt as 2026-11-24: 40 injected, 39 resident, ledger residual 0.
+- `APPLICATION-ENCELADUS-E3-001` (10,000-step extended campaign) was not run.
+
+**Nightly coverage note.** The nightly's `enceladus` runner
+(`utility/nightly/runners.json`) runs the committed upstream code, family
+`app-enceladus` ("srcEnceladus (plume forward model)"): 53 rows, among them
+`U00_exporter` (three exporter modules) and ten `S_<module>` rows. The local
+`test_prepare_forward_cases.py` (untracked), the four data-root exporter tests,
+U09 and U10 reach the nightly only after they are committed.
+
+## Merge with upstream `master` — 2026-11-24
+
+User authorization: fetch/pull upstream `origin/master` and merge it with the
+local source, adjusting the Enceladus model if needed, without committing.
+Local `master` had no commits of its own (0 ahead / 68 behind), so the pull was
+a fast-forward from `d068476` to upstream `74b15db`; no merge commit exists.
+All local work remains unstaged and uncommitted on top of it.
+
+**Preservation.** Before the pull every locally modified tracked file, a
+binary patch of all local changes (verified to reverse-apply), the 21 untracked
+files the pull would overwrite and the before/after refs were saved under
+`/home/vtenishe/Mars2/AMPS/test_output/upstream-merge-20261124/backup/`. The 13
+files changed on both sides were set to the committed base for the
+fast-forward and then re-merged three ways (base `d068476`, local backup,
+upstream); 19 of the 21 untracked blockers were byte-identical to upstream.
+
+**Conflict resolution.**
+
+- `srcEnceladus/test/run_tests.py`: upstream `822dec0` (one `S_<module>` case
+  per other standalone test module) is kept; `test_prepare_forward_cases`
+  joins `EXPORTER_MODULES`, so it stays inside `U00_exporter` as documented.
+- `src/test/tests/harness/self/run_test.py`: stream pin `[1222, 70, 50]` =
+  upstream core 1220 + INP-06/07, Enceladus 62 + U09/U10/N06–N11, and Moon 50.
+  Pristine upstream already failed `HARNESS-SELECTION-001` (observed
+  `[1220, 62, 50]` against its pin `[1220, 62, 46]`) because `e5f2978`
+  registered MOON-I21..I24 without updating the pin; verified on a
+  `git archive` export of `74b15db`.
+- `src/test/tests/applications/enceladus/run_test.py`: upstream's new `S_`
+  rows made `APPLICATION-ENCELADUS-FORWARD-001` error on pristine upstream
+  (exact-list check, no `SKIP` status). The owner now validates `S_` rows
+  separately (unique, PASS/FAIL/SKIP, any FAIL raises a suite error), records
+  skipped modules in its metrics, and still requires the 45 registered rows
+  exactly and in order.
+- `src/test/README.md` keeps both sections with merged totals;
+  `doc/build_manual.py` is upstream's file, which already contains the local
+  project Tectonic lookup; `TEST_CATALOG.md` and `doc/TestSuiteCatalog.tex`
+  were regenerated (67 suites / 1342 cases, both `--check` PASS);
+  `doc/AMPS.pdf` was rebuilt with `doc/build_manual.py --engine pdflatex`.
+- Root `AGENTS.md`: the tracked upstream file (srcMoon V&V rules) is followed
+  verbatim by the previously untracked local repository-wide file (CME program,
+  read-only Git, native preflight), also verbatim.
+
+Upstream's Enceladus changes (`74974c2`: portable repository-relative
+provenance in exported source receipts and new exporter tests; `822dec0`:
+per-module standalone cases and data/SPICE path options) needed no model or
+physics change. No source law, reaction, transport, sampling or generic PIC
+behavior was altered by the merge.
+
+**Validation** (evidence root
+`/home/vtenishe/Mars2/AMPS/test_output/upstream-merge-20261124/`):
+
+- Standalone discovery with validation data and SPICE roots: **72 PASS**, no
+  skips (66 earlier + upstream exporter tests + four data-root tests).
+- `srcEnceladus/test/run_tests.py` with data/SPICE roots: **55 PASS**
+  (45 registered + ten `S_` modules), no skips.
+- Focused global campaign (`global-focused/`): native owner
+  `APPLICATION-ENCELADUS-NATIVE-STARTUP-001` performed the clean
+  configure/hooks/`-j16` build and passed all 12 cases (six legacy gates and
+  N06–N11). The same run exposed the two pristine-upstream harness/owner
+  regressions above (`HARNESS-SELECTION-001` FAIL, forward owner ERROR).
+- After those fixes (`global-focused-rerun/`): CORE-HARNESS-001 13,
+  CORE-GENERAL-INPUT-001 7 and APPLICATION-ENCELADUS-FORWARD-001 45 —
+  **65/65 PASS, 3/3 suites**. Without data/SPICE roots in the owner
+  environment `S_source_cases` and `S_spice_ground_tracks` are SKIP (recorded
+  in metrics, not imported); both pass when the roots are supplied.
+- Production-root rebuild (`production-build/`): preflight, `rm -rf -- build`,
+  `Config.pl -application=enceladus
+  -model-data-path=/data/vtenishe/cassini_validation_data/studies`, hooks,
+  `env MAKEFLAGS=-j16 make amps` — PASS; `Makefile.conf` unchanged; the same
+  four inherited warnings (dust format, `register`, two path-format sites);
+  `srcEnceladus/test_output` held and restored.
+- Production checks (`production/`): startup gates **6 PASS**; inventory
+  exactly 1 READY / 27 MISSING_PUBLICATION; describe shows fitted
+  `Q=3.142481780338366e28 s^-1`; local and four-rank collective validation
+  PASS with no particle buffer. Bounded real E3 run (`real-e3-short.in`:
+  4 steps, 2-step windows, 10 primaries/step, no tube): exit 0, 40 injected,
+  39 resident, 1 escape, ledger residual 0, minimum edge 126050 m,
+  `dt=210.0833 s` (CFL 0.5, 300 m/s). Execution/provenance only, not a
+  converged plume.
+
+The shared build was previously configured for `core-mesh-3d`; it is now the
+production-root Enceladus build. The 2026-11-13 evidence directory
+`test_output/enceladus-case-runtime-20261113/` cited below is no longer present
+in this checkout; its paths are historical references.
+
+## Implemented case runner and runtime AMR controls — 2026-11-13
+
+This section supersedes the earlier proposal-only entry retained below. User
+authorization: implement `CASE_RUNNER_PROPOSAL.md` and move domain/refinement
+control into runtime `.in`. No fitting strategy is interpreted by Monte Carlo.
+Git operations were read-only; source/data changes remain unstaged/uncommitted.
+
+### Implementation
+
+- New dependency-light `CaseSelection.{h,cpp}`, `SourceCatalog.{h,cpp}` and
+  `MeshControls.cpp`; native application makefile includes all modules.
+  The established core `ResolveCase` handles common/direct named overlays.
+  CLI accepts `-i`/`-input`/`--input[=]`, `-case`/`--case[=]`, list, describe,
+  local validation, and collective MPI validation. Unknown/duplicate/missing
+  arguments and selectors are errors. Schema 2 explicit-file behavior remains.
+- Schema 3 `source_set` resolves below `PIC::UserModelInputDataPath`, generated
+  by existing `Config.pl -model-data-path=PATH`. Catalog/source/observation
+  paths and hashes are checked without selecting an alternative fit.
+  Absolute/traversing paths and escaping symlinks are rejected. All selected
+  bytes are retained; native table readers use those verified snapshots.
+  Actual ranks compare input/asset/executable identity before mesh allocation.
+  MPI inspection explicitly verifies a null particle buffer and exits early.
+- Runtime mesh keys define SI body-fixed box bounds, background cell maximum
+  edge, optional hemisphere surface sizes, optional south-polar cone and
+  repeatable named box/sphere/shell refinements. Requests combine by minimum.
+  The exact block-intersection criterion catches small off-centre features;
+  exact segment/AABB distance supports the existing flyby tube. Noncubic cell
+  aspect ratio is handled explicitly. Explicit mesh law bypasses hidden
+  TESTMODE scaling; absent new keys preserves legacy behavior. Compiled AMR
+  limits are checked rather than clipping unattainable requests.
+- Final numerical plan records actual minimum allocated edge,
+  `dt=min(CFL*dx/v_characteristic)`, and `W=Q*dt/N` for each primary.
+  Case inspection does not pretend these are known before mesh construction.
+  Fresh case directories are required. Rank zero snapshots raw root/includes,
+  canonical selected input, complete sources/assets and phase/iteration/rank/
+  binary/source identity in `case_inputs/` and `run_manifest.json`; final
+  receipts include realized cell size, timestep, limiting species and weights.
+- Core input `Document::sourceBytes` appends exact bytes without changing the
+  grammar/canonical form or existing leading fields. New dependency-free
+  `amps_input_digest.h` supplies SHA-256, independently tested with known
+  vectors. No CME physics, generic PIC particle algorithm, reaction constants
+  or source emission law was altered by this task.
+- `standalone/prepare_forward_cases.py` prepares a NEW immutable local bundle
+  from explicit complete fit files and native observation blocks. It preserves
+  nonuniform/zero strengths, validates full geometry/kinematics/mode coverage,
+  merges disjoint species only when compatible, excludes nuisance backgrounds,
+  and copies hash-bound observations/observer tables/trajectories. It refuses
+  replacement of an existing bundle. “Publication” is local file packaging;
+  there is no Git commit, network upload or public release.
+
+### Real-data availability
+
+The executable's final model-data root is
+`/data/vtenishe/cassini_validation_data/studies`.
+`input/enceladus_cases.in` declares all seven measurements × four bases.
+Only one real prescription was already explicitly selected by the user:
+`E3--tenishev2014_hybrid_8`, independent H2O, absolute
+`Q=3.1424817803383656e28 molecules/s`. Its complete fitted export,
+qualified `inms_e3_h2o` block/data and SPICE-derived E3 trajectory are copied
+without changing original files into:
+
+`/data/vtenishe/cassini_validation_data/studies/enceladus_sources_20261113`
+
+The selection receipt is retained at
+`test_output/enceladus-case-runtime-20261113/e3-source-selection.json`.
+Other 27 real identities intentionally report `MISSING_PUBLICATION` until the
+upstream selection is specified. No independent/pooled alternative was chosen
+silently. Absolute E3/E5 physical CO2 remains deferred. A separately labelled
+28-case synthetic bundle at
+`.../studies/enceladus_case_validation_20261113_synthetic` exercises interfaces
+only. Its geometry/rates are not inferred from Cassini and are not production
+source prescriptions.
+
+### Validation ledger
+
+Evidence root (absolute):
+`/home/vtenishe/Mars2/AMPS/test_output/enceladus-case-runtime-20261113`.
+The native owner now serializes a clean configuration/hooks/top-level `-j16`
+build, safely holds/restores the pre-existing 19 GiB application output during
+source copying, and imports six unchanged legacy gates plus six new groups.
+Machine tool/rank-flag settings remain configurable. MPI-unavailable groups
+report SKIP; data/physics failures remain FAIL. New IDs are registered in the
+manifest, case registry, traceability, generated `TEST_CATALOG.md` and manual
+suite snapshot (56 suites / 1203 registered cases; registration is not PASS).
+
+- Full standalone unittest discovery with
+  `ENCELADUS_VALIDATION_DATA_ROOT=/data/vtenishe/cassini_validation_data`:
+  **66 PASS**, no skips; `standalone-final.log`.
+- Final dependency-light application campaign: **45 PASS**, no failures;
+  `application-final/test_receipt.json`. U00 includes four new publisher tests;
+  U09 includes nine C++ resolver-driven test methods; U10 checks independent
+  refinement/distance/capability fixtures. Original 43 outcomes/references stay.
+- Generic parser/digest tests: **7 PASS** (original five plus INP-06/07).
+  Harness self-tests: **13 PASS**. See global run receipts below.
+- Final combined report: **77 PASS / 0 FAIL / 0 SKIP / 0 ERROR**, four suites
+  all PASS, 240.488 s. Global run:
+  `test_output/enceladus-case-runtime-20261113/global-results/run-20261113T092040Z-2290774`.
+  `amps-core-tests.json` and `.xml` are the single combined reports; per-stream
+  core/application logs and exact per-test artifact paths are retained there.
+  Native receipts contain all six legacy gates plus N06–N11. Nine transport
+  runs cover all four bases and both primaries, including four ranks; two
+  UVIS runs each output three rays in two windows. All 40-injection global
+  ledgers close. Noncubic refinement gives minimum edge 63025 m and
+  dt=7.878125 s for CFL 0.5 / characteristic speed 4000 m/s.
+- Restored production-root native build: **PASS** through recorded root/idle,
+  `rm -rf -- build`, Config.pl, ampsConfig.pl hooks and top-level `-j16` make;
+  `production-build/{native-preflight.json,native-config.log,native-hooks.log,native-build.log}`.
+  Site `Makefile.conf` remains byte-for-byte identical to preflight. The
+  original application test output is restored. No `.amps.conf` was edited
+  directly. The four existing build warnings (dust format, legacy register,
+  two legacy path formatting sites) remain visible in the build transcript.
+- Restored executable legacy startup: **6 PASS**; `production-startup/`.
+  Production case inventory/describe: **PASS**, exactly one READY and 27
+  MISSING_PUBLICATION, correct fitted Q; `production-list.log` and
+  `production-describe.log`.
+- Real E3 four-rank validation: **PASS**, null particle buffer;
+  `production-mpi-validate.log`. Bounded four-step one-rank E3 H2O run:
+  **PASS**, 40 injected primaries, closed final ledger, two sampling windows,
+  complete source/input/observation snapshots, independently verified SHA-256,
+  fitted Q=3.142481780338366e28 s^-1. Deliberately coarse test mesh minimum
+  edge=126050 m; CFL 0.5 and 4000 m/s give dt=15.75625 s. Numerical overrides
+  are confined to `real-e3-short.in` (4 steps, sample length 2, 10 primaries
+  per step, no flyby tube). Original `input/enceladus_cases.in` remains the
+  10,000-step/1000-window/100-primary configuration with the E3 tube.
+  Output directory:
+  `test_output/enceladus-case-runtime-20261113/production-e3-short-final`;
+  log `production-e3-short-final.log`, receipt
+  `production-e3-short-receipt.json`. Binary SHA-256:
+  `54b776cea6298a128ff316b454d17ef09e5eb46d5421d2fef079a270dfcf94de`.
+  This short run verifies execution/provenance, not a steady Cassini profile.
+
+Earlier attempts remain visible rather than overwritten. The first native
+legacy run exposed N02/N03 moving behind MPI initialization; restoring the
+case-free pre-MPI installer fixed both unchanged gates. A first new UVIS test
+looked for a nonexistent `instrument=UVIS` header; it was corrected to assert
+actual documented UVIS title/event/schema, all ray rows and positive path
+lengths. Global run `run-20261113T091105Z-2285726` recorded 74 PASS / 3 FAIL:
+N08/N09/N10 checked newly added raw-input snapshots against generated sources
+copied before that addition. A clean rebuild includes the final receipt code.
+Run `run-20261113T091533Z-2287986` used a newly added context fixture that still
+contained density column mappings with `comparison_species=none`; native
+validation correctly rejected it. The fixture now removes those mappings,
+preserving the original parser gate; the 45-result application rerun and
+subsequent complete 77-check combined campaign pass.
+The first private real-E3 short deck disabled the tube but retained its
+inactive controls; unchanged validation correctly rejected that deck before
+allocation. The final test deck removes the inactive controls;
+`production-e3-short-input-rejected.log` and
+`real-e3-short-disabled-refinement-attempt.in` retain the rejection evidence.
+These are superseded development attempts, not omitted failure evidence.
+
+### Scientific limits and operation
+
+The bounded synthetic cases exercise all bases, both neutral primaries,
+one/four-rank bookkeeping, both UVIS operators, output cadence and realized
+runtime mesh controls. They do not establish observational agreement, steady
+state, mesh/particle/seed/timestep convergence or physical CO2 calibration.
+No new full 10,000-step fitting/validation campaign is claimed here. The
+example retains the user's 300 m/s numerical characteristic speed and CFL
+0.5; source gas speeds/temperatures remain the fitted file's values. These
+controls require scientific convergence studies separately.
+
+Complete key syntax, build/run commands, selection JSON and per-test purpose
+are in `RUNTIME_INPUT.md`, `standalone/README.md` and `test/README.md`.
+Automatic refinement from arbitrary UVIS/INMS paths remains future work;
+explicit regions and the existing E3 tube are available now.
+
+### Historical proposal record (superseded by implementation above)
+
+### Proposed measurement/source-basis CLI and publication interface
+
+`CASE_RUNNER_PROPOSAL.md` gives the detailed design for I3-style named cases
+selected as `measurement--base`, including E3/UVIS examples, input/catalog
+syntax, portable data roots, MPI startup, compatibility, implementation
+stages and required tests. Inspection confirmed that `Config.pl
+-model-data-path` already generates `PIC::UserModelInputDataPath`, and the
+generic AMPS input parser already implements `ResolveCase`.
+
+The forward model is to consume complete published source files, with no
+fitting-strategy selector or interpretation. The standalone publisher must
+map each case ID to its chosen source prescription and qualified observation
+assets. Absolute files contain source rates; shape files retain explicit
+user totals. The existing E3/E5 physical-CO2 deferral is preserved.
+
+This change adds proposal/documentation only. No CLI/parser/application
+implementation, native build, simulation or new validation result is claimed.
+Existing explicit-file runtime inputs and all user-owned changes remain
+untouched. The proposal is linked from `RUNTIME_INPUT.md`.
+
+### Ready-to-run independent E3 H2O example
+
+Added `input/enceladus_e3_h2o_fitted.in` for the independent hybrid-fit E3
+H2O absolute source vector, with `Q=3.1424817803383656e28 molecules/s`.
+It retains the user's 10,000/1,000-step, 100-particles/step, 300 m/s,
+Courant-0.5 settings, active-Sun H2O parent loss and E3 refinement. It
+selects H2O only and the E3 H2O observation; inactive CO2 controls and other
+observations are removed. The default deck and fitted source files remain
+unchanged. `./amps --validate-input --input
+input/enceladus_e3_h2o_fitted.in` passes with the current native binary.
+This was input validation only; the new long run was not started.
+`RUNTIME_INPUT.md` gives the isolated-output run command and explains the
+distinction between characteristic timestep speed and fitted gas velocities.
 
 ## Current outcome — automatic fitted sources and manuscript campaign
 
@@ -1048,3 +1545,38 @@ exactly.
 
 No observational agreement, production readiness, or unique source recovery
 is claimed by the current E3 run.
+
+
+## Case runner validation commands (2026-11-13 final receipt)
+
+All commands below run from `/home/vtenishe/Mars2/AMPS`; native rebuilds use
+only the required root `build` cleanup and established configuration workflow.
+The machine overlay changes output/work locations without changing physics.
+
+```bash
+env ENCELADUS_VALIDATION_DATA_ROOT=/data/vtenishe/cassini_validation_data \
+  python3 -B -m unittest discover -s srcEnceladus/standalone/tests -v
+python3 -B src/test/run_tests.py \
+  --config test_output/enceladus-case-runtime-20261113/machine.json \
+  --test CORE-HARNESS-001 --test CORE-GENERAL-INPUT-001 \
+  --test APPLICATION-ENCELADUS-FORWARD-001 \
+  --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001 --jobs 1 --streams 1
+python3 -B test_output/enceladus-case-runtime-20261113/production-build/build.py
+python3 -B srcEnceladus/test/run_native_startup.py --executable ./amps \
+  --output test_output/enceladus-case-runtime-20261113/production-startup
+./amps -i input/enceladus_cases.in --list-cases
+./amps -i input/enceladus_cases.in -case E3--tenishev2014_hybrid_8 --describe-case
+mpiexec -n 4 ./amps -i input/enceladus_cases.in \
+  -case E3--tenishev2014_hybrid_8 --validate-runtime-input
+make -C src/general/input test
+python3 -B src/test/generate_test_catalog.py --check
+python3 -B doc/update_test_catalog.py --check
+```
+
+The standalone/publisher/native test output directories are retained and
+creation-only. Choose NEW output directories when repeating the scripts;
+do not overwrite qualified evidence. The production build driver likewise
+uses creation-only logs; its recorded command sequence is the reproducible
+build recipe, not a command to overwrite the existing receipt. MPI runs on
+this host require normal host local-socket access; sandbox-only socket errors
+are an execution-environment failure, not a model result.

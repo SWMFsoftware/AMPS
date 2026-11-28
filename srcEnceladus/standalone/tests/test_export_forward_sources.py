@@ -83,7 +83,17 @@ class ForwardSourceExportTests(unittest.TestCase):
         name, mode, values = EXPORT.validate_manifest(self.manifest("absolute"))
         self.assertEqual(name, "unit_fixture")
         self.assertEqual(mode, "absolute")
-        self.assertEqual(sum(values["H2O"].values()), 3.0e26)
+        # Absolute mode must keep every component rate (molecules/s) exactly;
+        # a shape export would instead rescale the strengths to unit sum.
+        for species in ("H2O", "CO2"):
+            self.assertEqual(set(values[species].values()), {2.0e25})
+        # The 15-component total is 3.0e26 s^-1 only to binary64 rounding:
+        # 2.0e25 is not exactly representable, so the summed double depends
+        # on summation order.  Python 3.8's naive sum() rounds to 3.0e26,
+        # while math.fsum (and builtin sum() since Python 3.12) returns the
+        # correctly rounded value one ulp higher.  Compare within a few ulps.
+        self.assertTrue(math.isclose(math.fsum(values["H2O"].values()), 3.0e26,
+                                     rel_tol=1.0e-15, abs_tol=0.0))
 
     def test_e3_e5_equal_startup_manifests_preserve_reported_totals(self):
         expected = {

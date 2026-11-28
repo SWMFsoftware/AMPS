@@ -348,11 +348,15 @@ def test_selection_contract(context: Dict) -> None:
     # Moon M3 (e5f2978, 2026-11-23) makes the regression owner import the
     # linked I21-I24 outcomes that srcMoon/test/run_all_test.py already
     # registers: srcMoon grows from 36 + 10 = 46 to 40 + 10 = 50 cases.
+    # The Enceladus case-runner/runtime-mesh work (2026-11-13) adds two generic
+    # input/digest core cases (INP-06/07) and eight Enceladus cases (U09, U10,
+    # N06-N11) on top of the upstream inventory: core 1220 + 2 = 1222 and
+    # Enceladus 62 + 8 = 70. The suite counts are unchanged (new cases only).
     suite_counts = [len(item["tests"]) for item in streams]
     assert suite_counts == [62, 3, 2], "suites per stream: %r" % suite_counts
     case_counts = [sum(len(test["selected_cases"]) for _, test in item["tests"])
                    for item in streams]
-    assert case_counts == [1220, 62, 50], "cases per stream: %r" % case_counts
+    assert case_counts == [1222, 70, 50], "cases per stream: %r" % case_counts
     # srcMoon test IDs are frozen by its roadmap (U01-U26 stand-alone,
     # I01-I46 linked). Pin each owner's exact identities from those ranges,
     # not only their number, so exchanging one ID for another or moving an

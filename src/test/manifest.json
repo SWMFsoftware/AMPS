@@ -43,7 +43,7 @@
         "paths": ["src/general/input/amps_input.h", "src/general/input/test_amps_input.cpp"],
         "capabilities": []
       },
-      "expected_cases": ["INP-01", "INP-02", "INP-03", "INP-04", "INP-05"],
+      "expected_cases": ["INP-01", "INP-02", "INP-03", "INP-04", "INP-05", "INP-06", "INP-07"],
       "timeout_seconds": 120
     },
     {
@@ -1872,7 +1872,7 @@
       "level": "system",
       "tiers": ["extended", "application-smoke"],
       "runner": "tests/applications/enceladus_native/run_test.py",
-      "description": "Clean Enceladus build and exact import of all six pre-MPI native startup/configuration gates",
+      "description": "Clean Enceladus build; six legacy startup gates and six case, MPI, transport, UVIS and runtime mesh groups",
       "requires": {
         "tools": ["python", "make"],
         "paths": ["Config.pl", "srcEnceladus/test/run_native_startup.py"],

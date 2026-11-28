@@ -4,7 +4,8 @@ This file is the handoff between the standalone fit and the AMPS forward
 model. It carries a complete explicitly named geometry, gas
 kinematics, and either normalized source shapes or absolute source rates. The
 forward model does not choose a fit strategy or silently substitute a compiled
-source map. A production run must name an exported file explicitly.
+source map. A production run selects an exported file explicitly, either directly in schema 2
+or through a schema 3 `measurement--basis` catalog entry.
 
 ## Complete example
 
@@ -157,9 +158,12 @@ v_hat dot surface_normal > 0.
 Thus directions are weighted by the standalone radial moment `K3(c,s)`, and
 the conditional speed density is proportional to the integrand above. It is
 not an ordinary shifted Cartesian Maxwellian truncated at the surface. The
-current analytic inverse-CDF recurrence is qualified for `s*c >= -2`; all
-outward directions of the present `tenishev2014_hybrid_8` H2O/CO2 sources
-satisfy that bound, and startup checks the complete hemisphere.
+analytic inverse-CDF recurrence is used for `a=s*c >= -2`; all outward
+directions of the present `tenishev2014_hybrid_8` H2O/CO2 sources satisfy
+that bound (`a >= -1.71`). Tilted catalog sources can reach `a < -2`; there
+the sampler switches to the positive scaled-quadrature tail described under
+[Automatic fitted-result export](#automatic-fitted-result-export-2026-11-11).
+Native startup checks each positive-rate source/species combination.
 
 ## Tiger stripes
 
@@ -317,3 +321,21 @@ startup before MPI/PIC initialization. To add another spatial distribution,
 add a new `source_case`, its geometry validator and independent reference
 tests. Do not reinterpret `tenishev2014_hybrid_8` or make its required sources
 optional.
+
+
+## Case catalog consumer
+
+The source grammar above is unchanged by the case runner. See
+[`RUNTIME_INPUT.md`](RUNTIME_INPUT.md) for runtime selection/domain/refinement
+and [`standalone/README.md`](standalone/README.md#prepare-forward-case-data)
+for packaging complete files into a local immutable bundle. The forward code
+checks catalog/source basis, frame, reference radius, species coverage and
+SHA-256 before consuming the same in-memory bytes. Catalog observations are
+selected by measurement and active species. Fitting strategy is opaque
+upstream provenance; it is never a Monte Carlo input selector.
+
+The publisher preserves nonuniform and exactly zero strengths. It can merge
+separate species receipts only when all source geometry and gas kinematics
+agree. A mismatch is an error requiring an upstream source prescription;
+it is not averaged. Physical E3/E5 absolute CO2 remains unavailable without
+an explicit upstream calibration receipt. No sensitivity factor is guessed.

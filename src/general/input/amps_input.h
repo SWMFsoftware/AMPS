@@ -72,6 +72,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -174,6 +175,10 @@ struct Block {
 struct Document {
   Block root;
   std::vector<std::string> files;
+  // Exact bytes actually parsed, including includes. Ingest owners can bind
+  // provenance/MPI identity to this snapshot instead of reopening mutable
+  // paths after parsing. This does not change grammar/canonical serialization.
+  std::map<std::string,std::string> sourceBytes;
 };
 
 // Diagnostic for an error at a user-visible location, in the uniform
@@ -370,6 +375,10 @@ struct Parser {
     if (!status.ok())
       return from ? ErrorAt(from->where, status.message, from->text) : status;
     document->files.push_back(path.string());
+    const auto previous=document->sourceBytes.find(path.string());
+    if(previous!=document->sourceBytes.end()&&previous->second!=text)
+      return Status::Error("input changed between repeated includes: "+path.string());
+    document->sourceBytes[path.string()]=text;
     includeChain.push_back(key);
     status = ParseText(text, path.string(), path.parent_path());
     includeChain.pop_back();
@@ -522,6 +531,7 @@ inline Status ParseText(const std::string& text, const std::string& displayName,
   if (document == nullptr) return Status::Error("input document output is null");
   Document candidate;
   candidate.files.push_back(displayName);
+  candidate.sourceBytes[displayName]=text;
   detail::Parser parser;
   parser.document = &candidate;
   parser.stack.push_back(&candidate.root);

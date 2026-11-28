@@ -26,6 +26,8 @@ CASES = {
     "U06_source_law": "source_law",
     "U07_numerics": "numerics",
     "U08_validation": "validation",
+    "U09_case_runtime": "case_runtime",
+    "U10_runtime_mesh": "runtime_mesh",
 }
 
 
@@ -43,6 +45,7 @@ def main() -> int:
         result = suite.run([sys.executable, "-m", "unittest",
                             "standalone.tests.test_export_forward_sources",
                             "standalone.tests.test_fit_source_export",
+                            "standalone.tests.test_prepare_forward_cases",
                             "standalone.tests.test_export_forward_observations"])
         detail = result.stdout + result.stderr
         passed = result.returncode == 0
@@ -64,13 +67,15 @@ def main() -> int:
                 binary = temp / "forward_model_tests"
                 compiled = suite.run([
                     "g++", "-std=c++17", "-O2", "-I..", "-I../src",
-                    "ForwardModel.cpp", "test/forward_model_tests.cpp",
+                    "ForwardModel.cpp", "MeshControls.cpp", "CaseSelection.cpp", "SourceCatalog.cpp", "test/forward_model_tests.cpp",
                     "-o", str(binary),
                 ])
                 if args.case == "U02_core_compile" or compiled.returncode != 0:
                     result = compiled
                 elif exported.returncode != 0:
                     result = exported
+                elif args.case == "U09_case_runtime":
+                    result = suite.run([sys.executable,str(suite.TEST/"run_case_runtime_tests.py"),"--executable",str(binary)])
                 elif args.case == "U03c_catalog_source_geometry":
                     result = suite.run([sys.executable,
                         str(suite.TEST/"run_source_export_roundtrip.py"),

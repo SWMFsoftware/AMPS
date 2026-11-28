@@ -1,0 +1,66 @@
+! E3 H2O, independently fitted tenishev2014_hybrid_8 source distribution.
+! Export: fitting_compain_111126 / independent_each_observation / E3 / H2O.
+! Total fitted production is approximately 3.1424817803383656e28 molecules/s.
+! Source locations, directions, temperatures, bulk speeds and individual
+! absolute rates are read from source_distribution_file below. No separate
+! total_source_rate.H2O_s-1 key is allowed in absolute mode.
+!
+! Keep the user's existing long-run numerical controls. Characteristic speed
+! is used only to compute the global timestep; it does not replace the fitted
+! gas bulk velocities or limit the sampled molecular speeds. The 300 m/s
+! setting is retained from input/enceladus.in, not derived from this fit.
+! Numerical convergence of this long run has not been established by the
+! earlier 20-step native source smoke tests.
+!
+! H2O parent-loss photolysis only, active Sun, no plasma or daughter particles.
+! Run with an explicit --input path from a fresh output directory.
+
+#begin application: enceladus
+schema_version=2
+source_distribution_file=/data/vtenishe/cassini_validation_data/studies/fitting_compain_111126/h2o/tenishev2014_hybrid_8/amps_sources/independent_each_observation__E3__H2O__absolute.in
+
+simulated_species=H2O
+injected_species=H2O
+chemistry_species=H2O
+reaction_products=discard
+
+selected_reactions=burger2007.photo.h2o_to_oh_h,burger2007.photo.h2o_to_h2_o,burger2007.photo.h2o_to_h_h_o,burger2007.photo.h2o_to_h2op_e,burger2007.photo.h2o_to_h_ohp_e,burger2007.photo.h2o_to_h2_op_e,burger2007.photo.h2o_to_oh_hp_e
+solar_activity=active
+
+plasma_background_mode=none
+
+primary_macroparticles_per_step.H2O=100
+
+characteristic_speed.H2O_m_s-1=300
+courant.H2O=0.5
+
+sample_length_steps=1000
+total_iterations=10000
+volume_field_output=false
+flyby_density_output=true
+flyby_id=E3
+flyby_trajectory_file=../srcEnceladus/standalone/figure_data/e3_spice_ground_track.csv
+
+flyby_mesh_refinement=true
+flyby_refinement_target_cell_size_m=20000
+flyby_refinement_radius_m=150000
+flyby_refinement_time_min_s=-120
+flyby_refinement_time_max_s=100
+random_seed=184467
+particle_splitting_merging=off
+
+observation_data_root=/data/vtenishe/cassini_validation_data/data/processed
+
+#begin observation: inms_e3_h2o
+instrument=INMS
+event_id=E3
+data_file=plume_fit_v1/e3_h2o_sticking_corrected.csv
+time_column=time_ca_s
+x_column=x_m
+y_column=y_m
+z_column=z_m
+comparison_species=H2O
+value_column=density_m3
+uncertainty_column=sigma_m3
+#end observation
+#end application

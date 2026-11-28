@@ -14,6 +14,7 @@
     {"id": "earth", "group": "legacy", "title": "Earth & Geospace"},
     {"id": "movers", "group": "legacy", "title": "Particle movers & trajectories"},
     {"id": "planets", "group": "legacy", "title": "Planetary exospheres"},
+    {"id": "enceladus-e2e", "group": "legacy", "title": "Enceladus plume end-to-end (INMS, UVIS)"},
     {"id": "comet-dust", "group": "legacy", "title": "Comet & dust"},
     {"id": "bats-coupling", "group": "legacy", "title": "AMPS – BATS-R-US coupling"},
     {"id": "physics-models", "group": "legacy", "title": "Collisions, chemistry & photons"},
@@ -22,6 +23,7 @@
     {"id": "unit-tests", "group": "legacy", "title": "GoogleTest unit tests"},
 
     {"id": "sep-long", "group": "long", "title": "SEP real-event validation (long tier)"},
+    {"id": "enceladus-long", "group": "long", "title": "Enceladus plume end-to-end (long tier)"},
 
     {"id": "core-general", "group": "core", "title": "Core: general utilities & harness",
      "suite_prefixes": ["CORE-HARNESS-", "CORE-GENERAL-", "CORE-UNITS-", "CORE-T12-", "CORE-LEGACY-"]},

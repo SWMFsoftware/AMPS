@@ -1,5 +1,201 @@
 # Enceladus forward-model runtime input
 
+The `measurement--basis` CLI, portable source-data catalog and runtime mesh
+controls are implemented. The design/evidence contract is maintained in
+[CASE_RUNNER_PROPOSAL.md](CASE_RUNNER_PROPOSAL.md). Schema 2 explicit-file
+runs remain supported; schema 3 adds named cases. Neither interface asks the
+forward model to select or interpret a fitting strategy.
+
+## Case input and commands
+
+`input/enceladus_cases.in` declares all 28 identities: seven measurements
+(E3, E5, E14, E17, E18, UVIS 2007 and UVIS 2010) and four source bases.
+A declaration is not a claim that its fitted source prescription is ready.
+Currently the local real-data bundle contains only the explicitly selected
+independent E3 H2O hybrid fit. Other identities report `MISSING_PUBLICATION`;
+synthetic tests exercise all 28. E3/E5 absolute physical CO2 remains deferred.
+
+The data root is compiled through the existing configuration option:
+
+```bash
+# At repository root, with no other build/test running:
+pwd
+rm -rf -- build
+./Config.pl -application=enceladus -model-data-path=/data/vtenishe/cassini_validation_data/studies
+./ampsConfig.pl -input enceladus.input -no-compile
+env MAKEFLAGS=-j16 make amps
+./amps -i input/enceladus_cases.in --list-cases
+./amps -i input/enceladus_cases.in -case E3--tenishev2014_hybrid_8 --describe-case
+./amps -i input/enceladus_cases.in -case E3--tenishev2014_hybrid_8 --validate-input
+mpiexec -n 4 ./amps -i input/enceladus_cases.in -case E3--tenishev2014_hybrid_8 --validate-runtime-input
+```
+
+`Config.pl` copies the application tree: keep generated test output outside
+that tree during configuration if it is large. The native test owner holds
+and restores `srcEnceladus/test_output` automatically. Do not edit `.amps.conf`.
+Local inspection modes do not initialize MPI or build a mesh. Collective
+validation initializes MPI, verifies identical input/asset/executable hashes,
+installs the source/observation readers, and exits without a particle buffer.
+Only an actual run computes final timestep and particle weights from allocated
+cells. `--describe-case` labels those values `pending_realized_AMR`.
+
+Start a production case in a fresh output directory:
+
+```bash
+run_dir=$(mktemp -d "$PWD/test_output/e3_case.XXXXXX")
+mkdir -p "$run_dir/PT/plots"
+cd "$run_dir"
+mpiexec -n 1 /home/vtenishe/Mars2/AMPS/amps \
+  -i /home/vtenishe/Mars2/AMPS/input/enceladus_cases.in \
+  -case E3--tenishev2014_hybrid_8
+```
+
+The example retains 10,000 iterations, 1,000-step windows, 100 primary
+macroparticles/step, 300 m/s characteristic speed and Courant 0.5. These
+numerical settings do not establish convergence. Fitted gas temperatures,
+bulk velocities, axes and rates come from the complete source file.
+
+Aliases `-i`, `-input`, `--input`, `--input=FILE` and `-case`, `--case`,
+`--case=ID` are accepted. Duplicate options, malformed IDs, unknown arguments,
+missing selectors and unavailable data are errors. No unselected case or
+legacy source table is substituted. List/describe/local validate/MPI validate
+are mutually exclusive. A case run refuses an existing run manifest, mesh
+file, or populated `PT/plots` directory. Legacy flat runs retain their old
+startup validation ordering and source-path rules.
+
+## Runtime domain and refinement (schema 2 or 3)
+
+All coordinates are SI metres in body-fixed `IAU_ENCELADUS`; the box must
+strictly enclose the complete 252100 m reference sphere on every axis.
+A cell-size target is its **maximum edge length**, not its diagonal. AMR
+bisects blocks, so actual edges are normally smaller than the request.
+Explicit mesh controls bypass the old `TESTMODE` mesh multiplier; absence
+of every new key preserves the legacy resolution/domain law. Schema 3
+requires the three mandatory keys below. Schema 2 can opt in to the same law.
+
+```text
+#begin application: enceladus
+schema_version=3
+source_set=enceladus_sources_20261113
+mesh.domain_min_m=-1260500,-1260500,-1260500
+mesh.domain_max_m=1260500,1260500,1260500
+mesh.background_cell_size_m=600000
+! Optional surface pair; north is z>0, south z<=0.
+mesh.surface_cell_size_north_m=300000
+mesh.surface_cell_size_south_m=150000
+! Optional infinite south-polar cone pair: angle from the -z axis.
+mesh.south_polar_half_angle_deg=45
+mesh.south_polar_cell_size_m=300000
+! Common physical/numerical keys omitted here; see the complete input file.
+#begin refinement: instrument_region
+geometry=box
+min_m=350000,-30000,-230000
+max_m=450000,30000,-170000
+cell_size_m=20000
+#end refinement
+#begin case: E3--tenishev2014_hybrid_8
+! Scalars override common keys; identically named refinements overlay by name.
+! Case-specific controls are shown in input/enceladus_cases.in.
+#end case
+#end application
+```
+
+Repeat named `refinement` blocks at common or case level. Supported geometries:
+
+| `geometry` | Required geometry keys | Meaning |
+|---|---|---|
+| `box` | `min_m`, `max_m` (three components each) | Closed axis-aligned volume |
+| `sphere` | `center_m`, `radius_m` | Closed ball |
+| `shell` | `center_m`, `inner_radius_m`, `outer_radius_m` | Closed spherical shell; inner radius may be zero |
+
+Every region also requires positive finite `cell_size_m`. Radius/extent
+ordering, unknown keys, incomplete optional pairs, disjoint regions and
+nonfinite values are rejected. Overlaps take the finest request, including
+background, surface, polar cone, explicit regions and the existing E3 flyby
+tube. Regions may extend outside the domain; only intersecting AMR blocks
+exist. A conservative block/region intersection test catches small off-centre
+features even when none of the old centre/corner probes lies inside them.
+The tube uses exact segment-to-box distance. Noncubic domains use their actual
+cell aspect ratio when converting the core's diagonal resolution metric.
+
+The compiled block dimensions, ghost cells and maximum AMR level remain build
+capabilities. Input inspection rejects targets below that level's attainable
+maximum edge; no silent target clipping is accepted. Final
+`dt=min_species(Courant * smallest_allocated_cell_edge / characteristic_speed)`
+and `W_species=Q_species*dt/N_species` use the actual mesh and active primaries.
+A smaller refinement can therefore reduce every species' global timestep and
+statistical weight. Surface tessellation and domain changes can increase memory;
+these controls do not qualify spatial or statistical convergence.
+
+## Local source-data bundle
+
+The runtime `source_set` is a relative directory below the configured data
+root. It contains `enceladus_cases.in`, complete source files, observations,
+optional observer/trajectory tables, SHA-256 inventory and opaque provenance.
+Absolute/traversing asset paths and escaping symlinks are rejected. Asset bytes
+are checked before use and retained, so native readers consume the verified
+snapshot rather than reopen changing data. A portable content fingerprint
+excludes installation-specific absolute paths; actual MPI runs add the
+executable hash and require all ranks to agree before mesh allocation.
+
+Prepare a new bundle from an explicit upstream selection; existing directories
+are never overwritten:
+
+```bash
+python3 srcEnceladus/standalone/prepare_forward_cases.py \
+  --selection /path/to/selection.json \
+  --output-dir /configured/model-data-root/enceladus_sources_VERSION
+```
+
+The selection syntax and complete catalog contract are documented in the
+[standalone README](standalone/README.md#prepare-forward-case-data).
+`mode=absolute` carries every rate and forbids runtime total-rate overrides;
+`mode=shape` requires explicit `total_source_rate.SPECIES_s-1` in the run input.
+Multiple species can share a case only with identical geometry, temperature,
+bulk speed, emission law and source mode. No fitted nuisance background is
+injected. New observation IDs require explicit catalog data and native-qualified
+observation/ray schemas; a name alone creates no trajectory or calibration.
+
+Every actual run writes `run_manifest.json` plus `case_inputs/`: selected
+canonical input, source bytes, checksummed asset copies, case/publication
+identity, binary hash, rank count, realized minimum cell edge, limiting species,
+global timestep, weights, completed iterations and phase. A short synthetic
+transport PASS validates these interfaces, not observational agreement.
+
+## Run E3 H2O from the independent hybrid fit
+
+`input/enceladus_e3_h2o_fitted.in` is a ready-to-run, pre-MPI-validated
+single-species example for the independent E3 H2O fit in
+`fitting_compain_111126`. It reads the hybrid 8+7 absolute source file directly:
+`Q=3.1424817803383656e28 molecules/s`. It retains the existing 10,000 steps,
+1,000-step sampling, 100 global injections/step, active-Sun parent-loss
+photolysis, no plasma/daughters/splitting, and E3 trajectory refinement and
+observed-density comparison. Its 300 m/s characteristic speed and Courant
+0.5 are retained user numerical inputs; source gas velocities still come
+from the fitted file. Neither the speed control nor this example claims
+long-run numerical convergence. Other fitting strategies have separate
+files and must be selected explicitly with `source_distribution_file`.
+
+With the current configured Enceladus executable, no rebuild is needed:
+
+```bash
+cd /home/vtenishe/Mars2/AMPS
+./amps --validate-input --input input/enceladus_e3_h2o_fitted.in
+run_dir=$(mktemp -d "$PWD/test_output/e3_h2o_fitted.XXXXXX")
+mkdir -p "$run_dir/PT/plots"
+cd "$run_dir"
+mpiexec -n 1 /home/vtenishe/Mars2/AMPS/amps \
+  --input /home/vtenishe/Mars2/AMPS/input/enceladus_e3_h2o_fitted.in \
+  > run.log 2>&1
+```
+
+Each invocation uses a fresh output directory. The current working directory
+owns `run.log` and `PT/plots/`, including the dense E3 flyby Tecplot file and
+the named `inms_e3_h2o` observation product. The application-global E3 test
+wrapper assumes both H2O and CO2; use this direct command for the H2O-only
+example. Its full 10,000-step simulation has not been executed merely by
+validating the new input deck.
+
 `input/enceladus.input` is read only by the AMPS build/configuration workflow.
 It selects compiled capabilities and the union of available species; it is not
 a run deck. Every executable invocation reads `input/enceladus.in` by default,
@@ -118,6 +314,31 @@ Tecplot products, and sampling-window resets. This is the checked-in mode for
 the multi-observation run: ten generic active-species dumps would otherwise
 duplicate roughly 14 GiB of fields that the observation operators do not
 consume. It is an output-storage control, not a physics or sampling switch.
+
+`reproducible_parallel_run` (optional, `true` or `false`, default `false`;
+schema 2 and 3) makes a multi-rank run with a fixed `random_seed` and MPI rank
+count reproducible regardless of machine load. Without it two such runs can
+differ (2026-11-28, 8 ranks, 5000-step UVIS 2010: 1,132 vs 1,135 resident
+macroparticles; columns up to a few percent apart), because two inputs to the
+particle histories depend on timing:
+
+- the AMPS core rebalances the domain (emergency rebalancing triggered by the
+  measured MPI latency, and rebalancing at every sampling break) by measured
+  wall-clock execution time, which changes block ownership and each rank's
+  random-number sequence; and
+- particles received in the exchange enter the cell lists in MPI
+  message-arrival order, and each particle draws its random numbers in list
+  order.
+
+`true` sets the core switches `PIC::Parallel::DynamicLoadRebalancingEnabled=false`
+(the decomposition made at mesh initialization is kept) and
+`PIC::Parallel::DeterministicParticleExchangeOrder=true` (every cell's
+particle list is sorted by particle signature after each exchange, the
+mechanism the nightly test mode uses). Physics, sampling and output are
+unchanged; the run time can grow on an uneven plume load, and which particle
+receives which random number differs from a run without it. The end-to-end
+regression decks (`test/end_to_end/`) set it. The receipt reports
+`reproducible_parallel_run=on|off`.
 
 ## Flyby density observation operator
 

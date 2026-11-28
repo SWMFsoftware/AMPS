@@ -7074,6 +7074,30 @@ memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double)
      //(PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime)
      extern double EmergencyLoadRebalancingFactor;
 
+     //Runtime switch for the two dynamic load-rebalancing paths of PIC::TimeStep(): the emergency
+     //rebalancing triggered by the measured cumulative latency (_PIC_EMERGENCY_LOAD_REBALANCING_MODE_)
+     //and the rebalancing at every sampling break (_PIC_SAMPLING_BREAK_LOAD_REBALANCING_MODE_).
+     //Default true: the compiled modes act exactly as before. An application may set it to false
+     //before its time loop (identically on every rank); the domain decomposition made at mesh
+     //initialization is then kept for the whole run. Both paths move blocks according to measured
+     //wall-clock execution times, so with them active the block-to-rank ownership, and with it each
+     //rank's sequence of random numbers, depends on machine load; with the switch off, a run with a
+     //fixed seed and rank count is reproducible. Physics is unchanged; only the load balance (and so
+     //the run time) differs. The compile-time TEST_REBALANCING debug mode is not affected.
+     extern bool DynamicLoadRebalancingEnabled;
+
+     //Runtime switch for a deterministic particle order after every particle exchange. Received
+     //particles are inserted into the cell lists in the order in which the MPI messages arrive
+     //(MPI_Testany), and each particle then draws its random numbers in list order, so even with a
+     //fixed decomposition two runs with the same seed and rank count can diverge. When true (or when
+     //AMPS is built in the nightly test mode, as before), ExchangeParticleData_unbuffered() and
+     //ExchangeParticleData_buffered() (non-CUDA) sort every cell's particle list by the CRC32 signature
+     //of the particle data after the exchange, which removes that dependence on message timing.
+     //Default false: no sort outside the nightly test mode, as before. Costs one sort of each
+     //non-empty cell list per exchange. With DynamicLoadRebalancingEnabled=false it makes a run with
+     //a fixed seed and rank count reproducible (srcEnceladus reproducible_parallel_run=true).
+     extern bool DeterministicParticleExchangeOrder;
+
      //process the corner node associated data for nodes located at the boundary of the subdomain and at the boundary of the computational domain
      namespace CornerBlockBoundaryNodes {
        extern bool ActiveFlag;

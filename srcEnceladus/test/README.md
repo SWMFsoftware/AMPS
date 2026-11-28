@@ -13,8 +13,12 @@ toolchain:
 python3 test/run_tests.py --cxx clang++
 ```
 
-The same complete 43-result receipt is registered in the repository-wide
-procedure and uses its configured C++ compiler:
+The same receipt's 45 registered results (`U00`–`U10` and the `R_*`
+references) are imported by the repository-wide procedure, which uses its
+configured C++ compiler. The local receipt additionally lists one
+`S_<module>.<Class>.<method>` row per standalone test (described below); the
+global owner validates those rows and turns any `S_` failure into a suite
+error, but does not import them as registered identities:
 
 ```bash
 cd /home/vtenishe/Mars2/AMPS
@@ -26,8 +30,8 @@ python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
   --test APPLICATION-ENCELADUS-E3-001
 ```
 
-The first owner imports the 43 dependency-light checks below. The native owner
-performs a clean configured AMPS build and imports all six startup gates. The
+The first owner imports the 45 dependency-light checks below. The native owner
+performs a clean configured AMPS build and imports six startup gates and six case/MPI/mesh groups. The
 E3 owner retains all 13 long-run identities but defaults to explicit `SKIP`;
 enable the optional `enceladus-e3` machine capability only on a host approved
 for the 10,000-step MPI campaign. The global catalog and manifest are the
@@ -93,10 +97,19 @@ production projection, and final generated pointer-mover and loss-callback
 macros. These tests do not initialize MPI, allocate a mesh, or claim an
 evolving physics run.
 
-The global runner executes the standalone source exporter tests (`U00_exporter`)
-and every other test module of the standalone plume model, one case
-`S_<module>` per `standalone/tests/test_<module>.py`. Those read the Cassini
-validation data and, for `S_spice_ground_tracks`, CSPICE and its kernels:
+The global runner executes every test of the standalone plume model
+(`standalone/tests/test_<module>.py`) and reports each test as its own row
+`S_<module>.<Class>.<method>`, for example
+`S_physics.PhysicsTests.test_inverse_square_and_horizon`. Remove `S_` and put
+back `test_` to rerun one test from `srcEnceladus`:
+`python3 -m unittest standalone.tests.test_physics.PhysicsTests.test_inverse_square_and_horizon`.
+The four exporter/publisher modules (`test_export_forward_sources`,
+`test_fit_source_export`, `test_prepare_forward_cases`,
+`test_export_forward_observations`) run together in the caller's environment;
+the registered case `U00_exporter` passes when none of their tests fails, and
+their per-test rows follow it. Every other module runs in its own interpreter
+and reads the Cassini validation data and, for the `S_spice_ground_tracks.*`
+tests, CSPICE and its kernels:
 
 ```bash
 python3 srcEnceladus/test/run_tests.py --output /tmp/enceladus-tests \
@@ -106,9 +119,16 @@ python3 srcEnceladus/test/run_tests.py --output /tmp/enceladus-tests \
 
 Each option defaults to its environment variable (`ENCELADUS_VALIDATION_DATA_ROOT`,
 `ENCELADUS_SPICE_TOOLKIT_ROOT`, `ENCELADUS_SPICE_KERNEL_ROOT`). Without them the
-tests that need these inputs are skipped, and a case whose tests are all skipped
-is reported as `SKIP` with the reason. The AMPS nightly passes the machine
-file's `enceladus_validation_data`, `spice_path` and `spice_kernels`.
+tests that need these inputs are skipped; each skipped test is reported as
+`SKIP` with its reason. `test/standalone_test_receipt.py` records the outcomes
+(its docstring gives the rules): a unittest error is `FAIL`, any failing
+subtest fails its test, a test that never ran because a `setUpClass` or
+`setUpModule` fixture was skipped or failed inherits that outcome, a failing
+fixture that explains no test (such as `tearDownClass`) is its own `FAIL` row,
+and a module that cannot be imported or has no tests is one `FAIL` row
+`S_<module>`. The per-test JSON of each interpreter is kept in
+`<output>/standalone_tests/`. The AMPS nightly passes the machine file's
+`enceladus_validation_data`, `spice_path` and `spice_kernels`.
 
 It then exports a complete 8-jet/7-stripe fixture, builds the dependency-free C++ core, and runs
 focused source-parser, runtime-parser, Burger-chemistry, Tenishev flux-law,
@@ -172,6 +192,19 @@ For the refined 10,000-step run, the runner additionally requires
 is a direct check of the allocated mesh at the observation locations; it does
 not infer resolution from the requested configuration.
 
+## End-to-end Table tests: E3 INMS and UVIS 2010
+
+`MakefileTest/Table` holds four end-to-end tests of the production
+executable, documented in [`end_to_end/README.md`](end_to_end/README.md):
+`Enceladus--E3-INMS` and `Enceladus--UVIS-2010` (nightly, 5000 steps) and
+`Long--Enceladus--E3-INMS` and `Long--Enceladus--UVIS-2010` (long tier,
+10000 steps, 8 ranks). Each loads the `tenishev2014_hybrid_8` source fitted
+to its observation alone from `data/input/Enceladus/fitted_plume`, compares
+the model with the observation in `data/input/Enceladus/observation_files`,
+gates on completion, rank count, zone count, particle ledger and an exact
+regression of its products (`output/test_Enceladus/<NAME>--*.ref_np8.gz`),
+and plots the model-observation comparison without gating on it.
+
 ## Repeatable INMS and UVIS comparison run
 
 The checked-in runtime deck requests the currently usable INMS flybys and UVIS
@@ -186,11 +219,18 @@ units, required columns, ray geometry, and fail-closed validation rules are
 documented in `../RUNTIME_INPUT.md`.
 
 Regenerate the repository-released E7/E21 tables and their checksummed
-provenance manifest from the validation archive with:
+provenance manifest from the validation archive. The archive location is a
+required input (`--validation-data-root` or `ENCELADUS_VALIDATION_DATA_ROOT`);
+the exporter refuses to run without one rather than assuming a machine path:
 
 ```bash
-python3 standalone/export_forward_observations.py
+python3 standalone/export_forward_observations.py \
+  --validation-data-root /absolute/path/to/cassini_validation_data
 ```
+
+By default this rewrites `standalone/observations/`. To compare a rebuild with
+the checked-in release first, add `--output-dir /new/empty/directory` and
+compare the table SHA-256 values in the two `release_manifest.json` files.
 
 Run the current E3 source distribution for ten 1,000-step sampling windows in
 a fresh output directory:
@@ -229,3 +269,58 @@ separately report the AMPS peak/published-column ratio. A plotter `PASS` means
 that all products have the requested zone count, stable row sequence, valid
 schema, and a generated PNG; it is not a claim of observational agreement or
 physical convergence.
+
+
+## Case runner and runtime mesh regression
+
+The case campaign uses explicitly synthetic geometry and nonuniform source
+rates; it never substitutes them for the real fitted-data catalog. Four
+stdlib-only publisher tests run inside U00. U09 drives the actual C++ resolver
+through nine test methods, including relocation, hash changes, source symlink
+escape, missing/unknown cases, absolute/shape totals and removal of the original
+fitting data. U10 checks independent point/block geometry, shell cavities,
+segment-to-box distances, polar refinement and compiled AMR limits.
+
+| Global test ID | What is checked / why |
+|---|---|
+| ENCELADUS-U09-CASE-RUNTIME | Actual CLI/catalog parser preserves all 28 nonuniform rate vectors and rejects wrong or unavailable inputs; no silent source fallback. |
+| ENCELADUS-U10-RUNTIME-MESH | Independent box/sphere/shell/cone and exact-distance fixtures verify refinement intersection and compiled-depth rejection. |
+| ENCELADUS-N06-CASE-LOCAL | Native list/describe/local validation resolves all 28 measurement–basis cases, including both UVIS ray schemas, without mesh allocation. |
+| ENCELADUS-N07-CASE-MPI | One/four ranks agree on content; rank-local mismatch and missing data fail collectively without hanging and without a particle buffer. |
+| ENCELADUS-N08-CASE-TRANSPORT | Nine short native runs cover every source basis, H2O and CO2 plus four-rank ownership; each closes an exact 40-particle global injection ledger. |
+| ENCELADUS-N09-CASE-UVIS | Both native UVIS ray operators advance and output all three fixture rays in each of two sampling windows with positive domain paths. |
+| ENCELADUS-N10-RUNTIME-MESH | A noncubic domain with box/sphere/shell refinements produces actual observation cells within 80 km and the independently calculated global timestep. |
+| ENCELADUS-N11-CASE-ERRORS | Native local validation rejects a domain cutting the surface, an unattainable cell target and a misspelled mesh key before allocation. |
+
+Native groups execute through the existing serialized native owner:
+
+```bash
+python3 src/test/run_tests.py --config test/qualification-machine/passion.json \
+  --test APPLICATION-ENCELADUS-NATIVE-STARTUP-001
+```
+
+This owner creates its synthetic bundle in retained artifacts, performs the
+required root/idle/clean/configure/hooks/top-level `-j16` build, and then runs
+the unchanged six legacy gates plus the six groups above. It temporarily holds
+and restores existing application test output during source generation.
+`tools.mpiexec` and `execution.mpi_rank_flag` come from the machine profile;
+missing MPI is reported as SKIP for MPI-dependent groups, never PASS. Native
+runs use fresh subdirectories and retain individual command logs, manifest,
+source snapshots and the application receipt. Results are imported into the
+single global JSON/JUnit reports with stable IDs.
+
+For an already built executable whose configured root contains a generated
+fixture bundle:
+
+```bash
+python3 -B srcEnceladus/test/run_case_native_tests.py \
+  --executable ./amps --fixture-deck /path/to/fixture/cases.in \
+  --output /new/output/directory --launcher-json '["mpiexec"]'
+```
+
+The native script does not build/configure or alter fitted data. Its synthetic
+sources and four-step windows check integration and bookkeeping; they do not
+measure Cassini agreement, chemistry convergence or steady plume convergence.
+New tests must be registered in the global manifest/case registry and
+`src/test/TEST_CATALOG.md` in the same change; agents must regenerate the
+catalog and its manual snapshot rather than leave undocumented case IDs.

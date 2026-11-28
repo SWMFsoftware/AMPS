@@ -1118,6 +1118,82 @@ Check=
 <#
 
 #>
+Name=Long--Enceladus--E3-INMS
+Family=enceladus-long
+Tier=long
+Ranks=8
+Time=20
+
+Compile=
+>>>@echo "test_Long--Enceladus--E3-INMS_compile..." > test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+>>>@# The production Enceladus executable (srcEnceladus/test/end_to_end/README.md): -amps-test=off, no SPICE
+>>>@# at run time; the deck sets the runtime mesh explicitly, so the mesh does not depend on the test mode.
+>>>./Config.pl -application=enceladus -spice-path=nospice -spice-kernels=nospice -amps-test=off
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_Long--Enceladus--E3-INMS_compile... done" >> test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+
+Run=
+>>>@echo "test_Long--Enceladus--E3-INMS_run..." >> test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+>>>@echo Test test_Long--Enceladus--E3-INMS has started: `date`
+>>>@# E3 flyby: AMPS H2O density along the E3 track compared with INMS (10000 steps: 10 sampling windows of 1000 steps).
+>>>@# The deck loads the tenishev2014_hybrid_8 source rates fitted to this observation alone
+>>>@# (data/input/Enceladus/fitted_plume) and the observation (data/input/Enceladus/observation_files).
+>>>@# Tier=long: the nightly never runs it; the periodic long routine runs it on Ranks= ranks.
+>>>mkdir -p $(TESTLong--Enceladus--E3-INMSDIR)/PT/plots
+>>>cd $(TESTLong--Enceladus--E3-INMSDIR) && $(TESTMPILAUNCH) $(TESTLong--Enceladus--E3-INMSRANKS) ./amps -input $(PTDIR)/srcEnceladus/test/end_to_end/e3_inms.long.in > run.log 2>&1
+>>>@echo "test_Long--Enceladus--E3-INMS_run... done" >> test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+
+Check=
+>>>@echo "test_Long--Enceladus--E3-INMS_check..." >> test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+>>>@# PASS/FAIL (srcEnceladus/test/end_to_end/check.sh): the run finished on the references' rank count, wrote
+>>>@# 10 comparison zones and closed its particle ledger, and its products equal
+>>>@# output/test_Enceladus/Long--Enceladus--E3-INMS--<observation|ledger>.ref_np<N>.gz under DiffNum.pl.
+>>>@# compare.sh then plots the model against INMS in $(TESTLong--Enceladus--E3-INMSDIR)/comparison and prints the metrics; never gating.
+>>>-@sh srcEnceladus/test/end_to_end/check.sh Long--Enceladus--E3-INMS $(TESTLong--Enceladus--E3-INMSDIR) inms_e3_h2o 10 "$(TESTLong--Enceladus--E3-INMSRANKS)" ${SCRIPTDIR}/DiffNum.pl > test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+>>>-@sh srcEnceladus/test/end_to_end/compare.sh $(TESTLong--Enceladus--E3-INMSDIR) inms_e3_h2o 10
+>>>@ls -l test_Long--Enceladus--E3-INMS$(TESTLong--Enceladus--E3-INMS-REF).diff
+>>>@echo Test Long--Enceladus--E3-INMS has finished: `date`
+<#
+
+#>
+Name=Long--Enceladus--UVIS-2010
+Family=enceladus-long
+Tier=long
+Ranks=8
+Time=12
+
+Compile=
+>>>@echo "test_Long--Enceladus--UVIS-2010_compile..." > test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+>>>@# The production Enceladus executable (srcEnceladus/test/end_to_end/README.md): -amps-test=off, no SPICE
+>>>@# at run time; the deck sets the runtime mesh explicitly, so the mesh does not depend on the test mode.
+>>>./Config.pl -application=enceladus -spice-path=nospice -spice-kernels=nospice -amps-test=off
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_Long--Enceladus--UVIS-2010_compile... done" >> test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+
+Run=
+>>>@echo "test_Long--Enceladus--UVIS-2010_run..." >> test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+>>>@echo Test test_Long--Enceladus--UVIS-2010 has started: `date`
+>>>@# UVIS 2010 E10 solar occultation: AMPS H2O column along each ray compared with UVIS (10000 steps: 10 sampling windows of 1000 steps).
+>>>@# The deck loads the tenishev2014_hybrid_8 source rates fitted to this observation alone
+>>>@# (data/input/Enceladus/fitted_plume) and the observation (data/input/Enceladus/observation_files).
+>>>@# Tier=long: the nightly never runs it; the periodic long routine runs it on Ranks= ranks.
+>>>mkdir -p $(TESTLong--Enceladus--UVIS-2010DIR)/PT/plots
+>>>cd $(TESTLong--Enceladus--UVIS-2010DIR) && $(TESTMPILAUNCH) $(TESTLong--Enceladus--UVIS-2010RANKS) ./amps -input $(PTDIR)/srcEnceladus/test/end_to_end/uvis_2010.long.in > run.log 2>&1
+>>>@echo "test_Long--Enceladus--UVIS-2010_run... done" >> test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+
+Check=
+>>>@echo "test_Long--Enceladus--UVIS-2010_check..." >> test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+>>>@# PASS/FAIL (srcEnceladus/test/end_to_end/check.sh): the run finished on the references' rank count, wrote
+>>>@# 10 comparison zones and closed its particle ledger, and its products equal
+>>>@# output/test_Enceladus/Long--Enceladus--UVIS-2010--<observation|ledger>.ref_np<N>.gz under DiffNum.pl.
+>>>@# compare.sh then plots the model against UVIS in $(TESTLong--Enceladus--UVIS-2010DIR)/comparison and prints the metrics; never gating.
+>>>-@sh srcEnceladus/test/end_to_end/check.sh Long--Enceladus--UVIS-2010 $(TESTLong--Enceladus--UVIS-2010DIR) uvis_2010_e10_solar 10 "$(TESTLong--Enceladus--UVIS-2010RANKS)" ${SCRIPTDIR}/DiffNum.pl > test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+>>>-@sh srcEnceladus/test/end_to_end/compare.sh $(TESTLong--Enceladus--UVIS-2010DIR) uvis_2010_e10_solar 10
+>>>@ls -l test_Long--Enceladus--UVIS-2010$(TESTLong--Enceladus--UVIS-2010-REF).diff
+>>>@echo Test Long--Enceladus--UVIS-2010 has finished: `date`
+<#
+
+#>
 Name=SEP--Parker_spiral--ParkerEq 
 Family=sep
 Time=4
@@ -2646,6 +2722,77 @@ Run=
 >>>cd $(TESTEnceladusDIR); ${MPIRUN} ./amps -input $(PTDIR)/input/enceladus-test.in
 >>>@echo "test_Enceladus_run... done" >> test_Enceladus$(TESTEnceladus-REF).diff
 <#
+-------------------------------------------------------------------------------
+#>
+Name=Enceladus--E3-INMS
+Family=enceladus-e2e
+Time=15
+
+Compile=
+>>>@echo "test_Enceladus--E3-INMS_compile..." > test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+>>>@# The production Enceladus executable (srcEnceladus/test/end_to_end/README.md): -amps-test=off, no SPICE
+>>>@# at run time; the deck sets the runtime mesh explicitly, so the mesh does not depend on the test mode.
+>>>./Config.pl -application=enceladus -spice-path=nospice -spice-kernels=nospice -amps-test=off
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_Enceladus--E3-INMS_compile... done" >> test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+
+Run=
+>>>@echo "test_Enceladus--E3-INMS_run..." >> test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+>>>@echo Test test_Enceladus--E3-INMS has started: `date`
+>>>@# E3 flyby: AMPS H2O density along the E3 track compared with INMS (5000 steps: 5 sampling windows of 1000 steps).
+>>>@# The deck loads the tenishev2014_hybrid_8 source rates fitted to this observation alone
+>>>@# (data/input/Enceladus/fitted_plume) and the observation (data/input/Enceladus/observation_files).
+>>>mkdir -p $(TESTEnceladus--E3-INMSDIR)/PT/plots
+>>>cd $(TESTEnceladus--E3-INMSDIR) && ${MPIRUN} ./amps -input $(PTDIR)/srcEnceladus/test/end_to_end/e3_inms.nightly.in > run.log 2>&1
+>>>@echo "test_Enceladus--E3-INMS_run... done" >> test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+
+Check=
+>>>@echo "test_Enceladus--E3-INMS_check..." >> test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+>>>@# PASS/FAIL (srcEnceladus/test/end_to_end/check.sh): the run finished on the references' rank count, wrote
+>>>@# 5 comparison zones and closed its particle ledger, and its products equal
+>>>@# output/test_Enceladus/Enceladus--E3-INMS--<observation|ledger>.ref_np<N>.gz under DiffNum.pl.
+>>>@# compare.sh then plots the model against INMS in $(TESTEnceladus--E3-INMSDIR)/comparison and prints the metrics; never gating.
+>>>-@sh srcEnceladus/test/end_to_end/check.sh Enceladus--E3-INMS $(TESTEnceladus--E3-INMSDIR) inms_e3_h2o 5 "" ${SCRIPTDIR}/DiffNum.pl > test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+>>>-@sh srcEnceladus/test/end_to_end/compare.sh $(TESTEnceladus--E3-INMSDIR) inms_e3_h2o 5
+>>>@ls -l test_Enceladus--E3-INMS$(TESTEnceladus--E3-INMS-REF).diff
+>>>@echo Test Enceladus--E3-INMS has finished: `date`
+<#
+
+#>
+Name=Enceladus--UVIS-2010
+Family=enceladus-e2e
+Time=8
+
+Compile=
+>>>@echo "test_Enceladus--UVIS-2010_compile..." > test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+>>>@# The production Enceladus executable (srcEnceladus/test/end_to_end/README.md): -amps-test=off, no SPICE
+>>>@# at run time; the deck sets the runtime mesh explicitly, so the mesh does not depend on the test mode.
+>>>./Config.pl -application=enceladus -spice-path=nospice -spice-kernels=nospice -amps-test=off
+>>>@$(MAKE) -j$(TESTCOMPILEJOBS) amps
+>>>@echo "test_Enceladus--UVIS-2010_compile... done" >> test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+
+Run=
+>>>@echo "test_Enceladus--UVIS-2010_run..." >> test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+>>>@echo Test test_Enceladus--UVIS-2010 has started: `date`
+>>>@# UVIS 2010 E10 solar occultation: AMPS H2O column along each ray compared with UVIS (5000 steps: 5 sampling windows of 1000 steps).
+>>>@# The deck loads the tenishev2014_hybrid_8 source rates fitted to this observation alone
+>>>@# (data/input/Enceladus/fitted_plume) and the observation (data/input/Enceladus/observation_files).
+>>>mkdir -p $(TESTEnceladus--UVIS-2010DIR)/PT/plots
+>>>cd $(TESTEnceladus--UVIS-2010DIR) && ${MPIRUN} ./amps -input $(PTDIR)/srcEnceladus/test/end_to_end/uvis_2010.nightly.in > run.log 2>&1
+>>>@echo "test_Enceladus--UVIS-2010_run... done" >> test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+
+Check=
+>>>@echo "test_Enceladus--UVIS-2010_check..." >> test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+>>>@# PASS/FAIL (srcEnceladus/test/end_to_end/check.sh): the run finished on the references' rank count, wrote
+>>>@# 5 comparison zones and closed its particle ledger, and its products equal
+>>>@# output/test_Enceladus/Enceladus--UVIS-2010--<observation|ledger>.ref_np<N>.gz under DiffNum.pl.
+>>>@# compare.sh then plots the model against UVIS in $(TESTEnceladus--UVIS-2010DIR)/comparison and prints the metrics; never gating.
+>>>-@sh srcEnceladus/test/end_to_end/check.sh Enceladus--UVIS-2010 $(TESTEnceladus--UVIS-2010DIR) uvis_2010_e10_solar 5 "" ${SCRIPTDIR}/DiffNum.pl > test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+>>>-@sh srcEnceladus/test/end_to_end/compare.sh $(TESTEnceladus--UVIS-2010DIR) uvis_2010_e10_solar 5
+>>>@ls -l test_Enceladus--UVIS-2010$(TESTEnceladus--UVIS-2010-REF).diff
+>>>@echo Test Enceladus--UVIS-2010 has finished: `date`
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=Rosetta@@(0+) 

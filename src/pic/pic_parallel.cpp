@@ -11,6 +11,8 @@
 long int PIC::Parallel::sendParticleCounter=0,PIC::Parallel::recvParticleCounter=0,PIC::Parallel::IterationNumberAfterRebalancing=0;
 double PIC::Parallel::RebalancingTime=0.0,PIC::Parallel::CumulativeLatency=0.0;
 double PIC::Parallel::EmergencyLoadRebalancingFactor=3.0;
+bool PIC::Parallel::DynamicLoadRebalancingEnabled=true; //see pic.h: false keeps the initial decomposition
+bool PIC::Parallel::DeterministicParticleExchangeOrder=false; //see pic.h: true sorts cell lists after each exchange
 double PIC::Parallel::Latency=0.0;
 
 //the user-defiend function to perform MPI exchange of the model data
@@ -515,7 +517,8 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
     }
   };
 
-  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+  //nightly test mode or the runtime switch (pic.h): order independent of the message arrival time
+  if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)||(PIC::Parallel::DeterministicParticleExchangeOrder==true)) {
     SortParticleList();
   }
  }
@@ -986,7 +989,8 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
     }
   };
 
-  if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(_CUDA_MODE_ == _OFF_)) {
+  //nightly test mode or the runtime switch (pic.h): order independent of the message arrival time
+  if (((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)||(PIC::Parallel::DeterministicParticleExchangeOrder==true))&&(_CUDA_MODE_ == _OFF_)) {
     SortParticleList();
   }
 
