@@ -518,10 +518,10 @@ gate the test. Number of energy bins with particles in that run, at 12, 24,
 ### Long Table blocks
 
 `SEP--event-2013-04-11-long--Parker`, `--FTE-Dmumu` and `--FTE-MFP`
-(`Family=sep-long`, `Tier=long`, `Ranks=32`). They run `event.in`, the full
+(`Family=sep-long`, `Tier=long`, `Ranks=16`). They run `event.in`, the full
 event, with the same `event.args`, launched as
 `$(TESTMPILAUNCH) $(TEST<name>RANKS) ./amps`. The check compares the same four
-products with `output/test_SEP3D/SEP--event-2013-04-11-long--<Mover>--<label>.ref_np32.gz`,
+products with `output/test_SEP3D/SEP--event-2013-04-11-long--<Mover>--<label>.ref_np16.gz`,
 fails a run on another rank count, and then runs `score_observations.pl`
 (report `run_test_<name>/observation-score.{txt,csv}`, printed in the log,
 never gating). Their names do not begin with a nightly test's name, because
@@ -530,15 +530,18 @@ the runner collects `test_<name>*.diff`.
 By hand, from the AMPS root: `make test_SEP--event-2013-04-11-long--FTE-MFP`
 (add `TESTMPILAUNCH='mpiexec -n'` where needed).
 
-Provisional until the first long runs: `Ranks=32` (passion's limit for the
-long routine), the `Time=` values (1440, 1440 and 360 min), and the deck
-itself (the convergence study may change the long numerics). The long
-references do not exist yet: they are made by `make_references.sh` from the
-first full runs.
+`Ranks=16` (2026-11-28): passion has 18 physical cores and Open MPI refuses
+`mpirun -np 32` there; 16 ranks leave two cores for the system and the
+runner. Provisional until the first long runs: the `Time=` values (1440,
+1440 and 360 min), and the deck itself (the convergence study may change the
+long numerics). Each `Time=` is then set to 1.5 times the measured wall time
+of that test's first full 16-rank run, made in a quiet window of the machine.
+The long references do not exist yet: `make_references.sh` makes them from
+the same first full runs.
 
 ## 6. Pending
 
-1. First full long runs by hand (cost at 32 ranks; references); then the
+1. First full long runs by hand (cost at 16 ranks; references); then the
    periodic crontab line.
 2. Convergence (ε, dt, samples per step, boundary tolerance) for the long
    deck; strong scaling for its rank count.

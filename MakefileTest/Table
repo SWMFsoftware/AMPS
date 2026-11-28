@@ -731,7 +731,7 @@ Check=
 Name=SEP--event-2013-04-11-long--FTE-MFP
 Family=sep-long
 Tier=long
-Ranks=32
+Ranks=16
 Time=360
 
 Compile=
@@ -775,7 +775,7 @@ Check=
 Name=SEP--event-2013-04-11-long--Parker
 Family=sep-long
 Tier=long
-Ranks=32
+Ranks=16
 Time=1440
 
 Compile=
@@ -819,7 +819,7 @@ Check=
 Name=SEP--event-2013-04-11-long--FTE-Dmumu
 Family=sep-long
 Tier=long
-Ranks=32
+Ranks=16
 Time=1440
 
 Compile=
@@ -992,7 +992,7 @@ Check=
 Name=SEP3D--event-2013-04-11-long--FTE-MFP
 Family=sep-long
 Tier=long
-Ranks=32
+Ranks=16
 Time=720
 
 Compile=
@@ -1035,7 +1035,7 @@ Check=
 Name=SEP3D--event-2013-04-11-long--Parker
 Family=sep-long
 Tier=long
-Ranks=32
+Ranks=16
 Time=720
 
 Compile=
@@ -1078,7 +1078,7 @@ Check=
 Name=SEP3D--event-2013-04-11-long--FTE-Dmumu
 Family=sep-long
 Tier=long
-Ranks=32
+Ranks=16
 Time=720
 
 Compile=

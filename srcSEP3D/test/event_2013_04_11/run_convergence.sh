@@ -8,7 +8,7 @@
 #   MOVER        parker, fte-dmumu or fte-mfp
 #   WORK_DIR     gets one run directory convergence-<RADIUS_TAG>-<MOVER> per radius
 #   RADIUS_TAG   r0p005au r0p01au r0p02au r0p04au by default
-# Environment: MPIRUN (default "mpirun -np 32"). A run directory that already
+# Environment: MPIRUN (default "mpirun -np 16", the long-tier rank count). A run directory that already
 # holds a finished run (its run.status says exit=0) is reused, so the study
 # can be resumed or extended.
 #
@@ -20,7 +20,7 @@
 # status (0 selected, 1 none, 2 bad input) is the script's exit status.  A
 # failed run stops the script with exit 1 before the report.
 #
-# Example: MPIRUN="mpirun -np 32" sh run_convergence.sh ../../../amps fte-mfp /scratch/conv
+# Example: MPIRUN="mpirun -np 16" sh run_convergence.sh ../../../amps fte-mfp /scratch/conv
 set -eu
 # here: this directory (decks, ephemerides, report); e1: the 1-D event
 # directory, which holds event.event (#included by the decks) and its WSO
@@ -38,7 +38,7 @@ shift 3
 [ $# -gt 0 ] || set -- r0p005au r0p01au r0p02au r0p04au
 case $mover in parker|fte-dmumu|fte-mfp) ;; *) echo "unknown mover $mover" >&2; exit 2;; esac
 [ -x "$amps" ] || { echo "no executable $amps" >&2; exit 2; }
-mpirun=${MPIRUN:-mpirun -np 32}
+mpirun=${MPIRUN:-mpirun -np 16}
 mkdir -p "$work"
 # pairs: the RADIUS_AU=RUN_DIR arguments of convergence_report.py.
 pairs=""
@@ -57,7 +57,7 @@ for tag in "$@"; do
     cp "$e1/assets/wso_cr2135_model_frame.harmonics.csv" "$dir"/assets/
     ln -s "$amps" "$dir/amps"
     echo "convergence: $tag $mover started $(date)"
-    # MPIRUN is expanded unquoted so that "mpirun -np 32" splits into words.
+    # MPIRUN is expanded unquoted so that "mpirun -np 16" splits into words.
     status=0
     (cd "$dir" && $mpirun ./amps -input "$deck" > run.log 2> run.err) || status=$?
     echo "exit=$status" > "$dir/run.status"

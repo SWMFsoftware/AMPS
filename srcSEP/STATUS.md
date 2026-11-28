@@ -37,7 +37,7 @@ Liu et al. (2025) lambda for all movers, release at 1.3 R_sh, a
   0.5% change of one value fails the check.
 - Long tier (full 41.4 h event, observation score reported):
   `SEP--event-2013-04-11-long--{Parker,FTE-Dmumu,FTE-MFP}`, `Tier=long`,
-  `Ranks=32`, in `Makefile.test.long` (generic mechanism: `table_parser`,
+  `Ranks=16`, in `Makefile.test.long` (generic mechanism: `table_parser`,
   `Makefile.def.amps`, the long routine of `utility/nightly`). No full run
   and no long reference yet; the long numerics wait for the convergence study
   and a scaling measurement.

@@ -47,7 +47,7 @@ Ranks=64
 """
 LONG = {"enabled": True, "start": "Sat 10:00", "time_limit_h": 32, "lanes": 1, "compile_lanes": 1,
         "timeouts_s": {"compile": 3600, "rundir": 600, "run": 86400, "check": 1800},
-        "make_vars": {"TESTMPILAUNCH": "mpirun -np"}, "max_ranks": 32, "stale_after_h": 192}
+        "make_vars": {"TESTMPILAUNCH": "mpirun -np"}, "max_ranks": 16, "stale_after_h": 192}
 
 
 def machine(name="box", **extra):
@@ -127,7 +127,7 @@ class Machines(unittest.TestCase):
         self.assertEqual(long_.make_vars, {"MPIRUN": "mpirun -np 8", "TESTMPILAUNCH": "mpirun -np"})
         self.assertEqual(long_.compile_jobs_for(), 36)                    # one compile lane gets the cores
         self.assertEqual((m.lanes, m.start, m.timeouts_s["run"], m.compile_jobs_for()), (4, "20:00", 7200, 9))
-        self.assertEqual((m.max_ranks("long"), m.stale_after_h("long")), (32, 192))
+        self.assertEqual((m.max_ranks("long"), m.stale_after_h("long")), (16, 192))
         # defaults: the machine's values, max_ranks = cores, stale after 192 h
         d = parse_machine(machine(cores=36, routines={"long": {"start": "12:00"}}), Path("box.json")).for_routine("long")
         self.assertEqual((d.lanes, d.night_limit_h, d.max_ranks("long"), d.stale_after_h("long")), (1, 14, 36, 192))

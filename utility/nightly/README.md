@@ -129,7 +129,7 @@ long routine. On passion:
 ```json
 "routines": {"long": {"enabled": true, "start": "Sat 10:00", "time_limit_h": 32, "lanes": 1, "compile_lanes": 1,
                       "timeouts_s": {"compile": 3600, "rundir": 600, "run": 86400, "check": 1800},
-                      "make_vars": {"TESTMPILAUNCH": "mpirun -np"}, "max_ranks": 32, "stale_after_h": 192}}
+                      "make_vars": {"TESTMPILAUNCH": "mpirun -np"}, "max_ranks": 16, "stale_after_h": 192}}
 ```
 
 While the routine runs, `time_limit_h` replaces `night_limit_h`, `lanes` and `compile_lanes` replace the

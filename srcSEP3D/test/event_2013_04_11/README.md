@@ -297,8 +297,8 @@ copies them there.
 | `run_unit_tests.sh` | E3D01–E3D06, standalone under ASan/UBSan: frame, inertial terms, ephemeris, tracing and the tube, absorbing shock and bridge statistics, tube-line source rate, weights, spectrum and pitch law |
 | `run_spice_test.sh CSPICE_DIR LSK SPK` | E3D07: the SPICE body-observer path against the Horizons Earth table. On passion (CSPICE N0067, `naif0012.tls`, `de430.bsp`) Earth differs by at most 0.14 km and 3×10⁻⁵ m/s over the 67 samples. SPICE kernels for SOHO and ACE are not available here, so those bodies use the table. |
 | `SEP3D--event-2013-04-11--{Parker,FTE-Dmumu,FTE-MFP}` | Nightly Table tests: first hour, DiffNum of `observers`, `radial_energy` and `ledger` (`regression_products.sh`) against `output/test_SEP3D/SEP3D--event-2013-04-11--<Mover>--<label>.ref_np<N>.gz` |
-| `SEP3D--event-2013-04-11-long--{FTE-MFP,Parker,FTE-Dmumu}` | Long tier: full event, `Ranks=32` |
-| `run_convergence.sh AMPS MOVER WORK_DIR [RADIUS_TAG ...]` | The collection-radius study (section 6): one long-tier run of `event3d.convergence-<tag>.<mover>.in` per radius (`MPIRUN`, default `mpirun -np 32`), then `convergence_report.py`. Finished runs are reused. |
+| `SEP3D--event-2013-04-11-long--{FTE-MFP,Parker,FTE-Dmumu}` | Long tier: full event, `Ranks=16` |
+| `run_convergence.sh AMPS MOVER WORK_DIR [RADIUS_TAG ...]` | The collection-radius study (section 6): one long-tier run of `event3d.convergence-<tag>.<mover>.in` per radius (`MPIRUN`, default `mpirun -np 16`), then `convergence_report.py`. Finished runs are reused. |
 | `convergence_report.py RADIUS_AU=RUN_DIR ...` | Pairwise comparison of consecutive radii and the selected radius (section 6) |
 
 `make_references.sh RUN_DIR TEST_NAME REFERENCE_DIR` writes the references
@@ -327,7 +327,8 @@ their Monte Carlo uncertainty.
   radius also sets the tube width (ρ + s around each observer), so every
   radius builds its own mesh.
 - **Run:** `run_convergence.sh <amps> fte-mfp <work-dir>`. Each run is one
-  long-tier job (about 12 h on 32 ranks, as `SEP3D--event-2013-04-11-long--*`).
+  long-tier job (16 ranks, as `SEP3D--event-2013-04-11-long--*`; the 12 h
+  estimate below was made for 32 ranks and is not a measurement).
   The collection radius is a sampling parameter, so one mover suffices; pass
   another mover to check that.
 - **Profiles:** the tube observers `tube-earth`, `tube-soho` and `tube-ace`,
@@ -361,7 +362,8 @@ returns "not decided" (exit 1). The study needs the long tier.
   `score_observations.pl` reads the 1-D outputs) come after the convergence
   study.
 - The long-tier and convergence run times are estimates (`Time=720`, about
-  12 h on 32 ranks each), not measurements. The nightly tier takes 4–13 min
+  12 h each, made for 32 ranks before the long tier moved to 16 on
+  2026-11-28), not measurements. The nightly tier takes 4–13 min
   on 8 ranks for 60 steps; the long tier has 2484 steps and a growing
   population.
 - Memory: AMPS replicates the whole tree on every rank. With the coarsened
