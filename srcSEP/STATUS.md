@@ -41,6 +41,14 @@ Liu et al. (2025) lambda for all movers, release at 1.3 R_sh, a
   `Makefile.def.amps`, the long routine of `utility/nightly`). No full run
   and no long reference yet; the long numerics wait for the convergence study
   and a scaling measurement.
+- 2026-11-28: the first full run of the long fte-mfp deck stopped at step 22
+  with "stability limit is below the declared minimum substep": the time left
+  in the 60 s step was a round-off residue of about 7e-15 s.
+  `PICAdapter::SelectParticleSubstep` now completes such a remainder whole, as
+  the first move already did (TRANSPORT_NUMERICS.md). The unmodified deck
+  reproduces the stop at step 22; with the fix the full event (2484 steps)
+  completes, and the three nightly 1-D tests match their np8 references byte
+  for byte.
 
 ## Legacy CME shock evolution regression, 2026-11-24
 

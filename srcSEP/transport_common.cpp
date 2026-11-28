@@ -652,7 +652,18 @@ ScalarResult SelectParticleSubstep(const ParticleContext& context,double elapsed
     const std::vector<StepLimit>& limits,double minimumAdaptiveStepS,StepDiagnostics* diagnostics) {
   if(context.consumesPendingBirth)
     return Birth::SelectFirstMoveSubstep(context.firstMove,elapsedS,limits,minimumAdaptiveStepS,diagnostics);
-  return SelectSubstep(context.moveDurationS-elapsedS,limits,minimumAdaptiveStepS,diagnostics);
+  // Same rule as the first move (Birth::SelectFirstMoveSubstep): a remaining
+  // interval below the refinement floor is admissible only as the complete
+  // interval.  The movers sum their substeps in floating point, so after a
+  // substep set by another limit (for example the snapshot boundary, computed
+  // from absolute epochs) the time left in the step can be a round-off residue
+  // of about one ulp of the step (7e-15 s for 60 s).  Rejecting that residue
+  // as a stability underflow stopped the full 2013-04-11 fte-mfp run at step
+  // 22.  Any physical or stability limit smaller than the residue still raises
+  // StepUnderflow as before, and runs that never leave a residue below the
+  // floor select exactly the same substeps.
+  const double remainingS=context.moveDurationS-elapsedS;
+  return SelectSubstep(remainingS,limits,std::min(minimumAdaptiveStepS,remainingS),diagnostics);
 }
 
 Status AdvanceAlongFieldLine(ParticleContext* context,

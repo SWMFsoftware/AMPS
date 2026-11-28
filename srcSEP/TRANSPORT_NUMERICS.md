@@ -210,6 +210,15 @@ interval independently of the PIC counter's start/end update order. A declared
 positive terminal first interval below the adaptive refinement floor is
 completed whole; a physical/stability limit that requires a smaller interval
 still returns `StepUnderflow`. No phase is clipped, redrawn, or discarded.
+Every later substep of a move follows the same rule
+(`PICAdapter::SelectParticleSubstep`): the movers sum their substeps in
+floating point, so after a substep set by another limit (for example the
+snapshot boundary, computed from absolute epochs) the time left in the move
+can be a round-off residue of about one ulp of the step (7e-15 s of a 60 s
+step). That remainder is completed whole instead of being reported as a
+stability underflow; a limit smaller than the remainder still returns
+`StepUnderflow`, and a move that leaves no such remainder selects the same
+substeps as before.
 
 Successful phase-space, complete RNG/hazard history, and first-move consumption
 are committed together. A statistical split copies the parent's physical birth
